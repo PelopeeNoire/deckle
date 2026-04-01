@@ -1,0 +1,19 @@
+# Dépôt whisper.cpp cloné — code source externe, non versionné ici
+whisper.cpp/
+
+# Modèles Whisper — fichiers binaires lourds (100 Mo à 3 Go)
+shared/*.bin
+
+# Artefacts de compilation .NET
+whisp-ui/**/bin/
+whisp-ui/**/obj/
+
+# Dossier de déploiement — reconstruisible avec dotnet publish
+whisp-ui/publish/
+
+# Fichier audio temporaire créé pendant l'enregistrement
+**/temp.wav
+
+# Fichiers locaux non pertinents
+build-log.txt
+modelfile-fastapply
