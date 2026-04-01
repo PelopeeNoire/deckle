@@ -149,13 +149,28 @@ Warning bénin identique à Phase 1 (`%ld` ligne 3437). Sans impact fonctionnel.
 
 **Toutes les étapes terminées. ✅**
 
-### Prochaine étape prévue — Finaliser le branchement Ollama (Alt+Ctrl+`)
+### Phase 3 — Branchement Ollama ✅ TERMINÉE (session 2026-04-01)
 
-`RewriteWithLlm()` est implémentée dans `Program.cs` mais nécessite 3 corrections :
+3 corrections appliquées dans `Program.cs` :
+1. `OLLAMA_MODEL` : `qwen2.5:1.5b` → `ministral-3:3b--instruct--96k`
+2. Endpoint : `/api/generate` → `/api/chat` + corps `messages: [{role:"system",...}, {role:"user",...}]`
+3. Parsing : `root["response"]` → `root["message"]["content"]`
+4. Filet clipboard : brut copié avant l'appel LLM, réécrit remplace si LLM répond
 
-1. **Mauvais modèle** : `OLLAMA_MODEL = "qwen2.5:1.5b"` → à remplacer par un des modèles ci-dessous
-2. **Prompt inline redondant** : le prompt contient des instructions dupliquant le system prompt du Modelfile → passer uniquement le texte brut à réécrire
-3. **Pas de filet clipboard** : copier le brut d'abord, puis remplacer par le réécrit si le LLM répond
+Raison du switch `/api/generate` → `/api/chat` : Ollama détecte mal le TEMPLATE des GGUF Mistral locaux,
+ce qui peut faire ignorer le system prompt du Modelfile. `/api/chat` contourne ce problème.
+
+**À tester** : lancer `Alt+Ctrl+`` et valider que la réécriture LLM fonctionne correctement.
+
+### Phase 4 — Déploiement + Git (session 2026-04-01)
+
+- `dotnet publish -c Release -o ../publish/` → `whisp-ui\publish\` mis à jour
+- Tâche planifiée Windows `Whisp` pointe sur `whisp-ui\publish\WhispInteropTest.exe` ✅
+- Dépôt git initialisé à la racine `d:\projects\ai\transcription\` ✅
+  - Branche : `main`
+  - Premier commit : `cceb090`
+  - Identité git : `Louis <louis@local.dev>`
+  - `whisper.cpp\`, `shared\*.bin`, `bin\`, `obj\`, `publish\` exclus via `.gitignore`
 
 ### Modèles Ollama disponibles (session 2026-04-01)
 
