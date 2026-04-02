@@ -160,7 +160,35 @@ Warning bénin identique à Phase 1 (`%ld` ligne 3437). Sans impact fonctionnel.
 Raison du switch `/api/generate` → `/api/chat` : Ollama détecte mal le TEMPLATE des GGUF Mistral locaux,
 ce qui peut faire ignorer le system prompt du Modelfile. `/api/chat` contourne ce problème.
 
-**À tester** : lancer `Alt+Ctrl+`` et valider que la réécriture LLM fonctionne correctement.
+**Réécriture LLM (Alt+Ctrl+`) : non validée.** Ollama a été réinitialisé — les modèles sont à retélécharger et reconfigurer (system prompt, température). Bloquer cette fonctionnalité jusqu'à ce que la base soit stabilisée.
+
+### Phase 5 — Qualité de transcription brute + observabilité (session 2026-04-02)
+
+Commit `01fece1` (session précédente) :
+1. `initial_prompt` : `"Transcription en français."` — ancre le modèle, favorise la ponctuation.
+2. `entropy_thold` : `2.4` → `1.9` — rejette plus tôt les segments répétitifs.
+3. Filtre `IsHallucinatedOutput` : rejette tokens parasites Radio-Canada.
+4. `no_speech_thold` : `0.6` → `0.7`.
+
+Session 2026-04-02 (non encore commité) :
+5. Transcription par chunks de 30 s : chaque chunk transcrit et filtré indépendamment, buffer cumulé, clipboard mis à jour après chaque chunk propre.
+6. Fenêtre de debug WinForms (`DebugForm`) : logs horodatés `[HH:mm:ss.fff] [PHASE] message`, flag `const bool DEBUG_LOG` pour activer/désactiver sans recompiler.
+   - Phase `RECORD` : démarrage boucle, chaque buffer WHDR_DONE récolté, fin de boucle + total.
+   - Phase `TRANSCRIBE` : réception rawPcm, conversion float[], nb chunks, envoi/retour whisper_full par chunk avec durée, écriture clipboard.
+   - Phase `INIT` : durée de chargement du modèle au démarrage.
+7. `_ctx` sorti de `Transcribe()` → chargé une seule fois au démarrage sur thread de fond. Tray affiche "Chargement du modèle..." jusqu'à ce que le contexte soit prêt. Libéré dans `Dispose()`.
+
+**Priorités prochaine session :**
+- Valider la qualité de transcription en conditions réelles avec les logs de debug
+- Reconfigurer Ollama (modèles + Modelfiles) une fois la qualité brute satisfaisante
+
+### Workflow de développement
+
+Deux scripts dans `whisp-ui/` :
+- `dev-run.ps1` : kill instance en cours → `dotnet build -c Release` → lance l'exe depuis `bin/Release/` pour tester
+- `dev-publish.ps1` : kill instance de test → `dotnet publish -c Release -o ../publish/` pour mettre en production
+
+La tâche planifiée Windows `Whisp` pointe sur `whisp-ui/publish/WhispInteropTest.exe` — relancer manuellement après publish si besoin.
 
 ### Phase 4 — Déploiement + Git (session 2026-04-01)
 

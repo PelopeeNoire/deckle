@@ -43,7 +43,10 @@ Application.Run(new WhispForm(modelPath));
 
 class WhispForm : Form
 {
-    // ── Constantes Windows ────────────────────────────────────────────────────
+    // ── Debug ─────────────────────────────────────────────────────────────────
+
+    // Mettre à false pour désactiver tous les logs de debug sans recompiler.
+    const bool DEBUG_LOG = true;
 
     // ── Constantes Ollama ─────────────────────────────────────────────────────
 
@@ -100,6 +103,13 @@ class WhispForm : Form
     // volatile : accédé depuis le thread UI (écriture) et le thread de transcription (lecture).
     volatile IntPtr _pasteTarget = IntPtr.Zero;
 
+    // Contexte Whisper chargé une seule fois au démarrage (thread de fond).
+    // volatile : écrit depuis le thread de chargement, lu depuis le thread de transcription.
+    // IntPtr.Zero tant que le chargement n'est pas terminé.
+    volatile IntPtr _ctx = IntPtr.Zero;
+
+    DebugForm _debugForm = null!;
+
     // ── Constructeur ──────────────────────────────────────────────────────────
 
     public WhispForm(string modelPath)
@@ -119,7 +129,7 @@ class WhispForm : Form
         _trayIcon = new NotifyIcon
         {
             Icon    = SystemIcons.Application,
-            Text    = "Whisp — En attente",
+            Text    = "Whisp — Chargement du modèle...",
             Visible = true
         };
 
@@ -134,6 +144,43 @@ class WhispForm : Form
         // Le | combine les masques de modificateurs : MOD_ALT | MOD_SHIFT = Alt+Shift.
         RegisterHotKey(this.Handle, HOTKEY_ID_ALT,      MOD_ALT,                 VK_OEM_3);
         RegisterHotKey(this.Handle, HOTKEY_ID_ALT_CTRL, MOD_ALT | MOD_CONTROL,   VK_OEM_3);
+
+        _debugForm = new DebugForm();
+
+        // Charger le modèle whisper en arrière-plan dès le démarrage.
+        // Le chargement de ggml-large-v3.bin prend plusieurs secondes — le faire ici
+        // plutôt que dans Transcribe() évite cette latence au moment de l'utilisation.
+        var loadThread = new Thread(() =>
+        {
+            var swLoad = System.Diagnostics.Stopwatch.StartNew();
+            DbgLog("INIT", $"Chargement du modèle ({Path.GetFileName(_modelPath)})...");
+
+            IntPtr ctxParamsPtr = whisper_context_default_params_by_ref();
+            WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
+            whisper_free_context_params(ctxParamsPtr);
+            ctxParams.use_gpu = 1;
+
+            _ctx = whisper_init_from_file_with_params(_modelPath, ctxParams);
+            swLoad.Stop();
+
+            if (!this.IsDisposed)
+                this.BeginInvoke(() =>
+                {
+                    if (_ctx == IntPtr.Zero)
+                    {
+                        _trayIcon.Text = "Whisp — Erreur : modèle non chargé";
+                        MessageBox.Show($"Impossible de charger le modèle :\n{_modelPath}",
+                            "Whisp — Erreur", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    else
+                    {
+                        DbgLog("INIT", $"Modèle chargé en {swLoad.ElapsedMilliseconds} ms — prêt");
+                        _trayIcon.Text = "Whisp — En attente";
+                    }
+                });
+        });
+        loadThread.IsBackground = true;
+        loadThread.Start();
     }
 
     // ── Ne jamais afficher la fenêtre ────────────────────────────────────────
@@ -184,12 +231,30 @@ class WhispForm : Form
         base.WndProc(ref m); // laisser WinForms traiter les autres messages
     }
 
+    // ── Helper log de debug ──────────────────────────────────────────────────
+    //
+    // Envoie une ligne horodatée à la fenêtre de debug si DEBUG_LOG est actif.
+    // Thread-safe : DebugForm.Log() achemine via BeginInvoke si nécessaire.
+
+    void DbgLog(string phase, string message)
+    {
+        if (!DEBUG_LOG) return;
+        string ts = DateTime.Now.ToString("HH:mm:ss.fff");
+        _debugForm.Log($"[{ts}] [{phase}] {message}");
+    }
+
     // ── Démarrer l'enregistrement sur un thread de fond ───────────────────────
 
     void StartRecording()
     {
         _isRecording   = true;
         _stopRecording = false;
+
+        // Ouvrir la fenêtre de debug dès le premier appui pour que les logs
+        // de Record() soient visibles (Clear + Show ici, plus dans OnRecordingDone).
+        _debugForm.Clear();
+        _debugForm.Show();
+        DbgLog("RECORD", "Démarrage de l'enregistrement");
 
         _trayIcon.Text = "Whisp — Enregistrement...  (appuyer à nouveau pour arrêter)";
         _trayIcon.Icon = SystemIcons.Shield; // icône différente = feedback visuel
@@ -238,55 +303,54 @@ class WhispForm : Form
 
     void Transcribe(byte[] rawPcm)
     {
+        double audioSec = rawPcm.Length / 32000.0; // 16000 Hz × 2 octets = 32000 octets/s
+        DbgLog("TRANSCRIBE", $"rawPcm reçu — {rawPcm.Length} octets ({audioSec:F1}s d'audio)");
+
         // Écrire le WAV sur disque (utile pour vérifier l'enregistrement si besoin)
         string tempWav = Path.Combine(AppContext.BaseDirectory, "temp.wav");
         WriteWav(tempWav, rawPcm);
 
-        float[] samples = PcmToFloat(rawPcm);
+        float[] allSamples = PcmToFloat(rawPcm);
+        DbgLog("TRANSCRIBE", $"Conversion float[] terminée — {allSamples.Length} samples");
 
-        // Charger le modèle avec GPU activé
-        IntPtr ctxParamsPtr = whisper_context_default_params_by_ref();
-        WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
-        whisper_free_context_params(ctxParamsPtr);
-        ctxParams.use_gpu = 1;
-
-        IntPtr ctx = whisper_init_from_file_with_params(_modelPath, ctxParams);
+        // Le contexte Whisper est chargé une seule fois au démarrage (champ _ctx).
+        // Si l'utilisateur transcrit avant la fin du chargement, on refuse poliment.
+        IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
         {
             if (!this.IsDisposed)
                 this.BeginInvoke(() =>
                 {
-                    _trayIcon.Text = "Whisp — Erreur : modèle non chargé";
+                    _trayIcon.Text = "Whisp — Modèle non prêt";
                     _trayIcon.Icon = SystemIcons.Application;
+                    MessageBox.Show("Le modèle est encore en cours de chargement.\nRéessaie dans quelques secondes.",
+                        "Whisp", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 });
             return;
         }
 
-        // Paramètres de transcription
+        // Paramètres de transcription — créés une fois, réutilisés pour chaque chunk.
         IntPtr fullParamsPtr = whisper_full_default_params_by_ref(0);
         WhisperFullParams wparams = Marshal.PtrToStructure<WhisperFullParams>(fullParamsPtr);
         whisper_free_params(fullParamsPtr);
 
         // StringToHGlobalAnsi : alloue une chaîne C (bytes ASCII) en mémoire non managée.
-        // Obligatoire pour passer une chaîne à une DLL C.
+        // Obligatoire pour passer une chaîne à une DLL C. Libérés après la boucle de chunks.
         IntPtr langPtr         = Marshal.StringToHGlobalAnsi("fr");
         IntPtr promptPtr       = Marshal.StringToHGlobalAnsi("Transcription en français.");
         wparams.language       = langPtr;
         wparams.initial_prompt = promptPtr;
         // entropy_thold : défaut 2.4, descendu à 1.9.
+        // Dans ce build whisper.cpp, joue le rôle du compression_ratio_threshold d'OpenAI.
         // Mesure le désordre de la distribution de probabilité sur les tokens.
         // Une valeur haute tolère les sorties incohérentes (répétitions, hallucinations).
-        // À 1.9 Whisper rejette plus tôt les segments bruités ou répétitifs.
-        wparams.entropy_thold  = 1.9f;
-        // no_speech_thold : défaut 0.6, conservé — segments à faible confiance déjà filtrés.
-        wparams.print_progress = 0;
-
-        int result = whisper_full(ctx, wparams, samples, samples.Length);
-        Marshal.FreeHGlobal(langPtr);
-        Marshal.FreeHGlobal(promptPtr);
+        wparams.entropy_thold   = 1.9f;
+        // no_speech_thold : monté à 0.7 (défaut 0.6).
+        // Quand la probabilité que le segment soit du silence dépasse ce seuil, Whisper rejette le segment.
+        wparams.no_speech_thold = 0.7f;
+        wparams.print_progress  = 0;
 
         // Patterns parasites injectés par Whisper sur silence ou fin d'audio.
-        // Si le texte ne contient que ces tokens, il est rejeté (clipboard inchangé).
         static bool IsHallucinatedOutput(string text) =>
             string.IsNullOrWhiteSpace(text) ||
             text.Contains("Sous-titrage", StringComparison.OrdinalIgnoreCase) ||
@@ -295,40 +359,93 @@ class WhispForm : Form
             text.Contains("Sous-titres",   StringComparison.OrdinalIgnoreCase) ||
             text.Contains("SRC",           StringComparison.Ordinal);
 
-        if (result == 0)
+        // Transcription par chunks de 30 secondes.
+        // Whisper est entraîné sur des fenêtres de 30s max — traiter plus long en une passe
+        // favorise les répétitions et les hallucinations.
+        // Chaque chunk est transcrit et filtré indépendamment. Les chunks propres s'accumulent
+        // dans le buffer. Le clipboard est mis à jour après chaque chunk propre.
+        const int CHUNK_SAMPLES = 30 * 16_000; // 30s × 16 000 Hz = 480 000 floats
+        var chunkBuffer = new List<string>();
+        int totalSamples = allSamples.Length;
+        int chunkIndex   = 0;
+        int nChunks      = (int)Math.Ceiling((double)totalSamples / CHUNK_SAMPLES);
+        DbgLog("TRANSCRIBE", $"{nChunks} chunk(s) à traiter — {totalSamples} samples au total");
+
+        for (int offset = 0; offset < totalSamples; offset += CHUNK_SAMPLES)
         {
+            chunkIndex++;
+            int   count     = Math.Min(CHUNK_SAMPLES, totalSamples - offset);
+            float chunkSec  = (float)count / 16_000f;
+            float[] chunk   = allSamples[offset..(offset + count)];
+
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex}/{nChunks} — offset {offset}, {count} samples ({chunkSec:F1}s) → whisper_full...");
+
+            var swChunk = System.Diagnostics.Stopwatch.StartNew();
+            int result = whisper_full(ctx, wparams, chunk, chunk.Length);
+            swChunk.Stop();
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex}/{nChunks} — whisper_full terminé en {swChunk.ElapsedMilliseconds} ms, code retour={result}");
+
+            if (result != 0)
+            {
+                _debugForm.Log("→ whisper_full a retourné une erreur, chunk ignoré.");
+                continue;
+            }
+
             int nSeg = whisper_full_n_segments(ctx);
             var parts = new List<string>();
             for (int i = 0; i < nSeg; i++)
                 parts.Add(Marshal.PtrToStringUTF8(whisper_full_get_segment_text(ctx, i)) ?? "");
+            string chunkText = string.Join(" ", parts).Trim();
 
-            string fullText = string.Join(" ", parts).Trim();
+            _debugForm.Log($"Brut    : {chunkText}");
 
-            if (IsHallucinatedOutput(fullText))
-                return; // rien à coller, sortie silencieuse
-
-            // Filet clipboard : le brut est dans le clipboard avant l'appel LLM.
-            // Si le LLM plante ou retourne du vide, l'utilisateur récupère au moins le brut.
-            CopyToClipboard(fullText);
-
-            // Réécriture LLM : point d'accroche pour les raccourcis Alt+Ctrl+` et Alt+Ctrl+Shift+`
-            if (_useLlm)
+            if (IsHallucinatedOutput(chunkText))
             {
-                string? rewritten = RewriteWithLlm(fullText);
-                if (!string.IsNullOrWhiteSpace(rewritten))
-                {
-                    fullText = rewritten;
-                    CopyToClipboard(fullText);   // remplace le brut par le réécrit
-                }
-                // Si LLM indisponible ou vide → le clipboard garde le brut, rien à faire
+                _debugForm.Log("→ filtré (hallucination détectée)");
+                continue;
             }
 
-            // Collage auto : toujours actif pour les deux raccourcis
-            if (_shouldPaste)
-                PasteFromClipboard();
+            chunkBuffer.Add(chunkText);
+            string accumulated = string.Join(" ", chunkBuffer);
+            _debugForm.Log($"→ accepté. Buffer : {accumulated}");
+
+            // Mettre le clipboard à jour après chaque chunk propre.
+            // Résultat partiel disponible le plus tôt possible.
+            CopyToClipboard(accumulated);
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex}/{nChunks} → clipboard mis à jour ({accumulated.Length} chars)");
         }
 
-        whisper_free(ctx);
+        Marshal.FreeHGlobal(langPtr);
+        Marshal.FreeHGlobal(promptPtr);
+        // ctx = _ctx : partagé entre les transcriptions, libéré dans Dispose().
+
+        string fullText = string.Join(" ", chunkBuffer).Trim();
+
+        if (string.IsNullOrWhiteSpace(fullText))
+        {
+            if (!this.IsDisposed)
+                this.BeginInvoke(() =>
+                {
+                    _trayIcon.Text = "Whisp — En attente";
+                    _trayIcon.Icon = SystemIcons.Application;
+                });
+            return;
+        }
+
+        // Réécriture LLM : point d'accroche pour les raccourcis Alt+Ctrl+` et Alt+Ctrl+Shift+`
+        if (_useLlm)
+        {
+            string? rewritten = RewriteWithLlm(fullText);
+            if (!string.IsNullOrWhiteSpace(rewritten))
+            {
+                fullText = rewritten;
+                CopyToClipboard(fullText);
+            }
+        }
+
+        // Collage auto : toujours actif pour les deux raccourcis
+        if (_shouldPaste)
+            PasteFromClipboard();
 
         if (!this.IsDisposed)
             this.BeginInvoke(() =>
@@ -421,6 +538,13 @@ class WhispForm : Form
             UnregisterHotKey(this.Handle, HOTKEY_ID_ALT_CTRL);
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
+            _debugForm.Dispose();
+            // Libérer le contexte Whisper chargé au démarrage.
+            if (_ctx != IntPtr.Zero)
+            {
+                whisper_free(_ctx);
+                _ctx = IntPtr.Zero;
+            }
         }
         base.Dispose(disposing);
     }
@@ -612,6 +736,7 @@ class WhispForm : Form
 
         waveInStart(hWaveIn);
         var allBytes = new List<byte>();
+        DbgLog("RECORD", "Boucle waveIn démarrée");
 
         // Boucle d'enregistrement.
         // Avant : s'arrêtait sur Console.ReadKey.
@@ -629,6 +754,7 @@ class WhispForm : Form
                     var data = new byte[hdr.dwBytesRecorded];
                     Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
                     allBytes.AddRange(data);
+                    DbgLog("RECORD", $"Buffer[{i}] récolté — {hdr.dwBytesRecorded} octets (total : {allBytes.Count})");
 
                     // Remettre le buffer dans la file du driver.
                     // On efface WHDR_DONE (0x1) mais on garde WHDR_PREPARED (0x2).
@@ -638,6 +764,7 @@ class WhispForm : Form
                 }
             }
         }
+        DbgLog("RECORD", $"Boucle terminée — {allBytes.Count} octets accumulés ({allBytes.Count / 32000.0:F1}s)");
 
         waveInStop(hWaveIn);
         Thread.Sleep(100); // laisser le driver retourner les buffers en cours
@@ -904,4 +1031,69 @@ struct WhisperFullParams
     public float vad_max_speech_duration_s;
     public int   vad_speech_pad_ms;
     public float vad_samples_overlap;
+}
+
+// ─── Fenêtre de debug ────────────────────────────────────────────────────────
+//
+// Affiche en temps réel, chunk par chunk :
+//   - la durée du chunk audio
+//   - le texte brut produit par Whisper
+//   - si le chunk est accepté ou filtré
+//   - le buffer cumulé après chaque chunk propre
+//
+// Log() est thread-safe : appelable depuis n'importe quel thread.
+// InvokeRequired vérifie si l'appel vient d'un thread différent du thread UI.
+// Si oui, BeginInvoke poste le rappel sur le thread UI pour éviter
+// les accès croisés aux contrôles WinForms.
+
+class DebugForm : Form
+{
+    readonly TextBox _log;
+
+    public DebugForm()
+    {
+        Text            = "Whisp — Debug";
+        Size            = new System.Drawing.Size(700, 450);
+        StartPosition   = FormStartPosition.Manual;
+        Location        = new System.Drawing.Point(50, 50);
+        FormBorderStyle = FormBorderStyle.SizableToolWindow;
+
+        // FormClosing intercepté pour masquer plutôt que détruire.
+        // La form est réutilisée à chaque transcription.
+        FormClosing += (_, e) =>
+        {
+            e.Cancel = true;
+            Hide();
+        };
+
+        _log = new TextBox
+        {
+            Multiline   = true,
+            ReadOnly    = true,
+            ScrollBars  = ScrollBars.Vertical,
+            Dock        = DockStyle.Fill,
+            Font        = new System.Drawing.Font("Consolas", 9f),
+            BackColor   = System.Drawing.Color.FromArgb(30, 30, 30),
+            ForeColor   = System.Drawing.Color.FromArgb(220, 220, 220),
+            WordWrap    = true,
+        };
+
+        Controls.Add(_log);
+    }
+
+    public void Log(string line)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) { BeginInvoke(() => Log(line)); return; }
+        _log.AppendText(line + "\r\n");
+        _log.SelectionStart = _log.Text.Length;
+        _log.ScrollToCaret();
+    }
+
+    public void Clear()
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) { BeginInvoke(Clear); return; }
+        _log.Clear();
+    }
 }
