@@ -269,12 +269,31 @@ class WhispForm : Form
 
         // StringToHGlobalAnsi : alloue une chaîne C (bytes ASCII) en mémoire non managée.
         // Obligatoire pour passer une chaîne à une DLL C.
-        IntPtr langPtr = Marshal.StringToHGlobalAnsi("fr");
+        IntPtr langPtr         = Marshal.StringToHGlobalAnsi("fr");
+        IntPtr promptPtr       = Marshal.StringToHGlobalAnsi("Transcription en français.");
         wparams.language       = langPtr;
+        wparams.initial_prompt = promptPtr;
+        // entropy_thold : défaut 2.4, descendu à 1.9.
+        // Mesure le désordre de la distribution de probabilité sur les tokens.
+        // Une valeur haute tolère les sorties incohérentes (répétitions, hallucinations).
+        // À 1.9 Whisper rejette plus tôt les segments bruités ou répétitifs.
+        wparams.entropy_thold  = 1.9f;
+        // no_speech_thold : défaut 0.6, conservé — segments à faible confiance déjà filtrés.
         wparams.print_progress = 0;
 
         int result = whisper_full(ctx, wparams, samples, samples.Length);
-        Marshal.FreeHGlobal(langPtr); // libérer immédiatement après usage
+        Marshal.FreeHGlobal(langPtr);
+        Marshal.FreeHGlobal(promptPtr);
+
+        // Patterns parasites injectés par Whisper sur silence ou fin d'audio.
+        // Si le texte ne contient que ces tokens, il est rejeté (clipboard inchangé).
+        static bool IsHallucinatedOutput(string text) =>
+            string.IsNullOrWhiteSpace(text) ||
+            text.Contains("Sous-titrage", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("Radio-Canada",  StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("[BLANK_AUDIO]", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("Sous-titres",   StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("SRC",           StringComparison.Ordinal);
 
         if (result == 0)
         {
@@ -284,6 +303,9 @@ class WhispForm : Form
                 parts.Add(Marshal.PtrToStringUTF8(whisper_full_get_segment_text(ctx, i)) ?? "");
 
             string fullText = string.Join(" ", parts).Trim();
+
+            if (IsHallucinatedOutput(fullText))
+                return; // rien à coller, sortie silencieuse
 
             // Filet clipboard : le brut est dans le clipboard avant l'appel LLM.
             // Si le LLM plante ou retourne du vide, l'utilisateur récupère au moins le brut.
