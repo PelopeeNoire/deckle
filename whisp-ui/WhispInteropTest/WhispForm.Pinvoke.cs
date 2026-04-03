@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 
 partial class WhispForm
 {
@@ -46,28 +45,6 @@ partial class WhispForm
     // reste bloqué pour toutes les autres applis tant que le process tourne)
     [DllImport("user32.dll")]
     static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-    // ─── P/Invoke : user32.dll — focus et classe de fenêtre ─────────────────
-    //
-    // GetWindowThreadProcessId : retourne l'identifiant du thread qui a créé la fenêtre.
-    //   Nécessaire pour appeler GetGUIThreadInfo sur le bon thread.
-    //   lpdwProcessId (out) reçoit l'ID du process — ignoré ici (out _).
-    //
-    // GetGUIThreadInfo : remplit une struct GUITHREADINFO avec l'état UI du thread indiqué.
-    //   hwndFocus dans la struct = le contrôle qui a actuellement le focus clavier.
-    //
-    // GetClassName : copie le nom de la classe Windows du handle dans le StringBuilder.
-    //   La classe identifie le type de contrôle : "Edit", "RichEdit20W", etc.
-    //   nMaxCount = capacité du StringBuilder (terminateur null inclus).
-
-    [DllImport("user32.dll")]
-    static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [DllImport("user32.dll")]
-    static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO pgui);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
     // ─── P/Invoke : user32.dll — presse-papier ───────────────────────────────
 

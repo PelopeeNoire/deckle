@@ -1,28 +1,5 @@
 using System.Runtime.InteropServices;
 
-// RECT : rectangle en coordonnées écran (utilisé dans GUITHREADINFO)
-[StructLayout(LayoutKind.Sequential)]
-struct RECT
-{
-    public int Left, Top, Right, Bottom;
-}
-
-// GUITHREADINFO : état de l'interface (fenêtre active, focus, capture...) pour un thread donné.
-// Rempli par GetGUIThreadInfo — cbSize doit être initialisé avant l'appel.
-[StructLayout(LayoutKind.Sequential)]
-struct GUITHREADINFO
-{
-    public uint   cbSize;       // taille de la struct, obligatoire avant l'appel
-    public uint   flags;        // flags d'état (non utilisés ici)
-    public IntPtr hwndActive;   // fenêtre active du thread
-    public IntPtr hwndFocus;    // contrôle qui a le focus clavier — c'est celui qu'on interroge
-    public IntPtr hwndCapture;  // fenêtre capturant la souris
-    public IntPtr hwndMenuOwner;
-    public IntPtr hwndMoveSize;
-    public IntPtr hwndCaret;    // fenêtre propriétaire du curseur clignotant
-    public RECT   rcCaret;      // position du curseur dans hwndCaret
-}
-
 // INPUT aplati : représente un événement clavier pour SendInput.
 //
 // La struct Windows INPUT contient une union C (clavier, souris, matériel).
