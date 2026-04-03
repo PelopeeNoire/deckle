@@ -1,14 +1,9 @@
-// Étape 6 — 4 raccourcis avec comportements distincts
-//
-// Alt+`              → transcription → clipboard uniquement
-// Alt+Shift+`        → transcription → clipboard + collage auto
-// Alt+Ctrl+`         → transcription → réécriture LLM → clipboard (TODO)
-// Alt+Ctrl+Shift+`   → transcription → réécriture LLM → clipboard + collage auto (TODO)
+// Alt+`       → transcription → clipboard + collage auto
+// Alt+Ctrl+`  → transcription → réécriture LLM → clipboard + collage auto (TODO)
 //
 // UX toggle : premier appui = démarrer, deuxième appui = arrêter + transcrire
 
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -84,7 +79,6 @@ partial class WhispForm : Form
 
     // Masques de modificateurs (se combinent avec | dans RegisterHotKey)
     const uint MOD_ALT     = 0x0001; // touche Alt
-    const uint MOD_SHIFT   = 0x0004; // touche Shift
     const uint MOD_CONTROL = 0x0002; // touche Ctrl
 
     // VK_OEM_3 : code virtuel du ` (backtick) sur clavier QWERTY US
@@ -163,10 +157,9 @@ partial class WhispForm : Form
             }
         };
 
-        // Enregistrer les 4 raccourcis globaux.
+        // Enregistrer les 2 raccourcis globaux.
         // this.Handle force la création du handle Windows (identifiant numérique
         // que Windows utilise pour envoyer les messages WM_HOTKEY à notre fenêtre).
-        // Le | combine les masques de modificateurs : MOD_ALT | MOD_SHIFT = Alt+Shift.
         RegisterHotKey(this.Handle, HOTKEY_ID_ALT,      MOD_ALT,                 VK_OEM_3);
         RegisterHotKey(this.Handle, HOTKEY_ID_ALT_CTRL, MOD_ALT | MOD_CONTROL,   VK_OEM_3);
 
@@ -469,16 +462,8 @@ partial class WhispForm : Form
             }
         }
 
-        // Collage auto : uniquement si un champ texte est détecté dans la fenêtre cible.
-        // Évite d'injecter Ctrl+V dans un contexte sans champ texte (bureau, toolbar, etc.)
-        // où le raccourci pourrait déclencher une commande non souhaitée.
         if (_shouldPaste)
-        {
-            if (IsTextInputFocused(_pasteTarget))
-                PasteFromClipboard();
-            else
-                DbgLog("TRANSCRIBE", "Collage annulé — aucun champ texte détecté dans la fenêtre cible");
-        }
+            PasteFromClipboard();
 
         if (!this.IsDisposed)
             this.BeginInvoke(() =>
@@ -733,51 +718,6 @@ partial class WhispForm : Form
         };
 
         SendInput((uint)inputs.Length, inputs, cbSize);
-    }
-
-    // ── Détection de champ texte ──────────────────────────────────────────────
-    //
-    // Interroge le thread de la fenêtre cible pour trouver quel contrôle a le focus,
-    // puis lit son nom de classe Windows pour déterminer si c'est un champ texte.
-    //
-    // Limites connues :
-    //   - Chrome / Edge / Electron : la classe "Chrome_RenderWidgetHostHWND" couvre TOUT
-    //     le contenu rendu — impossible de distinguer un champ texte d'un autre élément.
-    //     On autorise le collage dans ce cas (l'utilisateur a déclenché le hotkey
-    //     intentionnellement, on lui fait confiance).
-    //   - Firefox (MozillaWindowClass) : même situation.
-    //   - Apps natives Windows (Edit, RichEdit, Scintilla…) : détection fiable.
-
-    bool IsTextInputFocused(IntPtr targetWindow)
-    {
-        if (targetWindow == IntPtr.Zero) return false;
-
-        uint threadId = GetWindowThreadProcessId(targetWindow, out _);
-        var info = new GUITHREADINFO { cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>() };
-
-        if (!GetGUIThreadInfo(threadId, ref info) || info.hwndFocus == IntPtr.Zero)
-            return false;
-
-        var sb = new System.Text.StringBuilder(256);
-        GetClassName(info.hwndFocus, sb, sb.Capacity);
-        string cls = sb.ToString();
-
-        DbgLog("TRANSCRIBE", $"Classe du contrôle focusé : \"{cls}\"");
-
-        // Liste positive : classes connues comme champs de saisie texte.
-        // "Edit"                        → TextBox natif Windows (Notepad, barres d'adresse, etc.)
-        // "RichEdit20W" / "RichEdit50W" → contrôles rich text (WordPad, Word, WinForms RichTextBox)
-        // "Scintilla"                   → éditeurs de code (Notepad++, etc.)
-        // "Chrome_RenderWidgetHostHWND" → tout contenu Chrome/Edge/Electron (navigateurs, VS Code…)
-        // "MozillaWindowClass"          → tout contenu Firefox
-        // "ConsoleWindowClass"          → terminal Windows
-        return cls is "Edit"
-                   or "RichEdit20W" or "RichEdit50W" or "RICHEDIT50W"
-                   or "Scintilla"
-                   or "Chrome_RenderWidgetHostHWND"
-                   or "Chrome_WidgetWin_1"   // Electron (VSCode, VSCodium, Discord, etc.) + Chrome récent
-                   or "MozillaWindowClass"
-                   or "ConsoleWindowClass";
     }
 
     static void CopyToClipboard(string text)
