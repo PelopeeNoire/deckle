@@ -15,7 +15,7 @@ using System.Windows.Forms;
 
 class DebugForm : Form
 {
-    readonly TextBox _log;
+    readonly RichTextBox _log;
 
     // ShowWithoutActivation : empêche la fenêtre de prendre le focus quand Show() est appelé
     // programmatiquement. Garantit que le Show() au démarrage d'un enregistrement ne vole
@@ -85,13 +85,6 @@ class DebugForm : Form
             (_, _) => Clear()));
         // ↑ Effacer : vide la zone de texte. Équivalent au Clear() appelé à chaque transcription.
 
-        // Toujours visible : TopMost = true → la fenêtre reste au-dessus de toutes les autres.
-        // CheckOnClick : WinForms bascule Checked automatiquement à chaque clic.
-        // CheckedChanged : déclenché après le basculement — on lit la nouvelle valeur.
-        // TopMost est modifiable à chaud (envoie SetWindowPos en interne), indépendant de WS_EX_NOACTIVATE.
-        var toutjours = new ToolStripMenuItem("Toujours visible") { CheckOnClick = true };
-        toutjours.CheckedChanged += (_, _) => TopMost = toutjours.Checked;
-        vueMenu.DropDownItems.Add(toutjours);
 
         menuStrip.Items.Add(vueMenu);
 
@@ -103,11 +96,10 @@ class DebugForm : Form
         // La police en points (9f) est déjà une unité physique indépendante du DPI —
         // pas besoin de l'ajuster manuellement.
 
-        _log = new TextBox
+        _log = new RichTextBox
         {
-            Multiline   = true,
             ReadOnly    = true,
-            ScrollBars  = ScrollBars.Vertical,
+            ScrollBars  = RichTextBoxScrollBars.Vertical,
             Dock        = DockStyle.Fill,
             Font        = new System.Drawing.Font("Consolas", 9f),
             BackColor   = System.Drawing.Color.FromArgb(30, 30, 30),
@@ -126,8 +118,25 @@ class DebugForm : Form
     {
         if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(() => Log(line)); return; }
+        _log.SelectionStart  = _log.TextLength;
+        _log.SelectionLength = 0;
+        _log.SelectionColor  = System.Drawing.Color.FromArgb(220, 220, 220);
         _log.AppendText(line + "\r\n");
-        _log.SelectionStart = _log.Text.Length;
+        _log.ScrollToCaret();
+    }
+
+    // LogError : même comportement que Log, mais en rouge.
+    // À utiliser pour les chunks rejetés par whisper_full, les hallucinations,
+    // ou tout incident dans le pipeline recording/transcription.
+    public void LogError(string line)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) { BeginInvoke(() => LogError(line)); return; }
+        _log.SelectionStart  = _log.TextLength;
+        _log.SelectionLength = 0;
+        _log.SelectionColor  = System.Drawing.Color.FromArgb(255, 100, 100);
+        _log.AppendText(line + "\r\n");
+        _log.SelectionColor  = _log.ForeColor; // restaurer la couleur par défaut
         _log.ScrollToCaret();
     }
 

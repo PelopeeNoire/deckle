@@ -3,10 +3,8 @@
 //
 // UX toggle : premier appui = démarrer, deuxième appui = arrêter + transcrire
 
-using System.Net.Http;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.Json;
 using System.Windows.Forms;
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -55,22 +53,6 @@ partial class WhispForm : Form
     // Mettre à false pour désactiver tous les logs de debug sans recompiler.
     const bool DEBUG_LOG = true;
 
-    // ── Constantes Ollama ─────────────────────────────────────────────────────
-
-    const string OLLAMA_MODEL = "ministral-3:3b--instruct--96k";   // modèle local pour la réécriture
-    const string OLLAMA_URL   = "http://localhost:11434/api/chat";  // /api/chat : messages structurés (system + user)
-
-    // Instructions envoyées explicitement dans chaque requête (role "system").
-    // Plus robuste que le Modelfile Ollama : Ollama détecte mal le TEMPLATE des GGUF locaux,
-    // ce qui peut faire ignorer le system prompt du Modelfile. /api/chat contourne ce problème.
-    const string OLLAMA_SYSTEM_PROMPT =
-        "Tu reçois une transcription vocale brute en français. Réécris-la en texte fluide " +
-        "et cohérent : corrige les erreurs de transcription, les répétitions, les sauts de " +
-        "phrases, la syntaxe orale. Conserve le sens exact, tous les points abordés et le " +
-        "registre de la personne. Ne résume pas. Ne commente pas. Ne reformule pas avec moins " +
-        "d'informations. Ne commence pas ta réponse par 'Voici', un titre ou une introduction. " +
-        "Ta réponse commence directement par la première phrase du texte réécrit.";
-
     // ── Constantes Windows ────────────────────────────────────────────────────
 
     // Identifiants arbitraires pour nos 2 hotkeys (doivent être uniques par process)
@@ -91,6 +73,9 @@ partial class WhispForm : Form
 
     readonly string    _modelPath;
     readonly NotifyIcon _trayIcon;
+    readonly Icon _trayIconIdle;
+    readonly Icon _trayIconRecording;
+    readonly LlmService _llm;
 
     // volatile : interdit au compilateur de mettre ces valeurs en cache CPU.
     // Sans volatile, le thread d'enregistrement pourrait lire une valeur obsolète
@@ -114,6 +99,23 @@ partial class WhispForm : Form
     // IntPtr.Zero tant que le chargement n'est pas terminé.
     volatile IntPtr _ctx = IntPtr.Zero;
 
+    // Pipeline producteur/consommateur entre le thread d'enregistrement et le thread de transcription.
+    // Le thread Record() y pousse des chunks float[] dès que 30s d'audio sont prêtes.
+    // Le thread Transcribe() en consomme en continu via GetConsumingEnumerable().
+    // Recréé à chaque session d'enregistrement (BlockingCollection ne peut être complété qu'une fois).
+    BlockingCollection<float[]> _pipeline = null!;
+
+    // Buffer interne des textes transcrits, chunk par chunk.
+    // Champ de classe (pas variable locale) : survit à une exception non gérée
+    // pendant la phase de transcription et permet de récupérer les chunks déjà traités.
+    // Vidé en début de chaque session par StartRecording().
+    readonly List<string> _transcribedChunks = new();
+
+    // Chronomètre démarré au début de chaque enregistrement.
+    // Null avant le premier enregistrement, Running pendant Record()+Transcribe().
+    // Permet d'afficher le temps écoulé dans les logs en complément de l'heure.
+    System.Diagnostics.Stopwatch? _recordingSw;
+
     DebugForm _debugForm = null!;
 
     // ── Constructeur ──────────────────────────────────────────────────────────
@@ -121,6 +123,8 @@ partial class WhispForm : Form
     public WhispForm(string modelPath)
     {
         _modelPath = modelPath;
+        _trayIconIdle      = LoadTrayIcon(active: false);
+        _trayIconRecording = LoadTrayIcon(active: true);
 
         // Rendre la fenêtre complètement invisible.
         // La fenêtre doit quand même exister (handle Windows valide)
@@ -134,7 +138,7 @@ partial class WhispForm : Form
         // Icône dans la barre système (zone de notification en bas à droite)
         _trayIcon = new NotifyIcon
         {
-            Icon    = SystemIcons.Application,
+            Icon    = _trayIconIdle,
             Text    = "Whisp — Chargement du modèle...",
             Visible = true
         };
@@ -165,6 +169,18 @@ partial class WhispForm : Form
 
         _debugForm = new DebugForm();
 
+        // Le callback _onError est appelé depuis un thread de fond — BeginInvoke achemine
+        // la mise à jour du tray sur le thread UI.
+        _llm = new LlmService(onError: msg =>
+        {
+            if (!this.IsDisposed)
+                this.BeginInvoke(() =>
+                {
+                    _trayIcon.Text = $"Whisp — {msg}";
+                    _trayIcon.Icon = _trayIconIdle;
+                });
+        });
+
         // Charger le modèle whisper en arrière-plan dès le démarrage.
         // Le chargement de ggml-large-v3.bin prend plusieurs secondes — le faire ici
         // plutôt que dans Transcribe() évite cette latence au moment de l'utilisation.
@@ -194,6 +210,7 @@ partial class WhispForm : Form
                     {
                         DbgLog("INIT", $"Modèle chargé en {swLoad.ElapsedMilliseconds} ms — prêt");
                         _trayIcon.Text = "Whisp — En attente";
+                        _trayIcon.Icon = _trayIconIdle;
                     }
                 });
         });
@@ -257,7 +274,12 @@ partial class WhispForm : Form
     void DbgLog(string phase, string message)
     {
         if (!DEBUG_LOG) return;
-        string ts = DateTime.Now.ToString("HH:mm:ss.fff");
+        string wallClock = DateTime.Now.ToString("HH:mm:ss.fff");
+        // Temps écoulé depuis le début de l'enregistrement, affiché uniquement quand
+        // le chronomètre tourne (pas pour les logs INIT avant le premier enregistrement).
+        string ts = (_recordingSw != null && _recordingSw.IsRunning)
+            ? $"{wallClock} +{_recordingSw.Elapsed:hh\\:mm\\:ss\\.ff}"
+            : wallClock;
         _debugForm.Log($"[{ts}] [{phase}] {message}");
     }
 
@@ -267,81 +289,66 @@ partial class WhispForm : Form
     {
         _isRecording   = true;
         _stopRecording = false;
+        _transcribedChunks.Clear();
+        _pipeline = new BlockingCollection<float[]>();
 
         // Ouvrir la fenêtre de debug dès le premier appui pour que les logs
-        // de Record() soient visibles (Clear + Show ici, plus dans OnRecordingDone).
+        // de Record() soient visibles. ShowWithoutActivation = true garantit que
+        // Show() ne vole pas le focus — on ne call plus Activate() ici pour la
+        // même raison : l'app cible doit garder le focus pendant l'enregistrement.
+        _recordingSw = System.Diagnostics.Stopwatch.StartNew();
         _debugForm.Clear();
         _debugForm.Show();
-        _debugForm.TopMost = true; // premier plan pendant toute la session enregistrement + transcription
+        _debugForm.TopMost = true;
         DbgLog("RECORD", "Démarrage de l'enregistrement");
 
         _trayIcon.Text = "Whisp — Enregistrement...  (appuyer à nouveau pour arrêter)";
-        _trayIcon.Icon = SystemIcons.Shield; // icône différente = feedback visuel
+        _trayIcon.Icon = _trayIconRecording;
 
-        // Thread séparé : l'enregistrement audio est bloquant.
-        // Si on le faisait sur le thread UI, la fenêtre ne répondrait plus
-        // (plus de WM_HOTKEY, plus de menu tray).
-        var thread = new Thread(() =>
+        // Thread d'enregistrement : pousse les chunks dans _pipeline au fil de la capture.
+        // Quand l'enregistrement s'arrête, il complète le pipeline et met le tray à jour.
+        var recordThread = new Thread(() =>
         {
-            byte[] rawPcm = Record();
-
-            // BeginInvoke : poste un appel sur le thread UI.
-            // Obligatoire : NotifyIcon et les contrôles WinForms ne sont
-            // accessibles que depuis le thread qui les a créés.
+            Record();
             if (!this.IsDisposed)
-                this.BeginInvoke(() => OnRecordingDone(rawPcm));
+                this.BeginInvoke(() =>
+                {
+                    _isRecording = false;
+                    _trayIcon.Text = "Whisp — Transcription en cours...";
+                });
         });
-        thread.IsBackground = true; // le thread ne bloque pas la fermeture de l'appli
-        thread.Start();
-    }
+        recordThread.IsBackground = true;
 
-    // ── Fin d'enregistrement : lancer la transcription ────────────────────────
+        // Thread de transcription : démarre en même temps, consomme _pipeline en continu.
+        // Bloque sur GetConsumingEnumerable() tant que le pipeline n'est pas complété.
+        var transcribeThread = new Thread(Transcribe);
+        transcribeThread.IsBackground = true;
 
-    void OnRecordingDone(byte[] rawPcm)
-    {
-        // Cette méthode s'exécute sur le thread UI (via BeginInvoke)
-        _isRecording = false;
-
-        if (rawPcm.Length == 0)
-        {
-            _trayIcon.Text = "Whisp — En attente";
-            _trayIcon.Icon = SystemIcons.Application;
-            return;
-        }
-
-        _trayIcon.Text = "Whisp — Transcription en cours...";
-
-        // La transcription whisper est bloquante (plusieurs secondes).
-        // On la lance aussi sur un thread de fond.
-        var thread = new Thread(() => Transcribe(rawPcm));
-        thread.IsBackground = true;
-        thread.Start();
+        recordThread.Start();
+        transcribeThread.Start();
     }
 
     // ── Transcription whisper + copie clipboard ───────────────────────────────
+    //
+    // Consomme le pipeline en continu dès le démarrage de l'enregistrement.
+    // Bloque sur GetConsumingEnumerable() tant que Record() n'a pas appelé
+    // _pipeline.CompleteAdding(). Chaque chunk transcrit est ajouté à _transcribedChunks.
+    // La finalisation (clipboard, paste) se fait une seule fois, après le dernier chunk.
 
-    void Transcribe(byte[] rawPcm)
+    void Transcribe()
     {
-        double audioSec = rawPcm.Length / 32000.0; // 16000 Hz × 2 octets = 32000 octets/s
-        DbgLog("TRANSCRIBE", $"rawPcm reçu — {rawPcm.Length} octets ({audioSec:F1}s d'audio)");
-
-        // Écrire le WAV sur disque (utile pour vérifier l'enregistrement si besoin)
-        string tempWav = Path.Combine(AppContext.BaseDirectory, "temp.wav");
-        WriteWav(tempWav, rawPcm);
-
-        float[] allSamples = PcmToFloat(rawPcm);
-        DbgLog("TRANSCRIBE", $"Conversion float[] terminée — {allSamples.Length} samples");
-
         // Le contexte Whisper est chargé une seule fois au démarrage (champ _ctx).
-        // Si l'utilisateur transcrit avant la fin du chargement, on refuse poliment.
+        // Si l'utilisateur transcrit avant la fin du chargement, on vide le pipeline
+        // (pour ne pas bloquer Record()) et on refuse poliment.
         IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
         {
+            foreach (var _ in _pipeline.GetConsumingEnumerable()) { }
             if (!this.IsDisposed)
                 this.BeginInvoke(() =>
                 {
                     _trayIcon.Text = "Whisp — Modèle non prêt";
-                    _trayIcon.Icon = SystemIcons.Application;
+                    _trayIcon.Icon = _trayIconIdle;
                     MessageBox.Show("Le modèle est encore en cours de chargement.\nRéessaie dans quelques secondes.",
                         "Whisp", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 });
@@ -353,7 +360,7 @@ partial class WhispForm : Form
         WhisperFullParams wparams = Marshal.PtrToStructure<WhisperFullParams>(fullParamsPtr);
         whisper_free_params(fullParamsPtr);
 
-        // StringToHGlobalAnsi : alloue une chaîne C (bytes ASCII) en mémoire non managée.
+        // StringToHGlobalAnsi : alloue une chaîne C en mémoire non managée.
         // Obligatoire pour passer une chaîne à une DLL C. Libérés après la boucle de chunks.
         IntPtr langPtr         = Marshal.StringToHGlobalAnsi("fr");
         IntPtr promptPtr       = Marshal.StringToHGlobalAnsi("Transcription en français.");
@@ -378,35 +385,23 @@ partial class WhispForm : Form
             text.Contains("Sous-titres",   StringComparison.OrdinalIgnoreCase) ||
             text.Contains("SRC",           StringComparison.Ordinal);
 
-        // Transcription par chunks de 30 secondes.
-        // Whisper est entraîné sur des fenêtres de 30s max — traiter plus long en une passe
-        // favorise les répétitions et les hallucinations.
-        // Chaque chunk est transcrit et filtré indépendamment. Les chunks propres s'accumulent
-        // dans le buffer. Le clipboard est mis à jour après chaque chunk propre.
-        const int CHUNK_SAMPLES = 30 * 16_000; // 30s × 16 000 Hz = 480 000 floats
-        var chunkBuffer = new List<string>();
-        int totalSamples = allSamples.Length;
-        int chunkIndex   = 0;
-        int nChunks      = (int)Math.Ceiling((double)totalSamples / CHUNK_SAMPLES);
-        DbgLog("TRANSCRIBE", $"{nChunks} chunk(s) à traiter — {totalSamples} samples au total");
-
-        for (int offset = 0; offset < totalSamples; offset += CHUNK_SAMPLES)
+        // Boucle de consommation : bloque jusqu'à ce que Record() appelle CompleteAdding().
+        // Chaque chunk float[] est transcrit immédiatement à sa réception.
+        int chunkIndex = 0;
+        foreach (float[] chunk in _pipeline.GetConsumingEnumerable())
         {
             chunkIndex++;
-            int   count     = Math.Min(CHUNK_SAMPLES, totalSamples - offset);
-            float chunkSec  = (float)count / 16_000f;
-            float[] chunk   = allSamples[offset..(offset + count)];
+            float chunkSec = (float)chunk.Length / 16_000f;
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} reçu — {chunk.Length} samples ({chunkSec:F1}s) → whisper_full...");
 
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex}/{nChunks} — offset {offset}, {count} samples ({chunkSec:F1}s) → whisper_full...");
-
-            var swChunk = System.Diagnostics.Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             int result = whisper_full(ctx, wparams, chunk, chunk.Length);
-            swChunk.Stop();
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex}/{nChunks} — whisper_full terminé en {swChunk.ElapsedMilliseconds} ms, code retour={result}");
+            sw.Stop();
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} — terminé en {sw.ElapsedMilliseconds} ms, code retour={result}");
 
             if (result != 0)
             {
-                _debugForm.Log("→ whisper_full a retourné une erreur, chunk ignoré.");
+                _debugForm.LogError($"[ERREUR] Chunk {chunkIndex} : whisper_full code {result}, chunk ignoré");
                 continue;
             }
 
@@ -424,15 +419,26 @@ partial class WhispForm : Form
                 continue;
             }
 
-            chunkBuffer.Add(chunkText);
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex}/{nChunks} → accepté ({chunkText.Length} chars). Buffer : {chunkBuffer.Count} chunk(s)");
+            _transcribedChunks.Add(chunkText);
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} → accepté ({chunkText.Length} chars). Buffer : {_transcribedChunks.Count} chunk(s)");
+
+            // Mettre à jour initial_prompt pour le chunk suivant.
+            // Whisper traite ce prompt comme de l'audio précédemment transcrit :
+            // en lui passant la fin du chunk accepté, il continue sans coupure
+            // au milieu d'une phrase à la frontière des 30s.
+            // On libère l'ancien pointeur avant d'en allouer un nouveau.
+            // 150 chars ≈ 30 tokens — largement sous la limite interne (~224 tokens).
+            Marshal.FreeHGlobal(promptPtr);
+            string tail = chunkText.Length > 150 ? chunkText[^150..] : chunkText;
+            promptPtr = Marshal.StringToHGlobalAnsi(tail);
+            wparams.initial_prompt = promptPtr;
         }
 
         Marshal.FreeHGlobal(langPtr);
         Marshal.FreeHGlobal(promptPtr);
         // ctx = _ctx : partagé entre les transcriptions, libéré dans Dispose().
 
-        string fullText = string.Join(" ", chunkBuffer).Trim();
+        string fullText = string.Join(" ", _transcribedChunks).Trim();
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
@@ -440,8 +446,7 @@ partial class WhispForm : Form
                 this.BeginInvoke(() =>
                 {
                     _trayIcon.Text = "Whisp — En attente";
-                    _trayIcon.Icon = SystemIcons.Application;
-                    _debugForm.TopMost = false; // transcription terminée — fenêtre repasse en arrière-plan
+                    _trayIcon.Icon = _trayIconIdle;
                 });
             return;
         }
@@ -454,7 +459,7 @@ partial class WhispForm : Form
         // Si le LLM répond, sa version remplace le brut dans le presse-papier.
         if (_useLlm)
         {
-            string? rewritten = RewriteWithLlm(fullText);
+            string? rewritten = _llm.Rewrite(fullText);
             if (!string.IsNullOrWhiteSpace(rewritten))
             {
                 fullText = rewritten;
@@ -468,81 +473,32 @@ partial class WhispForm : Form
         if (!this.IsDisposed)
             this.BeginInvoke(() =>
             {
-                _trayIcon.Text = "Whisp — En attente";
-                _trayIcon.Icon = SystemIcons.Application;
-                _debugForm.TopMost = false; // transcription terminée — fenêtre repasse en arrière-plan
-            });
+            _trayIcon.Text = "Whisp — En attente";
+            _trayIcon.Icon = _trayIconIdle;
+        });
+
+        _recordingSw?.Stop();
     }
 
-    // ── Réécriture du texte via Ollama ───────────────────────────────────────
-    //
-    // Appel POST bloquant vers l'API locale d'Ollama.
-    // On est déjà sur un thread de fond (lancé par OnRecordingDone),
-    // donc .GetAwaiter().GetResult() est sûr ici : pas de deadlock possible.
-    // En cas d'erreur (Ollama absent, timeout, etc.), retourne null →
-    // l'appelant conserve le texte original.
-
-    static readonly HttpClient _http = new();   // une seule instance partagée (bonne pratique)
-
-    string? RewriteWithLlm(string text)
+    static Icon LoadTrayIcon(bool active)
     {
-        try
+        string fileName = active
+            ? "recording--indicator--true--32px.ico"
+            : "recording--indicator--false--32px.ico";
+
+        string[] candidates =
         {
-            // Texte brut à réécrire. Les instructions sont dans OLLAMA_SYSTEM_PROMPT,
-            // passées explicitement via le rôle "system" dans chaque requête.
-            string prompt = text;
+            Path.Combine(AppContext.BaseDirectory, "assets", "icons", fileName),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "assets", "icons", fileName),
+        };
 
-            // Corps de la requête Ollama /api/chat
-            // messages : tableau de rôles (system + user). Ollama applique le bon template
-            //            de prompt quelle que soit la détection automatique du GGUF.
-            // stream: false   → Ollama attend la fin de la génération avant de répondre
-            // keep_alive: "5m" → le modèle reste en VRAM 5 minutes, puis Ollama le vide
-            var body = new
-            {
-                model      = OLLAMA_MODEL,
-                stream     = false,
-                keep_alive = "5m",
-                messages   = new[]
-                {
-                    new { role = "system", content = OLLAMA_SYSTEM_PROMPT },
-                    new { role = "user",   content = prompt }
-                }
-            };
-
-            string json = JsonSerializer.Serialize(body);
-
-            // StringContent : enveloppe la chaîne JSON dans un objet que HttpClient peut envoyer
-            // Encoding.UTF8 + "application/json" : en-tête Content-Type attendu par Ollama
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            // PostAsync bloquant. Timeout par défaut de HttpClient = 100 secondes.
-            // Pour les gros modèles, augmenter si nécessaire.
-            using var response = _http.PostAsync(OLLAMA_URL, content).GetAwaiter().GetResult();
-            response.EnsureSuccessStatusCode();
-
-            string responseJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-
-            // /api/chat retourne { "message": { "role": "assistant", "content": "..." }, ... }
-            using var doc = JsonDocument.Parse(responseJson);
-            string? rewritten = doc.RootElement
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
-
-            return rewritten?.Trim();
-        }
-        catch (Exception ex)
+        foreach (string path in candidates)
         {
-            // Notifier discrètement sans bloquer ni crasher
-            if (!this.IsDisposed)
-                this.BeginInvoke(() =>
-                {
-                    _trayIcon.Text = "Whisp — LLM indisponible";
-                    _trayIcon.Icon = SystemIcons.Warning;
-                });
-            _ = ex; // silence du compilateur (ex non utilisé intentionnellement)
-            return null;
+            if (File.Exists(path))
+                return new Icon(path);
         }
+
+        return (Icon)SystemIcons.Application.Clone();
     }
 
     // ── Nettoyage à la fermeture ──────────────────────────────────────────────
@@ -557,7 +513,10 @@ partial class WhispForm : Form
             UnregisterHotKey(this.Handle, HOTKEY_ID_ALT_CTRL);
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
+            _trayIconIdle.Dispose();
+            _trayIconRecording.Dispose();
             _debugForm.Dispose();
+            _pipeline?.Dispose();
             // Libérer le contexte Whisper chargé au démarrage.
             if (_ctx != IntPtr.Zero)
             {
@@ -570,7 +529,15 @@ partial class WhispForm : Form
 
     // ─── Fonctions audio ─────────────────────────────────────────────────────
 
-    byte[] Record()
+    // ── Enregistrement audio ─────────────────────────────────────────────────
+    //
+    // Capture le micro en continu. Dès que 30s d'audio sont accumulées,
+    // convertit en float[] et pousse dans _pipeline pour que Transcribe()
+    // puisse traiter le chunk immédiatement, sans attendre la fin de l'enregistrement.
+    // Quand _stopRecording passe à true, les derniers octets restants forment
+    // un chunk final (durée < 30s), puis le pipeline est complété.
+
+    void Record()
     {
         // Constantes waveIn
         const uint WAVE_MAPPER    = 0xFFFFFFFF; // device audio par défaut du système
@@ -578,6 +545,7 @@ partial class WhispForm : Form
         const uint WHDR_DONE      = 0x00000001; // flag : le driver a fini d'écrire ce buffer
         const int  N_BUFFERS      = 4;          // nombre de buffers en rotation
         const int  BYTES_PER_BUF  = 16000 * 2 * 500 / 1000; // 500ms × 16kHz × 2 octets/sample
+        const int  CHUNK_BYTES    = 30 * 16000 * 2;           // 30s × 16kHz × 2 octets/sample
 
         // Format audio : PCM 16kHz mono 16 bits
         var wfx = new WAVEFORMATEX
@@ -597,7 +565,8 @@ partial class WhispForm : Form
         if (err != 0)
         {
             CloseHandle(hEvent);
-            return [];
+            _pipeline.CompleteAdding(); // débloquer Transcribe() même en cas d'erreur
+            return;
         }
 
         uint hdrSize = (uint)Marshal.SizeOf<WAVEHDR>();
@@ -639,6 +608,17 @@ partial class WhispForm : Form
                     allBytes.AddRange(data);
                     DbgLog("RECORD", $"Buffer[{i}] récolté — {hdr.dwBytesRecorded} octets (total : {allBytes.Count})");
 
+                    // Dès que 30s d'audio sont accumulées, extraire et envoyer au thread de transcription.
+                    // La boucle while couvre le cas (rare) où deux chunks complets se forment
+                    // entre deux passages de la boucle d'enregistrement.
+                    while (allBytes.Count >= CHUNK_BYTES)
+                    {
+                        byte[] chunkBytes = allBytes.GetRange(0, CHUNK_BYTES).ToArray();
+                        allBytes.RemoveRange(0, CHUNK_BYTES);
+                        DbgLog("RECORD", $"Chunk 30s extrait — {CHUNK_BYTES / 32000.0:F1}s → pipeline");
+                        _pipeline.Add(PcmToFloat(chunkBytes));
+                    }
+
                     // Remettre le buffer dans la file du driver.
                     // On efface WHDR_DONE (0x1) mais on garde WHDR_PREPARED (0x2).
                     hdr.dwFlags &= ~(uint)0x00000001;
@@ -670,7 +650,18 @@ partial class WhispForm : Form
         waveInClose(hWaveIn);
         CloseHandle(hEvent);
 
-        return allBytes.ToArray();
+        // Dernier chunk : audio restant après le dernier chunk de 30s complet.
+        // Durée variable (entre 0 et 30s). Toujours envoyé s'il contient des données.
+        if (allBytes.Count > 0)
+        {
+            DbgLog("RECORD", $"Dernier chunk — {allBytes.Count / 32000.0:F1}s → pipeline");
+            _pipeline.Add(PcmToFloat(allBytes.ToArray()));
+        }
+
+        // Signaler à Transcribe() que plus aucun chunk n'arrivera.
+        // GetConsumingEnumerable() retournera après avoir vidé le pipeline.
+        _pipeline.CompleteAdding();
+        DbgLog("RECORD", "Pipeline complété — fin d'enregistrement");
     }
 
     static float[] PcmToFloat(byte[] pcm)
@@ -763,4 +754,3 @@ partial class WhispForm : Form
         w.Write(pcmData);
     }
 }
-
