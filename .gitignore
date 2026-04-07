@@ -13,6 +13,9 @@ archive/**/obj/
 # Dossier de déploiement — reconstruisible avec dotnet publish
 whisp-ui/publish/
 
+# Scripts de build/publish locaux — chemins machine, pas versionnés
+whisp-ui/*.ps1
+
 # Fichier audio temporaire créé pendant l'enregistrement
 **/temp.wav
 
