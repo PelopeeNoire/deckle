@@ -48,8 +48,15 @@ public sealed partial class HudWindow : Window
     private const byte   VISIBLE_ALPHA   = 255;
 
     private readonly IntPtr _hwnd;
-    private readonly DispatcherTimer _clockTimer;
     private readonly System.Diagnostics.Stopwatch _stopwatch = new();
+    private bool _clockRenderingHooked;
+
+    // Cache des derniers chiffres affichés : évite de réécrire un Run.Text
+    // identique à chaque tick (les centièmes changent à 30 Hz, mais minutes
+    // et secondes ne changent qu'occasionnellement).
+    private int _lastMin = -1;
+    private int _lastSec = -1;
+    private int _lastCs  = -1;
 
     private byte _currentAlpha = VISIBLE_ALPHA;
 
@@ -115,12 +122,11 @@ public sealed partial class HudWindow : Window
             Hide();
         };
 
-        // Chrono 100 ms (non exact, peu importe : affichage).
-        _clockTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(100),
-        };
-        _clockTimer.Tick += (_, _) => UpdateClock();
+        // Chrono : pas de DispatcherTimer (jitter visible quand le thread UI est
+        // chargé par les WM_INPUT/SetLayeredWindowAttributes). On utilise
+        // CompositionTarget.Rendering qui fire à chaque frame du compositor
+        // (vsync), donc cadence parfaitement régulière. Branché/débranché dans
+        // ShowRecording / Hide via _clockRenderingHooked.
     }
 
     private void RegisterMouseRawInput()
@@ -150,8 +156,13 @@ public sealed partial class HudWindow : Window
             TranscribeRing.Visibility = Visibility.Collapsed;
 
             _stopwatch.Restart();
+            _lastMin = _lastSec = _lastCs = -1; // force repaint complet au show
             UpdateClock();
-            _clockTimer.Start();
+            if (!_clockRenderingHooked)
+            {
+                CompositionTarget.Rendering += OnClockRendering;
+                _clockRenderingHooked = true;
+            }
 
             ShowNoActivate();
 
@@ -183,7 +194,11 @@ public sealed partial class HudWindow : Window
             _proximityActive = false;
             SetAlphaImmediate(VISIBLE_ALPHA); // reset pour la prochaine session
 
-            _clockTimer.Stop();
+            if (_clockRenderingHooked)
+            {
+                CompositionTarget.Rendering -= OnClockRendering;
+                _clockRenderingHooked = false;
+            }
             _stopwatch.Stop();
             TranscribeRing.IsActive   = false;
             TranscribeRing.Visibility = Visibility.Collapsed;
@@ -222,10 +237,36 @@ public sealed partial class HudWindow : Window
             NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOACTIVATE);
     }
 
+    private void OnClockRendering(object? sender, object e) => UpdateClock();
+
     private void UpdateClock()
     {
-        // Tâche 2 : layout statique, chrono figé à 00.00.00 (Runs en XAML).
-        // La logique runtime (timer 33 ms, coloration des chiffres actifs) arrive à la Tâche 3.
+        // Format MM.SS.cc — minutes modulo 100 (rolling silencieux à 100 min,
+        // largement au-delà de toute dictée réaliste).
+        var elapsed = _stopwatch.Elapsed;
+        int totalMin = (int)elapsed.TotalMinutes;
+        int min = totalMin % 100;
+        int sec = elapsed.Seconds;
+        int cs  = elapsed.Milliseconds / 10; // 0..99
+
+        if (min != _lastMin)
+        {
+            Min1.Text = ((min / 10)).ToString();
+            Min2.Text = ((min % 10)).ToString();
+            _lastMin = min;
+        }
+        if (sec != _lastSec)
+        {
+            Sec1.Text = ((sec / 10)).ToString();
+            Sec2.Text = ((sec % 10)).ToString();
+            _lastSec = sec;
+        }
+        if (cs != _lastCs)
+        {
+            Cs1.Text = ((cs / 10)).ToString();
+            Cs2.Text = ((cs % 10)).ToString();
+            _lastCs = cs;
+        }
     }
 
     // ── Subclass : interception WM_INPUT ──────────────────────────────────────

@@ -35,14 +35,14 @@
                            HorizontalAlignment="Left"
                            VerticalAlignment="Center"
                            Foreground="{ThemeResource TextFillColorPrimaryBrush}">
-                    <Run Text="0" />
-                    <Run Text="0" />
+                    <Run x:Name="Min1" Text="0" />
+                    <Run x:Name="Min2" Text="0" />
                     <Run Text="." />
-                    <Run Text="0" />
-                    <Run Text="0" />
+                    <Run x:Name="Sec1" Text="0" />
+                    <Run x:Name="Sec2" Text="0" />
                     <Run Text="." />
-                    <Run Text="0" />
-                    <Run Text="0" />
+                    <Run x:Name="Cs1"  Text="0" />
+                    <Run x:Name="Cs2"  Text="0" />
                 </TextBlock>
             </Border>
 
