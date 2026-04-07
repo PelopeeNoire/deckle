@@ -17,3 +17,14 @@ whisp-ui/publish/
 # Fichiers locaux non pertinents
 build-log.txt
 modelfile-fastapply
+
+# État local Visual Studio
+.vs/
+
+# Scories de diagnostic (scripts/logs ad hoc)
+.tmp/
+**/.tmp-*
+**/*.binlog
+**/build.log
+**/xamlcompiler.log
+**/xaml.out
