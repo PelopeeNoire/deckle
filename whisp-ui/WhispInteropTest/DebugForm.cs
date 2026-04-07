@@ -35,7 +35,7 @@ class DebugForm : Form
         AutoScaleMode       = AutoScaleMode.Dpi;
 
         Text            = "Whisp — Debug";
-        Size            = new System.Drawing.Size(700, 450); // pixels logiques @ 96 DPI
+        Size            = new System.Drawing.Size(960, 450); // pixels logiques @ 96 DPI
         StartPosition   = FormStartPosition.Manual;
         Location        = new System.Drawing.Point(50, 50);
         // Sizable : barre titre Windows 11 standard (coins arrondis, boutons minimize/maximize/close).

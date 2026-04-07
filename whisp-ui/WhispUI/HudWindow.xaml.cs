@@ -21,8 +21,9 @@ namespace WhispUI;
 
 public sealed partial class HudWindow : Window
 {
-    private const int HUD_WIDTH  = 360;
-    private const int HUD_HEIGHT = 96;
+    // Dimensions Figma (node 64:1699) : 314 × 78.
+    private const int HUD_WIDTH  = 314;
+    private const int HUD_HEIGHT = 78;
     private const int HUD_BOTTOM_MARGIN = 64; // légèrement au-dessus de la taskbar
 
     private readonly IntPtr _hwnd;
@@ -33,9 +34,6 @@ public sealed partial class HudWindow : Window
     // un SolidColorBrush depuis un thread de fond lève RPC_E_WRONG_THREAD.
     private readonly SolidColorBrush _recordingBrush;
     private readonly SolidColorBrush _transcribingBrush;
-
-    private bool _positioned;
-    private bool _isVisible;
 
     public HudWindow()
     {
@@ -51,6 +49,7 @@ public sealed partial class HudWindow : Window
         presenter.IsMinimizable = false;
         presenter.IsMaximizable = false;
         presenter.IsResizable   = false;
+        presenter.IsAlwaysOnTop = true; // topmost permanent, ne vole pas le focus
         presenter.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false);
         AppWindow.SetPresenter(presenter);
 
@@ -115,7 +114,6 @@ public sealed partial class HudWindow : Window
             TranscribeRing.IsActive   = false;
             TranscribeRing.Visibility = Visibility.Collapsed;
             NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
-            _isVisible = false;
         });
     }
 
@@ -129,13 +127,24 @@ public sealed partial class HudWindow : Window
 
     private void ShowNoActivate()
     {
-        if (!_positioned)
+        // Recalculé à chaque show : si l'utilisateur change l'échelle Windows
+        // (125% → 150%) entre deux dictées, le HUD s'adapte automatiquement.
         {
             var wa = DisplayArea.Primary.WorkArea;
-            int x = wa.X + (wa.Width  - HUD_WIDTH)  / 2;
-            int y = wa.Y +  wa.Height - HUD_HEIGHT - HUD_BOTTOM_MARGIN;
-            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, HUD_WIDTH, HUD_HEIGHT));
-            _positioned = true;
+
+            // AppWindow.MoveAndResize attend des pixels physiques. HUD_WIDTH/HEIGHT
+            // sont en unités logiques (Figma 100% = 96 DPI). On multiplie par le
+            // facteur d'échelle du moniteur courant pour rester visuellement
+            // identique à 100%, 125%, 150%…
+            uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
+            double scale = dpi / 96.0;
+            int w = (int)Math.Round(HUD_WIDTH  * scale);
+            int h = (int)Math.Round(HUD_HEIGHT * scale);
+            int margin = (int)Math.Round(HUD_BOTTOM_MARGIN * scale);
+
+            int x = wa.X + (wa.Width  - w) / 2;
+            int y = wa.Y +  wa.Height - h - margin;
+            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
         }
 
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNOACTIVATE);
@@ -143,7 +152,6 @@ public sealed partial class HudWindow : Window
             _hwnd, NativeMethods.HWND_TOP,
             0, 0, 0, 0,
             NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOACTIVATE);
-        _isVisible = true;
     }
 
     private void UpdateClock()

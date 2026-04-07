@@ -71,10 +71,17 @@ Filets de diagnostic dans `App` : `Application.UnhandledException`, `AppDomain.U
   Pistes : `AllowSetForegroundWindow` / `AttachThreadInput` / retry avec délai. À instrumenter
   via la passe debug d'abord.
 - **Icône tray manquante** : placeholder à remplacer par un vrai .ico.
-- **HUD taille** : chrono coupé en haut — `HUD_HEIGHT=96` trop petit pour police 48 + paddings.
-- **HUD espacement chiffres** : Bitcount Single donne des advances énormes. Piste : trois
-  conteneurs `00` séparés par des `.` en police différente.
-- **Focus restore du HUD imparfait** : retour au premier plan parfois absent — à préciser.
+- **HUD chrono coupé en haut** : malgré `TextLineBounds="Tight"` + `LineHeight="48"` +
+  sous-container `Grid 214x30` (taille bbox Figma exacte) qui laisse le glyphe déborder
+  dans les paddings, le haut des chiffres reste tronqué. Hypothèse : la cap-height réelle
+  de Bitcount Single Light à 48px est plus grande que les ~34 DIPs estimés, ou l'ascent
+  WinUI ne s'aligne pas comme prévu avec la baseline Figma. À investiguer : mesurer le
+  glyphe natif WinUI (`TextBlock.ActualHeight` après render), ou augmenter `HUD_HEIGHT`
+  de quelques DIPs en compensant côté padding pour garder le visuel Figma.
+- **HUD espacement chiffres** : visuellement très large (`00 . . 00 . . 00`). À comparer
+  avec un screenshot réel Figma — si Figma rend pareil, c'est juste le tracking faible
+  (-2.4 px = -5 % = `CharacterSpacing="-50"`) qui ne suffit pas à compenser les advances
+  natifs Bitcount. Sinon, vérifier l'unité du `letterSpacing: -5` Figma (% vs px).
 - **UX toolbar LogWindow** : grouper les boutons, envisager split-buttons. Après la passe debug.
 
 ---

@@ -89,6 +89,12 @@ public sealed partial class LogWindow : Window
 
         AppWindow.Show();
         this.Activate();
+
+        // WinUI 3 : Activate() ne ramène pas toujours la fenêtre au premier plan
+        // quand l'appel vient d'un callback tray (TrackPopupMenu a déjà consommé
+        // le contexte foreground). SetForegroundWindow depuis le même process est
+        // autorisé puisque l'AnchorWindow détient déjà le foreground.
+        NativeMethods.SetForegroundWindow(_hwnd);
     }
 
     // ── Implémentation ────────────────────────────────────────────────────────
