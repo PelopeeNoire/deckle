@@ -183,7 +183,18 @@ public sealed partial class HudWindow : Window
             StatusDot.Fill = _transcribingBrush;
             TranscribeRing.Visibility = Visibility.Visible;
             TranscribeRing.IsActive   = true;
-            // Le chrono continue — il reflète le temps total de la session.
+
+            // Fige le chrono à la fin de l'enregistrement : la valeur affichée
+            // reste visible pendant la transcription, mais ne tourne plus.
+            // On stoppe aussi le rendering hook — inutile de tourner à 60 Hz
+            // pour réafficher la même valeur.
+            _stopwatch.Stop();
+            if (_clockRenderingHooked)
+            {
+                CompositionTarget.Rendering -= OnClockRendering;
+                _clockRenderingHooked = false;
+            }
+            UpdateClock(); // dernière passe pour caler les Runs sur le temps figé
         });
     }
 
