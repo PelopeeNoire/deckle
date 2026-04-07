@@ -1,0 +1,47 @@
+<Window
+    x:Class="WhispUI.HudWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="Transparent">
+        <Border CornerRadius="7"
+                BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+                BorderThickness="1">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                <Border Padding="32,24,12,24">
+                    <TextBlock x:Name="ClockText"
+                               FontFamily="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single"
+                               FontWeight="Light"
+                               FontSize="48"
+                               LineHeight="48"
+                               CharacterSpacing="-50"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}">
+                        <Run Text="0" />
+                        <Run Text="0" />
+                        <Run Text="." />
+                        <Run Text="0" />
+                        <Run Text="0" />
+                        <Run Text="." />
+                        <Run Text="0" />
+                        <Run Text="0" />
+                    </TextBlock>
+                </Border>
+
+                <Border Padding="12">
+                    <Grid Width="32" Height="32">
+                        <Ellipse x:Name="StatusDot"
+                                 Width="4" Height="4"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 Fill="{ThemeResource SystemFillColorCriticalBrush}" />
+                        <ProgressRing x:Name="TranscribeRing"
+                                      Width="32" Height="32"
+                                      IsActive="False"
+                                      Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
