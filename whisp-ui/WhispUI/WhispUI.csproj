@@ -12,6 +12,11 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Force le pipeline Publish à générer/copier WhispUI.pri dans PublishDir.
+         Sans ça, en unpackaged + WindowsAppSDK 1.8, le .pri n'arrive pas dans publish\
+         et toutes les ressources XAML compilées (.xbf embarqués dans le .pri depuis 1.8)
+         deviennent injoignables. Cf. microsoft/WindowsAppSDK#3451. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
   <ItemGroup>
