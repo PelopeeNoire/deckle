@@ -7,6 +7,8 @@ shared/*.bin
 # Artefacts de compilation .NET
 whisp-ui/**/bin/
 whisp-ui/**/obj/
+archive/**/bin/
+archive/**/obj/
 
 # Dossier de déploiement — reconstruisible avec dotnet publish
 whisp-ui/publish/

@@ -36,8 +36,8 @@ D:\projects\ai\transcription\
 ├── whisper.cpp\              — dépôt whisper.cpp cloné (DLLs dans build\bin\)
 ├── shared\                   — modèles Whisper (ggml-base.bin, ggml-large-v3.bin)
 ├── whisp-ui\
-│   ├── WhispInteropTest\     — app WinForms (prod actuelle, en maintenance) → voir son CLAUDE.md
-│   └── WhispUI\              — app WinUI 3 (futur point d'entrée, en cours) → voir son CLAUDE.md
+│   └── WhispUI\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
+├── archive\                  — code gelé pour référence (ex. WhispInteropTest)
 └── CLAUDE.md                 — ce fichier
 ```
 

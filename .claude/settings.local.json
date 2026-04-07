@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet run:*)"
+      "Bash(dotnet run:*)",
+      "Bash(dotnet build:*)",
+      "Bash(git add:*)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet package:*)"
     ]
   }
 }
