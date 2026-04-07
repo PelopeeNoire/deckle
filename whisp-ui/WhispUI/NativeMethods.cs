@@ -55,6 +55,11 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    // Renvoie le DPI logique de la fenêtre (96 = 100%, 120 = 125%, 144 = 150%…).
+    // Per-monitor DPI aware : suit le moniteur sur lequel se trouve la fenêtre.
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hwnd);
+
     // ── SetWindowSubclass (comctl32 v6) ───────────────────────────────────────
     // Requiert Common Controls v6 dans app.manifest.
     // Ne pas utiliser SetWindowLongPtr(GWLP_WNDPROC) : remplacerait entièrement
