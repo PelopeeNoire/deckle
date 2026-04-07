@@ -33,11 +33,25 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe` (self-contain
 
 ## État actuel
 
-**Étapes 1 → 5 validées runtime. Transcription fonctionnelle de bout en bout.**
+**V1 atteinte. Étapes 1 → 7 validées runtime. Transcription fonctionnelle de bout en bout, HUD complet, prêt pour publication (étape 8).**
 
 Bootstrap (AnchorWindow invisible + ancre lifetime), pipeline complet
-(`WhispEngine` + tray + LogWindow + hotkey Alt+\` toggle Start/Stop), HudWindow basique
-(chrono figé, beacon/ProgressRing, Mica). Layout HUD à finir (cf. Tâches ouvertes).
+(`WhispEngine` + tray + LogWindow + hotkey Alt+\` toggle Start/Stop), HUD complet :
+layout Figma (chrono Bitcount Single Light + beacon/ProgressRing dans Mica arrondi),
+chrono câblé `MM.SS.cc` via `CompositionTarget.Rendering` (cadence vsync, pas de
+`DispatcherTimer` → pas de jitter), fige à la transition record→transcribe.
+
+**Fade proximité souris (étape 7)** : approche event-driven via Raw Input
+(`RegisterRawInputDevices` + `RIDEV_INPUTSINK`) interceptée par subclass HWND
+(SubclassProc en champ d'instance, ID `0x48554450`). Alpha layered global
+(`WS_EX_LAYERED` + `SetLayeredWindowAttributes(LWA_ALPHA)`) qui couvre Mica + content,
+mappé à la distance curseur via smoothstep (`NEAR_RADIUS_DIP=10`, `FAR_RADIUS_DIP=200`).
+Pas de polling, pas d'animation timer — la fluidité vient de la fréquence des `WM_INPUT`.
+Approche inspirée de `D:\projects\environment\taskbar-overlay-cs`.
+
+**Script `build-run.ps1`** dans le dossier projet : tue WhispUI s'il tourne, build via
+MSBuild VS 2026 (Configuration/Restore en flags), lance l'exe. Switches `-Restore`,
+`-NoRun`, `-Wait`, `-Configuration`. Standard pour toute itération build/test.
 
 **Fix focus régression (post-Étape 5)** : `_pasteTarget` est figé au Start, pas re-capturé
 au Stop, pour éviter que le HUD foreground n'écrase la cible. Voir
@@ -116,15 +130,22 @@ mentalement `WispUI` → `WhispUI` partout.
 
 Étapes 1 → 5 : **faites** (cf. État actuel).
 
-**Étape 6 — Niveau audio RMS.** Nouvel événement `WhispEngine.AudioLevel(float rms)` calculé
-dans `Record()` (RMS sur PCM16). HUD : ProgressBar réactive.
+**Étape 6 — Niveau audio RMS.** *Reportée post-V1.* Nouvel événement
+`WhispEngine.AudioLevel(float rms)` calculé dans `Record()` (RMS sur PCM16).
+HUD : ProgressBar réactive.
 
-**Étape 7 — Proximité souris.** Nouveau `MousePoller` (DispatcherTimer 100 ms + GetCursorPos).
-HUD : DoubleAnimation Opacity 1.0↔0.25 selon distance. Démarré dans ShowHud, arrêté dans HideHud.
+**Étape 7 — Proximité souris.** **Faite**, mais avec une approche différente du plan
+initial (qui prévoyait `MousePoller` polling 100 ms + animation `Opacity` 1.0↔0.25).
+Implémentation actuelle : Raw Input event-driven + alpha layered + smoothstep continu
+(cf. *État actuel*). Le plan initial reste obsolète sur ce point.
 
-**Étape 8 — Publish + validation end-to-end.** Publish vers `whisp-ui/publish/` via le MSBuild
-de VS (cf. section Build, avec `-t:Restore,Publish -p:PublishDir=...`). Tests à froid après
-reboot. Tuer WhispInteropTest avant les tests.
+**Étape 8 — Publish + validation end-to-end + autostart Windows + partage.** Publish vers
+`whisp-ui/publish/` via le MSBuild de VS (cf. section Build, avec `-t:Restore,Publish
+-p:PublishDir=...`). Nettoyage du dépôt avant partage (vérifier qu'aucune info sensible
+ne traîne dans ce qui sera distribué — modèles Whisper exclus). Autostart Windows
+(tâche planifiée `Whisp` à mettre à jour vers WhispUI.exe, ou clé Run). Tests à froid
+après reboot. Tuer WhispInteropTest avant les tests. **C'est l'étape de la prochaine
+session de travail.**
 
 **Post-validation :** mettre à jour la tâche planifiée `Whisp` → exe WhispUI ; mettre à jour
 `../../CLAUDE.md` (point d'entrée).
