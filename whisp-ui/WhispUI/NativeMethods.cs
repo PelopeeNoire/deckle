@@ -215,6 +215,38 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool GetCursorPos(out POINT lpPoint);
 
+    // ── Raw Input (WM_INPUT) ──────────────────────────────────────────────────
+    // Approche event-driven : on s'abonne aux mouvements souris globaux via
+    // RegisterRawInputDevices avec RIDEV_INPUTSINK (reçoit même quand la fenêtre
+    // n'a pas le focus). Pour notre besoin proximité, on n'a pas besoin de parser
+    // le RAWINPUT — on appelle GetCursorPos pour avoir la position absolue à jour.
+
+    public const uint WM_INPUT       = 0x00FF;
+    public const uint RIDEV_INPUTSINK = 0x00000100;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool RegisterRawInputDevices(
+        RAWINPUTDEVICE[] pRawInputDevices, uint uiNumDevices, uint cbSize);
+
+    // ── Layered Window (alpha global, Mica inclus) ────────────────────────────
+    // WS_EX_LAYERED + SetLayeredWindowAttributes(LWA_ALPHA) permet d'appliquer
+    // un alpha 0-255 à la fenêtre entière, par-dessus la composition WinUI 3
+    // (Mica compris). Sans ça, animer Content.Opacity ne touche pas le backdrop.
+
+    public const int  GWL_EXSTYLE   = -20;
+    public const uint WS_EX_LAYERED = 0x00080000;
+    public const uint LWA_ALPHA     = 0x00000002;
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
+    public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
+    public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetLayeredWindowAttributes(
+        IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
 

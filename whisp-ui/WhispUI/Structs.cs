@@ -10,6 +10,19 @@ internal struct POINT
     public int Y;
 }
 
+// ── RAWINPUTDEVICE ────────────────────────────────────────────────────────────
+// Décrit un device source pour RegisterRawInputDevices.
+// Pour la souris : usUsagePage=0x01 (Generic Desktop), usUsage=0x02 (Mouse).
+// dwFlags=RIDEV_INPUTSINK : recevoir les events même sans focus (hwndTarget requis).
+[StructLayout(LayoutKind.Sequential)]
+internal struct RAWINPUTDEVICE
+{
+    public ushort usUsagePage;
+    public ushort usUsage;
+    public uint   dwFlags;
+    public IntPtr hwndTarget;
+}
+
 // ── NOTIFYICONDATA ────────────────────────────────────────────────────────────
 //
 // Structure Shell32 pour gérer l'icône dans la zone de notification.

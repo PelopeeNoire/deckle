@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -18,6 +19,14 @@ namespace WhispUI;
 //   TranscriptionFinished                   → Hide()
 //
 // Tous les appels publics sont thread-safe (marshal via DispatcherQueue).
+//
+// Proximité souris :
+//   - WS_EX_LAYERED + SetLayeredWindowAttributes(LWA_ALPHA) → alpha global
+//     qui couvre Mica + content. Anim manuelle via DispatcherTimer (~16 ms).
+//   - Source d'événements : Raw Input (WM_INPUT) avec RIDEV_INPUTSINK.
+//     Pas de polling — on ne consomme rien quand la souris est immobile.
+//   - Subclass sur le HWND pour intercepter WM_INPUT (pattern identique à
+//     TrayIconManager : délégué en champ d'instance pour éviter le GC).
 
 public sealed partial class HudWindow : Window
 {
@@ -26,9 +35,30 @@ public sealed partial class HudWindow : Window
     private const int HUD_HEIGHT = 78;
     private const int HUD_BOTTOM_MARGIN = 64; // légèrement au-dessus de la taskbar
 
+    // ── Proximité souris ──────────────────────────────────────────────────────
+    // Fade continu : alpha mappé sur la distance curseur/HUD via smoothstep.
+    //   distance >= FAR_RADIUS → alpha 255 (totalement visible)
+    //   distance <= NEAR_RADIUS → alpha 0   (totalement invisible, Mica inclus)
+    //   entre les deux → smoothstep (t²(3-2t)), courbe douce sans cassure aux bords.
+    // Pas d'hystérésis : la transition est continue, donc pas de risque de flicker.
+    // Pas d'animation : chaque WM_INPUT (souris à ~125 Hz) recalcule et applique
+    // directement l'alpha cible. La fluidité vient de la fréquence des events.
+    private const double NEAR_RADIUS_DIP = 10;   // quasi-touchant → invisible
+    private const double FAR_RADIUS_DIP  = 200;  // ≥ 200 DIPs → 100 % visible
+    private const byte   VISIBLE_ALPHA   = 255;
+
     private readonly IntPtr _hwnd;
     private readonly DispatcherTimer _clockTimer;
     private readonly System.Diagnostics.Stopwatch _stopwatch = new();
+
+    private byte _currentAlpha = VISIBLE_ALPHA;
+
+    // Subclass : délégué en champ d'instance (jamais lambda locale, GC sinon).
+    private NativeMethods.SubclassProc? _subclassDelegate;
+    private static readonly UIntPtr SubclassId = new(0x48554450); // "HUDP"
+
+    private bool _proximityActive; // true entre Show et Hide ; gate du subclass proc
+    private bool _rawInputRegistered;
 
     // Brushes créés sur le thread UI (constructeur). Piège connu : instancier
     // un SolidColorBrush depuis un thread de fond lève RPC_E_WRONG_THREAD.
@@ -61,6 +91,23 @@ public sealed partial class HudWindow : Window
         // donne la forme arrondie ; le Mica le traverse via la racine transparente.
         SystemBackdrop = new MicaBackdrop();
 
+        // Marquer la fenêtre comme layered et set alpha initial à 255 (opaque).
+        // Sans WS_EX_LAYERED, SetLayeredWindowAttributes est sans effet.
+        var ex = NativeMethods.GetWindowLongPtr(_hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
+        NativeMethods.SetWindowLongPtr(
+            _hwnd, NativeMethods.GWL_EXSTYLE,
+            new IntPtr(ex | NativeMethods.WS_EX_LAYERED));
+        NativeMethods.SetLayeredWindowAttributes(
+            _hwnd, 0, VISIBLE_ALPHA, NativeMethods.LWA_ALPHA);
+
+        // Subclass HWND pour intercepter WM_INPUT (proximité souris event-driven).
+        _subclassDelegate = SubclassCallback;
+        NativeMethods.SetWindowSubclass(_hwnd, _subclassDelegate, SubclassId, IntPtr.Zero);
+
+        // Enregistrer le device souris en RIDEV_INPUTSINK : reçoit les WM_INPUT
+        // même quand le HUD n'a pas le focus (et il ne l'a jamais, par design).
+        RegisterMouseRawInput();
+
         // Jamais détruite — sortie unique via tray Quitter.
         AppWindow.Closing += (_, args) =>
         {
@@ -74,6 +121,22 @@ public sealed partial class HudWindow : Window
             Interval = TimeSpan.FromMilliseconds(100),
         };
         _clockTimer.Tick += (_, _) => UpdateClock();
+    }
+
+    private void RegisterMouseRawInput()
+    {
+        var rid = new RAWINPUTDEVICE[]
+        {
+            new RAWINPUTDEVICE
+            {
+                usUsagePage = 0x01, // Generic Desktop Controls
+                usUsage     = 0x02, // Mouse
+                dwFlags     = NativeMethods.RIDEV_INPUTSINK,
+                hwndTarget  = _hwnd,
+            }
+        };
+        _rawInputRegistered = NativeMethods.RegisterRawInputDevices(
+            rid, 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
     }
 
     // ── API publique (thread-safe) ────────────────────────────────────────────
@@ -91,6 +154,14 @@ public sealed partial class HudWindow : Window
             _clockTimer.Start();
 
             ShowNoActivate();
+
+            // Reset alpha à 255 et arme la proximité.
+            SetAlphaImmediate(VISIBLE_ALPHA);
+            _proximityActive = true;
+
+            // Évalue une fois manuellement : si la souris est déjà sous/près
+            // du HUD au moment du show, aucun WM_INPUT ne viendra avant un mouvement.
+            UpdateProximity();
         });
     }
 
@@ -109,6 +180,9 @@ public sealed partial class HudWindow : Window
     {
         EnqueueUI(() =>
         {
+            _proximityActive = false;
+            SetAlphaImmediate(VISIBLE_ALPHA); // reset pour la prochaine session
+
             _clockTimer.Stop();
             _stopwatch.Stop();
             TranscribeRing.IsActive   = false;
@@ -129,23 +203,17 @@ public sealed partial class HudWindow : Window
     {
         // Recalculé à chaque show : si l'utilisateur change l'échelle Windows
         // (125% → 150%) entre deux dictées, le HUD s'adapte automatiquement.
-        {
-            var wa = DisplayArea.Primary.WorkArea;
+        var wa = DisplayArea.Primary.WorkArea;
 
-            // AppWindow.MoveAndResize attend des pixels physiques. HUD_WIDTH/HEIGHT
-            // sont en unités logiques (Figma 100% = 96 DPI). On multiplie par le
-            // facteur d'échelle du moniteur courant pour rester visuellement
-            // identique à 100%, 125%, 150%…
-            uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
-            double scale = dpi / 96.0;
-            int w = (int)Math.Round(HUD_WIDTH  * scale);
-            int h = (int)Math.Round(HUD_HEIGHT * scale);
-            int margin = (int)Math.Round(HUD_BOTTOM_MARGIN * scale);
+        uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
+        double scale = dpi / 96.0;
+        int w = (int)Math.Round(HUD_WIDTH  * scale);
+        int h = (int)Math.Round(HUD_HEIGHT * scale);
+        int margin = (int)Math.Round(HUD_BOTTOM_MARGIN * scale);
 
-            int x = wa.X + (wa.Width  - w) / 2;
-            int y = wa.Y +  wa.Height - h - margin;
-            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
-        }
+        int x = wa.X + (wa.Width  - w) / 2;
+        int y = wa.Y +  wa.Height - h - margin;
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
 
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNOACTIVATE);
         NativeMethods.SetWindowPos(
@@ -158,5 +226,61 @@ public sealed partial class HudWindow : Window
     {
         // Tâche 2 : layout statique, chrono figé à 00.00.00 (Runs en XAML).
         // La logique runtime (timer 33 ms, coloration des chiffres actifs) arrive à la Tâche 3.
+    }
+
+    // ── Subclass : interception WM_INPUT ──────────────────────────────────────
+
+    private IntPtr SubclassCallback(
+        IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam,
+        UIntPtr uIdSubclass, IntPtr dwRefData)
+    {
+        if (uMsg == NativeMethods.WM_INPUT && _proximityActive)
+        {
+            // Pas besoin de parser le RAWINPUT : on veut juste la position absolue
+            // courante du curseur (les RAWMOUSE deltas seraient inutiles ici).
+            UpdateProximity();
+        }
+        return NativeMethods.DefSubclassProc(hWnd, uMsg, wParam, lParam);
+    }
+
+    // ── Proximité : distance → alpha via smoothstep ───────────────────────────
+
+    private void UpdateProximity()
+    {
+        if (!NativeMethods.GetCursorPos(out var cursor)) return;
+
+        var pos  = AppWindow.Position; // pixels physiques
+        var size = AppWindow.Size;
+        int left   = pos.X;
+        int top    = pos.Y;
+        int right  = pos.X + size.Width;
+        int bottom = pos.Y + size.Height;
+
+        // Distance euclidienne curseur → rectangle (0 si dedans).
+        int dx = cursor.X < left ? left - cursor.X : (cursor.X > right  ? cursor.X - right  : 0);
+        int dy = cursor.Y < top  ? top  - cursor.Y : (cursor.Y > bottom ? cursor.Y - bottom : 0);
+        double distancePx = Math.Sqrt(dx * dx + dy * dy);
+
+        // Conversion seuils DIPs → pixels via le DPI du HUD.
+        double scale   = NativeMethods.GetDpiForWindow(_hwnd) / 96.0;
+        double nearPx  = NEAR_RADIUS_DIP * scale;
+        double farPx   = FAR_RADIUS_DIP  * scale;
+
+        // Normalisation distance → t ∈ [0, 1] entre near et far.
+        double t = (distancePx - nearPx) / (farPx - nearPx);
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+
+        // Smoothstep : t²(3-2t). Pente nulle aux bords, accélération au milieu.
+        double eased = t * t * (3.0 - 2.0 * t);
+
+        byte alpha = (byte)Math.Round(eased * 255.0);
+        if (alpha != _currentAlpha) SetAlphaImmediate(alpha);
+    }
+
+    private void SetAlphaImmediate(byte alpha)
+    {
+        _currentAlpha = alpha;
+        NativeMethods.SetLayeredWindowAttributes(_hwnd, 0, alpha, NativeMethods.LWA_ALPHA);
     }
 }
