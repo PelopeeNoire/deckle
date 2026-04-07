@@ -8,63 +8,58 @@
             <SolidColorBrush x:Key="HudStrokeBrush" Color="#66757575" />
         </Grid.Resources>
 
+        <!-- Bordure arrondie seule (pas de contenu enfant) : un Border CornerRadius
+             clippe son contenu, donc on le garde vide et on superpose le contenu
+             en frère dans la Grid racine. Comme ca le glyphe Bitcount peut deborder
+             librement sans etre rogne. -->
         <Border CornerRadius="7"
                 BorderBrush="{StaticResource HudStrokeBrush}"
-                BorderThickness="1">
-            <!-- Grid 2 colonnes Auto/Auto : sémantique plus claire qu'un StackPanel pour
-                 un layout figé. Le contenu est centré globalement par le HUD lui-même. -->
-            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+                BorderThickness="1" />
 
-                <!-- container clock : padding Figma 32 / 24 / 12 / 24 (l/t/r/b).
-                     Astuce : la bbox Figma du <p> chrono mesure 214x30 (mode vertical
-                     trim cap-height-to-baseline). Le glyphe Bitcount Single 48 fait
-                     ~34 DIPs de haut, donc dépasse cette bbox de ~2px en haut/bas.
-                     On contraint un Grid intermediaire a 214x30 et le TextBlock dedans
-                     deborde naturellement (TextBlock ne clippe pas son contenu) dans
-                     les paddings 24/24 - le Border arrondi 78 contient tout. -->
-                <Border Grid.Column="0" Padding="32,24,12,24">
-                    <Grid Width="214" Height="30">
-                    <TextBlock x:Name="ClockText"
-                               FontFamily="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single"
-                               FontWeight="Light"
-                               FontSize="48"
-                               LineHeight="48"
-                               CharacterSpacing="-50"
-                               TextLineBounds="Tight"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               Foreground="{ThemeResource TextFillColorPrimaryBrush}">
-                        <Run Text="0" />
-                        <Run Text="0" />
-                        <Run Text="." />
-                        <Run Text="0" />
-                        <Run Text="0" />
-                        <Run Text="." />
-                        <Run Text="0" />
-                        <Run Text="0" />
-                    </TextBlock>
-                    </Grid>
-                </Border>
+        <!-- Contenu superpose, frere du Border : paddings Figma exacts. -->
+        <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-                <!-- container indicator : padding Figma 12 uniforme, sous-grille 32x32. -->
-                <Border Grid.Column="1" Padding="12">
-                    <Grid Width="32" Height="32">
-                        <Ellipse x:Name="StatusDot"
-                                 Width="4" Height="4"
-                                 HorizontalAlignment="Center"
-                                 VerticalAlignment="Center"
-                                 Fill="{ThemeResource SystemFillColorCriticalBrush}" />
-                        <ProgressRing x:Name="TranscribeRing"
-                                      Width="32" Height="32"
-                                      IsActive="False"
-                                      Visibility="Collapsed" />
-                    </Grid>
-                </Border>
-            </Grid>
-        </Border>
+            <!-- container clock : padding Figma 32 / 24 / 12 / 24 (l/t/r/b). -->
+            <Border Grid.Column="0" Padding="0">
+                <TextBlock x:Name="ClockText"
+                           FontFamily="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single"
+                           FontWeight="ExtraLight"
+                           FontSize="48"
+                           TextLineBounds="Tight"
+                           CharacterSpacing="-325"
+                           Margin="24,0,0,0"
+                           HorizontalAlignment="Left"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}">
+                    <Run Text="0" />
+                    <Run Text="0" />
+                    <Run Text="."/>
+                    <Run Text="0" />
+                    <Run Text="0" />
+                    <Run Text="."/>
+                    <Run Text="0" />
+                    <Run Text="0" />
+                </TextBlock>
+            </Border>
+
+            <!-- container indicator : padding Figma 12 uniforme, sous-grille 32x32. -->
+            <Border Grid.Column="1" Padding="12,12,12,12">
+                <Grid Width="32" Height="32">
+                    <Ellipse x:Name="StatusDot"
+                             Width="4" Height="4"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             Fill="{ThemeResource SystemFillColorCriticalBrush}" />
+                    <ProgressRing x:Name="TranscribeRing"
+                                  Width="32" Height="32"
+                                  IsActive="False"
+                                  Visibility="Collapsed" />
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
