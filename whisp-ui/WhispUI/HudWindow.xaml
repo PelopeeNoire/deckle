@@ -2,7 +2,7 @@
     x:Class="WhispUI.HudWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid Background="Transparent">
+    <Grid x:Name="RootGrid" Background="Transparent">
         <Grid.Resources>
             <!-- Stroke Figma : #757575 @ 40% (identique light/dark dans la maquette). -->
             <SolidColorBrush x:Key="HudStrokeBrush" Color="#66757575" />
@@ -37,10 +37,10 @@
                            Foreground="{ThemeResource TextFillColorPrimaryBrush}">
                     <Run Text="0" />
                     <Run Text="0" />
-                    <Run Text="."/>
+                    <Run Text="." />
                     <Run Text="0" />
                     <Run Text="0" />
-                    <Run Text="."/>
+                    <Run Text="." />
                     <Run Text="0" />
                     <Run Text="0" />
                 </TextBlock>
