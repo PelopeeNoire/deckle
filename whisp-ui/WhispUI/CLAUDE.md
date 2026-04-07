@@ -49,9 +49,13 @@ mappé à la distance curseur via smoothstep (`NEAR_RADIUS_DIP=10`, `FAR_RADIUS_
 Pas de polling, pas d'animation timer — la fluidité vient de la fréquence des `WM_INPUT`.
 Approche inspirée de `D:\projects\environment\taskbar-overlay-cs`.
 
-**Script `build-run.ps1`** dans le dossier projet : tue WhispUI s'il tourne, build via
-MSBuild VS 2026 (Configuration/Restore en flags), lance l'exe. Switches `-Restore`,
-`-NoRun`, `-Wait`, `-Configuration`. Standard pour toute itération build/test.
+**Scripts `whisp-ui/build-run.ps1` et `whisp-ui/publish.ps1`** (un cran au-dessus du
+projet, non versionnés — chemins machine). `build-run` : tue WhispUI s'il tourne, build
+via MSBuild VS, lance l'exe. Switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`,
+`-MsBuild`. `publish` : même logique, target `Restore;Publish` vers `whisp-ui/publish/`,
+switches `-Configuration`, `-Open`, `-MsBuild`. MSBuild résolu via `-MsBuild` >
+`$env:WHISPUI_MSBUILD` > `vswhere` (cf. section commentée en tête de chaque script).
+Chez Louis : `setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
 
 **Fix focus régression (post-Étape 5)** : `_pasteTarget` est figé au Start, pas re-capturé
 au Stop, pour éviter que le HUD foreground n'écrase la cible. Voir
