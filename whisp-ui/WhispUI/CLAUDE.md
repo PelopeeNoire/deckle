@@ -59,10 +59,26 @@ switches `-Configuration`, `-Open`, `-MsBuild`. MSBuild résolu via `-MsBuild` >
 `$env:WHISPUI_MSBUILD` > `vswhere` (cf. section commentée en tête de chaque script).
 Chez Louis : `setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
 
-**Fix focus régression (post-Étape 5)** : `_pasteTarget` est figé au Start, pas re-capturé
-au Stop, pour éviter que le HUD foreground n'écrase la cible. Voir
-[WhispEngine.cs:148](WhispEngine.cs#L148) et [App.xaml.cs:88](App.xaml.cs#L88). Résiduel :
-`SetForegroundWindow` peut échouer silencieusement (cf. Tâches ouvertes).
+**Cible paste — re-capture au Stop avec filet PID** : `_pasteTarget` est captée au Start
+puis **re-capturée au Stop** via `GetForegroundWindow()`. Permet de coller dans le champ
+texte courant si l'utilisateur a basculé d'app pendant l'enregistrement. Filet : si le
+foreground au Stop appartient au process WhispUI (HUD/LogWindow activé par un clic), on
+garde la cible Start — évite le faux positif "collé dans nos propres logs". Voir
+[WhispEngine.cs:169](WhispEngine.cs#L169).
+
+**Fix race paste / Hide HUD (rendez-vous synchrone)** : avant, `HudWindow.Hide()` était
+déclenché en async via `TranscriptionFinished` après `PasteFromClipboard`. `SendInput`
+étant asynchrone (il enfile les frappes dans la queue d'input du thread cible), le `SW_HIDE`
+async pouvait redistribuer l'activation pendant que le Ctrl+V était encore en vol — la
+LogWindow ouverte à côté pouvait récupérer le focus, le coller atterrissait là, et le log
+vert "Bout en bout OK" mentait. Fix : nouveau callback `WhispEngine.OnReadyToPaste` invoqué
+synchronement entre `CopyToClipboard` et `PasteFromClipboard` ; câblé dans `App.xaml.cs` à
+`HudWindow.HideSync()` qui marshalle le `Hide` sur le thread UI via `DispatcherQueue` et
+**bloque l'appelant** sur un `ManualResetEventSlim` jusqu'à ce que `SW_HIDE` soit effectif.
+Plus rien dans WhispUI ne touche à l'activation entre `SetForegroundWindow(target)` et la
+livraison des frappes. Pas de sleep, pas de polling — rendez-vous explicite par signal OS.
+Voir [HudWindow.xaml.cs:255](HudWindow.xaml.cs#L255), [WhispEngine.cs:36](WhispEngine.cs#L36),
+[WhispEngine.cs:494](WhispEngine.cs#L494), [App.xaml.cs:81](App.xaml.cs#L81).
 
 **LogWindow v3** : refonte basée sur design Figma (`fAjzDDUpFW1InvLl5xL83R`, node `98:9790`).
 Fenêtre classique (`OverlappedPresenter`), Close→Cancel+Hide, **thème système** (plus de
@@ -136,6 +152,15 @@ retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié via `GetFocus
 
 ## Tâches ouvertes
 
+- **Paste "fantôme" intermittent**. Symptôme : le pipeline log vert "Bout en bout OK" +
+  PASTE "Ctrl+V envoyé à <cible>", mais rien n'apparaît dans le champ cible. Récurrent,
+  pas systématique. Hypothèse Louis : la transcription n'a peut-être pas eu lieu (chunks
+  capturés mais pas de texte recollé final), donc le clipboard contiendrait l'ancienne
+  valeur ou rien — et le `SendInput` Ctrl+V ne ferait "rien" côté cible. À investiguer
+  au prochain occurrence : capturer les logs complets de la session fautive (vérifier
+  présence de la ligne TRANSCRIBE "texte recollé" et de la ligne CLIPBOARD "Texte copié
+  (N chars)" avec `N > 0`). Si N = 0 ou ligne absente → bug en amont (Whisper / pipeline).
+  Si N > 0 mais paste vide → bug `SendInput` ou délivrance, malgré le réordonnancement.
 - **Hallucinations : filtrage trop grossier**. `MatchHallucination` rejette tout le chunk
   30s dès qu'un pattern (`Sous-titrage`, `Radio-Canada`, `[BLANK_AUDIO]`, `Sous-titres`, `SRC`)
   apparaît n'importe où dans le texte recollé ([WhispEngine.cs:393](WhispEngine.cs#L393)).
@@ -150,9 +175,6 @@ retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié via `GetFocus
   (Record/Transcribe) non background ou bloqués, icône tray non supprimée via `NIM_DELETE`,
   Windows non fermées explicitement avant Exit. À investiguer : `Dispose`/`Shutdown` explicite
   avant `Exit`, ou fallback `Environment.Exit(0)`.
-- **Focus restore incomplet** : `SetForegroundWindow(_pasteTarget)` avant paste échoue parfois.
-  Pistes : `AllowSetForegroundWindow` / `AttachThreadInput` / retry avec délai. À instrumenter
-  via la passe debug d'abord.
 - **Icône tray manquante** : placeholder à remplacer par un vrai .ico.
 - **HUD chrono coupé en haut** : malgré `TextLineBounds="Tight"` + `LineHeight="48"` +
   sous-container `Grid 214x30` (taille bbox Figma exacte) qui laisse le glyphe déborder

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -197,6 +198,12 @@ public sealed partial class HudWindow : Window
             // TextFillColorPrimaryBrush, donc auto-réactif au thème). Tout
             // chiffre qui changera ensuite passera en accent rouge et y restera.
             _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
+            // Reset .Text à "0" sinon UpdateClock voit RunX.Text != "0" (résiduel
+            // de la session précédente) et lève le flag rouge alors que la valeur
+            // courante est 0.
+            Min1.Text = Min2.Text = "0";
+            Sec1.Text = Sec2.Text = "0";
+            Cs1.Text  = Cs2.Text  = "0";
             Min1.ClearValue(TextElement.ForegroundProperty);
             Min2.ClearValue(TextElement.ForegroundProperty);
             Sec1.ClearValue(TextElement.ForegroundProperty);
@@ -246,24 +253,39 @@ public sealed partial class HudWindow : Window
         });
     }
 
-    public void Hide()
-    {
-        EnqueueUI(() =>
-        {
-            _proximityActive = false;
-            SetAlphaImmediate(VISIBLE_ALPHA); // reset pour la prochaine session
+    public void Hide() => EnqueueUI(HideCore);
 
-            if (_clockRenderingHooked)
-            {
-                CompositionTarget.Rendering -= OnClockRendering;
-                _clockRenderingHooked = false;
-            }
-            _stopwatch.Stop();
-            TranscribeRing.IsActive   = false;
-            TranscribeRing.Visibility = Visibility.Collapsed;
-            IconAssets.ApplyToWindow(AppWindow, recording: false);
-            NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
+    // Variante bloquante : rendez-vous explicite entre un thread de fond
+    // (transcribe) et le thread UI. Utilisée juste avant PasteFromClipboard
+    // pour garantir que le HUD est entièrement caché AVANT que SendInput
+    // n'enfile le Ctrl+V — sinon SW_HIDE peut redistribuer l'activation
+    // pendant que les frappes sont en vol et le coller atterrit ailleurs.
+    public void HideSync()
+    {
+        if (DispatcherQueue.HasThreadAccess) { HideCore(); return; }
+        var done = new ManualResetEventSlim();
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            try { HideCore(); } finally { done.Set(); }
         });
+        done.Wait();
+    }
+
+    private void HideCore()
+    {
+        _proximityActive = false;
+        SetAlphaImmediate(VISIBLE_ALPHA); // reset pour la prochaine session
+
+        if (_clockRenderingHooked)
+        {
+            CompositionTarget.Rendering -= OnClockRendering;
+            _clockRenderingHooked = false;
+        }
+        _stopwatch.Stop();
+        TranscribeRing.IsActive   = false;
+        TranscribeRing.Visibility = Visibility.Collapsed;
+        IconAssets.ApplyToWindow(AppWindow, recording: false);
+        NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
     }
 
     // ── Implémentation ────────────────────────────────────────────────────────

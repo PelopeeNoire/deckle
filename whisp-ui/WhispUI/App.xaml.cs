@@ -78,6 +78,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         _engine.LogWarningLine       += msg => _logWindow.LogWarning(msg);
         _engine.LogErrorLine         += msg => _logWindow.LogError(msg);
         _engine.TranscriptionFinished += () => _hudWindow.Hide();
+        // Rendez-vous synchrone juste avant le paste : on cache le HUD et on
+        // attend que SW_HIDE soit effectif côté thread UI avant que le moteur
+        // n'envoie le SendInput. Évite la race où Hide() (déclenché en async
+        // après le paste) redistribue l'activation pendant que le Ctrl+V est
+        // encore dans la queue d'input du thread cible.
+        _engine.OnReadyToPaste = () => _hudWindow.HideSync();
 
         _anchor = new AnchorWindow(_tray, OnHotkey);
 
