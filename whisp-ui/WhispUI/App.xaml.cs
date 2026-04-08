@@ -73,6 +73,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _hudWindow.SwitchToTranscribing();
         };
         _engine.LogLine              += msg => _logWindow.Log(msg);
+        _engine.LogStepLine          += msg => _logWindow.LogStep(msg);
+        _engine.LogWarningLine       += msg => _logWindow.LogWarning(msg);
         _engine.LogErrorLine         += msg => _logWindow.LogError(msg);
         _engine.TranscriptionFinished += () => _hudWindow.Hide();
 
@@ -110,11 +112,16 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             IntPtr target = NativeMethods.GetForegroundWindow();
             DebugLog.Write("HOTKEY", $"start id={hotkeyId} target={target}");
+            string desc = Win32Util.DescribeHwnd(target);
+            _logWindow?.LogStep($"Hotkey start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
+            if (Win32Util.GetFocusedClass(target) is null)
+                _logWindow?.LogWarning("Cible sans focus clavier — le paste risque d'échouer");
             _engine.StartRecording(useLlm: useLlm, shouldPaste: true, pasteTarget: target);
         }
         else
         {
             DebugLog.Write("HOTKEY", $"stop id={hotkeyId}");
+            _logWindow?.LogStep("Hotkey stop");
             _engine.StopRecording();
         }
     }

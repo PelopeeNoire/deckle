@@ -233,7 +233,9 @@ public sealed partial class LogWindow : Window
     {
         var res = Application.Current.Resources;
         _infoBrush  = (SolidColorBrush)res["TextFillColorPrimaryBrush"];
-        _stepBrush  = (SolidColorBrush)res["AccentTextFillColorPrimaryBrush"];
+        // Step = vert succès — distinctif et indépendant de l'accent système
+        // (Attention/Accent peut être gris chez l'utilisateur).
+        _stepBrush  = (SolidColorBrush)res["SystemFillColorSuccessBrush"];
         _warnBrush  = (SolidColorBrush)res["SystemFillColorCautionBrush"];
         _errorBrush = (SolidColorBrush)res["SystemFillColorCriticalBrush"];
     }

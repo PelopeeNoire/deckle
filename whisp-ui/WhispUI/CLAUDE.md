@@ -96,20 +96,48 @@ scroll horizontal est autorisé). `LogWarning` exposé mais pas encore appelé p
 Filets de diagnostic dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`,
 `TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH`/`CRASH-AD`/`CRASH-TS`).
 
+**Passe debug logs A→Z (faite)** : 4 niveaux côté API (`Info` / `Step` / `Warning` / `Error`)
+et 3 modes de filtre dans le `SelectorBar` (Full / Filtered / Critical). `WhispEngine` expose
+maintenant `LogStepLine` + `LogWarningLine` en plus de `LogLine` / `LogErrorLine`. Cartographie
+instrumentée : MODEL (path/taille/use_gpu, Step au succès, Warn si fichier absent), HOTKEY
+(`DescribeHwnd` cible + Warn si pas de focus clavier), RECORD (heartbeat 5s en Info au lieu
+d'une ligne par buffer, Warn sur buffers vides ou retard, Step pour démarrage / chunks 30s /
+chunk final / fin), TRANSCRIBE (Step à réception et succès, segments numérotés avec timestamps
++ `no_speech_prob`, texte recollé en Info, Warn paramétré sur hallucination avec pattern
+matché, Warn sur répétition heuristique, mémoire `initial_prompt` du chunk suivant en Info),
+CLIPBOARD (méthode d'instance, instrumentation `GlobalAlloc`/`OpenClipboard`/`SetClipboardData`
++ re-lecture de vérification post-copie), PASTE (`DescribeHwnd` cible, foreground avant/après,
+retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié via `GetFocusedClass`), LLM
+(callbacks `onWarn`/`onStep`/`onInfo`, fallback détaillé avec type d'exception). Helper
+`Win32Util.DescribeHwnd` (exe / titre / classe focusée). Step coloré en
+`SystemFillColorSuccessBrush` (vert) — pas l'accent système qui peut être gris chez l'utilisateur.
+
 ---
 
 ## Tâches ouvertes
 
+- **Hallucinations : filtrage trop grossier**. `MatchHallucination` rejette tout le chunk
+  30s dès qu'un pattern (`Sous-titrage`, `Radio-Canada`, `[BLANK_AUDIO]`, `Sous-titres`, `SRC`)
+  apparaît n'importe où dans le texte recollé ([WhispEngine.cs:393](WhispEngine.cs#L393)).
+  Conséquence : 25s de parole utile sont jetées si Whisper hallucine 1s en bonus. Cible :
+  filtrer **par segment**, pas par chunk — jeter le segment hallucinatoire et garder les
+  autres. Idem prendre en compte `no_speech_prob` (déjà loggé) comme critère. Et ne réinjecter
+  en `initial_prompt` que les segments qui ont passé un seuil de confiance (sinon une
+  hallucination en fin de chunk N contamine le démarrage du chunk N+1 — observé : passage
+  spontané au japonais après une phrase anglaise propre).
+- **Logs Step : sémantique « action faite » vs « résultat vérifié »**. Plusieurs Step verts
+  signalent qu'une action a été lancée sans avoir vérifié son effet. Cas observé : « Collé
+  dans WhispUI » alors que la fenêtre de logs n'a aucun champ texte — l'utilisateur voit du
+  vert pour une opération qui n'a rien collé. Reprendre tous les `DbgStep` ajoutés et soit
+  ajouter une vérification post-action avant d'émettre le Step (ex : pour PASTE, vérifier
+  que la cible a effectivement reçu un événement clavier ou qu'elle a bien un champ texte
+  focusé), soit dégrader en Info quand on ne peut pas confirmer. Possiblement introduire
+  un 5ᵉ niveau (« attempt » / Info+ ?) pour distinguer « j'ai essayé » de « j'ai réussi ».
 - **Quitter depuis le tray ne tue pas tout le process** : `Application.Current.Exit()` dans
   `TrayIconManager.OnQuit` ne termine pas proprement. Suspects : threads WhispEngine
   (Record/Transcribe) non background ou bloqués, icône tray non supprimée via `NIM_DELETE`,
   Windows non fermées explicitement avant Exit. À investiguer : `Dispose`/`Shutdown` explicite
   avant `Exit`, ou fallback `Environment.Exit(0)`.
-- **Passe debug logs (A+B+C+D)** : instrumenter les 7 étapes — Modèle / En attente / Capture
-  audio / Transcription / Réécriture LLM / Copie clipboard / Collage app cible. Helper
-  `DescribeHwnd` (HWND + titre + nom exe), retours Win32 (`SetForegroundWindow`, `SendInput`,
-  `SetClipboardData`), foreground avant/après paste. Optionnel : enum `WorkflowStep` + event
-  `StepChanged` pour préparer un futur flyout stepper.
 - **Focus restore incomplet** : `SetForegroundWindow(_pasteTarget)` avant paste échoue parfois.
   Pistes : `AllowSetForegroundWindow` / `AttachThreadInput` / retry avec délai. À instrumenter
   via la passe debug d'abord.

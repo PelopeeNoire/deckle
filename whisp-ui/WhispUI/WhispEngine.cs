@@ -20,6 +20,8 @@ internal sealed class WhispEngine : IDisposable
 
     // Logs textuels (thread de fond → LogWindow).
     public event Action<string>?  LogLine;
+    public event Action<string>?  LogStepLine;
+    public event Action<string>?  LogWarningLine;
     public event Action<string>?  LogErrorLine;
 
     // Levé en toute fin de Transcribe(), quel que soit le chemin de sortie
@@ -70,7 +72,10 @@ internal sealed class WhispEngine : IDisposable
     {
         _modelPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH") ?? DEFAULT_MODEL;
 
-        _llm = new LlmService(onError: msg => LogErrorLine?.Invoke($"[LLM] {msg}"));
+        _llm = new LlmService(
+            onWarn: msg  => LogWarningLine?.Invoke($"[LLM] {msg}"),
+            onStep: msg  => LogStepLine?.Invoke(msg),
+            onInfo: msg  => LogLine?.Invoke(msg));
 
         LoadModelAsync();
     }
@@ -85,7 +90,17 @@ internal sealed class WhispEngine : IDisposable
         {
             DebugLog.Write("ENGINE", "load thread started, path=" + _modelPath);
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            LogLine?.Invoke($"[INIT] Chargement du modèle ({Path.GetFileName(_modelPath)})...");
+            DbgLog("MODEL", $"path: {_modelPath}");
+            if (File.Exists(_modelPath))
+            {
+                double mb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
+                DbgLog("MODEL", $"fichier: {mb:F1} MB");
+            }
+            else
+            {
+                DbgWarn($"MODEL: fichier introuvable sur disque ({_modelPath})");
+            }
+            DbgLog("MODEL", "init whisper_init_from_file_with_params (use_gpu=1)");
 
             IntPtr ctxParamsPtr = NativeMethods.whisper_context_default_params_by_ref();
             WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
@@ -103,7 +118,7 @@ internal sealed class WhispEngine : IDisposable
             }
             else
             {
-                LogLine?.Invoke($"[INIT] Modèle chargé en {sw.ElapsedMilliseconds} ms — prêt");
+                DbgStep($"Modèle chargé en {sw.ElapsedMilliseconds} ms");
                 StatusChanged?.Invoke("En attente");
             }
         });
@@ -166,6 +181,9 @@ internal sealed class WhispEngine : IDisposable
         LogLine?.Invoke($"[{ts}] [{phase}] {msg}");
     }
 
+    private void DbgStep(string msg) => LogStepLine?.Invoke(msg);
+    private void DbgWarn(string msg) => LogWarningLine?.Invoke(msg);
+
     // ── Enregistrement audio ──────────────────────────────────────────────────
     //
     // Capture le micro en continu. Dès que 30s d'audio sont accumulées,
@@ -222,27 +240,39 @@ internal sealed class WhispEngine : IDisposable
 
         NativeMethods.waveInStart(hWaveIn);
         var allBytes = new List<byte>();
-        DbgLog("RECORD", "Boucle waveIn démarrée");
+        DbgStep("Enregistrement démarré (16kHz mono PCM16)");
+
+        int chunksExtracted = 0;
+        double nextHeartbeatSec = 5.0;
 
         while (!_stopRecording)
         {
             NativeMethods.WaitForSingleObject(hEvent, 100);
 
+            int bufferDoneCount = 0;
             for (int i = 0; i < N_BUFFERS; i++)
             {
                 WAVEHDR hdr = Marshal.PtrToStructure<WAVEHDR>(hdrPtrs[i]);
                 if ((hdr.dwFlags & WHDR_DONE) != 0)
                 {
-                    var data = new byte[hdr.dwBytesRecorded];
-                    Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
-                    allBytes.AddRange(data);
-                    DbgLog("RECORD", $"Buffer[{i}] récolté — {hdr.dwBytesRecorded} octets (total : {allBytes.Count})");
+                    bufferDoneCount++;
+                    if (hdr.dwBytesRecorded == 0)
+                    {
+                        DbgWarn($"RECORD: buffer[{i}] vide reçu");
+                    }
+                    else
+                    {
+                        var data = new byte[hdr.dwBytesRecorded];
+                        Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
+                        allBytes.AddRange(data);
+                    }
 
                     while (allBytes.Count >= CHUNK_BYTES)
                     {
                         byte[] chunkBytes = allBytes.GetRange(0, CHUNK_BYTES).ToArray();
                         allBytes.RemoveRange(0, CHUNK_BYTES);
-                        DbgLog("RECORD", $"Chunk 30s extrait — {CHUNK_BYTES / 32000.0:F1}s → pipeline");
+                        chunksExtracted++;
+                        DbgStep($"Chunk {chunksExtracted} extrait (30s) → pipeline");
                         _pipeline.Add(PcmToFloat(chunkBytes));
                     }
 
@@ -250,6 +280,17 @@ internal sealed class WhispEngine : IDisposable
                     Marshal.StructureToPtr(hdr, hdrPtrs[i], fDeleteOld: false);
                     NativeMethods.waveInAddBuffer(hWaveIn, hdrPtrs[i], hdrSize);
                 }
+            }
+
+            if (bufferDoneCount > 1)
+                DbgWarn($"RECORD: retard, {bufferDoneCount} buffers prêts simultanément");
+
+            // Heartbeat ~5s, en Info → visible Full uniquement
+            double curSec = allBytes.Count / 32000.0 + chunksExtracted * 30.0;
+            if (curSec >= nextHeartbeatSec)
+            {
+                DbgLog("RECORD", $"+{curSec:F1}s capturés (en attente: {allBytes.Count}o)");
+                nextHeartbeatSec += 5.0;
             }
         }
         DbgLog("RECORD", $"Boucle terminée — {allBytes.Count} octets accumulés ({allBytes.Count / 32000.0:F1}s)");
@@ -276,12 +317,13 @@ internal sealed class WhispEngine : IDisposable
 
         if (allBytes.Count > 0)
         {
-            DbgLog("RECORD", $"Dernier chunk — {allBytes.Count / 32000.0:F1}s → pipeline");
+            chunksExtracted++;
+            DbgStep($"Chunk final extrait ({allBytes.Count / 32000.0:F1}s)");
             _pipeline.Add(PcmToFloat(allBytes.ToArray()));
         }
 
         _pipeline.CompleteAdding();
-        DbgLog("RECORD", "Pipeline complété — fin d'enregistrement");
+        DbgStep($"Capture terminée — {chunksExtracted} chunk(s)");
     }
 
     // ── Transcription Whisper ─────────────────────────────────────────────────
@@ -313,25 +355,50 @@ internal sealed class WhispEngine : IDisposable
         wparams.no_speech_thold = 0.7f;
         wparams.print_progress  = 0;
 
-        static bool IsHallucinatedOutput(string text) =>
-            string.IsNullOrWhiteSpace(text) ||
-            text.Contains("Sous-titrage", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("Radio-Canada",  StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("[BLANK_AUDIO]", StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("Sous-titres",   StringComparison.OrdinalIgnoreCase) ||
-            text.Contains("SRC",           StringComparison.Ordinal);
+        // Patterns d'hallucination connus, retournés pour pouvoir logger lequel a matché.
+        static string? MatchHallucination(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "(vide)";
+            string[] pats = { "Sous-titrage", "Radio-Canada", "[BLANK_AUDIO]", "Sous-titres" };
+            foreach (var p in pats)
+                if (text.Contains(p, StringComparison.OrdinalIgnoreCase)) return p;
+            if (text.Contains("SRC", StringComparison.Ordinal)) return "SRC";
+            return null;
+        }
+
+        // Détecte une répétition simple : sous-séquence de ≥4 mots qui revient ≥3 fois.
+        // Heuristique grossière, juste pour avoir un signal dans les logs.
+        static bool LooksRepeated(string text)
+        {
+            var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length < 12) return false;
+            for (int n = 4; n <= 8; n++)
+            {
+                var counts = new Dictionary<string, int>();
+                for (int i = 0; i + n <= words.Length; i++)
+                {
+                    var key = string.Join(' ', words, i, n);
+                    counts[key] = counts.GetValueOrDefault(key) + 1;
+                    if (counts[key] >= 3) return true;
+                }
+            }
+            return false;
+        }
 
         int chunkIndex = 0;
+        long transcribeMsTotal = 0;
         foreach (float[] chunk in _pipeline.GetConsumingEnumerable())
         {
             chunkIndex++;
             float chunkSec = (float)chunk.Length / 16_000f;
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} reçu — {chunk.Length} samples ({chunkSec:F1}s) → whisper_full...");
+            DbgStep($"Chunk {chunkIndex} reçu ({chunkSec:F1}s)");
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} → whisper_full ({chunk.Length} samples)");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             int result = NativeMethods.whisper_full(ctx, wparams, chunk, chunk.Length);
             sw.Stop();
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} — terminé en {sw.ElapsedMilliseconds} ms, code={result}");
+            transcribeMsTotal += sw.ElapsedMilliseconds;
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} → whisper_full code={result}, {sw.ElapsedMilliseconds} ms");
 
             if (result != 0)
             {
@@ -341,26 +408,42 @@ internal sealed class WhispEngine : IDisposable
 
             int nSeg = NativeMethods.whisper_full_n_segments(ctx);
             var parts = new List<string>();
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} découpé en {nSeg} phrase(s) par Whisper :");
             for (int i = 0; i < nSeg; i++)
-                parts.Add(Marshal.PtrToStringUTF8(NativeMethods.whisper_full_get_segment_text(ctx, i)) ?? "");
+            {
+                string segText = Marshal.PtrToStringUTF8(NativeMethods.whisper_full_get_segment_text(ctx, i)) ?? "";
+                parts.Add(segText);
+                long t0 = NativeMethods.whisper_full_get_segment_t0(ctx, i);
+                long t1 = NativeMethods.whisper_full_get_segment_t1(ctx, i);
+                float nsp = NativeMethods.whisper_full_get_segment_no_speech_prob(ctx, i);
+                // no_speech : proba que le segment soit du silence/bruit (0 = parole sûre, 1 = silence sûr)
+                DbgLog("TRANSCRIBE", $"   {i + 1}. [{t0/100.0:F1}s→{t1/100.0:F1}s, silence?={nsp:P0}] {segText.Trim()}");
+            }
             string chunkText = string.Join(" ", parts).Trim();
 
-            LogLine?.Invoke($"Brut    : {chunkText}");
+            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} — texte recollé : {chunkText}");
 
-            if (IsHallucinatedOutput(chunkText))
+            string? hallucPattern = MatchHallucination(chunkText);
+            if (hallucPattern is not null)
             {
-                LogLine?.Invoke("→ filtré (hallucination détectée)");
+                DbgWarn($"Chunk {chunkIndex} filtré (hallucination: pattern='{hallucPattern}')");
                 continue;
             }
 
-            _transcribedChunks.Add(chunkText);
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} → accepté ({chunkText.Length} chars). Buffer : {_transcribedChunks.Count} chunk(s)");
+            if (LooksRepeated(chunkText))
+                DbgWarn($"Chunk {chunkIndex} suspect (répétition détectée)");
 
-            // Mettre à jour initial_prompt avec la fin du chunk accepté pour la continuité
+            _transcribedChunks.Add(chunkText);
+            DbgStep($"Chunk {chunkIndex} transcrit OK ({sw.ElapsedMilliseconds} ms, {nSeg} seg, {chunkText.Length} chars)");
+
+            // Mémoire courte transmise au chunk suivant : Whisper lit ce texte avant
+            // de transcrire les 30s suivantes, ce qui aide à garder le fil (orthographe,
+            // contexte, langue). On lui donne les ~150 derniers caractères du chunk courant.
             Marshal.FreeHGlobal(promptPtr);
             string tail = chunkText.Length > 150 ? chunkText[^150..] : chunkText;
             promptPtr = Marshal.StringToHGlobalAnsi(tail);
             wparams.initial_prompt = promptPtr;
+            DbgLog("TRANSCRIBE", $"Mémoire passée au chunk suivant : « {tail} »");
         }
 
         Marshal.FreeHGlobal(langPtr);
@@ -376,11 +459,17 @@ internal sealed class WhispEngine : IDisposable
         }
 
         // Copie systématique du texte brut — filet de sécurité même si le LLM échoue
+        var swClip = System.Diagnostics.Stopwatch.StartNew();
         CopyToClipboard(fullText);
+        swClip.Stop();
 
+        long llmMs = 0;
         if (_useLlm)
         {
+            var swLlm = System.Diagnostics.Stopwatch.StartNew();
             string? rewritten = _llm.Rewrite(fullText);
+            swLlm.Stop();
+            llmMs = swLlm.ElapsedMilliseconds;
             if (!string.IsNullOrWhiteSpace(rewritten))
             {
                 fullText = rewritten;
@@ -388,8 +477,17 @@ internal sealed class WhispEngine : IDisposable
             }
         }
 
+        long pasteMs = 0;
         if (_shouldPaste)
+        {
+            var swPaste = System.Diagnostics.Stopwatch.StartNew();
             PasteFromClipboard();
+            swPaste.Stop();
+            pasteMs = swPaste.ElapsedMilliseconds;
+        }
+
+        double totalSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
+        DbgStep($"Terminé — total {totalSec:F1}s (trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)");
 
         StatusChanged?.Invoke("En attente");
         _recordingSw?.Stop();
@@ -398,7 +496,7 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Presse-papier ─────────────────────────────────────────────────────────
 
-    private static void CopyToClipboard(string text)
+    private void CopyToClipboard(string text)
     {
         const uint GMEM_MOVEABLE  = 0x0002;
         const uint CF_UNICODETEXT = 13;
@@ -406,17 +504,43 @@ internal sealed class WhispEngine : IDisposable
         int byteCount = (text.Length + 1) * 2;
 
         IntPtr hMem = NativeMethods.GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)byteCount);
-        if (hMem == IntPtr.Zero) return;
+        DbgLog("CLIPBOARD", $"GlobalAlloc {byteCount}o → hMem={hMem}");
+        if (hMem == IntPtr.Zero) { DbgWarn("Clipboard: GlobalAlloc échoué"); return; }
 
         IntPtr ptr = NativeMethods.GlobalLock(hMem);
         Marshal.Copy(text.ToCharArray(), 0, ptr, text.Length);
         Marshal.WriteInt16(ptr, text.Length * 2, 0);
         NativeMethods.GlobalUnlock(hMem);
 
-        if (!NativeMethods.OpenClipboard(IntPtr.Zero)) return;
+        bool opened = NativeMethods.OpenClipboard(IntPtr.Zero);
+        DbgLog("CLIPBOARD", $"OpenClipboard → {opened}");
+        if (!opened) { DbgWarn("Clipboard: OpenClipboard échoué"); return; }
+
         NativeMethods.EmptyClipboard();
-        NativeMethods.SetClipboardData(CF_UNICODETEXT, hMem);
+        IntPtr setHandle = NativeMethods.SetClipboardData(CF_UNICODETEXT, hMem);
+        if (setHandle == IntPtr.Zero) DbgWarn("Clipboard: SetClipboardData échoué (handle 0)");
         NativeMethods.CloseClipboard();
+
+        // Re-lecture immédiate pour vérifier que c'est bien dans le presse-papier
+        if (NativeMethods.OpenClipboard(IntPtr.Zero))
+        {
+            IntPtr h = NativeMethods.GetClipboardData(CF_UNICODETEXT);
+            if (h == IntPtr.Zero)
+            {
+                DbgWarn("Clipboard: vérif post-copie → aucune donnée Unicode");
+            }
+            else
+            {
+                IntPtr p = NativeMethods.GlobalLock(h);
+                string? back = p != IntPtr.Zero ? Marshal.PtrToStringUni(p) : null;
+                NativeMethods.GlobalUnlock(h);
+                if (back is null || back.Length != text.Length)
+                    DbgWarn($"Clipboard: vérif post-copie → longueur {back?.Length ?? -1} != {text.Length}");
+            }
+            NativeMethods.CloseClipboard();
+        }
+
+        DbgStep($"Texte copié ({text.Length} chars)");
     }
 
     private void PasteFromClipboard()
@@ -426,10 +550,26 @@ internal sealed class WhispEngine : IDisposable
         const ushort VK_CONTROL      = 0x11;
         const ushort VK_V            = 0x56;
 
+        DbgLog("PASTE", $"cible attendue: {Win32Util.DescribeHwnd(_pasteTarget)}");
+        IntPtr fgBefore = NativeMethods.GetForegroundWindow();
+        DbgLog("PASTE", $"foreground avant: {Win32Util.DescribeHwnd(fgBefore)}");
+
         if (_pasteTarget != IntPtr.Zero)
         {
-            NativeMethods.SetForegroundWindow(_pasteTarget);
+            bool sfgOk = NativeMethods.SetForegroundWindow(_pasteTarget);
+            DbgLog("PASTE", $"SetForegroundWindow → {sfgOk}");
+            if (!sfgOk) DbgWarn("PASTE: SetForegroundWindow refusé");
             Thread.Sleep(50);
+
+            IntPtr fgAfter = NativeMethods.GetForegroundWindow();
+            if (fgAfter != _pasteTarget)
+                DbgWarn($"PASTE: focus pas restauré (attendu {Win32Util.DescribeHwnd(_pasteTarget)}, actuel {Win32Util.DescribeHwnd(fgAfter)})");
+
+            string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
+            if (focusClass is null)
+                DbgWarn("PASTE: cible n'a pas de focus clavier — paste ira dans le vide");
+            else
+                DbgLog("PASTE", $"contrôle focusé: {focusClass}");
         }
 
         int cbSize = Marshal.SizeOf<INPUT>();
@@ -442,7 +582,11 @@ internal sealed class WhispEngine : IDisposable
             new INPUT { type = INPUT_KEYBOARD, ki_wVk = VK_CONTROL, ki_dwFlags = KEYEVENTF_KEYUP },
         };
 
-        NativeMethods.SendInput((uint)inputs.Length, inputs, cbSize);
+        uint sent = NativeMethods.SendInput((uint)inputs.Length, inputs, cbSize);
+        if (sent != inputs.Length)
+            DbgWarn($"PASTE: SendInput a injecté {sent}/{inputs.Length} events");
+
+        DbgStep($"Collé dans {Win32Util.DescribeHwnd(_pasteTarget)}");
     }
 
     // ── Conversion PCM → float ────────────────────────────────────────────────

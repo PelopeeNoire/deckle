@@ -28,17 +28,24 @@ internal class LlmService
 
     static readonly HttpClient _http = new();
 
-    readonly Action<string>? _onError;
+    readonly Action<string>? _onWarn;
+    readonly Action<string>? _onStep;
+    readonly Action<string>? _onInfo;
 
-    public LlmService(Action<string>? onError = null)
+    public LlmService(Action<string>? onWarn = null, Action<string>? onStep = null, Action<string>? onInfo = null)
     {
-        _onError = onError;
+        _onWarn = onWarn;
+        _onStep = onStep;
+        _onInfo = onInfo;
     }
 
     public string? Rewrite(string text)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
+            _onInfo?.Invoke($"[LLM] requête {text.Length} chars → {OLLAMA_MODEL}");
+
             var body = new
             {
                 model      = OLLAMA_MODEL,
@@ -63,11 +70,15 @@ internal class LlmService
                 .GetProperty("content")
                 .GetString();
 
-            return rewritten?.Trim();
+            sw.Stop();
+            string trimmed = rewritten?.Trim() ?? "";
+            _onStep?.Invoke($"Réécriture OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars)");
+            return trimmed;
         }
-        catch
+        catch (Exception ex)
         {
-            _onError?.Invoke("LLM indisponible");
+            sw.Stop();
+            _onWarn?.Invoke($"LLM indisponible : {ex.GetType().Name} {ex.Message} — texte brut conservé");
             return null;
         }
     }
