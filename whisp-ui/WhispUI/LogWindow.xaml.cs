@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml.Input;
+using Windows.System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
@@ -103,6 +105,14 @@ public sealed partial class LogWindow : Window
         // IsChecked="False".
         LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["NoWrapTemplate"];
         LogScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+
+        // Shift+molette → scroll horizontal. ScrollViewer marque PointerWheelChanged
+        // comme handled pour son propre scroll vertical, donc AddHandler avec
+        // handledEventsToo=true pour quand même intercepter.
+        LogScrollViewer.AddHandler(
+            UIElement.PointerWheelChangedEvent,
+            new PointerEventHandler(OnLogPointerWheel),
+            handledEventsToo: true);
 
         // Icônes app : résolues une fois, partagées avec le tray.
         LoadAppIcons();
@@ -443,6 +453,29 @@ public sealed partial class LogWindow : Window
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────
+
+    private void OnLogPointerWheel(object sender, PointerRoutedEventArgs e)
+    {
+        // Shift non pressé → laisser le ScrollViewer faire son scroll vertical natif.
+        var mods = e.KeyModifiers;
+        if ((mods & VirtualKeyModifiers.Shift) == 0) return;
+
+        // En mode wrap, le scroll horizontal est désactivé : rien à faire.
+        if (LogScrollViewer.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
+
+        var point = e.GetCurrentPoint(LogScrollViewer);
+        int delta = point.Properties.MouseWheelDelta;
+        if (delta == 0) return;
+
+        // Convention Windows : 120 unités = un cran. On scrolle ~80 px par cran,
+        // dans le sens inverse du delta (delta>0 = molette vers le haut = scroll vers la gauche).
+        double offset = LogScrollViewer.HorizontalOffset - (delta / 120.0) * 80.0;
+        if (offset < 0) offset = 0;
+        if (offset > LogScrollViewer.ScrollableWidth) offset = LogScrollViewer.ScrollableWidth;
+
+        LogScrollViewer.ChangeView(offset, null, null, disableAnimation: true);
+        e.Handled = true;
+    }
 
     private void OnClearClick(object sender, RoutedEventArgs e) => ClearAll();
 
