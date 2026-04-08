@@ -1,5 +1,4 @@
 using Microsoft.UI;
-using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -116,31 +115,19 @@ public sealed partial class LogWindow : Window
 
         // Icônes app : résolues une fois, partagées avec le tray.
         LoadAppIcons();
-        AppIconBeacon.Source = _iconIdle;
+        AppTitleBarIcon.ImageSource = _iconIdle;
         if (_iconIdlePath is not null) AppWindow.SetIcon(_iconIdlePath);
 
-        // Title bar custom : étend le contenu dans la zone titre.
-        // Toute la grid AppTitleBar est marquée comme drag region (pour pouvoir
-        // déplacer la fenêtre depuis n'importe quelle zone vide de la barre).
-        // Le SearchBox au centre est ensuite explicitement marqué comme zone
-        // passthrough via InputNonClientPointerSource (cf. SetupDragPassthrough),
-        // sinon il est intercepté par la title bar et ne reçoit plus de clics.
+        // Title bar natif : ExtendsContentIntoTitleBar + SetTitleBar reste requis
+        // pour que le contrôle TitleBar remplace la system title bar. Hauteur,
+        // drag region, caption buttons themés sont gérés par le contrôle.
         ExtendsContentIntoTitleBar = true;
-        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         SetTitleBar(AppTitleBar);
-
-        // Le passthrough doit être recalculé après chaque layout de la SearchBox
-        // (taille variable selon la largeur de la fenêtre).
-        SearchBox.SizeChanged += (_, _) => SetupDragPassthrough();
-        SearchBox.Loaded      += (_, _) => SetupDragPassthrough();
 
         // Réactivité au theme switch système : re-résoudre les brushes
         // (theme resources sont snapshots à l'instant t, pas live), rebuild
-        // les entrées existantes pour qu'elles adoptent les nouvelles couleurs,
-        // et mettre à jour les couleurs des caption buttons système (qui ne
-        // sont pas auto-themées quand on personnalise la title bar).
+        // les entrées existantes pour qu'elles adoptent les nouvelles couleurs.
         RootGrid.ActualThemeChanged += (_, _) => OnThemeChanged();
-        RefreshTitleBarButtonColors();
 
         // Mica : fond translucide qui prend les couleurs du thème système.
         // Win11 requis (OK ici) ; sinon fallback transparent.
@@ -199,7 +186,7 @@ public sealed partial class LogWindow : Window
     private void ApplyRecordingState(bool isRecording)
     {
         _isRecording = isRecording;
-        AppIconBeacon.Source = isRecording ? _iconRecording : _iconIdle;
+        AppTitleBarIcon.ImageSource = isRecording ? _iconRecording : _iconIdle;
 
         // Icône de fenêtre (titlebar Windows + taskbar + alt-tab) : suit le
         // même état. AppWindow.SetIcon attend un chemin .ico sur disque.
@@ -289,84 +276,6 @@ public sealed partial class LogWindow : Window
         _entries.Clear();
         _entries.AddRange(rebuilt);
         ApplyFilter();
-
-        // L'icône beacon n'est pas thémée (asset .ico unique par état),
-        // donc rien à faire dessus. Caption buttons → repilotés à la main.
-        RefreshTitleBarButtonColors();
-    }
-
-    private void RefreshTitleBarButtonColors()
-    {
-        // Les caption buttons système (min/max/close) ne s'auto-thèment pas
-        // quand on customise la title bar — il faut les piloter à la main.
-        var tb = AppWindow.TitleBar;
-        bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
-
-        var fg       = dark ? Colors.White : Colors.Black;
-        var inactive = dark ? Color.FromArgb(0xFF, 0x9A, 0x9A, 0x9A)
-                             : Color.FromArgb(0xFF, 0x60, 0x60, 0x60);
-        var hoverBg  = dark ? Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
-                             : Color.FromArgb(0x10, 0x00, 0x00, 0x00);
-        var pressBg  = dark ? Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)
-                             : Color.FromArgb(0x20, 0x00, 0x00, 0x00);
-
-        tb.ButtonBackgroundColor         = Colors.Transparent;
-        tb.ButtonInactiveBackgroundColor = Colors.Transparent;
-        tb.ButtonForegroundColor         = fg;
-        tb.ButtonInactiveForegroundColor = inactive;
-        tb.ButtonHoverBackgroundColor    = hoverBg;
-        tb.ButtonHoverForegroundColor    = fg;
-        tb.ButtonPressedBackgroundColor  = pressBg;
-        tb.ButtonPressedForegroundColor  = fg;
-    }
-
-    // ── Title bar : drag passthrough pour la SearchBox ───────────────────────
-
-    private void ClearDragPassthrough()
-    {
-        try
-        {
-            var nonClient = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
-            nonClient.SetRegionRects(NonClientRegionKind.Passthrough, Array.Empty<Windows.Graphics.RectInt32>());
-        }
-        catch (Exception ex)
-        {
-            DebugLog.Write("LOGWIN", $"passthrough clear err: {ex.Message}");
-        }
-    }
-
-    private void SetupDragPassthrough()
-    {
-        // Search masquée (responsive < 600 px) → on retire la zone passthrough,
-        // sinon une zone fantôme reste sur la title bar.
-        if (SearchBox.Visibility == Visibility.Collapsed)
-        {
-            ClearDragPassthrough();
-            return;
-        }
-        if (SearchBox.ActualWidth <= 0 || SearchBox.ActualHeight <= 0) return;
-        if (RootGrid.XamlRoot is null) return;
-
-        var scale = RootGrid.XamlRoot.RasterizationScale;
-        var transform = SearchBox.TransformToVisual(null);
-        var bounds = transform.TransformBounds(
-            new Windows.Foundation.Rect(0, 0, SearchBox.ActualWidth, SearchBox.ActualHeight));
-
-        var rect = new Windows.Graphics.RectInt32(
-            (int)(bounds.X * scale),
-            (int)(bounds.Y * scale),
-            (int)(bounds.Width * scale),
-            (int)(bounds.Height * scale));
-
-        try
-        {
-            var nonClient = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
-            nonClient.SetRegionRects(NonClientRegionKind.Passthrough, new[] { rect });
-        }
-        catch (Exception ex)
-        {
-            DebugLog.Write("LOGWIN", $"passthrough err: {ex.Message}");
-        }
     }
 
     // ── Implémentation ────────────────────────────────────────────────────────
@@ -516,24 +425,6 @@ public sealed partial class LogWindow : Window
         var dp = new DataPackage();
         dp.SetText(sb.ToString());
         Clipboard.SetContent(dp);
-    }
-
-    // ── Responsive : visibilité de la SearchBox ─────────────────────────────
-    //
-    // La migration des items de la CommandBar est gérée nativement
-    // (IsDynamicOverflowEnabled + DynamicOverflowOrder en XAML). Ici on
-    // s'occupe juste de la SearchBox qui doit disparaître sous 650 px.
-    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        var newSearchVis = e.NewSize.Width >= 650
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
-        if (SearchBox.Visibility != newSearchVis)
-        {
-            SearchBox.Visibility = newSearchVis;
-            SetupDragPassthrough();
-        }
     }
 
     private async void OnSaveClick(object sender, RoutedEventArgs e)
