@@ -146,8 +146,10 @@
             <ScrollViewer x:Name="LogScrollViewer"
                           Padding="12,8"
                           VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Auto">
-                <ItemsControl x:Name="LogItems" />
+                          HorizontalScrollBarVisibility="Auto"
+                          HorizontalContentAlignment="Left"
+                          HorizontalScrollMode="Enabled">
+                <ItemsControl x:Name="LogItems" HorizontalAlignment="Left" />
             </ScrollViewer>
         </Border>
     </Grid>
