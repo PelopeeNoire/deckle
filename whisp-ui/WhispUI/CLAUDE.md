@@ -133,20 +133,30 @@ la cible au foreground (vérifié via `GetForegroundWindow()` après sleep, pas 
 `GetFocusedClass == null`, `SendInput` partiel. Si tout passe, le récap final devient le Step vert
 de bout en bout ; sinon `[DONE]` Verbose timings + le Warn orange explicatif.
 
-Cartographie instrumentée historique : `WhispEngine` expose
-maintenant `LogStepLine` + `LogWarningLine` en plus de `LogLine` / `LogErrorLine`. Cartographie
-instrumentée : MODEL (path/taille/use_gpu, Step au succès, Warn si fichier absent), HOTKEY
-(`DescribeHwnd` cible + Warn si pas de focus clavier), RECORD (heartbeat 5s en Info au lieu
-d'une ligne par buffer, Warn sur buffers vides ou retard, Step pour démarrage / chunks 30s /
-chunk final / fin), TRANSCRIBE (Step à réception et succès, segments numérotés avec timestamps
-+ `no_speech_prob`, texte recollé en Info, Warn paramétré sur hallucination avec pattern
-matché, Warn sur répétition heuristique, mémoire `initial_prompt` du chunk suivant en Info),
-CLIPBOARD (méthode d'instance, instrumentation `GlobalAlloc`/`OpenClipboard`/`SetClipboardData`
-+ re-lecture de vérification post-copie), PASTE (`DescribeHwnd` cible, foreground avant/après,
-retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié via `GetFocusedClass`), LLM
-(callbacks `onWarn`/`onStep`/`onInfo`, fallback détaillé avec type d'exception). Helper
-`Win32Util.DescribeHwnd` (exe / titre / classe focusée). Step coloré en
-`SystemFillColorSuccessBrush` (vert) — pas l'accent système qui peut être gris chez l'utilisateur.
+**Pipeline monobloc (refonte)** : plus de chunking externe 30s. `Record()` accumule
+tout l'audio capturé dans un unique `List<byte>` et retourne un `float[]` au Stop.
+`Transcribe(float[])` fait **un seul** appel `whisper_full()` — Whisper gère son propre
+fenêtrage interne (30s + seek dynamique) et la propagation de contexte inter-fenêtres
+via tokens. La récupération progressive passe par `new_segment_callback` (binding du
+champ `WhisperFullParams.new_segment_callback` via `Marshal.GetFunctionPointerForDelegate` ;
+délégué stocké en champ d'instance `_newSegmentCallback` pour échapper au GC pendant
+l'appel natif). Chaque segment est poussé sous lock dans `List<TranscribedSegment>
+_segments` (Text / T0 / T1 / NoSpeechProb), depuis le thread d'inférence de whisper.cpp.
+Le texte final est assemblé à partir de cette liste — garantit qu'un segment loggé est
+exactement un segment du texte produit. Un seul thread worker `Record → Transcribe` au
+lieu de deux threads parallèles (plus de `BlockingCollection`). `MatchHallucination` et
+la mémoire `initial_prompt` chunk-par-chunk supprimées. `LooksRepeated` conservée en
+log-only sur le texte complet. Cartographie de logs à reprendre — voir *Tâches ouvertes*.
+
+Cartographie historique (à actualiser) : `WhispEngine` expose `LogStepLine` +
+`LogWarningLine` en plus de `LogLine` / `LogErrorLine`. MODEL (path/taille/use_gpu, Step
+au succès, Warn si fichier absent), HOTKEY (`DescribeHwnd` cible + Warn si pas de focus
+clavier), CLIPBOARD (méthode d'instance, instrumentation `GlobalAlloc`/`OpenClipboard`/
+`SetClipboardData` + re-lecture de vérification post-copie), PASTE (`DescribeHwnd` cible,
+foreground avant/après, retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié
+via `GetFocusedClass`), LLM (callbacks `onWarn`/`onStep`/`onInfo`, fallback détaillé avec
+type d'exception). Helper `Win32Util.DescribeHwnd` (exe / titre / classe focusée). Step
+coloré en `SystemFillColorSuccessBrush` (vert) — pas l'accent système qui peut être gris.
 
 ---
 
@@ -161,15 +171,16 @@ retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié via `GetFocus
   présence de la ligne TRANSCRIBE "texte recollé" et de la ligne CLIPBOARD "Texte copié
   (N chars)" avec `N > 0`). Si N = 0 ou ligne absente → bug en amont (Whisper / pipeline).
   Si N > 0 mais paste vide → bug `SendInput` ou délivrance, malgré le réordonnancement.
-- **Hallucinations : filtrage trop grossier**. `MatchHallucination` rejette tout le chunk
-  30s dès qu'un pattern (`Sous-titrage`, `Radio-Canada`, `[BLANK_AUDIO]`, `Sous-titres`, `SRC`)
-  apparaît n'importe où dans le texte recollé ([WhispEngine.cs:393](WhispEngine.cs#L393)).
-  Conséquence : 25s de parole utile sont jetées si Whisper hallucine 1s en bonus. Cible :
-  filtrer **par segment**, pas par chunk — jeter le segment hallucinatoire et garder les
-  autres. Idem prendre en compte `no_speech_prob` (déjà loggé) comme critère. Et ne réinjecter
-  en `initial_prompt` que les segments qui ont passé un seuil de confiance (sinon une
-  hallucination en fin de chunk N contamine le démarrage du chunk N+1 — observé : passage
-  spontané au japonais après une phrase anglaise propre).
+- **Filtrage par segment + seuils Whisper.** Le chunking externe et `MatchHallucination` ont
+  été supprimés (voir *Pipeline monobloc* ci-dessous). Plus de filtrage textuel par patterns
+  — on s'appuie sur `entropy_thold=1.9` et `no_speech_thold=0.7`. À valider en usage réel ;
+  sinon, brancher un filtre **par segment** basé sur `no_speech_prob` (déjà accessible via
+  `_segments`) plutôt que rejeter tout le texte.
+- **Refonte logs post-pipeline-monobloc.** La cartographie debug actuelle référence des
+  événements qui n'existent plus (`Chunk N extrait`, `Mémoire passée au chunk suivant`,
+  `Chunk N → texte recollé`). Nouvelle réalité : `RECORD` heartbeat 5s + capture terminée,
+  `TRANSCRIBE` audio reçu + un Verbose par segment via callback + récap final. Repasser sur
+  les niveaux (Verbose/Info/Step) une fois que le nouvel usage aura révélé ce qui est utile.
 - **Quitter depuis le tray ne tue pas tout le process** : `Application.Current.Exit()` dans
   `TrayIconManager.OnQuit` ne termine pas proprement. Suspects : threads WhispEngine
   (Record/Transcribe) non background ou bloqués, icône tray non supprimée via `NIM_DELETE`,

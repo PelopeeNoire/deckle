@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 
 namespace WhispUI;
@@ -55,13 +54,21 @@ internal sealed class WhispEngine : IDisposable
     private volatile bool   _useLlm        = false;
     private volatile IntPtr _pasteTarget   = IntPtr.Zero;
 
-    // Pipeline producteur/consommateur entre Record() et Transcribe().
-    // Recréé à chaque session (BlockingCollection ne peut être complété qu'une fois).
-    private BlockingCollection<float[]> _pipeline = null!;
+    // Segments produits par Whisper pendant whisper_full() via le callback natif.
+    // Accumulés au fil de l'eau depuis le thread d'inférence whisper.cpp — protégés
+    // par lock car le callback tourne sur un thread différent du nôtre. Sert à la
+    // fois de récupération progressive (logs) et de source pour le texte final.
+    private readonly List<TranscribedSegment> _segments = new();
+    private readonly object _segmentsLock = new();
 
-    // Accumule les textes transcrits chunk par chunk.
-    // Survive à une exception dans Transcribe() — les chunks déjà traités sont récupérables.
-    private readonly List<string> _transcribedChunks = new();
+    // Délégué stocké en champ d'instance pour empêcher le GC de le ramasser
+    // pendant que whisper.cpp détient son pointeur natif (même piège que SubclassProc).
+    private WhisperNewSegmentCallback? _newSegmentCallback;
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void WhisperNewSegmentCallback(IntPtr ctx, IntPtr state, int n_new, IntPtr user_data);
+
+    private readonly record struct TranscribedSegment(string Text, long T0, long T1, float NoSpeechProb);
 
     // Chronomètre démarré au début de chaque enregistrement (utilisé pour les logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
@@ -143,25 +150,23 @@ internal sealed class WhispEngine : IDisposable
         _shouldPaste   = shouldPaste;
         _useLlm        = useLlm;
         _pasteTarget   = pasteTarget;
-        _transcribedChunks.Clear();
-        _pipeline = new BlockingCollection<float[]>();
+        lock (_segmentsLock) _segments.Clear();
 
         _recordingSw = System.Diagnostics.Stopwatch.StartNew();
         StatusChanged?.Invoke("Enregistrement...");
 
-        var recordThread = new Thread(() =>
+        // Un seul thread de fond : Record puis Transcribe en séquence.
+        // Whisper a besoin de la totalité de l'audio pour gérer son fenêtrage
+        // interne — pas de parallélisme possible, et plus simple à débuguer.
+        var worker = new Thread(() =>
         {
-            Record();
+            float[] audio = Record();
             _isRecording = false;
             StatusChanged?.Invoke("Transcription en cours...");
+            Transcribe(audio);
         });
-        recordThread.IsBackground = true;
-
-        var transcribeThread = new Thread(Transcribe);
-        transcribeThread.IsBackground = true;
-
-        recordThread.Start();
-        transcribeThread.Start();
+        worker.IsBackground = true;
+        worker.Start();
     }
 
     // ── Arrêter l'enregistrement (deuxième appui hotkey) ──────────────────────
@@ -212,18 +217,19 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Enregistrement audio ──────────────────────────────────────────────────
     //
-    // Capture le micro en continu. Dès que 30s d'audio sont accumulées,
-    // convertit en float[] et pousse dans _pipeline pour traitement immédiat.
-    // Quand _stopRecording passe à true, les octets restants forment un dernier chunk.
+    // Capture le micro en continu dans un unique buffer redimensionnable.
+    // Quand _stopRecording passe à true, retourne tout l'audio accumulé en float[]
+    // (PCM16 → float [-1, 1]) pour être passé en un seul appel à whisper_full().
+    // Whisper gère son propre fenêtrage interne (30s + seek dynamique) et la
+    // propagation de contexte inter-fenêtres via tokens — pas de chunking ici.
 
-    private void Record()
+    private float[] Record()
     {
         const uint WAVE_MAPPER    = 0xFFFFFFFF;
         const uint CALLBACK_EVENT = 0x00050000;
         const uint WHDR_DONE      = 0x00000001;
         const int  N_BUFFERS      = 4;
         const int  BYTES_PER_BUF  = 16000 * 2 * 500 / 1000; // 500ms × 16kHz × 2 octets/sample
-        const int  CHUNK_BYTES    = 30 * 16000 * 2;           // 30s × 16kHz × 2 octets/sample
 
         var wfx = new WAVEFORMATEX
         {
@@ -243,8 +249,7 @@ internal sealed class WhispEngine : IDisposable
         {
             LogErrorLine?.Invoke($"[RECORD] waveInOpen erreur {err}");
             NativeMethods.CloseHandle(hEvent);
-            _pipeline.CompleteAdding();
-            return;
+            return Array.Empty<float>();
         }
 
         uint hdrSize = (uint)Marshal.SizeOf<WAVEHDR>();
@@ -265,10 +270,11 @@ internal sealed class WhispEngine : IDisposable
         }
 
         NativeMethods.waveInStart(hWaveIn);
-        var allBytes = new List<byte>();
+        // Buffer unique, croît tout au long de l'enregistrement.
+        // 1 sample = 2 octets PCM16. À 16 kHz, 1 minute = 1.92M octets.
+        var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pré-réserve ~1 min
         DbgLog("RECORD", "Enregistrement démarré (16kHz mono PCM16)");
 
-        int chunksExtracted = 0;
         double nextHeartbeatSec = 5.0;
 
         while (!_stopRecording)
@@ -293,15 +299,6 @@ internal sealed class WhispEngine : IDisposable
                         allBytes.AddRange(data);
                     }
 
-                    while (allBytes.Count >= CHUNK_BYTES)
-                    {
-                        byte[] chunkBytes = allBytes.GetRange(0, CHUNK_BYTES).ToArray();
-                        allBytes.RemoveRange(0, CHUNK_BYTES);
-                        chunksExtracted++;
-                        DbgLog("RECORD", $"Chunk {chunksExtracted} extrait (30s) → pipeline");
-                        _pipeline.Add(PcmToFloat(chunkBytes));
-                    }
-
                     hdr.dwFlags &= ~(uint)0x00000001;
                     Marshal.StructureToPtr(hdr, hdrPtrs[i], fDeleteOld: false);
                     NativeMethods.waveInAddBuffer(hWaveIn, hdrPtrs[i], hdrSize);
@@ -311,15 +308,14 @@ internal sealed class WhispEngine : IDisposable
             if (bufferDoneCount > 1)
                 DbgWarn($"RECORD: retard, {bufferDoneCount} buffers prêts simultanément");
 
-            // Heartbeat ~5s, en Info → visible Full uniquement
-            double curSec = allBytes.Count / 32000.0 + chunksExtracted * 30.0;
+            // Heartbeat ~5s, Verbose → visible Full uniquement
+            double curSec = allBytes.Count / 32000.0;
             if (curSec >= nextHeartbeatSec)
             {
-                DbgVerbose("RECORD", $"+{curSec:F1}s capturés (en attente: {allBytes.Count}o)");
+                DbgVerbose("RECORD", $"+{curSec:F1}s capturés");
                 nextHeartbeatSec += 5.0;
             }
         }
-        DbgVerbose("RECORD", $"Boucle terminée — {allBytes.Count} octets accumulés ({allBytes.Count / 32000.0:F1}s)");
 
         NativeMethods.waveInStop(hWaveIn);
         Thread.Sleep(100);
@@ -341,30 +337,86 @@ internal sealed class WhispEngine : IDisposable
         NativeMethods.waveInClose(hWaveIn);
         NativeMethods.CloseHandle(hEvent);
 
-        if (allBytes.Count > 0)
-        {
-            chunksExtracted++;
-            DbgLog("RECORD", $"Chunk final extrait ({allBytes.Count / 32000.0:F1}s)");
-            _pipeline.Add(PcmToFloat(allBytes.ToArray()));
-        }
+        double totalSec = allBytes.Count / 32000.0;
+        DbgLog("RECORD", $"Capture terminée — {totalSec:F1}s d'audio ({allBytes.Count} octets)");
 
-        _pipeline.CompleteAdding();
-        DbgLog("RECORD", $"Capture terminée — {chunksExtracted} chunk(s)");
+        return PcmToFloat(allBytes.ToArray());
     }
 
     // ── Transcription Whisper ─────────────────────────────────────────────────
     //
-    // Consomme le pipeline en continu. Bloque sur GetConsumingEnumerable()
-    // tant que Record() n'a pas appelé CompleteAdding().
-    // Finalise dans le clipboard (+ LLM optionnel + paste).
+    // Appel monobloc : tout l'audio passe en une fois à whisper_full(), qui gère
+    // son propre fenêtrage interne (30s + seek dynamique) et la propagation de
+    // contexte inter-fenêtres via tokens. Pas de chunking côté C#.
+    //
+    // Récupération progressive via new_segment_callback : whisper.cpp invoque le
+    // callback à chaque nouveau segment validé pendant le décodage, sur SON thread
+    // d'inférence — d'où le lock sur _segments. Le texte final est assemblé à
+    // partir de ces segments à la fin de l'appel.
 
-    private void Transcribe()
+    // Détecte une répétition simple : sous-séquence de ≥4 mots qui revient ≥3 fois.
+    // Conservée en log-only (warning) pour signal de diagnostic — ne filtre rien.
+    private static bool LooksRepeated(string text)
+    {
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 12) return false;
+        for (int n = 4; n <= 8; n++)
+        {
+            var counts = new Dictionary<string, int>();
+            for (int i = 0; i + n <= words.Length; i++)
+            {
+                var key = string.Join(' ', words, i, n);
+                counts[key] = counts.GetValueOrDefault(key) + 1;
+                if (counts[key] >= 3) return true;
+            }
+        }
+        return false;
+    }
+
+    private void OnNewSegment(IntPtr ctx, IntPtr state, int n_new, IntPtr user_data)
+    {
+        // n_new = nb de segments produits depuis le dernier appel ; ils se trouvent
+        // à la fin de la liste totale exposée par whisper_full_n_segments.
+        try
+        {
+            int total = NativeMethods.whisper_full_n_segments(ctx);
+            int from  = total - n_new;
+            for (int i = from; i < total; i++)
+            {
+                string segText = Marshal.PtrToStringUTF8(NativeMethods.whisper_full_get_segment_text(ctx, i)) ?? "";
+                long  t0  = NativeMethods.whisper_full_get_segment_t0(ctx, i);
+                long  t1  = NativeMethods.whisper_full_get_segment_t1(ctx, i);
+                float nsp = NativeMethods.whisper_full_get_segment_no_speech_prob(ctx, i);
+
+                lock (_segmentsLock)
+                    _segments.Add(new TranscribedSegment(segText, t0, t1, nsp));
+
+                // no_speech : proba que le segment soit du silence/bruit (0 = parole sûre, 1 = silence sûr).
+                // t0/t1 sont en centisecondes (1 unité = 10 ms) côté whisper.cpp.
+                DbgVerbose("TRANSCRIBE", $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s, silence?={nsp:P0}] {segText.Trim()}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Ne JAMAIS laisser une exception traverser la frontière managed→native.
+            LogErrorLine?.Invoke($"[CALLBACK] {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void Transcribe(float[] audio)
     {
         IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
         {
-            foreach (var _ in _pipeline.GetConsumingEnumerable()) { }
             StatusChanged?.Invoke("Modèle non prêt");
+            TranscriptionFinished?.Invoke();
+            return;
+        }
+
+        if (audio.Length == 0)
+        {
+            DbgWarn("TRANSCRIBE: buffer audio vide, rien à transcrire");
+            StatusChanged?.Invoke("En attente");
             TranscriptionFinished?.Invoke();
             return;
         }
@@ -381,101 +433,47 @@ internal sealed class WhispEngine : IDisposable
         wparams.no_speech_thold = 0.7f;
         wparams.print_progress  = 0;
 
-        // Patterns d'hallucination connus, retournés pour pouvoir logger lequel a matché.
-        static string? MatchHallucination(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return "(vide)";
-            string[] pats = { "Sous-titrage", "Radio-Canada", "[BLANK_AUDIO]", "Sous-titres" };
-            foreach (var p in pats)
-                if (text.Contains(p, StringComparison.OrdinalIgnoreCase)) return p;
-            if (text.Contains("SRC", StringComparison.Ordinal)) return "SRC";
-            return null;
-        }
+        // Branchement du callback natif. Délégué stocké en champ d'instance pour
+        // empêcher le GC de le ramasser pendant que whisper.cpp détient le pointeur.
+        _newSegmentCallback = OnNewSegment;
+        wparams.new_segment_callback = Marshal.GetFunctionPointerForDelegate(_newSegmentCallback);
+        wparams.new_segment_callback_user_data = IntPtr.Zero;
 
-        // Détecte une répétition simple : sous-séquence de ≥4 mots qui revient ≥3 fois.
-        // Heuristique grossière, juste pour avoir un signal dans les logs.
-        static bool LooksRepeated(string text)
-        {
-            var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length < 12) return false;
-            for (int n = 4; n <= 8; n++)
-            {
-                var counts = new Dictionary<string, int>();
-                for (int i = 0; i + n <= words.Length; i++)
-                {
-                    var key = string.Join(' ', words, i, n);
-                    counts[key] = counts.GetValueOrDefault(key) + 1;
-                    if (counts[key] >= 3) return true;
-                }
-            }
-            return false;
-        }
+        float audioSec = (float)audio.Length / 16_000f;
+        DbgLog("TRANSCRIBE", $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
 
-        int chunkIndex = 0;
-        long transcribeMsTotal = 0;
-        foreach (float[] chunk in _pipeline.GetConsumingEnumerable())
-        {
-            chunkIndex++;
-            float chunkSec = (float)chunk.Length / 16_000f;
-            DbgVerbose("TRANSCRIBE", $"Chunk {chunkIndex} reçu ({chunkSec:F1}s)");
-            DbgVerbose("TRANSCRIBE", $"Chunk {chunkIndex} → whisper_full ({chunk.Length} samples)");
-
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            int result = NativeMethods.whisper_full(ctx, wparams, chunk, chunk.Length);
-            sw.Stop();
-            transcribeMsTotal += sw.ElapsedMilliseconds;
-            DbgVerbose("TRANSCRIBE", $"Chunk {chunkIndex} → whisper_full code={result}, {sw.ElapsedMilliseconds} ms");
-
-            if (result != 0)
-            {
-                LogErrorLine?.Invoke($"[ERREUR] Chunk {chunkIndex} : whisper_full code {result}, chunk ignoré");
-                continue;
-            }
-
-            int nSeg = NativeMethods.whisper_full_n_segments(ctx);
-            var parts = new List<string>();
-            DbgVerbose("TRANSCRIBE", $"Chunk {chunkIndex} découpé en {nSeg} phrase(s) par Whisper :");
-            for (int i = 0; i < nSeg; i++)
-            {
-                string segText = Marshal.PtrToStringUTF8(NativeMethods.whisper_full_get_segment_text(ctx, i)) ?? "";
-                parts.Add(segText);
-                long t0 = NativeMethods.whisper_full_get_segment_t0(ctx, i);
-                long t1 = NativeMethods.whisper_full_get_segment_t1(ctx, i);
-                float nsp = NativeMethods.whisper_full_get_segment_no_speech_prob(ctx, i);
-                // no_speech : proba que le segment soit du silence/bruit (0 = parole sûre, 1 = silence sûr)
-                DbgVerbose("TRANSCRIBE", $"   {i + 1}. [{t0/100.0:F1}s→{t1/100.0:F1}s, silence?={nsp:P0}] {segText.Trim()}");
-            }
-            string chunkText = string.Join(" ", parts).Trim();
-
-            DbgLog("TRANSCRIBE", $"Chunk {chunkIndex} — texte recollé : {chunkText}");
-
-            string? hallucPattern = MatchHallucination(chunkText);
-            if (hallucPattern is not null)
-            {
-                DbgWarn($"Chunk {chunkIndex} filtré (hallucination: pattern='{hallucPattern}')");
-                continue;
-            }
-
-            if (LooksRepeated(chunkText))
-                DbgWarn($"Chunk {chunkIndex} suspect (répétition détectée)");
-
-            _transcribedChunks.Add(chunkText);
-            DbgVerbose("TRANSCRIBE", $"Chunk {chunkIndex} transcrit OK ({sw.ElapsedMilliseconds} ms, {nSeg} seg, {chunkText.Length} chars)");
-
-            // Mémoire courte transmise au chunk suivant : Whisper lit ce texte avant
-            // de transcrire les 30s suivantes, ce qui aide à garder le fil (orthographe,
-            // contexte, langue). On lui donne les ~150 derniers caractères du chunk courant.
-            Marshal.FreeHGlobal(promptPtr);
-            string tail = chunkText.Length > 150 ? chunkText[^150..] : chunkText;
-            promptPtr = Marshal.StringToHGlobalAnsi(tail);
-            wparams.initial_prompt = promptPtr;
-            DbgVerbose("TRANSCRIBE", $"Mémoire passée au chunk suivant : « {tail} »");
-        }
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
+        sw.Stop();
+        long transcribeMsTotal = sw.ElapsedMilliseconds;
 
         Marshal.FreeHGlobal(langPtr);
         Marshal.FreeHGlobal(promptPtr);
 
-        string fullText = string.Join(" ", _transcribedChunks).Trim();
+        if (result != 0)
+        {
+            LogErrorLine?.Invoke($"[ERREUR] whisper_full code {result}");
+            StatusChanged?.Invoke("Erreur transcription");
+            TranscriptionFinished?.Invoke();
+            return;
+        }
+
+        // Assemble le texte final à partir des segments accumulés par le callback.
+        // On pourrait aussi re-itérer whisper_full_n_segments(ctx) ici, mais passer
+        // par _segments garantit qu'un segment loggé est exactement un segment du
+        // texte final — pas de divergence possible entre les deux sources.
+        string fullText;
+        int nSeg;
+        lock (_segmentsLock)
+        {
+            nSeg = _segments.Count;
+            fullText = string.Join(" ", _segments.Select(s => s.Text)).Trim();
+        }
+
+        DbgLog("TRANSCRIBE", $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
+
+        if (LooksRepeated(fullText))
+            DbgWarn("TRANSCRIBE: répétition détectée dans le texte (signal heuristique, aucun filtrage)");
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
@@ -672,8 +670,6 @@ internal sealed class WhispEngine : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-
-        _pipeline?.Dispose();
 
         if (_ctx != IntPtr.Zero)
         {
