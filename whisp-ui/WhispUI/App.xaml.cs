@@ -4,6 +4,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 {
     private AnchorWindow? _anchor;
     private LogWindow? _logWindow;
+    private SettingsWindow? _settingsWindow;
     private HudWindow? _hudWindow;
     private TrayIconManager? _tray;
     private WhispEngine? _engine;
@@ -42,6 +43,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         // LogWindow créée une fois, jamais détruite.
         _logWindow = new LogWindow();
 
+        // SettingsWindow créée une fois, jamais détruite. Pas de Show initial :
+        // ouverte uniquement à la demande via tray.
+        _settingsWindow = new SettingsWindow();
+
         // HudWindow créée une fois, jamais détruite. Pré-initialisée hors écran
         // via Show(false) : l'arbre XAML se construit sans que la fenêtre soit
         // visible (le Show réel passera par ShowNoActivate après positionnement).
@@ -51,8 +56,9 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         _tray = new TrayIconManager
         {
-            OnShowLogs = () => _logWindow.ShowAndActivate(),
-            OnQuit     = () => QuitApp(),
+            OnShowLogs     = () => _logWindow.ShowAndActivate(),
+            OnShowSettings = () => _settingsWindow.ShowAndActivate(),
+            OnQuit         = () => QuitApp(),
         };
 
         // Events moteur → UI. LogWindow.Log/LogError et TrayIconManager.UpdateStatus
