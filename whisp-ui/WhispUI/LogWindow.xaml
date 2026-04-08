@@ -3,28 +3,120 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    xmlns:local="using:WhispUI"
     Title="WhispUI Logs">
 
     <Grid x:Name="RootGrid">
         <Grid.Resources>
-            <!-- Deux templates distincts : swap au toggle Wrap.
-                 Plus simple que bind dynamique sur TextWrapping. -->
-            <DataTemplate x:Key="NoWrapTemplate">
-                <TextBlock Text="{Binding Text}"
-                           Foreground="{Binding Color}"
-                           FontFamily="Consolas"
-                           FontSize="12"
-                           TextWrapping="NoWrap"
-                           IsTextSelectionEnabled="True" />
-            </DataTemplate>
-            <DataTemplate x:Key="WrapTemplate">
-                <TextBlock Text="{Binding Text}"
-                           Foreground="{Binding Color}"
-                           FontFamily="Consolas"
-                           FontSize="12"
-                           TextWrapping="Wrap"
-                           IsTextSelectionEnabled="True" />
-            </DataTemplate>
+            <ResourceDictionary>
+                <ResourceDictionary.ThemeDictionaries>
+                    <!-- Bleu sémantique Fluent pour Info — pas l'accent système
+                         qui peut être gris / non-bleu chez l'utilisateur. -->
+                    <ResourceDictionary x:Key="Light">
+                        <SolidColorBrush x:Key="LogInfoBrush" Color="#005FB7" />
+                    </ResourceDictionary>
+                    <ResourceDictionary x:Key="Dark">
+                        <SolidColorBrush x:Key="LogInfoBrush" Color="#60CDFF" />
+                    </ResourceDictionary>
+                </ResourceDictionary.ThemeDictionaries>
+
+                <!-- 5 templates par dimension wrap, swap via DataTemplateSelector
+                     au toggle Wrap. Chaque template fige son Foreground sur un
+                     ThemeResource : WinUI re-résout automatiquement au theme
+                     switch, plus besoin de rebuilder les entrées en code. -->
+                <DataTemplate x:Key="NoWrap_Verbose">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="NoWrap_Info">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource LogInfoBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="NoWrap_Step">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="NoWrap_Warning">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="NoWrap_Error">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+
+                <DataTemplate x:Key="Wrap_Verbose">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="Wrap_Info">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource LogInfoBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="Wrap_Step">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="Wrap_Warning">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+                <DataTemplate x:Key="Wrap_Error">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </DataTemplate>
+
+                <local:LogLevelTemplateSelector x:Key="NoWrapSelector"
+                    Verbose="{StaticResource NoWrap_Verbose}"
+                    Info="{StaticResource NoWrap_Info}"
+                    Step="{StaticResource NoWrap_Step}"
+                    Warning="{StaticResource NoWrap_Warning}"
+                    Error="{StaticResource NoWrap_Error}" />
+                <local:LogLevelTemplateSelector x:Key="WrapSelector"
+                    Verbose="{StaticResource Wrap_Verbose}"
+                    Info="{StaticResource Wrap_Info}"
+                    Step="{StaticResource Wrap_Step}"
+                    Warning="{StaticResource Wrap_Warning}"
+                    Error="{StaticResource Wrap_Error}" />
+
+                <!-- Wrappers appliqués via ItemsControl.ItemTemplate : un
+                     ContentControl dont le ContentTemplateSelector pointe sur
+                     notre selector. Raison : ItemsControl expose bien
+                     ItemTemplateSelector mais WinUI 3 ne l'honore pas à
+                     l'exécution (seul ListViewBase le respecte). Le swap
+                     Wrap/NoWrap change donc ItemTemplate entre ces deux
+                     wrappers. -->
+                <DataTemplate x:Key="NoWrapRoot">
+                    <ContentControl Content="{Binding}"
+                                    HorizontalContentAlignment="Stretch"
+                                    ContentTemplateSelector="{StaticResource NoWrapSelector}" />
+                </DataTemplate>
+                <DataTemplate x:Key="WrapRoot">
+                    <ContentControl Content="{Binding}"
+                                    HorizontalContentAlignment="Stretch"
+                                    ContentTemplateSelector="{StaticResource WrapSelector}" />
+                </DataTemplate>
+            </ResourceDictionary>
         </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />

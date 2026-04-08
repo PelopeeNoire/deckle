@@ -1,4 +1,3 @@
-using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -7,12 +6,10 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Text;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
-using Windows.UI;
 using WinRT.Interop;
 
 namespace WhispUI;
@@ -33,6 +30,39 @@ public enum LogLevel { Verbose, Info, Step, Warning, Error }
 // Mode du SelectorBar — un seul actif à la fois (sélection exclusive native).
 internal enum LogFilterMode { All, Steps, Critical }
 
+// Selector par niveau — 5 templates par dimension wrap. Instancié deux fois
+// dans les ressources XAML (NoWrapSelector / WrapSelector), swap au toggle.
+public sealed class LogLevelTemplateSelector : DataTemplateSelector
+{
+    public DataTemplate? Verbose { get; set; }
+    public DataTemplate? Info    { get; set; }
+    public DataTemplate? Step    { get; set; }
+    public DataTemplate? Warning { get; set; }
+    public DataTemplate? Error   { get; set; }
+
+    protected override DataTemplate SelectTemplateCore(object item) => Pick(item);
+
+    protected override DataTemplate SelectTemplateCore(object item, DependencyObject container)
+        => Pick(item);
+
+    private DataTemplate Pick(object item)
+    {
+        if (item is LogWindow.LogEntry e)
+        {
+            return e.Level switch
+            {
+                LogLevel.Verbose => Verbose!,
+                LogLevel.Info    => Info!,
+                LogLevel.Step    => Step!,
+                LogLevel.Warning => Warning!,
+                LogLevel.Error   => Error!,
+                _                => Info!,
+            };
+        }
+        return Info!;
+    }
+}
+
 // ─── Fenêtre de logs ──────────────────────────────────────────────────────────
 //
 // Title bar custom (ExtendsContentIntoTitleBar) avec champ de recherche centré.
@@ -52,17 +82,15 @@ internal enum LogFilterMode { All, Steps, Critical }
 
 public sealed partial class LogWindow : Window
 {
-    private sealed class LogEntry
+    internal sealed class LogEntry
     {
         public string Text { get; }
         public LogLevel Level { get; }
-        public SolidColorBrush Color { get; }
 
-        public LogEntry(string text, LogLevel level, SolidColorBrush color)
+        public LogEntry(string text, LogLevel level)
         {
             Text = text;
             Level = level;
-            Color = color;
         }
     }
 
@@ -70,12 +98,6 @@ public sealed partial class LogWindow : Window
     private readonly ObservableCollection<LogEntry> _visible = new();
     private readonly IntPtr _hwnd;
     private bool _isVisible;
-
-    private SolidColorBrush _verboseBrush = null!;
-    private SolidColorBrush _infoBrush  = null!;
-    private SolidColorBrush _stepBrush  = null!;
-    private SolidColorBrush _warnBrush  = null!;
-    private SolidColorBrush _errorBrush = null!;
 
     // Icônes app — mêmes assets que TrayIconManager via IconAssets.
     // Source de vérité unique : changer un .ico le propage tray + beacon + window icon.
@@ -93,16 +115,10 @@ public sealed partial class LogWindow : Window
         InitializeComponent();
         _hwnd = WindowNative.GetWindowHandle(this);
 
-        // Brushes via theme resources Windows. Re-résolus à chaque theme switch
-        // (cf. OnThemeChanged), avec rebuild des entrées existantes pour qu'elles
-        // adoptent les nouvelles couleurs.
-        RefreshBrushes();
-
         LogItems.ItemsSource  = _visible;
-        // Wrap désactivé par défaut : on veut voir le déroulement ligne par ligne,
-        // sans repli, pour mieux suivre l'ordonnancement. Le toggle XAML est déjà
-        // IsChecked="False".
-        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["NoWrapTemplate"];
+        // Wrap désactivé par défaut. Selector par niveau → couleur résolue via
+        // ThemeResource, re-résolue automatiquement par WinUI au theme switch.
+        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["NoWrapRoot"];
         LogScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
 
         // Shift+molette → scroll horizontal. ScrollViewer marque PointerWheelChanged
@@ -123,11 +139,6 @@ public sealed partial class LogWindow : Window
         // drag region, caption buttons themés sont gérés par le contrôle.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-
-        // Réactivité au theme switch système : re-résoudre les brushes
-        // (theme resources sont snapshots à l'instant t, pas live), rebuild
-        // les entrées existantes pour qu'elles adoptent les nouvelles couleurs.
-        RootGrid.ActualThemeChanged += (_, _) => OnThemeChanged();
 
         // Mica : fond translucide qui prend les couleurs du thème système.
         // Win11 requis (OK ici) ; sinon fallback transparent.
@@ -237,61 +248,11 @@ public sealed partial class LogWindow : Window
         NativeMethods.SetForegroundWindow(_hwnd);
     }
 
-    // ── Theme switch : re-résolution brushes + rebuild entries ───────────────
-
-    private void RefreshBrushes()
-    {
-        var res = Application.Current.Resources;
-        // Verbose = blanc primary (couleur par défaut) — bruit / durée de vie
-        // (heartbeats, dumps par segment, plomberie clipboard). C'est le gros du
-        // volume, masqué en Filtered.
-        _verboseBrush = (SolidColorBrush)res["TextFillColorPrimaryBrush"];
-        // Info = bleu sémantique Fluent (SystemFillColorAttention canonique).
-        // On NE prend PAS le brush de la theme dictionary : chez certains users,
-        // la chaîne de fallback la fait résoudre sur l'accent système (couleur
-        // de personnalisation Windows), ce qui casse la sémantique. On force
-        // donc les valeurs hex officielles, theme-aware via OnThemeChanged.
-        bool isDark = RootGrid.ActualTheme == ElementTheme.Dark;
-        var infoColor = isDark
-            ? Color.FromArgb(0xFF, 0x60, 0xCD, 0xFF)   // dark : #60CDFF
-            : Color.FromArgb(0xFF, 0x00, 0x5F, 0xB7);  // light : #005FB7
-        _infoBrush  = new SolidColorBrush(infoColor);
-        // Step = vert succès — distinctif et indépendant de l'accent système
-        // (Attention/Accent peut être gris chez l'utilisateur).
-        _stepBrush  = (SolidColorBrush)res["SystemFillColorSuccessBrush"];
-        _warnBrush  = (SolidColorBrush)res["SystemFillColorCautionBrush"];
-        _errorBrush = (SolidColorBrush)res["SystemFillColorCriticalBrush"];
-    }
-
-    private void OnThemeChanged()
-    {
-        RefreshBrushes();
-
-        // Reconstruit les entrées avec les nouvelles brushes. LogEntry est
-        // immutable (record-like) donc on remplace les instances et on rejoue
-        // ApplyFilter qui re-peuple _visible depuis _entries.
-        var rebuilt = _entries
-            .Select(e => new LogEntry(e.Text, e.Level, BrushForLevel(e.Level)))
-            .ToList();
-        _entries.Clear();
-        _entries.AddRange(rebuilt);
-        ApplyFilter();
-    }
-
     // ── Implémentation ────────────────────────────────────────────────────────
-
-    private SolidColorBrush BrushForLevel(LogLevel level) => level switch
-    {
-        LogLevel.Error   => _errorBrush,
-        LogLevel.Warning => _warnBrush,
-        LogLevel.Step    => _stepBrush,
-        LogLevel.Verbose => _verboseBrush,
-        _                => _infoBrush,
-    };
 
     private void AppendEntry(string message, LogLevel level)
     {
-        var entry = new LogEntry(message, level, BrushForLevel(level));
+        var entry = new LogEntry(message, level);
         if (DispatcherQueue.HasThreadAccess) AddEntrySafe(entry);
         else DispatcherQueue.TryEnqueue(() => AddEntrySafe(entry));
     }
@@ -391,7 +352,7 @@ public sealed partial class LogWindow : Window
     private void OnWrapToggleClick(object sender, RoutedEventArgs e)
     {
         bool wrap = WrapToggle.IsChecked == true;
-        string key = wrap ? "WrapTemplate" : "NoWrapTemplate";
+        string key = wrap ? "WrapRoot" : "NoWrapRoot";
         LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources[key];
 
         // En mode wrap : couper le scroll horizontal pour que le ScrollViewer
