@@ -5,7 +5,7 @@
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     Title="WhispUI Logs">
 
-    <Grid x:Name="RootGrid" SizeChanged="OnRootSizeChanged">
+    <Grid x:Name="RootGrid">
         <Grid.Resources>
             <!-- Deux templates distincts : swap au toggle Wrap.
                  Plus simple que bind dynamique sur TextWrapping. -->
@@ -27,47 +27,29 @@
             </DataTemplate>
         </Grid.Resources>
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ── Title bar custom (extended into client area) ──────────────── -->
-        <!-- Layout 3 colonnes : drag (icône+titre) | search centrée | réserve caption btns.
-             Seule la colonne 0 est marquée comme drag region (SetTitleBar) pour
-             que l'AutoSuggestBox au centre puisse recevoir les clics. -->
-        <Grid Grid.Row="0" x:Name="AppTitleBar" Background="Transparent">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="138" />
-            </Grid.ColumnDefinitions>
-
-            <StackPanel Grid.Column="0"
-                        Orientation="Horizontal"
-                        Padding="16,0,8,0"
-                        Spacing="16"
-                        VerticalAlignment="Stretch">
-                <!-- Icône de l'application — même asset que le tray et que
-                     l'icône de fenêtre (taskbar/alt-tab). Source swappée
-                     idle/recording dans ApplyRecordingState. -->
-                <Image x:Name="AppIconBeacon"
-                       Width="16"
-                       Height="16"
-                       VerticalAlignment="Center" />
-                <TextBlock Text="WhispUI Logs"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           VerticalAlignment="Center" />
-            </StackPanel>
-
-            <AutoSuggestBox x:Name="SearchBox"
-                            Grid.Column="1"
-                            QueryIcon="Find"
-                            PlaceholderText="Rechercher"
-                            MaxWidth="320"
-                            VerticalAlignment="Center"
-                            TextChanged="OnSearchTextChanged" />
-        </Grid>
+        <!-- ── Title bar natif (Windows App SDK 1.6+) ─────────────────────── -->
+        <!-- Le contrôle TitleBar gère drag region, caption buttons themés,
+             hauteur, et expose un slot Content où on place la SearchBox. -->
+        <TitleBar Grid.Row="0"
+                  x:Name="AppTitleBar"
+                  Title="WhispUI Logs">
+            <TitleBar.IconSource>
+                <ImageIconSource x:Name="AppTitleBarIcon" />
+            </TitleBar.IconSource>
+            <TitleBar.Content>
+                <AutoSuggestBox x:Name="SearchBox"
+                                QueryIcon="Find"
+                                PlaceholderText="Rechercher"
+                                MaxWidth="320"
+                                VerticalAlignment="Center"
+                                TextChanged="OnSearchTextChanged" />
+            </TitleBar.Content>
+        </TitleBar>
 
         <!-- ── Command bar : selector niveau + actions ──────────────────── -->
         <Grid Grid.Row="1">
