@@ -6,7 +6,9 @@
       "Bash(git add:*)",
       "Bash(dotnet --list-sdks)",
       "Bash(dotnet package:*)",
-      "mcp__claude_ai_Figma__get_design_context"
+      "mcp__claude_ai_Figma__get_design_context",
+      "Bash(git commit -m ':*)",
+      "mcp__claude_ai_Microsoft_Learn__microsoft_docs_search"
     ]
   }
 }

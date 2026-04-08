@@ -33,9 +33,10 @@ public sealed class TrayIconManager : IDisposable
     private static readonly UIntPtr SubclassId = new(0x5752_4159); // "WRAY"
 
     // Callbacks vers l'app (marshaling UI déjà fait par l'abonné)
-    public Action? OnShowLogs     { get; set; }
-    public Action? OnShowSettings { get; set; }
-    public Action? OnQuit         { get; set; }
+    public Action? OnShowLogs         { get; set; }
+    public Action? OnShowSettings     { get; set; }
+    public Action? OnToggleRecording  { get; set; }
+    public Action? OnQuit             { get; set; }
 
     // ── Initialisation ────────────────────────────────────────────────────────
 
@@ -91,7 +92,10 @@ public sealed class TrayIconManager : IDisposable
 
             if (mouseEvent == NativeMethods.WM_LBUTTONUP)
             {
-                OnShowLogs?.Invoke();
+                // Clic gauche = toggle transcription (équivalent hotkey standard).
+                // Permet de lancer/arrêter à la souris quand une seule main est
+                // disponible. Logs et Settings passent par le clic droit.
+                OnToggleRecording?.Invoke();
                 return IntPtr.Zero;
             }
         }

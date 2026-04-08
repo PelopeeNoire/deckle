@@ -33,7 +33,10 @@ public sealed partial class SettingsWindow : Window
     private readonly UIElement _pageGeneral;
     private readonly UIElement _pageWhisper;
     private readonly UIElement _pageLlm;
-    private readonly UIElement _pageSettings;
+
+    // Callback injecté par App pour ouvrir la LogWindow partagée depuis l'item
+    // footer "Logs" de la NavigationView. Laissé null = item sans effet.
+    public Action? OnShowLogsRequested { get; set; }
 
     public SettingsWindow()
     {
@@ -68,7 +71,6 @@ public sealed partial class SettingsWindow : Window
         _pageGeneral  = BuildPlaceholder("Paramètres généraux à venir.");
         _pageWhisper  = BuildPlaceholder("Configuration Whisper à venir (modèle, threads, langue, paramètres avancés).");
         _pageLlm      = BuildPlaceholder("Réécriture LLM à venir (provider, modèle, prompt système, hotkey).");
-        _pageSettings = BuildPlaceholder("Paramètres applicatifs à venir.");
 
         // Sélection initiale.
         Nav.SelectedItem = NavGeneral;
@@ -131,12 +133,23 @@ public sealed partial class SettingsWindow : Window
             "general"  => (_pageGeneral,  "General"),
             "whisper"  => (_pageWhisper,  "Whisper configuration"),
             "llm"      => (_pageLlm,      "LLM Rewriting"),
-            "settings" => (_pageSettings, "Settings"),
             _          => (_pageGeneral,  "General"),
         };
 
         PageContent.Content = page;
         PageTitle.Text = title;
+    }
+
+    // Item footer "Logs" : SelectsOnInvoked=False donc pas de SelectionChanged,
+    // on passe par ItemInvoked pour récupérer le clic et déléguer à App qui
+    // ouvre la LogWindow partagée.
+    private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItemContainer is NavigationViewItem item &&
+            item.Tag as string == "logs")
+        {
+            OnShowLogsRequested?.Invoke();
+        }
     }
 
     // ── Boutons header / footer (stubs) ──────────────────────────────────────

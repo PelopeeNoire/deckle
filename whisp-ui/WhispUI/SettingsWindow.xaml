@@ -48,7 +48,8 @@
                         OpenPaneLength="280"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
-                        SelectionChanged="OnNavSelectionChanged">
+                        SelectionChanged="OnNavSelectionChanged"
+                        ItemInvoked="OnNavItemInvoked">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="NavGeneral" Content="General" Tag="general">
                     <NavigationViewItem.Icon>
@@ -68,9 +69,15 @@
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem x:Name="NavSettings" Content="Settings" Tag="settings">
+                <!-- Item "Logs" : ouvre la LogWindow partagée via callback App.
+                     SelectsOnInvoked=False pour que le clic ne le marque pas
+                     comme page sélectionnée (ce n'est pas une page interne). -->
+                <NavigationViewItem x:Name="NavLogs"
+                                    Content="Logs"
+                                    Tag="logs"
+                                    SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE115;" />
+                        <FontIcon Glyph="&#xEC7A;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
