@@ -77,6 +77,12 @@ public sealed partial class HudWindow : Window
         InitializeComponent();
         _hwnd = WindowNative.GetWindowHandle(this);
 
+        // Titre + icône cohérents avec les autres fenêtres de l'app.
+        // Le titre n'est pas visible (pas de title bar) mais sert dans
+        // alt-tab / Task View / outils de debug Windows.
+        Title = "WhispUI Recording";
+        IconAssets.ApplyToWindow(AppWindow);
+
         _recordingBrush    = new SolidColorBrush(Colors.IndianRed);
         _transcribingBrush = new SolidColorBrush(Colors.Gray);
 
@@ -164,6 +170,7 @@ public sealed partial class HudWindow : Window
                 _clockRenderingHooked = true;
             }
 
+            IconAssets.ApplyToWindow(AppWindow, recording: true);
             ShowNoActivate();
 
             // Reset alpha à 255 et arme la proximité.
@@ -183,6 +190,7 @@ public sealed partial class HudWindow : Window
             StatusDot.Fill = _transcribingBrush;
             TranscribeRing.Visibility = Visibility.Visible;
             TranscribeRing.IsActive   = true;
+            IconAssets.ApplyToWindow(AppWindow, recording: false);
 
             // Fige le chrono à la fin de l'enregistrement : la valeur affichée
             // reste visible pendant la transcription, mais ne tourne plus.
@@ -213,6 +221,7 @@ public sealed partial class HudWindow : Window
             _stopwatch.Stop();
             TranscribeRing.IsActive   = false;
             TranscribeRing.Visibility = Visibility.Collapsed;
+            IconAssets.ApplyToWindow(AppWindow, recording: false);
             NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
         });
     }

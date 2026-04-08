@@ -62,6 +62,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             _tray.UpdateStatus(status);
             _logWindow.Log($"[STATUS] {status}");
+            // Beacon "icône d'app" du LogWindow : rouge enregistrement, gris idle.
+            _logWindow.SetRecordingState(status == "Enregistrement...");
 
             // HUD : piloté par la transition de statut. Thread de fond → HudWindow
             // marshale en interne via DispatcherQueue.

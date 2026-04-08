@@ -23,6 +23,11 @@ public sealed partial class AnchorWindow : Window
         _tray = tray;
         _hotkeyManager = new HotkeyManager(_hwnd, onHotkey);
 
+        // Jamais visible mais on lui pose quand même titre + icône pour les
+        // outils Windows qui pourraient lister la fenêtre (Task Manager, debug).
+        Title = "WhispUI";
+        IconAssets.ApplyToWindow(AppWindow);
+
         AppWindow.Closing += OnClosing;
         RootGrid.Loaded += OnRootLoaded;
     }
