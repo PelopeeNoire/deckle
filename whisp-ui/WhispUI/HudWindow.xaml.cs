@@ -72,6 +72,12 @@ public sealed partial class HudWindow : Window
     private readonly SolidColorBrush _recordingBrush;
     private readonly SolidColorBrush _transcribingBrush;
 
+    // Brush accent Windows pour marquer les chiffres déjà passés au moins une fois.
+    // Résolu une fois en constructeur (snapshot, comme LogWindow).
+    private readonly Brush _accentBrush;
+    private readonly Brush _idleDigitBrush;
+    private bool _tMin1, _tMin2, _tSec1, _tSec2, _tCs1, _tCs2;
+
     public HudWindow()
     {
         InitializeComponent();
@@ -85,6 +91,13 @@ public sealed partial class HudWindow : Window
 
         _recordingBrush    = new SolidColorBrush(Colors.IndianRed);
         _transcribingBrush = new SolidColorBrush(Colors.Gray);
+
+        _accentBrush =
+            (Application.Current.Resources["AccentTextFillColorPrimaryBrush"] as Brush)
+            ?? new SolidColorBrush(Colors.DeepSkyBlue);
+        _idleDigitBrush =
+            (Application.Current.Resources["TextFillColorPrimaryBrush"] as Brush)
+            ?? new SolidColorBrush(Colors.White);
 
         // Présentation : pas de barre titre, pas de resize/min/max.
         ExtendsContentIntoTitleBar = true;
@@ -163,6 +176,15 @@ public sealed partial class HudWindow : Window
 
             _stopwatch.Restart();
             _lastMin = _lastSec = _lastCs = -1; // force repaint complet au show
+            // Reset coloration : tous les chiffres repartent en blanc, n'importe
+            // quel chiffre qui changera ensuite passera en accent et y restera.
+            _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
+            Min1.Foreground = _idleDigitBrush;
+            Min2.Foreground = _idleDigitBrush;
+            Sec1.Foreground = _idleDigitBrush;
+            Sec2.Foreground = _idleDigitBrush;
+            Cs1.Foreground  = _idleDigitBrush;
+            Cs2.Foreground  = _idleDigitBrush;
             UpdateClock();
             if (!_clockRenderingHooked)
             {
@@ -269,22 +291,28 @@ public sealed partial class HudWindow : Window
         int sec = elapsed.Seconds;
         int cs  = elapsed.Milliseconds / 10; // 0..99
 
+        // Coloration : un chiffre qui change passe en accent et y reste pour
+        // toute la session. Le 0 initial reste en blanc tant qu'il n'a pas bougé.
+        // Les points (Runs sans nom) ne sont jamais touchés → blanc.
         if (min != _lastMin)
         {
-            Min1.Text = ((min / 10)).ToString();
-            Min2.Text = ((min % 10)).ToString();
+            int d1 = min / 10, d2 = min % 10;
+            if (Min1.Text != d1.ToString()) { Min1.Text = d1.ToString(); if (!_tMin1) { _tMin1 = true; Min1.Foreground = _accentBrush; } }
+            if (Min2.Text != d2.ToString()) { Min2.Text = d2.ToString(); if (!_tMin2) { _tMin2 = true; Min2.Foreground = _accentBrush; } }
             _lastMin = min;
         }
         if (sec != _lastSec)
         {
-            Sec1.Text = ((sec / 10)).ToString();
-            Sec2.Text = ((sec % 10)).ToString();
+            int d1 = sec / 10, d2 = sec % 10;
+            if (Sec1.Text != d1.ToString()) { Sec1.Text = d1.ToString(); if (!_tSec1) { _tSec1 = true; Sec1.Foreground = _accentBrush; } }
+            if (Sec2.Text != d2.ToString()) { Sec2.Text = d2.ToString(); if (!_tSec2) { _tSec2 = true; Sec2.Foreground = _accentBrush; } }
             _lastSec = sec;
         }
         if (cs != _lastCs)
         {
-            Cs1.Text = ((cs / 10)).ToString();
-            Cs2.Text = ((cs % 10)).ToString();
+            int d1 = cs / 10, d2 = cs % 10;
+            if (Cs1.Text != d1.ToString()) { Cs1.Text = d1.ToString(); if (!_tCs1) { _tCs1 = true; Cs1.Foreground = _accentBrush; } }
+            if (Cs2.Text != d2.ToString()) { Cs2.Text = d2.ToString(); if (!_tCs2) { _tCs2 = true; Cs2.Foreground = _accentBrush; } }
             _lastCs = cs;
         }
     }
