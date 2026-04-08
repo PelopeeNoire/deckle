@@ -1,11 +1,8 @@
-using Microsoft.UI;
-using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.UI;
 using WinRT.Interop;
 
 namespace WhispUI;
@@ -48,21 +45,13 @@ public sealed partial class SettingsWindow : Window
         if (_iconIdlePath is not null)
         {
             _iconIdle = new BitmapImage(new Uri(_iconIdlePath));
-            AppIconBeacon.Source = _iconIdle;
+            AppTitleBarIcon.ImageSource = _iconIdle;
             AppWindow.SetIcon(_iconIdlePath);
         }
 
-        // Title bar custom : même pattern que LogWindow (extend + Tall + drag
-        // sur la grid entière, passthrough recalculé pour la SearchBox).
+        // Title bar natif : hauteur/drag/caption gérés par le contrôle.
         ExtendsContentIntoTitleBar = true;
-        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         SetTitleBar(AppTitleBar);
-
-        SearchBox.SizeChanged += (_, _) => SetupDragPassthrough();
-        SearchBox.Loaded      += (_, _) => SetupDragPassthrough();
-
-        RootGrid.ActualThemeChanged += (_, _) => RefreshTitleBarButtonColors();
-        RefreshTitleBarButtonColors();
 
         SystemBackdrop = new MicaBackdrop();
 
@@ -173,90 +162,20 @@ public sealed partial class SettingsWindow : Window
         AppWindow.Hide();
     }
 
-    // ── Theme : caption buttons ──────────────────────────────────────────────
+    // ── TitleBar : délègue le hamburger au NavigationView ───────────────────
 
-    private void RefreshTitleBarButtonColors()
+    private void OnPaneToggleRequested(TitleBar sender, object args)
+        => Nav.IsPaneOpen = !Nav.IsPaneOpen;
+
+    // Le NavigationView gère lui-même son affichage responsive. Quand il a
+    // la place (Expanded), on masque le hamburger du TitleBar : la nav est
+    // déjà visible à gauche. Quand il rétrécit (Compact/Minimal), on bascule
+    // le hamburger dans le TitleBar pour récupérer la place et on collapse
+    // la SearchBox qui deviendrait écrasée.
+    private void OnNavDisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
     {
-        var tb = AppWindow.TitleBar;
-        bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
-
-        var fg       = dark ? Colors.White : Colors.Black;
-        var inactive = dark ? Color.FromArgb(0xFF, 0x9A, 0x9A, 0x9A)
-                             : Color.FromArgb(0xFF, 0x60, 0x60, 0x60);
-        var hoverBg  = dark ? Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
-                             : Color.FromArgb(0x10, 0x00, 0x00, 0x00);
-        var pressBg  = dark ? Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)
-                             : Color.FromArgb(0x20, 0x00, 0x00, 0x00);
-
-        tb.ButtonBackgroundColor         = Colors.Transparent;
-        tb.ButtonInactiveBackgroundColor = Colors.Transparent;
-        tb.ButtonForegroundColor         = fg;
-        tb.ButtonInactiveForegroundColor = inactive;
-        tb.ButtonHoverBackgroundColor    = hoverBg;
-        tb.ButtonHoverForegroundColor    = fg;
-        tb.ButtonPressedBackgroundColor  = pressBg;
-        tb.ButtonPressedForegroundColor  = fg;
-    }
-
-    // ── Drag passthrough pour la SearchBox (calque LogWindow) ────────────────
-
-    private void ClearDragPassthrough()
-    {
-        try
-        {
-            var nonClient = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
-            nonClient.SetRegionRects(NonClientRegionKind.Passthrough, Array.Empty<Windows.Graphics.RectInt32>());
-        }
-        catch (Exception ex)
-        {
-            DebugLog.Write("SETTINGS", $"passthrough clear err: {ex.Message}");
-        }
-    }
-
-    private void SetupDragPassthrough()
-    {
-        if (SearchBox.Visibility == Visibility.Collapsed)
-        {
-            ClearDragPassthrough();
-            return;
-        }
-        if (SearchBox.ActualWidth <= 0 || SearchBox.ActualHeight <= 0) return;
-        if (RootGrid.XamlRoot is null) return;
-
-        var scale = RootGrid.XamlRoot.RasterizationScale;
-        var transform = SearchBox.TransformToVisual(null);
-        var bounds = transform.TransformBounds(
-            new Windows.Foundation.Rect(0, 0, SearchBox.ActualWidth, SearchBox.ActualHeight));
-
-        var rect = new Windows.Graphics.RectInt32(
-            (int)(bounds.X * scale),
-            (int)(bounds.Y * scale),
-            (int)(bounds.Width * scale),
-            (int)(bounds.Height * scale));
-
-        try
-        {
-            var nonClient = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
-            nonClient.SetRegionRects(NonClientRegionKind.Passthrough, new[] { rect });
-        }
-        catch (Exception ex)
-        {
-            DebugLog.Write("SETTINGS", $"passthrough err: {ex.Message}");
-        }
-    }
-
-    // ── Responsive : SearchBox masquée sous 650 px (calque LogWindow) ───────
-
-    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        var newSearchVis = e.NewSize.Width >= 650
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
-        if (SearchBox.Visibility != newSearchVis)
-        {
-            SearchBox.Visibility = newSearchVis;
-            SetupDragPassthrough();
-        }
+        bool compact = args.DisplayMode != NavigationViewDisplayMode.Expanded;
+        AppTitleBar.IsPaneToggleButtonVisible = compact;
+        SearchBox.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
     }
 }

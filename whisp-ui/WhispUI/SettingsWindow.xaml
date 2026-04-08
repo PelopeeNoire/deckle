@@ -5,41 +5,30 @@
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     Title="WhispUI Settings">
 
-    <Grid x:Name="RootGrid" SizeChanged="OnRootSizeChanged">
+    <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ── Title bar custom (48px, 3 colonnes — calque LogWindow) ───────── -->
-        <Grid Grid.Row="0" x:Name="AppTitleBar" Background="Transparent">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="138" />
-            </Grid.ColumnDefinitions>
-
-            <StackPanel Grid.Column="0"
-                        Orientation="Horizontal"
-                        Padding="16,0,8,0"
-                        Spacing="16"
-                        VerticalAlignment="Stretch">
-                <Image x:Name="AppIconBeacon"
-                       Width="16"
-                       Height="16"
-                       VerticalAlignment="Center" />
-                <TextBlock Text="WhispUI Settings"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           VerticalAlignment="Center" />
-            </StackPanel>
-
-            <AutoSuggestBox x:Name="SearchBox"
-                            Grid.Column="1"
-                            QueryIcon="Find"
-                            PlaceholderText="Rechercher un paramètre"
-                            MaxWidth="320"
-                            VerticalAlignment="Center" />
-        </Grid>
+        <!-- ── Title bar natif avec hamburger délégué au NavigationView ─── -->
+        <TitleBar Grid.Row="0"
+                  x:Name="AppTitleBar"
+                  Title="WhispUI Settings"
+                  IsPaneToggleButtonVisible="False"
+                  PaneToggleRequested="OnPaneToggleRequested">
+            <TitleBar.IconSource>
+                <ImageIconSource x:Name="AppTitleBarIcon" />
+            </TitleBar.IconSource>
+            <TitleBar.Content>
+                <AutoSuggestBox x:Name="SearchBox"
+                                QueryIcon="Find"
+                                PlaceholderText="Rechercher un paramètre"
+                                MaxWidth="320"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Center" />
+            </TitleBar.Content>
+        </TitleBar>
 
         <!-- ── NavigationView + contenu ─────────────────────────────────────── -->
         <NavigationView Grid.Row="1"
@@ -47,7 +36,9 @@
                         PaneDisplayMode="Auto"
                         OpenPaneLength="280"
                         IsBackButtonVisible="Collapsed"
+                        IsPaneToggleButtonVisible="False"
                         IsSettingsVisible="False"
+                        DisplayModeChanged="OnNavDisplayModeChanged"
                         SelectionChanged="OnNavSelectionChanged"
                         ItemInvoked="OnNavItemInvoked">
             <NavigationView.MenuItems>
