@@ -5,7 +5,7 @@
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     Title="WhispUI Logs">
 
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" SizeChanged="OnRootSizeChanged">
         <Grid.Resources>
             <!-- Deux templates distincts : swap au toggle Wrap.
                  Plus simple que bind dynamique sur TextWrapping. -->
@@ -86,30 +86,39 @@
                 <controls:SelectorBarItem x:Name="LevelCritical" Text="Critical" />
             </controls:SelectorBar>
 
+            <!-- Migration native via IsDynamicOverflowEnabled (true par défaut)
+                 + DynamicOverflowOrder. Plus haut = migre en premier.
+                 Groupe 2 (Copy/Save/Clear/Sep) part en premier, puis groupe 1
+                 (AutoScroll/Wrap). La CommandBar gère elle-même mesure, popup
+                 et placement. -->
             <CommandBar Grid.Column="1"
+                        x:Name="MainCommandBar"
                         DefaultLabelPosition="Right"
                         HorizontalAlignment="Right"
                         Background="Transparent"
-                        IsOpen="False"
-                        OverflowButtonVisibility="Collapsed">
-                <AppBarButton Label="Copy" Click="OnCopyClick">
+                        IsOpen="False">
+                <AppBarButton x:Name="CopyButton" Label="Copy"
+                              DynamicOverflowOrder="2" Click="OnCopyClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE8C8;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton Label="Save" Click="OnSaveClick">
+                <AppBarButton x:Name="SaveButton" Label="Save"
+                              DynamicOverflowOrder="2" Click="OnSaveClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE74E;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton Label="Clear" Click="OnClearClick">
+                <AppBarButton x:Name="ClearButton" Label="Clear"
+                              DynamicOverflowOrder="2" Click="OnClearClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE74D;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarSeparator />
+                <AppBarSeparator DynamicOverflowOrder="2" />
                 <AppBarToggleButton x:Name="AutoScrollToggle"
                                     Label="Auto scroll"
+                                    DynamicOverflowOrder="1"
                                     IsChecked="True">
                     <AppBarToggleButton.Icon>
                         <FontIcon Glyph="&#xE70D;" />
@@ -117,6 +126,7 @@
                 </AppBarToggleButton>
                 <AppBarToggleButton x:Name="WrapToggle"
                                     Label="Wrap"
+                                    DynamicOverflowOrder="1"
                                     IsChecked="False"
                                     Click="OnWrapToggleClick">
                     <AppBarToggleButton.Icon>

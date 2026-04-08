@@ -247,6 +247,18 @@ session de travail.**
 **Post-validation :** mettre à jour la tâche planifiée `Whisp` → exe WhispUI ; mettre à jour
 `../../CLAUDE.md` (point d'entrée).
 
+**Post-V1 — LogWindow responsive (et future SettingsWindow).** Rendre la `CommandBar` de
+LogWindow réactive à la largeur de la fenêtre, en s'appuyant au maximum sur le comportement
+standard WinUI : `AutoSuggestBox` qui se replie en icône loupe à gauche, et `AppBarButton`
+qui basculent dans le menu *More* (`…`) au fur et à mesure via `PrimaryCommands` /
+`SecondaryCommands` et `DefaultLabelPosition`. Si le mécanisme natif ne suffit pas, gérer
+manuellement via `SizeChanged` : à un premier seuil, déplacer Copy/Save/Clear en
+`SecondaryCommands` (AutoScroll + Wrap restent visibles) ; à un second seuil, basculer
+aussi AutoScroll + Wrap dans le menu More. `MinWidth` ~300–400 px. Même schéma à reprendre
+pour la future SettingsWindow — penser le pattern une fois, le réutiliser. Vérifier d'abord
+si WinUI 3 fournit déjà ce comportement clé en main avant de coder du custom ; sinon
+remonter à Louis pour qu'il fasse le design Figma.
+
 ---
 
 ## HudWindow — rappel spécification
