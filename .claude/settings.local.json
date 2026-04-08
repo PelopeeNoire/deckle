@@ -5,7 +5,8 @@
       "Bash(dotnet build:*)",
       "Bash(git add:*)",
       "Bash(dotnet --list-sdks)",
-      "Bash(dotnet package:*)"
+      "Bash(dotnet package:*)",
+      "mcp__claude_ai_Figma__get_design_context"
     ]
   }
 }
