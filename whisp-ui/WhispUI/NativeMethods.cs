@@ -55,6 +55,43 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    // ── Identification fenêtre / focus clavier (debug) ────────────────────────
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetWindowTextLength(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GUITHREADINFO
+    {
+        public int    cbSize;
+        public uint   flags;
+        public IntPtr hwndActive;
+        public IntPtr hwndFocus;
+        public IntPtr hwndCapture;
+        public IntPtr hwndMenuOwner;
+        public IntPtr hwndMoveSize;
+        public IntPtr hwndCaret;
+        public RECT   rcCaret;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int left, top, right, bottom; }
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetClipboardData(uint uFormat);
+
     // Renvoie le DPI logique de la fenêtre (96 = 100%, 120 = 125%, 144 = 150%…).
     // Per-monitor DPI aware : suit le moniteur sur lequel se trouve la fenêtre.
     [DllImport("user32.dll")]
@@ -277,6 +314,15 @@ internal static class NativeMethods
 
     [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr whisper_full_get_segment_text(IntPtr ctx, int i_segment);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern long whisper_full_get_segment_t0(IntPtr ctx, int i_segment);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern long whisper_full_get_segment_t1(IntPtr ctx, int i_segment);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern float whisper_full_get_segment_no_speech_prob(IntPtr ctx, int i_segment);
 
     [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
     public static extern void whisper_free(IntPtr ctx);
