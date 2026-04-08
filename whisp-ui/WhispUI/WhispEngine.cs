@@ -65,6 +65,16 @@ internal sealed class WhispEngine : IDisposable
     // pendant que whisper.cpp détient son pointeur natif (même piège que SubclassProc).
     private WhisperNewSegmentCallback? _newSegmentCallback;
 
+    // Borne basse des ids de tokens timestamp pour le modèle courant. Cachée au début
+    // de chaque Transcribe et lue par OnNewSegment pour filtrer les tokens non-texte.
+    private int _tokenBeg;
+
+    // t1 du segment précédent (centisecondes), pour calculer le gap inter-segments
+    // dans OnNewSegment. Reset à -1 au début de chaque Transcribe — la 1re itération
+    // affiche alors gap=+0,0s par convention. Lu/écrit uniquement depuis le thread
+    // d'inférence whisper.cpp (callback séquentiel), pas besoin de lock.
+    private long _lastSegmentT1;
+
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void WhisperNewSegmentCallback(IntPtr ctx, IntPtr state, int n_new, IntPtr user_data);
 
@@ -154,6 +164,22 @@ internal sealed class WhispEngine : IDisposable
 
         _recordingSw = System.Diagnostics.Stopwatch.StartNew();
         StatusChanged?.Invoke("Enregistrement...");
+
+        // Trace de la cible capturée au Start — symétrique du Step vert final.
+        // Permet de voir, dès le départ, quelle fenêtre / quel contrôle recevra
+        // le paste, et de diagnostiquer les cas où la cible Start est mauvaise.
+        if (_pasteTarget != IntPtr.Zero)
+        {
+            DbgVerbose("HOTKEY", $"cible capturée au Start: {Win32Util.DescribeHwnd(_pasteTarget)}");
+            string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
+            DbgVerbose("HOTKEY", focusClass is null
+                ? "contrôle focusé au Start: <aucun focus clavier détecté>"
+                : $"contrôle focusé au Start: {focusClass}");
+        }
+        else
+        {
+            DbgVerbose("HOTKEY", "aucune cible capturée au Start (paste désactivé ou foreground = WhispUI)");
+        }
 
         // Un seul thread de fond : Record puis Transcribe en séquence.
         // Whisper a besoin de la totalité de l'audio pour gérer son fenêtrage
@@ -381,6 +407,10 @@ internal sealed class WhispEngine : IDisposable
         {
             int total = NativeMethods.whisper_full_n_segments(ctx);
             int from  = total - n_new;
+            // Borne basse des ids de tokens timestamp — au-delà, ce sont des <|t.tt|>,
+            // pas des tokens texte. Cachée par appel Transcribe pour éviter des P/Invoke
+            // répétés inutiles (dépend du modèle, pas du segment).
+            int tokenBeg = _tokenBeg;
             for (int i = from; i < total; i++)
             {
                 string segText = Marshal.PtrToStringUTF8(NativeMethods.whisper_full_get_segment_text(ctx, i)) ?? "";
@@ -388,12 +418,39 @@ internal sealed class WhispEngine : IDisposable
                 long  t1  = NativeMethods.whisper_full_get_segment_t1(ctx, i);
                 float nsp = NativeMethods.whisper_full_get_segment_no_speech_prob(ctx, i);
 
+                // Confiance par segment, agrégée sur les seuls tokens texte.
+                // p = proba linéaire du token tel qu'échantillonné par Whisper.
+                // avg = signal "phrase globalement sûre ?", min = "maillon faible / mot bricolé ?".
+                int nTok = NativeMethods.whisper_full_n_tokens(ctx, i);
+                float sumP = 0f, minP = 1f;
+                int textTok = 0;
+                for (int k = 0; k < nTok; k++)
+                {
+                    int id = NativeMethods.whisper_full_get_token_id(ctx, i, k);
+                    if (id >= tokenBeg) continue; // skip tokens timestamp
+                    float p = NativeMethods.whisper_full_get_token_p(ctx, i, k);
+                    sumP += p;
+                    if (p < minP) minP = p;
+                    textTok++;
+                }
+                float avgP = textTok > 0 ? sumP / textTok : 0f;
+                if (textTok == 0) minP = 0f; // segment sans token texte → min "indéfini"
+
                 lock (_segmentsLock)
                     _segments.Add(new TranscribedSegment(segText, t0, t1, nsp));
 
+                // dur = durée du segment, gap = silence (ou recouvrement) avec le précédent.
+                // Sur une boucle d'hallucination type, on observe dur≈3,0s contiguë (gap=+0,0s)
+                // de façon métronomique — pattern visuellement repérable sans calcul mental.
+                // Un gros gap signale un saut de Whisper ou un blanc en entrée (à risque).
+                double dur = (t1 - t0) / 100.0;
+                double gap = _lastSegmentT1 < 0 ? 0.0 : (t0 - _lastSegmentT1) / 100.0;
+                _lastSegmentT1 = t1;
+
                 // no_speech : proba que le segment soit du silence/bruit (0 = parole sûre, 1 = silence sûr).
+                // p̄ / min : confiance moyenne et minimale sur les tokens texte du segment.
                 // t0/t1 sont en centisecondes (1 unité = 10 ms) côté whisper.cpp.
-                DbgVerbose("TRANSCRIBE", $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s, silence?={nsp:P0}] {segText.Trim()}");
+                DbgVerbose("TRANSCRIBE", $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok] {segText.Trim()}");
             }
         }
         catch (Exception ex)
@@ -429,9 +486,29 @@ internal sealed class WhispEngine : IDisposable
         IntPtr promptPtr = Marshal.StringToHGlobalAnsi("Transcription en français.");
         wparams.language       = langPtr;
         wparams.initial_prompt = promptPtr;
-        wparams.entropy_thold   = 1.9f;
-        wparams.no_speech_thold = 0.7f;
-        wparams.print_progress  = 0;
+        wparams.print_progress = 0;
+
+        // Pas d'override des seuils anti-hallucination — on s'appuie sur les defaults
+        // de whisper.cpp qui activent déjà le fallback natif :
+        //   temperature=0,0 / temperature_inc=0,2 / logprob_thold=-1,0 / entropy_thold=2,4
+        // Mécanique : après chaque segment, si (avg_logprob < logprob_thold) OU
+        // (entropy < entropy_thold), Whisper re-décode le MÊME segment à temperature+=
+        // 0,2 jusqu'à temperature ≤ 1,0. C'est le mécanisme officiel OpenAI Whisper.
+        //
+        // ATTENTION au sens d'entropy_thold : le test est `entropy < seuil` (pas >).
+        // Une entropie BASSE = distribution piquée sur un seul token = modèle "trop
+        // sûr" du même token = symptôme de boucle de répétition. Donc seuil HAUT
+        // (2,4) = STRICT (déclenche le fallback plus souvent), seuil BAS (1,9) =
+        // PERMISSIF. L'ancien override 1,9 (héritage chunking) était plus permissif
+        // que le défaut — on l'enlève pour laisser le filtre natif faire son boulot.
+        //
+        // no_speech_thold=0,7 (ancien override) était plus permissif que le défaut
+        // 0,6 mais sans effet : sur de la dictation, nsp est toujours 0% en logs.
+
+        // Cache la borne des tokens timestamp une fois pour tout l'appel — c'est une
+        // propriété du modèle, pas du segment, pas la peine d'appeler à chaque token.
+        _tokenBeg = NativeMethods.whisper_token_beg(ctx);
+        _lastSegmentT1 = -1;
 
         // Branchement du callback natif. Délégué stocké en champ d'instance pour
         // empêcher le GC de le ramasser pendant que whisper.cpp détient le pointeur.
@@ -441,6 +518,7 @@ internal sealed class WhispEngine : IDisposable
 
         float audioSec = (float)audio.Length / 16_000f;
         DbgLog("TRANSCRIBE", $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
+        DbgVerbose("TRANSCRIBE", $"params: temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | n_threads={wparams.n_threads}");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);

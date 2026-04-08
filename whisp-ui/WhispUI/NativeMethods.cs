@@ -325,5 +325,19 @@ internal static class NativeMethods
     public static extern float whisper_full_get_segment_no_speech_prob(IntPtr ctx, int i_segment);
 
     [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int whisper_full_n_tokens(IntPtr ctx, int i_segment);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int whisper_full_get_token_id(IntPtr ctx, int i_segment, int i_token);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern float whisper_full_get_token_p(IntPtr ctx, int i_segment, int i_token);
+
+    // Renvoie l'id à partir duquel les tokens sont des timestamps (<|0.00|>, <|5.30|>…).
+    // Tout token dont l'id est >= à cette valeur est un token de timestamp, pas du texte.
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int whisper_token_beg(IntPtr ctx);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
     public static extern void whisper_free(IntPtr ctx);
 }
