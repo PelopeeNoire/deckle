@@ -30,6 +30,12 @@ internal sealed class WhispEngine : IDisposable
     // pour se masquer. Thread de fond → abonné responsable du marshaling.
     public event Action?          TranscriptionFinished;
 
+    // Rendez-vous synchrone juste avant PasteFromClipboard. L'appelant
+    // (App.xaml.cs) y branche HudWindow.HideSync() pour garantir qu'aucune
+    // mutation d'activation côté WhispUI ne survienne pendant que SendInput
+    // est en vol vers la cible.
+    public Action? OnReadyToPaste { get; set; }
+
     // ── Configuration ─────────────────────────────────────────────────────────
 
     const string MODEL_FILE     = "ggml-large-v3.bin";
@@ -162,11 +168,29 @@ internal sealed class WhispEngine : IDisposable
 
     public void StopRecording()
     {
-        // _pasteTarget a été capturé au Start — on ne le re-capture PAS ici.
-        // Depuis l'introduction du HUD, GetForegroundWindow() au moment du Stop
-        // peut retourner le HUD (activable malgré SW_SHOWNOACTIVATE) au lieu de
-        // l'app d'origine. La cible du paste = l'app où l'utilisateur parlait,
-        // captée une fois pour toutes au Start.
+        // Re-capture la cible au Stop pour gérer le cas "j'ai changé de champ
+        // texte pendant l'enregistrement" : on veut coller dans le champ où
+        // l'utilisateur se trouve AU MOMENT du Stop, pas celui de Start. Le
+        // hotkey étant global, GetForegroundWindow() à cet instant renvoie
+        // l'app où il est. Filet : si le foreground appartient à WhispUI lui-
+        // même (HUD ou LogWindow activé par un clic), on garde la cible Start
+        // — sinon on aurait un faux positif "collé dans nos propres logs".
+        IntPtr fg = NativeMethods.GetForegroundWindow();
+        if (fg != IntPtr.Zero)
+        {
+            NativeMethods.GetWindowThreadProcessId(fg, out uint pid);
+            uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+            if (pid != ownPid)
+            {
+                if (fg != _pasteTarget)
+                    DbgVerbose("HOTKEY", $"cible mise à jour au Stop: {Win32Util.DescribeHwnd(fg)}");
+                _pasteTarget = fg;
+            }
+            else
+            {
+                DbgVerbose("HOTKEY", $"foreground au Stop = WhispUI ({Win32Util.DescribeHwnd(fg)}), cible Start conservée");
+            }
+        }
         _stopRecording = true;
     }
 
@@ -483,6 +507,12 @@ internal sealed class WhispEngine : IDisposable
         bool pasteVerified = false;
         if (_shouldPaste)
         {
+            // Rendez-vous synchrone : l'handler (App) cache le HUD et ne rend
+            // la main qu'une fois SW_HIDE effectif sur le thread UI. Après ce
+            // point, plus rien dans WhispUI ne touche à l'activation jusqu'à
+            // la fin de Transcribe — la livraison du Ctrl+V est protégée.
+            OnReadyToPaste?.Invoke();
+            DbgVerbose("PASTE", "HUD masqué (HideSync) — prêt à coller");
             var swPaste = System.Diagnostics.Stopwatch.StartNew();
             pasteVerified = PasteFromClipboard();
             swPaste.Stop();
