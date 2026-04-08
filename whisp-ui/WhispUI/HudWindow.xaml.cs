@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
 
@@ -72,10 +73,12 @@ public sealed partial class HudWindow : Window
     private readonly SolidColorBrush _recordingBrush;
     private readonly SolidColorBrush _transcribingBrush;
 
-    // Brush accent Windows pour marquer les chiffres déjà passés au moins une fois.
-    // Résolu une fois en constructeur (snapshot, comme LogWindow).
-    private readonly Brush _accentBrush;
-    private readonly Brush _idleDigitBrush;
+    // Chiffres déjà passés au moins une fois : peints avec le rouge "erreur"
+    // Windows (SystemFillColorCriticalBrush), qui s'adapte light/dark via
+    // theme resources. Re-résolu sur RootGrid.ActualThemeChanged pour suivre
+    // un changement de thème runtime (les Run.Foreground assignés en code
+    // ne réagissent pas aux ThemeResource binding).
+    private Brush _digitAccentBrush = null!;
     private bool _tMin1, _tMin2, _tSec1, _tSec2, _tCs1, _tCs2;
 
     public HudWindow()
@@ -92,12 +95,18 @@ public sealed partial class HudWindow : Window
         _recordingBrush    = new SolidColorBrush(Colors.IndianRed);
         _transcribingBrush = new SolidColorBrush(Colors.Gray);
 
-        _accentBrush =
-            (Application.Current.Resources["AccentTextFillColorPrimaryBrush"] as Brush)
-            ?? new SolidColorBrush(Colors.DeepSkyBlue);
-        _idleDigitBrush =
-            (Application.Current.Resources["TextFillColorPrimaryBrush"] as Brush)
-            ?? new SolidColorBrush(Colors.White);
+        _digitAccentBrush = ResolveCriticalBrush();
+        // Re-résoudre sur theme switch + ré-appliquer aux chiffres déjà allumés.
+        RootGrid.ActualThemeChanged += (_, _) =>
+        {
+            _digitAccentBrush = ResolveCriticalBrush();
+            if (_tMin1) Min1.Foreground = _digitAccentBrush;
+            if (_tMin2) Min2.Foreground = _digitAccentBrush;
+            if (_tSec1) Sec1.Foreground = _digitAccentBrush;
+            if (_tSec2) Sec2.Foreground = _digitAccentBrush;
+            if (_tCs1)  Cs1.Foreground  = _digitAccentBrush;
+            if (_tCs2)  Cs2.Foreground  = _digitAccentBrush;
+        };
 
         // Présentation : pas de barre titre, pas de resize/min/max.
         ExtendsContentIntoTitleBar = true;
@@ -148,6 +157,13 @@ public sealed partial class HudWindow : Window
         // ShowRecording / Hide via _clockRenderingHooked.
     }
 
+    // Résout SystemFillColorCriticalBrush via Application.Resources. Cette
+    // ressource pointe sur la variante (light/dark) active au moment de l'appel.
+    // → on appelle aussi sur ActualThemeChanged pour rester aligné.
+    private Brush ResolveCriticalBrush() =>
+        (Application.Current.Resources["SystemFillColorCriticalBrush"] as Brush)
+        ?? new SolidColorBrush(Microsoft.UI.Colors.IndianRed);
+
     private void RegisterMouseRawInput()
     {
         var rid = new RAWINPUTDEVICE[]
@@ -176,15 +192,17 @@ public sealed partial class HudWindow : Window
 
             _stopwatch.Restart();
             _lastMin = _lastSec = _lastCs = -1; // force repaint complet au show
-            // Reset coloration : tous les chiffres repartent en blanc, n'importe
-            // quel chiffre qui changera ensuite passera en accent et y restera.
+            // Reset coloration : on efface le Foreground local des Run pour
+            // qu'ils héritent de ClockText.Foreground (lié à ThemeResource
+            // TextFillColorPrimaryBrush, donc auto-réactif au thème). Tout
+            // chiffre qui changera ensuite passera en accent rouge et y restera.
             _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
-            Min1.Foreground = _idleDigitBrush;
-            Min2.Foreground = _idleDigitBrush;
-            Sec1.Foreground = _idleDigitBrush;
-            Sec2.Foreground = _idleDigitBrush;
-            Cs1.Foreground  = _idleDigitBrush;
-            Cs2.Foreground  = _idleDigitBrush;
+            Min1.ClearValue(TextElement.ForegroundProperty);
+            Min2.ClearValue(TextElement.ForegroundProperty);
+            Sec1.ClearValue(TextElement.ForegroundProperty);
+            Sec2.ClearValue(TextElement.ForegroundProperty);
+            Cs1.ClearValue(TextElement.ForegroundProperty);
+            Cs2.ClearValue(TextElement.ForegroundProperty);
             UpdateClock();
             if (!_clockRenderingHooked)
             {
@@ -297,22 +315,22 @@ public sealed partial class HudWindow : Window
         if (min != _lastMin)
         {
             int d1 = min / 10, d2 = min % 10;
-            if (Min1.Text != d1.ToString()) { Min1.Text = d1.ToString(); if (!_tMin1) { _tMin1 = true; Min1.Foreground = _accentBrush; } }
-            if (Min2.Text != d2.ToString()) { Min2.Text = d2.ToString(); if (!_tMin2) { _tMin2 = true; Min2.Foreground = _accentBrush; } }
+            if (Min1.Text != d1.ToString()) { Min1.Text = d1.ToString(); if (!_tMin1) { _tMin1 = true; Min1.Foreground = _digitAccentBrush; } }
+            if (Min2.Text != d2.ToString()) { Min2.Text = d2.ToString(); if (!_tMin2) { _tMin2 = true; Min2.Foreground = _digitAccentBrush; } }
             _lastMin = min;
         }
         if (sec != _lastSec)
         {
             int d1 = sec / 10, d2 = sec % 10;
-            if (Sec1.Text != d1.ToString()) { Sec1.Text = d1.ToString(); if (!_tSec1) { _tSec1 = true; Sec1.Foreground = _accentBrush; } }
-            if (Sec2.Text != d2.ToString()) { Sec2.Text = d2.ToString(); if (!_tSec2) { _tSec2 = true; Sec2.Foreground = _accentBrush; } }
+            if (Sec1.Text != d1.ToString()) { Sec1.Text = d1.ToString(); if (!_tSec1) { _tSec1 = true; Sec1.Foreground = _digitAccentBrush; } }
+            if (Sec2.Text != d2.ToString()) { Sec2.Text = d2.ToString(); if (!_tSec2) { _tSec2 = true; Sec2.Foreground = _digitAccentBrush; } }
             _lastSec = sec;
         }
         if (cs != _lastCs)
         {
             int d1 = cs / 10, d2 = cs % 10;
-            if (Cs1.Text != d1.ToString()) { Cs1.Text = d1.ToString(); if (!_tCs1) { _tCs1 = true; Cs1.Foreground = _accentBrush; } }
-            if (Cs2.Text != d2.ToString()) { Cs2.Text = d2.ToString(); if (!_tCs2) { _tCs2 = true; Cs2.Foreground = _accentBrush; } }
+            if (Cs1.Text != d1.ToString()) { Cs1.Text = d1.ToString(); if (!_tCs1) { _tCs1 = true; Cs1.Foreground = _digitAccentBrush; } }
+            if (Cs2.Text != d2.ToString()) { Cs2.Text = d2.ToString(); if (!_tCs2) { _tCs2 = true; Cs2.Foreground = _digitAccentBrush; } }
             _lastCs = cs;
         }
     }

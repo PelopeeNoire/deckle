@@ -35,6 +35,8 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe` (self-contain
 
 **V1 atteinte. Étapes 1 → 7 validées runtime. Transcription fonctionnelle de bout en bout, HUD complet, prêt pour publication (étape 8).**
 
+**HUD — coloration progressive des chiffres** : chaque chiffre du chrono qui change au moins une fois passe en rouge `SystemFillColorCriticalBrush` (theme resource Windows, suit light/dark) et y reste jusqu'au prochain `ShowRecording`. Le `0` initial reste neutre tant qu'il n'a pas bougé. Les Run idle ne portent pas de Foreground local — ils héritent de `ClockText.Foreground = {ThemeResource TextFillColorPrimaryBrush}`, donc auto-réactif au thème. Reset = `ClearValue(TextElement.ForegroundProperty)` sur chaque Run nommé. **Theme switch runtime** : `RootGrid.ActualThemeChanged` re-résout le brush critical et le réapplique aux chiffres déjà allumés (un Foreground assigné en code ne suit pas un ThemeResource binding, il faut le réassigner manuellement).
+
 Bootstrap (AnchorWindow invisible + ancre lifetime), pipeline complet
 (`WhispEngine` + tray + LogWindow + hotkey Alt+\` toggle Start/Stop), HUD complet :
 layout Figma (chrono Bitcount Single Light + beacon/ProgressRing dans Mica arrondi),
