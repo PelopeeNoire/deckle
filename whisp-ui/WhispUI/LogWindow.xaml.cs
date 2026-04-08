@@ -17,10 +17,15 @@ using WinRT.Interop;
 namespace WhispUI;
 
 // ─── Niveaux de log ───────────────────────────────────────────────────────────
-// Filtered (selector) = Warning + Error. Info masqué.
-// LogWarning() est exposé mais pas encore appelé par WhispEngine — l'API est
-// prête pour la passe debug à venir.
-public enum LogLevel { Info, Warning, Error }
+// Step  : étapes importantes du workflow, marquées explicitement par le code
+//         pour la vue Filtered (ce qui s'est passé proprement).
+// Critical (selector) = Warning + Error.
+// LogWarning/LogStep sont exposés mais pas encore appelés par WhispEngine —
+// l'API est prête pour la passe debug à venir.
+public enum LogLevel { Info, Step, Warning, Error }
+
+// Mode du SelectorBar — un seul actif à la fois (sélection exclusive native).
+internal enum LogFilterMode { All, Steps, Critical }
 
 // ─── Fenêtre de logs ──────────────────────────────────────────────────────────
 //
@@ -61,6 +66,7 @@ public sealed partial class LogWindow : Window
     private bool _isVisible;
 
     private SolidColorBrush _infoBrush  = null!;
+    private SolidColorBrush _stepBrush  = null!;
     private SolidColorBrush _warnBrush  = null!;
     private SolidColorBrush _errorBrush = null!;
 
@@ -71,7 +77,7 @@ public sealed partial class LogWindow : Window
     private string? _iconIdlePath;
     private string? _iconRecordingPath;
 
-    private bool _showOnlyAlerts;
+    private LogFilterMode _filterMode = LogFilterMode.All;
     private string _currentSearch = "";
     private bool _isRecording;
 
@@ -149,6 +155,7 @@ public sealed partial class LogWindow : Window
     // ── API publique (thread-safe) ────────────────────────────────────────────
 
     public void Log(string message)        => AppendEntry(message, LogLevel.Info);
+    public void LogStep(string message)    => AppendEntry(message, LogLevel.Step);
     public void LogWarning(string message) => AppendEntry(message, LogLevel.Warning);
     public void LogError(string message)   => AppendEntry(message, LogLevel.Error);
 
@@ -226,6 +233,7 @@ public sealed partial class LogWindow : Window
     {
         var res = Application.Current.Resources;
         _infoBrush  = (SolidColorBrush)res["TextFillColorPrimaryBrush"];
+        _stepBrush  = (SolidColorBrush)res["AccentTextFillColorPrimaryBrush"];
         _warnBrush  = (SolidColorBrush)res["SystemFillColorCautionBrush"];
         _errorBrush = (SolidColorBrush)res["SystemFillColorCriticalBrush"];
     }
@@ -309,6 +317,7 @@ public sealed partial class LogWindow : Window
     {
         LogLevel.Error   => _errorBrush,
         LogLevel.Warning => _warnBrush,
+        LogLevel.Step    => _stepBrush,
         _                => _infoBrush,
     };
 
@@ -343,7 +352,19 @@ public sealed partial class LogWindow : Window
 
     private bool Matches(LogEntry e)
     {
-        if (_showOnlyAlerts && e.Level == LogLevel.Info) return false;
+        // Filtre niveau :
+        //   All      → tout passe
+        //   Steps    → événements importants : Step + Warning + Error (Info masqué)
+        //   Critical → Warning + Error uniquement
+        bool levelOk = _filterMode switch
+        {
+            LogFilterMode.All      => true,
+            LogFilterMode.Steps    => e.Level != LogLevel.Info,
+            LogFilterMode.Critical => e.Level == LogLevel.Warning || e.Level == LogLevel.Error,
+            _                      => true,
+        };
+        if (!levelOk) return false;
+
         if (_currentSearch.Length > 0 &&
             e.Text.IndexOf(_currentSearch, StringComparison.OrdinalIgnoreCase) < 0) return false;
         return true;
@@ -391,7 +412,10 @@ public sealed partial class LogWindow : Window
 
     private void OnLevelSelectorChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        _showOnlyAlerts = sender.SelectedItem == LevelFiltered;
+        var sel = sender.SelectedItem;
+        _filterMode = sel == LevelCritical ? LogFilterMode.Critical
+                    : sel == LevelFiltered ? LogFilterMode.Steps
+                    : LogFilterMode.All;
         ApplyFilter();
     }
 
