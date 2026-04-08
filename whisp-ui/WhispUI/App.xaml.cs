@@ -44,8 +44,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         _logWindow = new LogWindow();
 
         // SettingsWindow créée une fois, jamais détruite. Pas de Show initial :
-        // ouverte uniquement à la demande via tray.
-        _settingsWindow = new SettingsWindow();
+        // ouverte uniquement à la demande via tray. L'item footer "Logs" de la
+        // NavigationView ouvre la LogWindow partagée via ce callback.
+        _settingsWindow = new SettingsWindow
+        {
+            OnShowLogsRequested = () => _logWindow.ShowAndActivate(),
+        };
 
         // HudWindow créée une fois, jamais détruite. Pré-initialisée hors écran
         // via Show(false) : l'arbre XAML se construit sans que la fenêtre soit
@@ -56,9 +60,12 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         _tray = new TrayIconManager
         {
-            OnShowLogs     = () => _logWindow.ShowAndActivate(),
-            OnShowSettings = () => _settingsWindow.ShowAndActivate(),
-            OnQuit         = () => QuitApp(),
+            OnShowLogs        = () => _logWindow.ShowAndActivate(),
+            OnShowSettings    = () => _settingsWindow.ShowAndActivate(),
+            // Clic gauche tray = toggle transcription via le même chemin que la
+            // hotkey standard. Permet de lancer à la souris avec une seule main.
+            OnToggleRecording = () => OnHotkey(NativeMethods.HOTKEY_ID_TRANSCRIBE),
+            OnQuit            = () => QuitApp(),
         };
 
         // Events moteur → UI. LogWindow.Log/LogError et TrayIconManager.UpdateStatus
