@@ -83,6 +83,7 @@
                                   SelectionChanged="OnLevelSelectorChanged">
                 <controls:SelectorBarItem x:Name="LevelFull" Text="Full" />
                 <controls:SelectorBarItem x:Name="LevelFiltered" Text="Filtered" />
+                <controls:SelectorBarItem x:Name="LevelCritical" Text="Critical" />
             </controls:SelectorBar>
 
             <CommandBar Grid.Column="1"
