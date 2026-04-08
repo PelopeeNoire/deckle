@@ -62,11 +62,34 @@ au Stop, pour éviter que le HUD foreground n'écrase la cible. Voir
 [WhispEngine.cs:148](WhispEngine.cs#L148) et [App.xaml.cs:88](App.xaml.cs#L88). Résiduel :
 `SetForegroundWindow` peut échouer silencieusement (cf. Tâches ouvertes).
 
-**LogWindow v2** : fenêtre classique (`OverlappedPresenter` standard, thème sombre forcé,
-Close→Cancel+Hide). Toolbar : Effacer / Copier tout / Enregistrer… (FileSavePicker .txt
-horodaté) / Auto-scroll (ON) / Retour ligne (OFF, swap entre `NoWrapTemplate` et
-`WrapTemplate` exposés sur `RootGrid.Resources`). Cap 5000 entrées. Tray "Logs" →
+**LogWindow v3** : refonte basée sur design Figma (`fAjzDDUpFW1InvLl5xL83R`, node `98:9790`).
+Fenêtre classique (`OverlappedPresenter`), Close→Cancel+Hide, **thème système** (plus de
+`RequestedTheme="Dark"` forcé), `SystemBackdrop = MicaBackdrop`. Title bar custom
+(`ExtendsContentIntoTitleBar=true`) en 3 colonnes : icône+titre draggable à gauche,
+`AutoSuggestBox` de recherche centrée, réserve 138px à droite pour les caption buttons
+système. Drag region limitée à la colonne gauche (`SetTitleBar(AppTitleBarLeftDrag)`)
+pour que le SearchBox reçoive les clics. Sous la title bar, command bar en 2 zones :
+`SelectorBar` Full / Filtered à gauche + `CommandBar` (icônes Segoe Fluent) à droite avec
+deux groupes séparés par `AppBarSeparator` — édition (Copy E8C8 / Save E74E / Clear E74D)
+puis affichage (Auto scroll E70D / Wrap E751 toggles). Cap 5000 entrées. Tray "Logs" →
 `ShowAndActivate`.
+
+**Modèle de données** : `enum LogLevel { Info, Warning, Error }` (public). API thread-safe
+`Log` / `LogWarning` / `LogError`. Deux collections : `_entries` (List, tampon complet) et
+`_visible` (ObservableCollection bindée à `LogItems`). Filtre = `Matches()` qui combine
+selector (Filtered masque Info, garde Warning+Error) + recherche live (`IndexOf` case-insensitive).
+`ApplyFilter()` rebuild `_visible`. Sur overflow, on retire la plus vieille entrée des deux
+collections (LogEntry est une `class`, ref equality, pas de collision). **Copy/Save opèrent
+sur `_visible`** — l'utilisateur copie/exporte ce qu'il voit.
+
+**Couleurs** via theme resources Windows résolus une fois en constructeur (snapshot, ne
+réagit pas au theme switch runtime — acceptable pour debug) : `TextFillColorPrimaryBrush`
+(Info), `SystemFillColorCautionBrush` (Warning), `SystemFillColorCriticalBrush` (Error).
+**Wrap** : le toggle swap `NoWrapTemplate`/`WrapTemplate` **et** bascule
+`HorizontalScrollBarVisibility` entre `Auto` et `Disabled` — sinon `TextWrapping="Wrap"`
+ne s'applique pas (le `ScrollViewer` mesure son contenu en largeur infinie tant que le
+scroll horizontal est autorisé). `LogWarning` exposé mais pas encore appelé par `WhispEngine`
+— prêt pour la passe debug à venir.
 
 Filets de diagnostic dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`,
 `TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH`/`CRASH-AD`/`CRASH-TS`).
@@ -100,7 +123,13 @@ Filets de diagnostic dans `App` : `Application.UnhandledException`, `AppDomain.U
   avec un screenshot réel Figma — si Figma rend pareil, c'est juste le tracking faible
   (-2.4 px = -5 % = `CharacterSpacing="-50"`) qui ne suffit pas à compenser les advances
   natifs Bitcount. Sinon, vérifier l'unité du `letterSpacing: -5` Figma (% vs px).
-- **UX toolbar LogWindow** : grouper les boutons, envisager split-buttons. Après la passe debug.
+- **LogWindow caption buttons** : avec title bar 48px et `ExtendsContentIntoTitleBar=true`,
+  les caption buttons système peuvent ressortir à 32px en haut (gap visuel). Si c'est moche,
+  ajouter `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall` après
+  `ExtendsContentIntoTitleBar = true`. Laissé en mode auto pour partir simple.
+- **LogWindow drag region partielle** : seule la colonne icône+titre est draggable. La bande
+  vide entre le SearchBox et les caption buttons ne déplace pas la fenêtre. Fixable via
+  `InputNonClientPointerSource` si besoin.
 
 ---
 
