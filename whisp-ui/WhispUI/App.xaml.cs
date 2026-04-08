@@ -72,6 +72,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             else if (status == "Transcription en cours...")
                 _hudWindow.SwitchToTranscribing();
         };
+        _engine.LogVerboseLine       += msg => _logWindow.LogVerbose(msg);
         _engine.LogLine              += msg => _logWindow.Log(msg);
         _engine.LogStepLine          += msg => _logWindow.LogStep(msg);
         _engine.LogWarningLine       += msg => _logWindow.LogWarning(msg);

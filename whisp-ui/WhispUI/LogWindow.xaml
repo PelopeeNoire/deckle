@@ -117,7 +117,7 @@
                 </AppBarToggleButton>
                 <AppBarToggleButton x:Name="WrapToggle"
                                     Label="Wrap"
-                                    IsChecked="True"
+                                    IsChecked="False"
                                     Click="OnWrapToggleClick">
                     <AppBarToggleButton.Icon>
                         <FontIcon Glyph="&#xE751;" />

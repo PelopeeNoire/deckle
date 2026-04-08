@@ -22,7 +22,12 @@ namespace WhispUI;
 // Critical (selector) = Warning + Error.
 // LogWarning/LogStep sont exposés mais pas encore appelés par WhispEngine —
 // l'API est prête pour la passe debug à venir.
-public enum LogLevel { Info, Step, Warning, Error }
+// Verbose : bruit de fond (heartbeats, dumps par segment, plomberie clipboard…) —
+//           visible uniquement en mode Full.
+// Info    : étapes du déroulé qu'on veut voir en Filtered (lancements, codes
+//           retour, textes, copies, paste).
+// Step    : jalons rares et vérifiés (modèle chargé, bout en bout OK).
+public enum LogLevel { Verbose, Info, Step, Warning, Error }
 
 // Mode du SelectorBar — un seul actif à la fois (sélection exclusive native).
 internal enum LogFilterMode { All, Steps, Critical }
@@ -65,6 +70,7 @@ public sealed partial class LogWindow : Window
     private readonly IntPtr _hwnd;
     private bool _isVisible;
 
+    private SolidColorBrush _verboseBrush = null!;
     private SolidColorBrush _infoBrush  = null!;
     private SolidColorBrush _stepBrush  = null!;
     private SolidColorBrush _warnBrush  = null!;
@@ -92,10 +98,11 @@ public sealed partial class LogWindow : Window
         RefreshBrushes();
 
         LogItems.ItemsSource  = _visible;
-        // Wrap activé par défaut : pas de scroll horizontal au démarrage,
-        // template wrap. Le toggle XAML est déjà IsChecked="True".
-        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["WrapTemplate"];
-        LogScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        // Wrap désactivé par défaut : on veut voir le déroulement ligne par ligne,
+        // sans repli, pour mieux suivre l'ordonnancement. Le toggle XAML est déjà
+        // IsChecked="False".
+        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["NoWrapTemplate"];
+        LogScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
 
         // Icônes app : résolues une fois, partagées avec le tray.
         LoadAppIcons();
@@ -154,6 +161,7 @@ public sealed partial class LogWindow : Window
 
     // ── API publique (thread-safe) ────────────────────────────────────────────
 
+    public void LogVerbose(string message) => AppendEntry(message, LogLevel.Verbose);
     public void Log(string message)        => AppendEntry(message, LogLevel.Info);
     public void LogStep(string message)    => AppendEntry(message, LogLevel.Step);
     public void LogWarning(string message) => AppendEntry(message, LogLevel.Warning);
@@ -232,7 +240,20 @@ public sealed partial class LogWindow : Window
     private void RefreshBrushes()
     {
         var res = Application.Current.Resources;
-        _infoBrush  = (SolidColorBrush)res["TextFillColorPrimaryBrush"];
+        // Verbose = blanc primary (couleur par défaut) — bruit / durée de vie
+        // (heartbeats, dumps par segment, plomberie clipboard). C'est le gros du
+        // volume, masqué en Filtered.
+        _verboseBrush = (SolidColorBrush)res["TextFillColorPrimaryBrush"];
+        // Info = bleu sémantique Fluent (SystemFillColorAttention canonique).
+        // On NE prend PAS le brush de la theme dictionary : chez certains users,
+        // la chaîne de fallback la fait résoudre sur l'accent système (couleur
+        // de personnalisation Windows), ce qui casse la sémantique. On force
+        // donc les valeurs hex officielles, theme-aware via OnThemeChanged.
+        bool isDark = RootGrid.ActualTheme == ElementTheme.Dark;
+        var infoColor = isDark
+            ? Color.FromArgb(0xFF, 0x60, 0xCD, 0xFF)   // dark : #60CDFF
+            : Color.FromArgb(0xFF, 0x00, 0x5F, 0xB7);  // light : #005FB7
+        _infoBrush  = new SolidColorBrush(infoColor);
         // Step = vert succès — distinctif et indépendant de l'accent système
         // (Attention/Accent peut être gris chez l'utilisateur).
         _stepBrush  = (SolidColorBrush)res["SystemFillColorSuccessBrush"];
@@ -320,6 +341,7 @@ public sealed partial class LogWindow : Window
         LogLevel.Error   => _errorBrush,
         LogLevel.Warning => _warnBrush,
         LogLevel.Step    => _stepBrush,
+        LogLevel.Verbose => _verboseBrush,
         _                => _infoBrush,
     };
 
@@ -355,13 +377,13 @@ public sealed partial class LogWindow : Window
     private bool Matches(LogEntry e)
     {
         // Filtre niveau :
-        //   All      → tout passe
-        //   Steps    → événements importants : Step + Warning + Error (Info masqué)
+        //   All      → tout passe (y compris Verbose)
+        //   Steps    → déroulé principal : Info + Step + Warning + Error (Verbose masqué)
         //   Critical → Warning + Error uniquement
         bool levelOk = _filterMode switch
         {
             LogFilterMode.All      => true,
-            LogFilterMode.Steps    => e.Level != LogLevel.Info,
+            LogFilterMode.Steps    => e.Level != LogLevel.Verbose,
             LogFilterMode.Critical => e.Level == LogLevel.Warning || e.Level == LogLevel.Error,
             _                      => true,
         };
