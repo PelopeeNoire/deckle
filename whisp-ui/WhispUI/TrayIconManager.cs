@@ -148,22 +148,12 @@ public sealed class TrayIconManager : IDisposable
 
     // Retourne (hIcon, owned) : owned=true si chargé depuis fichier (→ DestroyIcon requis),
     // owned=false si icône partagée système (→ NE PAS appeler DestroyIcon).
+    // Le chemin du .ico vient de IconAssets, source de vérité partagée avec LogWindow.
     private static (IntPtr hIcon, bool owned) LoadIconFromFile(bool active)
     {
-        string fileName = active
-            ? "recording--indicator--true--32px.ico"
-            : "recording--indicator--false--32px.ico";
-
-        string[] candidates =
+        string? path = IconAssets.ResolvePath(recording: active);
+        if (path is not null)
         {
-            Path.Combine(AppContext.BaseDirectory, "assets", "icons", fileName),
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "assets", "icons", fileName),
-        };
-
-        foreach (string path in candidates)
-        {
-            if (!File.Exists(path)) continue;
-
             IntPtr hIcon = NativeMethods.LoadImage(
                 IntPtr.Zero, path,
                 NativeMethods.IMAGE_ICON, 32, 32,

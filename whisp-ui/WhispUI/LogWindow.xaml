@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
-    Title="WhispUI — Logs">
+    Title="WhispUI Logs">
 
     <Grid x:Name="RootGrid">
         <Grid.Resources>
@@ -36,23 +36,26 @@
         <!-- Layout 3 colonnes : drag (icône+titre) | search centrée | réserve caption btns.
              Seule la colonne 0 est marquée comme drag region (SetTitleBar) pour
              que l'AutoSuggestBox au centre puisse recevoir les clics. -->
-        <Grid Grid.Row="0" x:Name="AppTitleBar">
+        <Grid Grid.Row="0" x:Name="AppTitleBar" Background="Transparent">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="138" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel x:Name="AppTitleBarLeftDrag"
-                        Grid.Column="0"
+            <StackPanel Grid.Column="0"
                         Orientation="Horizontal"
                         Padding="16,0,8,0"
                         Spacing="16"
                         VerticalAlignment="Stretch">
-                <FontIcon Glyph="&#xEA3A;"
-                          FontSize="16"
-                          VerticalAlignment="Center" />
-                <TextBlock Text="WhispUI — Logs"
+                <!-- Icône de l'application — même asset que le tray et que
+                     l'icône de fenêtre (taskbar/alt-tab). Source swappée
+                     idle/recording dans ApplyRecordingState. -->
+                <Image x:Name="AppIconBeacon"
+                       Width="16"
+                       Height="16"
+                       VerticalAlignment="Center" />
+                <TextBlock Text="WhispUI Logs"
                            Style="{StaticResource CaptionTextBlockStyle}"
                            VerticalAlignment="Center" />
             </StackPanel>
@@ -113,7 +116,7 @@
                 </AppBarToggleButton>
                 <AppBarToggleButton x:Name="WrapToggle"
                                     Label="Wrap"
-                                    IsChecked="False"
+                                    IsChecked="True"
                                     Click="OnWrapToggleClick">
                     <AppBarToggleButton.Icon>
                         <FontIcon Glyph="&#xE751;" />
@@ -123,12 +126,18 @@
         </Grid>
 
         <!-- ── Surface logs ─────────────────────────────────────────────── -->
-        <ScrollViewer x:Name="LogScrollViewer"
-                      Grid.Row="2"
-                      Padding="12,8"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto">
-            <ItemsControl x:Name="LogItems" />
-        </ScrollViewer>
+        <!-- Layer Fill distinct du fond Mica + divider en haut, pour matcher
+             la hiérarchie de surfaces Figma (App Base → App Layer). -->
+        <Border Grid.Row="2"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0">
+            <ScrollViewer x:Name="LogScrollViewer"
+                          Padding="12,8"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="LogItems" />
+            </ScrollViewer>
+        </Border>
     </Grid>
 </Window>

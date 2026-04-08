@@ -1,12 +1,17 @@
+using Microsoft.UI;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace WhispUI;
@@ -59,29 +64,60 @@ public sealed partial class LogWindow : Window
     private SolidColorBrush _warnBrush  = null!;
     private SolidColorBrush _errorBrush = null!;
 
+    // Icônes app — mêmes assets que TrayIconManager via IconAssets.
+    // Source de vérité unique : changer un .ico le propage tray + beacon + window icon.
+    private BitmapImage? _iconIdle;
+    private BitmapImage? _iconRecording;
+    private string? _iconIdlePath;
+    private string? _iconRecordingPath;
+
     private bool _showOnlyAlerts;
     private string _currentSearch = "";
+    private bool _isRecording;
 
     public LogWindow()
     {
         InitializeComponent();
         _hwnd = WindowNative.GetWindowHandle(this);
 
-        // Brushes via theme resources Windows : adaptent automatiquement
-        // light/dark au moment de l'instanciation. Snapshot constructeur,
-        // pas de re-binding sur theme switch (debug window, acceptable).
-        _infoBrush  = (SolidColorBrush)Application.Current.Resources["TextFillColorPrimaryBrush"];
-        _warnBrush  = (SolidColorBrush)Application.Current.Resources["SystemFillColorCautionBrush"];
-        _errorBrush = (SolidColorBrush)Application.Current.Resources["SystemFillColorCriticalBrush"];
+        // Brushes via theme resources Windows. Re-résolus à chaque theme switch
+        // (cf. OnThemeChanged), avec rebuild des entrées existantes pour qu'elles
+        // adoptent les nouvelles couleurs.
+        RefreshBrushes();
 
         LogItems.ItemsSource  = _visible;
-        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["NoWrapTemplate"];
+        // Wrap activé par défaut : pas de scroll horizontal au démarrage,
+        // template wrap. Le toggle XAML est déjà IsChecked="True".
+        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["WrapTemplate"];
+        LogScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+
+        // Icônes app : résolues une fois, partagées avec le tray.
+        LoadAppIcons();
+        AppIconBeacon.Source = _iconIdle;
+        if (_iconIdlePath is not null) AppWindow.SetIcon(_iconIdlePath);
 
         // Title bar custom : étend le contenu dans la zone titre.
-        // Drag region limitée au groupe icône+titre à gauche pour que le
-        // SearchBox au centre reçoive normalement les clics.
+        // Toute la grid AppTitleBar est marquée comme drag region (pour pouvoir
+        // déplacer la fenêtre depuis n'importe quelle zone vide de la barre).
+        // Le SearchBox au centre est ensuite explicitement marqué comme zone
+        // passthrough via InputNonClientPointerSource (cf. SetupDragPassthrough),
+        // sinon il est intercepté par la title bar et ne reçoit plus de clics.
         ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBarLeftDrag);
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        SetTitleBar(AppTitleBar);
+
+        // Le passthrough doit être recalculé après chaque layout de la SearchBox
+        // (taille variable selon la largeur de la fenêtre).
+        SearchBox.SizeChanged += (_, _) => SetupDragPassthrough();
+        SearchBox.Loaded      += (_, _) => SetupDragPassthrough();
+
+        // Réactivité au theme switch système : re-résoudre les brushes
+        // (theme resources sont snapshots à l'instant t, pas live), rebuild
+        // les entrées existantes pour qu'elles adoptent les nouvelles couleurs,
+        // et mettre à jour les couleurs des caption buttons système (qui ne
+        // sont pas auto-themées quand on personnalise la title bar).
+        RootGrid.ActualThemeChanged += (_, _) => OnThemeChanged();
+        RefreshTitleBarButtonColors();
 
         // Mica : fond translucide qui prend les couleurs du thème système.
         // Win11 requis (OK ici) ; sinon fallback transparent.
@@ -90,8 +126,9 @@ public sealed partial class LogWindow : Window
         // Sélection initiale du SelectorBar.
         LevelSelector.SelectedItem = LevelFull;
 
-        Title = "WhispUI — Logs";
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(900, 560));
+        Title = "WhispUI Logs";
+        // Format ~1:2 (vertical) — deux carrés empilés. Tient sur un écran 4K.
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
         // Fenêtre classique : min, max, resize.
         var presenter = OverlappedPresenter.Create();
@@ -121,6 +158,41 @@ public sealed partial class LogWindow : Window
         else DispatcherQueue.TryEnqueue(ClearAll);
     }
 
+    // Beacon "icône d'app" (rouge enregistrement / gris idle). Appelé depuis
+    // le StatusChanged de WhispEngine via App.xaml.cs. Thread-safe.
+    public void SetRecordingState(bool isRecording)
+    {
+        if (DispatcherQueue.HasThreadAccess) ApplyRecordingState(isRecording);
+        else DispatcherQueue.TryEnqueue(() => ApplyRecordingState(isRecording));
+    }
+
+    private void ApplyRecordingState(bool isRecording)
+    {
+        _isRecording = isRecording;
+        AppIconBeacon.Source = isRecording ? _iconRecording : _iconIdle;
+
+        // Icône de fenêtre (titlebar Windows + taskbar + alt-tab) : suit le
+        // même état. AppWindow.SetIcon attend un chemin .ico sur disque.
+        var path = isRecording ? _iconRecordingPath : _iconIdlePath;
+        if (path is not null) AppWindow.SetIcon(path);
+    }
+
+    private void LoadAppIcons()
+    {
+        _iconIdlePath      = IconAssets.ResolvePath(recording: false);
+        _iconRecordingPath = IconAssets.ResolvePath(recording: true);
+
+        if (_iconIdlePath is not null)
+            _iconIdle = new BitmapImage(new Uri(_iconIdlePath));
+        else
+            DebugLog.Write("LOGWIN", "icône idle introuvable");
+
+        if (_iconRecordingPath is not null)
+            _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
+        else
+            DebugLog.Write("LOGWIN", "icône recording introuvable");
+    }
+
     private void ClearAll()
     {
         _entries.Clear();
@@ -146,6 +218,89 @@ public sealed partial class LogWindow : Window
         // depuis le même process est autorisé (l'AnchorWindow détient déjà
         // le foreground).
         NativeMethods.SetForegroundWindow(_hwnd);
+    }
+
+    // ── Theme switch : re-résolution brushes + rebuild entries ───────────────
+
+    private void RefreshBrushes()
+    {
+        var res = Application.Current.Resources;
+        _infoBrush  = (SolidColorBrush)res["TextFillColorPrimaryBrush"];
+        _warnBrush  = (SolidColorBrush)res["SystemFillColorCautionBrush"];
+        _errorBrush = (SolidColorBrush)res["SystemFillColorCriticalBrush"];
+    }
+
+    private void OnThemeChanged()
+    {
+        RefreshBrushes();
+
+        // Reconstruit les entrées avec les nouvelles brushes. LogEntry est
+        // immutable (record-like) donc on remplace les instances et on rejoue
+        // ApplyFilter qui re-peuple _visible depuis _entries.
+        var rebuilt = _entries
+            .Select(e => new LogEntry(e.Text, e.Level, BrushForLevel(e.Level)))
+            .ToList();
+        _entries.Clear();
+        _entries.AddRange(rebuilt);
+        ApplyFilter();
+
+        // L'icône beacon n'est pas thémée (asset .ico unique par état),
+        // donc rien à faire dessus. Caption buttons → repilotés à la main.
+        RefreshTitleBarButtonColors();
+    }
+
+    private void RefreshTitleBarButtonColors()
+    {
+        // Les caption buttons système (min/max/close) ne s'auto-thèment pas
+        // quand on customise la title bar — il faut les piloter à la main.
+        var tb = AppWindow.TitleBar;
+        bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
+
+        var fg       = dark ? Colors.White : Colors.Black;
+        var inactive = dark ? Color.FromArgb(0xFF, 0x9A, 0x9A, 0x9A)
+                             : Color.FromArgb(0xFF, 0x60, 0x60, 0x60);
+        var hoverBg  = dark ? Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
+                             : Color.FromArgb(0x10, 0x00, 0x00, 0x00);
+        var pressBg  = dark ? Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)
+                             : Color.FromArgb(0x20, 0x00, 0x00, 0x00);
+
+        tb.ButtonBackgroundColor         = Colors.Transparent;
+        tb.ButtonInactiveBackgroundColor = Colors.Transparent;
+        tb.ButtonForegroundColor         = fg;
+        tb.ButtonInactiveForegroundColor = inactive;
+        tb.ButtonHoverBackgroundColor    = hoverBg;
+        tb.ButtonHoverForegroundColor    = fg;
+        tb.ButtonPressedBackgroundColor  = pressBg;
+        tb.ButtonPressedForegroundColor  = fg;
+    }
+
+    // ── Title bar : drag passthrough pour la SearchBox ───────────────────────
+
+    private void SetupDragPassthrough()
+    {
+        if (SearchBox.ActualWidth <= 0 || SearchBox.ActualHeight <= 0) return;
+        if (RootGrid.XamlRoot is null) return;
+
+        var scale = RootGrid.XamlRoot.RasterizationScale;
+        var transform = SearchBox.TransformToVisual(null);
+        var bounds = transform.TransformBounds(
+            new Windows.Foundation.Rect(0, 0, SearchBox.ActualWidth, SearchBox.ActualHeight));
+
+        var rect = new Windows.Graphics.RectInt32(
+            (int)(bounds.X * scale),
+            (int)(bounds.Y * scale),
+            (int)(bounds.Width * scale),
+            (int)(bounds.Height * scale));
+
+        try
+        {
+            var nonClient = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
+            nonClient.SetRegionRects(NonClientRegionKind.Passthrough, new[] { rect });
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Write("LOGWIN", $"passthrough err: {ex.Message}");
+        }
     }
 
     // ── Implémentation ────────────────────────────────────────────────────────
