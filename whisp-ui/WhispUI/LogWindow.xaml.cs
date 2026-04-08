@@ -144,10 +144,15 @@ public sealed partial class LogWindow : Window
         AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
         // Fenêtre classique : min, max, resize.
+        // Min size : empêche que la barre de commandes responsive soit
+        // écrasée en dessous du seuil le plus serré (400 px = tout dans
+        // le flyout More, search masquée).
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
+        presenter.PreferredMinimumWidth  = 400;
+        presenter.PreferredMinimumHeight = 300;
         AppWindow.SetPresenter(presenter);
 
         // Close → cache, ne détruit pas. L'instance est réutilisée via le tray.
@@ -307,8 +312,28 @@ public sealed partial class LogWindow : Window
 
     // ── Title bar : drag passthrough pour la SearchBox ───────────────────────
 
+    private void ClearDragPassthrough()
+    {
+        try
+        {
+            var nonClient = InputNonClientPointerSource.GetForWindowId(AppWindow.Id);
+            nonClient.SetRegionRects(NonClientRegionKind.Passthrough, Array.Empty<Windows.Graphics.RectInt32>());
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Write("LOGWIN", $"passthrough clear err: {ex.Message}");
+        }
+    }
+
     private void SetupDragPassthrough()
     {
+        // Search masquée (responsive < 600 px) → on retire la zone passthrough,
+        // sinon une zone fantôme reste sur la title bar.
+        if (SearchBox.Visibility == Visibility.Collapsed)
+        {
+            ClearDragPassthrough();
+            return;
+        }
         if (SearchBox.ActualWidth <= 0 || SearchBox.ActualHeight <= 0) return;
         if (RootGrid.XamlRoot is null) return;
 
@@ -458,6 +483,24 @@ public sealed partial class LogWindow : Window
         var dp = new DataPackage();
         dp.SetText(sb.ToString());
         Clipboard.SetContent(dp);
+    }
+
+    // ── Responsive : visibilité de la SearchBox ─────────────────────────────
+    //
+    // La migration des items de la CommandBar est gérée nativement
+    // (IsDynamicOverflowEnabled + DynamicOverflowOrder en XAML). Ici on
+    // s'occupe juste de la SearchBox qui doit disparaître sous 650 px.
+    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var newSearchVis = e.NewSize.Width >= 650
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        if (SearchBox.Visibility != newSearchVis)
+        {
+            SearchBox.Visibility = newSearchVis;
+            SetupDragPassthrough();
+        }
     }
 
     private async void OnSaveClick(object sender, RoutedEventArgs e)
