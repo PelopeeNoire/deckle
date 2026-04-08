@@ -1,0 +1,139 @@
+<Window
+    x:Class="WhispUI.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    Title="WhispUI Settings">
+
+    <Grid x:Name="RootGrid" SizeChanged="OnRootSizeChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Title bar custom (48px, 3 colonnes — calque LogWindow) ───────── -->
+        <Grid Grid.Row="0" x:Name="AppTitleBar" Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="138" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        Padding="16,0,8,0"
+                        Spacing="16"
+                        VerticalAlignment="Stretch">
+                <Image x:Name="AppIconBeacon"
+                       Width="16"
+                       Height="16"
+                       VerticalAlignment="Center" />
+                <TextBlock Text="WhispUI Settings"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <AutoSuggestBox x:Name="SearchBox"
+                            Grid.Column="1"
+                            QueryIcon="Find"
+                            PlaceholderText="Rechercher un paramètre"
+                            MaxWidth="320"
+                            VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- ── NavigationView + contenu ─────────────────────────────────────── -->
+        <NavigationView Grid.Row="1"
+                        x:Name="Nav"
+                        PaneDisplayMode="Auto"
+                        OpenPaneLength="280"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        SelectionChanged="OnNavSelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="NavGeneral" Content="General" Tag="general">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE713;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="NavWhisper" Content="Whisper configuration" Tag="whisper">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xF61F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="NavLlm" Content="LLM Rewriting" Tag="llm">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xF6C7;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="NavSettings" Content="Settings" Tag="settings">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE115;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <!-- Layer Fill comme LogWindow pour la hiérarchie de surfaces -->
+            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                    BorderThickness="1,1,0,0"
+                    CornerRadius="7,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Sticky header : H1 + Set to defaults global -->
+                    <Grid Grid.Row="0" Padding="32,24,32,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="PageTitle"
+                                   Grid.Column="0"
+                                   Text="General"
+                                   Style="{StaticResource TitleTextBlockStyle}"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Click="OnResetAllClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE10E;" FontSize="14" />
+                                <TextBlock Text="Set to defaults" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <!-- Zone scrollable : contenu de page courant -->
+                    <ScrollViewer Grid.Row="1"
+                                  Padding="32,0,32,24"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ContentPresenter x:Name="PageContent" />
+                    </ScrollViewer>
+
+                    <!-- Sticky footer : séparateur + Cancel / Save -->
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <StackPanel Grid.Row="1"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="12"
+                                    Padding="32,16,32,16">
+                            <Button Content="Cancel" Click="OnCancelClick" MinWidth="96" />
+                            <Button Content="Save" Style="{StaticResource AccentButtonStyle}"
+                                    Click="OnSaveClick" MinWidth="96" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </NavigationView>
+    </Grid>
+</Window>

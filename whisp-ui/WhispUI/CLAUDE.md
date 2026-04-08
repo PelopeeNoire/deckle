@@ -258,6 +258,24 @@ session de travail.**
 **Post-validation :** mettre à jour la tâche planifiée `Whisp` → exe WhispUI ; mettre à jour
 `../../CLAUDE.md` (point d'entrée).
 
+**SettingsWindow — skeleton livré.** `SettingsWindow.xaml` + `.cs` calqués sur LogWindow v3
+(Mica, thème système, title bar custom 48px 3 colonnes avec drag passthrough SearchBox,
+`OverlappedPresenter`, Close→Cancel+Hide, RefreshTitleBarButtonColors). Layout :
+`NavigationView PaneDisplayMode="Auto"` avec 3 items (General `\uE713`, Whisper configuration
+`\uF61F`, LLM Rewriting `\uF6C7`) + footer Settings `\uE115`. Contenu interne = Border
+LayerFill avec sticky header (H1 + Set to defaults `\uE10E`) / ScrollViewer + ContentPresenter
+swap / sticky footer (séparateur + Cancel/Save accent). Pages = placeholders TextBlock. Tray :
+nouvelle entrée "Settings" + `OnShowSettings` dans `TrayIconManager`. Instanciée une fois dans
+`App.OnLaunched`, jamais détruite.
+
+**À faire — voir mémoire `project_settingswindow.md`** : (1) tray clic gauche → Settings au
+lieu de Logs, Logs déplacé en footer NavigationView. (2) Refonte responsive avec briques
+WinUI natives — la search bar reste dans la title bar custom au lieu de migrer dans le header
+quand le nav collapse ; étudier la page Figma DS Windows UI 3 node `169220-31361` avant tout
+code custom. **Règle posée : chercher la brique native avant de bricoler.** (3) Sticky footer
+Cancel/Save visible uniquement en état dirty. (4) Vérifier version Figma WhispUI à jour
+`117-15203`. (5) Contenu réel des 3 pages — reporté.
+
 **Post-V1 — LogWindow responsive (et future SettingsWindow).** Rendre la `CommandBar` de
 LogWindow réactive à la largeur de la fenêtre, en s'appuyant au maximum sur le comportement
 standard WinUI : `AutoSuggestBox` qui se replie en icône loupe à gauche, et `AppBarButton`
