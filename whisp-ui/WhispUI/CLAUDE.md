@@ -96,8 +96,28 @@ scroll horizontal est autorisé). `LogWarning` exposé mais pas encore appelé p
 Filets de diagnostic dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`,
 `TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH`/`CRASH-AD`/`CRASH-TS`).
 
-**Passe debug logs A→Z (faite)** : 4 niveaux côté API (`Info` / `Step` / `Warning` / `Error`)
-et 3 modes de filtre dans le `SelectorBar` (Full / Filtered / Critical). `WhispEngine` expose
+**Passe debug logs A→Z (faite)** : 5 niveaux côté API (`Verbose` / `Info` / `Step` / `Warning` / `Error`)
+et 3 modes de filtre dans le `SelectorBar` (Full / Filtered / Critical). Sémantique couleur :
+**Verbose blanc** = bruit / durée de vie (heartbeats RECORD `+Ns capturés`, dumps par segment Whisper,
+plomberie clipboard `GlobalAlloc`/`OpenClipboard`, plomberie PASTE `cible attendue`/`SetForegroundWindow`/
+`contrôle focusé`, `Mémoire passée au chunk suivant`, `[DONE]` recap timings non vérifié) — masqué en
+Filtered ; **Info bleu sémantique Fluent** (`#005FB7` light / `#60CDFF` dark, brush construit en code car
+le `SystemFillColorAttentionBrush` de la theme dictionary peut résoudre sur l'accent système chez
+certains users) = jalons rares et importants (`Enregistrement démarré`, `Chunk N extrait → pipeline`,
+`Chunk final extrait`, `Capture terminée`, `Chunk N → texte recollé`, `Texte copié`, `Ctrl+V envoyé`) ;
+**Step vert** = jalons rares et **vérifiés** — exactement deux par session normale : `Modèle chargé en
+N ms` (init, vérifié `_ctx ≠ 0`) et `Bout en bout OK — N chars collés dans <cible>` (émis uniquement si
+`PasteFromClipboard` retourne `true`). Filtered masque uniquement Verbose. Critical = Warning + Error.
+
+**`PasteFromClipboard` retourne `bool`** et refuse de coller (Warn avec mode opératoire « le presse-papier
+contient le texte — colle manuellement avec Ctrl+V ») dans tous ces cas : `_pasteTarget == 0`, cible
+appartient au process WhispUI lui-même (`GetWindowThreadProcessId == GetCurrentProcess().Id` — filet
+contre le faux positif « collé dans WhispUI logs »), `SetForegroundWindow` n'a pas réellement ramené
+la cible au foreground (vérifié via `GetForegroundWindow()` après sleep, pas via le retour bool),
+`GetFocusedClass == null`, `SendInput` partiel. Si tout passe, le récap final devient le Step vert
+de bout en bout ; sinon `[DONE]` Verbose timings + le Warn orange explicatif.
+
+Cartographie instrumentée historique : `WhispEngine` expose
 maintenant `LogStepLine` + `LogWarningLine` en plus de `LogLine` / `LogErrorLine`. Cartographie
 instrumentée : MODEL (path/taille/use_gpu, Step au succès, Warn si fichier absent), HOTKEY
 (`DescribeHwnd` cible + Warn si pas de focus clavier), RECORD (heartbeat 5s en Info au lieu
@@ -125,14 +145,6 @@ retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié via `GetFocus
   en `initial_prompt` que les segments qui ont passé un seuil de confiance (sinon une
   hallucination en fin de chunk N contamine le démarrage du chunk N+1 — observé : passage
   spontané au japonais après une phrase anglaise propre).
-- **Logs Step : sémantique « action faite » vs « résultat vérifié »**. Plusieurs Step verts
-  signalent qu'une action a été lancée sans avoir vérifié son effet. Cas observé : « Collé
-  dans WhispUI » alors que la fenêtre de logs n'a aucun champ texte — l'utilisateur voit du
-  vert pour une opération qui n'a rien collé. Reprendre tous les `DbgStep` ajoutés et soit
-  ajouter une vérification post-action avant d'émettre le Step (ex : pour PASTE, vérifier
-  que la cible a effectivement reçu un événement clavier ou qu'elle a bien un champ texte
-  focusé), soit dégrader en Info quand on ne peut pas confirmer. Possiblement introduire
-  un 5ᵉ niveau (« attempt » / Info+ ?) pour distinguer « j'ai essayé » de « j'ai réussi ».
 - **Quitter depuis le tray ne tue pas tout le process** : `Application.Current.Exit()` dans
   `TrayIconManager.OnQuit` ne termine pas proprement. Suspects : threads WhispEngine
   (Record/Transcribe) non background ou bloqués, icône tray non supprimée via `NIM_DELETE`,

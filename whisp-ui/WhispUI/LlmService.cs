@@ -29,13 +29,11 @@ internal class LlmService
     static readonly HttpClient _http = new();
 
     readonly Action<string>? _onWarn;
-    readonly Action<string>? _onStep;
     readonly Action<string>? _onInfo;
 
-    public LlmService(Action<string>? onWarn = null, Action<string>? onStep = null, Action<string>? onInfo = null)
+    public LlmService(Action<string>? onWarn = null, Action<string>? onInfo = null)
     {
         _onWarn = onWarn;
-        _onStep = onStep;
         _onInfo = onInfo;
     }
 
@@ -72,7 +70,7 @@ internal class LlmService
 
             sw.Stop();
             string trimmed = rewritten?.Trim() ?? "";
-            _onStep?.Invoke($"Réécriture OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars)");
+            _onInfo?.Invoke($"[LLM] Réécriture OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars)");
             return trimmed;
         }
         catch (Exception ex)
