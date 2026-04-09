@@ -35,19 +35,20 @@ public sealed partial class HudWindow : Window
     // Dimensions Figma (node 64:1699) : 314 × 78.
     private const int HUD_WIDTH  = 314;
     private const int HUD_HEIGHT = 78;
-    private const int HUD_BOTTOM_MARGIN = 80; // au-dessus de la taskbar
+    private const int HUD_BOTTOM_MARGIN = 96; // au-dessus de la taskbar
 
     // ── Proximité souris ──────────────────────────────────────────────────────
     // Fade continu : alpha mappé sur la distance curseur/HUD via smoothstep.
-    //   distance >= FAR_RADIUS → alpha 255 (totalement visible)
-    //   distance <= NEAR_RADIUS → alpha 0   (totalement invisible, Mica inclus)
+    //   distance >= FAR_RADIUS → alpha MAX_ALPHA (plafond, HUD "pleine")
+    //   distance <= NEAR_RADIUS → alpha MIN_ALPHA (plancher, HUD estompée)
     //   entre les deux → smoothstep (t²(3-2t)), courbe douce sans cassure aux bords.
     // Pas d'hystérésis : la transition est continue, donc pas de risque de flicker.
     // Pas d'animation : chaque WM_INPUT (souris à ~125 Hz) recalcule et applique
     // directement l'alpha cible. La fluidité vient de la fréquence des events.
-    private const double NEAR_RADIUS_DIP = 10;   // quasi-touchant → invisible
-    private const double FAR_RADIUS_DIP  = 200;  // ≥ 200 DIPs → 100 % visible
-    private const byte   VISIBLE_ALPHA   = 255;
+    private const double NEAR_RADIUS_DIP = 10;   // quasi-touchant → alpha MIN
+    private const double FAR_RADIUS_DIP  = 128;  // ≥ 128 DIPs → alpha MAX
+    private const byte   MAX_ALPHA       = 255;  // HUD pleinement visible (loin)
+    private const byte   MIN_ALPHA       = 40;   // HUD estompée mais pas invisible (proche)
 
     private readonly IntPtr _hwnd;
     private readonly System.Diagnostics.Stopwatch _stopwatch = new();
@@ -60,7 +61,7 @@ public sealed partial class HudWindow : Window
     private int _lastSec = -1;
     private int _lastCs  = -1;
 
-    private byte _currentAlpha = VISIBLE_ALPHA;
+    private byte _currentAlpha = MAX_ALPHA;
 
     // Subclass : délégué en champ d'instance (jamais lambda locale, GC sinon).
     private NativeMethods.SubclassProc? _subclassDelegate;
@@ -150,9 +151,9 @@ public sealed partial class HudWindow : Window
         var ex = NativeMethods.GetWindowLongPtr(_hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
         NativeMethods.SetWindowLongPtr(
             _hwnd, NativeMethods.GWL_EXSTYLE,
-            new IntPtr(ex | NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TOOLWINDOW));
+            new IntPtr(ex | NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_TRANSPARENT));
         NativeMethods.SetLayeredWindowAttributes(
-            _hwnd, 0, VISIBLE_ALPHA, NativeMethods.LWA_ALPHA);
+            _hwnd, 0, MAX_ALPHA, NativeMethods.LWA_ALPHA);
 
         // Subclass HWND pour intercepter WM_INPUT (proximité souris event-driven).
         _subclassDelegate = SubclassCallback;
@@ -239,7 +240,7 @@ public sealed partial class HudWindow : Window
             ShowNoActivate();
 
             // Reset alpha à 255 et arme la proximité.
-            SetAlphaImmediate(VISIBLE_ALPHA);
+            SetAlphaImmediate(MAX_ALPHA);
             _proximityActive = true;
 
             // Évalue une fois manuellement : si la souris est déjà sous/près
@@ -292,7 +293,7 @@ public sealed partial class HudWindow : Window
     private void HideCore()
     {
         _proximityActive = false;
-        SetAlphaImmediate(VISIBLE_ALPHA); // reset pour la prochaine session
+        SetAlphaImmediate(MAX_ALPHA); // reset pour la prochaine session
 
         if (_clockRenderingHooked)
         {
@@ -431,7 +432,7 @@ public sealed partial class HudWindow : Window
         // Smoothstep : t²(3-2t). Pente nulle aux bords, accélération au milieu.
         double eased = t * t * (3.0 - 2.0 * t);
 
-        byte alpha = (byte)Math.Round(eased * 255.0);
+        byte alpha = (byte)Math.Round(MIN_ALPHA + eased * (MAX_ALPHA - MIN_ALPHA));
         if (alpha != _currentAlpha) SetAlphaImmediate(alpha);
     }
 

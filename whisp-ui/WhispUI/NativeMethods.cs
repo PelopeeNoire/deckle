@@ -298,6 +298,10 @@ internal static class NativeMethods
     // sur tous les bureaux virtuels. C'est le mécanisme qu'utilise PowerToys
     // pour ses overlays. Best-effort, peut casser sur futures builds Windows.
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
+    // WS_EX_TRANSPARENT : exclut la fenêtre du hit-testing. Les clics, le
+    // curseur et la sélection traversent la HUD et atteignent la fenêtre
+    // en dessous, quel que soit l'alpha layered appliqué.
+    public const uint WS_EX_TRANSPARENT = 0x00000020;
     public const uint LWA_ALPHA     = 0x00000002;
 
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
