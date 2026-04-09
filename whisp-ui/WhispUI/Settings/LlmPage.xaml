@@ -6,12 +6,13 @@
     <ScrollViewer Padding="32,24,32,24"
                   VerticalScrollBarVisibility="Auto">
         <StackPanel MaxWidth="1000" HorizontalAlignment="Stretch">
-            <TextBlock Text="LLM Rewriting"
+            <TextBlock Text="Rewriting"
                        Style="{StaticResource TitleTextBlockStyle}"
-                       Margin="0,0,0,16" />
+                       Margin="0,0,0,8" />
             <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        TextWrapping="Wrap"
-                       Text="Réécriture LLM à venir (provider, modèle, prompt système, hotkey)." />
+                       Text="Clean up and restructure your transcription through a local language model. Coming soon — provider, model, system prompt, and a dedicated shortcut kept separate from plain transcription." />
         </StackPanel>
     </ScrollViewer>
 </Page>

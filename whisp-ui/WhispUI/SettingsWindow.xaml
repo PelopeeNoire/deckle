@@ -40,19 +40,19 @@
             </NavigationView.AutoSuggestBox>
 
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="General"
+                <NavigationViewItem Content="Recording"
                                     Tag="WhispUI.Settings.GeneralPage">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE713;" />
+                        <FontIcon Glyph="&#xE720;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Whisper configuration"
+                <NavigationViewItem Content="Transcription"
                                     Tag="WhispUI.Settings.WhisperPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF61F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="LLM Rewriting"
+                <NavigationViewItem Content="Rewriting"
                                     Tag="WhispUI.Settings.LlmPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF6C7;" />

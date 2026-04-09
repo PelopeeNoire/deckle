@@ -7,7 +7,7 @@
 
     <!-- Pattern canonique Microsoft Learn (SettingsExpander sample "Settings page
          example") : StackPanel max 1000 dans un Grid, Spacing=4 entre cards,
-         Margin="1,30,0,6" sur les headers de section, transitions natives. -->
+         Margin="1,30,0,6" sur les headers de section. -->
     <Page.Resources>
         <x:Double x:Key="SettingsCardSpacing">4</x:Double>
         <Style x:Key="SettingsSectionHeaderTextBlockStyle"
@@ -23,82 +23,88 @@
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
         <Grid>
-            <!-- Workaround bug microsoft-ui-xaml#3842 : Grid wrapper autour du
-                 StackPanel MaxWidth pour éviter les glitches SettingsExpander. -->
             <StackPanel MaxWidth="1000"
                         HorizontalAlignment="Stretch"
                         Spacing="{StaticResource SettingsCardSpacing}">
-                <StackPanel.ChildrenTransitions>
-                    <EntranceThemeTransition FromVerticalOffset="50" />
-                    <RepositionThemeTransition IsStaggeringEnabled="False" />
-                </StackPanel.ChildrenTransitions>
 
                 <!-- Titre de page — pattern Win11 Settings : le H1 vit dans la
                      Page, pas dans le chrome de la fenêtre. -->
-                <TextBlock Text="General"
+                <TextBlock Text="Recording"
                            Style="{StaticResource TitleTextBlockStyle}"
-                           Margin="0,0,0,16" />
+                           Margin="0,0,0,8" />
 
-                <!-- ── Démarrage ───────────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,12"
+                           Text="Everything that happens when you press the shortcut — the key combination, the overlay you see while capturing, and how WhispUI runs in the background." />
+
+                <!-- ── Shortcut ────────────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Démarrage" />
+                           Text="Shortcut" />
 
-                <controls:SettingsCard Header="Démarrer avec Windows"
-                                       Description="Lance WhispUI automatiquement à l'ouverture de session."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
-                    <ToggleSwitch />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard Header="Minimiser au démarrage"
-                                       Description="Ouvre directement en zone de notification, sans fenêtre visible."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
-                    <ToggleSwitch IsOn="True" />
-                </controls:SettingsCard>
-
-                <!-- ── Apparence ───────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Apparence" />
-
-                <controls:SettingsCard Header="Thème de l'application"
-                                       Description="Choisir le thème utilisé par WhispUI."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
-                    <ComboBox SelectedIndex="0" MinWidth="160">
-                        <ComboBoxItem>Système</ComboBoxItem>
-                        <ComboBoxItem>Clair</ComboBoxItem>
-                        <ComboBoxItem>Sombre</ComboBoxItem>
-                    </ComboBox>
-                </controls:SettingsCard>
-
-                <controls:SettingsExpander Header="HUD d'enregistrement"
-                                           Description="Apparence et comportement de l'overlay pendant l'enregistrement."
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
-                    <ToggleSwitch IsOn="True" />
-                    <controls:SettingsExpander.Items>
-                        <controls:SettingsCard Header="Fondu à l'approche de la souris"
-                                               Description="Rend le HUD transparent quand le curseur passe au-dessus.">
-                            <ToggleSwitch IsOn="True" />
-                        </controls:SettingsCard>
-                        <controls:SettingsCard Header="Position à l'écran">
-                            <ComboBox SelectedIndex="0" MinWidth="160">
-                                <ComboBoxItem>Bas au centre</ComboBoxItem>
-                                <ComboBoxItem>Bas à droite</ComboBoxItem>
-                                <ComboBoxItem>Haut au centre</ComboBoxItem>
-                            </ComboBox>
-                        </controls:SettingsCard>
-                    </controls:SettingsExpander.Items>
-                </controls:SettingsExpander>
-
-                <!-- ── Raccourcis ──────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Raccourcis" />
-
-                <controls:SettingsCard Header="Raccourci d'enregistrement"
-                                       Description="Combinaison de touches globale pour démarrer / arrêter la transcription."
+                <controls:SettingsCard Header="Recording shortcut"
+                                       Description="Global key combination to start and stop transcription."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
                     <TextBlock Text="Alt + `"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
+
+                <!-- ── Recording overlay ───────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Recording overlay" />
+
+                <controls:SettingsExpander Header="Show the overlay while recording"
+                                           Description="A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes."
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                    <ToggleSwitch IsOn="True" />
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard Header="Fade when your cursor is near"
+                                               Description="Make the overlay transparent when you move over it, so it never blocks what's underneath.">
+                            <ToggleSwitch IsOn="True" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard Header="Screen position"
+                                               Description="Where the overlay appears on your primary display.">
+                            <ComboBox SelectedIndex="0" MinWidth="160">
+                                <ComboBoxItem>Bottom center</ComboBoxItem>
+                                <ComboBoxItem>Bottom right</ComboBoxItem>
+                                <ComboBoxItem>Top center</ComboBoxItem>
+                            </ComboBox>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- ── Startup ─────────────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Startup" />
+
+                <controls:SettingsCard Header="Start with Windows"
+                                       Description="Launch WhispUI automatically when you sign in."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
+                    <ToggleSwitch />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard Header="Start minimized"
+                                       Description="Open straight to the system tray, without any visible window."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
+                    <ToggleSwitch IsOn="True" />
+                </controls:SettingsCard>
+
+                <!-- ── Appearance ──────────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Appearance" />
+
+                <controls:SettingsCard Header="App theme"
+                                       Description="Light, dark, or follow your Windows theme."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
+                    <ComboBox SelectedIndex="0" MinWidth="160">
+                        <ComboBoxItem>System</ComboBoxItem>
+                        <ComboBoxItem>Light</ComboBoxItem>
+                        <ComboBoxItem>Dark</ComboBoxItem>
+                    </ComboBox>
+                </controls:SettingsCard>
+
             </StackPanel>
         </Grid>
     </ScrollViewer>
