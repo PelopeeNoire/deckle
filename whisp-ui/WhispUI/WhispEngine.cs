@@ -482,28 +482,14 @@ internal sealed class WhispEngine : IDisposable
         WhisperFullParams wparams = Marshal.PtrToStructure<WhisperFullParams>(fullParamsPtr);
         NativeMethods.whisper_free_params(fullParamsPtr);
 
-        IntPtr langPtr   = Marshal.StringToHGlobalAnsi("fr");
-        IntPtr promptPtr = Marshal.StringToHGlobalAnsi("Transcription en français.");
-        wparams.language       = langPtr;
-        wparams.initial_prompt = promptPtr;
         wparams.print_progress = 0;
 
-        // Pas d'override des seuils anti-hallucination — on s'appuie sur les defaults
-        // de whisper.cpp qui activent déjà le fallback natif :
-        //   temperature=0,0 / temperature_inc=0,2 / logprob_thold=-1,0 / entropy_thold=2,4
-        // Mécanique : après chaque segment, si (avg_logprob < logprob_thold) OU
-        // (entropy < entropy_thold), Whisper re-décode le MÊME segment à temperature+=
-        // 0,2 jusqu'à temperature ≤ 1,0. C'est le mécanisme officiel OpenAI Whisper.
-        //
-        // ATTENTION au sens d'entropy_thold : le test est `entropy < seuil` (pas >).
-        // Une entropie BASSE = distribution piquée sur un seul token = modèle "trop
-        // sûr" du même token = symptôme de boucle de répétition. Donc seuil HAUT
-        // (2,4) = STRICT (déclenche le fallback plus souvent), seuil BAS (1,9) =
-        // PERMISSIF. L'ancien override 1,9 (héritage chunking) était plus permissif
-        // que le défaut — on l'enlève pour laisser le filtre natif faire son boulot.
-        //
-        // no_speech_thold=0,7 (ancien override) était plus permissif que le défaut
-        // 0,6 mais sans effet : sur de la dictation, nsp est toujours 0% en logs.
+        // Snapshot des settings utilisateur au début de la transcription.
+        // Les champs hot-reload (seuils, VAD, suppress, contexte, décodage)
+        // sont appliqués ici à chaque appel — aucune relance de contexte.
+        // Les réglages lourds (modèle, use_gpu) sont gérés au LoadModelAsync.
+        var settings = Settings.SettingsService.Instance.Current;
+        var nativeAllocs = Settings.WhisperParamsMapper.Apply(ref wparams, settings);
 
         // Cache la borne des tokens timestamp une fois pour tout l'appel — c'est une
         // propriété du modèle, pas du segment, pas la peine d'appeler à chaque token.
@@ -525,8 +511,7 @@ internal sealed class WhispEngine : IDisposable
         sw.Stop();
         long transcribeMsTotal = sw.ElapsedMilliseconds;
 
-        Marshal.FreeHGlobal(langPtr);
-        Marshal.FreeHGlobal(promptPtr);
+        nativeAllocs.Free();
 
         if (result != 0)
         {
