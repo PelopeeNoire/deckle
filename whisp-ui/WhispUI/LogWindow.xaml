@@ -120,7 +120,7 @@
         </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="48" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -134,25 +134,18 @@
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <Grid VerticalAlignment="Center">
-                    <AutoSuggestBox x:Name="SearchBox"
-                                    QueryIcon="Find"
-                                    PlaceholderText="Rechercher"
-                                    MinWidth="280"
-                                    MaxWidth="760"
-                                    HorizontalAlignment="Stretch"
-                                    VerticalAlignment="Center"
-                                    TextChanged="OnSearchTextChanged" />
-                    <Button x:Name="SearchIconButton"
-                            Visibility="Collapsed"
-                            VerticalAlignment="Center"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            Click="OnSearchIconClick"
-                            ToolTipService.ToolTip="Rechercher">
-                        <FontIcon Glyph="&#xE721;" FontSize="16" />
-                    </Button>
-                </Grid>
+                <!-- AutoSuggestBox unique. Le TitleBar priorise la largeur de
+                     son Content vs caption buttons, et l'AutoSuggestBox
+                     rétrécit naturellement jusqu'à MinWidth. Pas de swap
+                     icône/field custom — pattern Win11 Settings. -->
+                <AutoSuggestBox x:Name="SearchBox"
+                                QueryIcon="Find"
+                                PlaceholderText="Rechercher"
+                                MinWidth="240"
+                                MaxWidth="760"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Center"
+                                TextChanged="OnSearchTextChanged" />
             </TitleBar.Content>
         </TitleBar>
 

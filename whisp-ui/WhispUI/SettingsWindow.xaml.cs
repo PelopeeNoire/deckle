@@ -2,6 +2,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
 
@@ -9,14 +10,17 @@ namespace WhispUI;
 
 // ─── Fenêtre Settings ─────────────────────────────────────────────────────────
 //
-// Famille visuelle calquée sur LogWindow v3 : Mica + thème système, title bar
-// custom 48px en 3 colonnes (drag gauche / search centre / réserve 138 caption),
-// Close→Cancel+Hide (jamais détruite, créée une fois dans App.OnLaunched).
+// Mica + thème système, TitleBar natif (icône + titre). NavigationView en
+// PaneDisplayMode=Auto qui gère lui-même la bascule Left / LeftCompact /
+// LeftMinimal et son propre burger natif. La recherche est dans le slot
+// canonique NavigationView.AutoSuggestBox (pattern Microsoft Learn).
 //
-// Layout principal : NavigationView adaptatif (Left ≥960 / LeftCompact <960).
-// Le contenu interne est un Grid sticky-header / Frame de navigation / sticky
-// footer. Chaque Page (General, Whisper, LLM) gère son propre ScrollViewer et
-// son padding — pattern canonique Microsoft Learn pour une settings page.
+// Navigation : Tag sur chaque item = nom complet du type de Page, résolu via
+// Type.GetType dans OnNavSelectionChanged (pattern du sample officiel
+// Microsoft Learn §"Code example").
+//
+// Auto-save partout, donc pas de Cancel/Save global. Close → cache, ne
+// détruit pas (créée une fois dans App.OnLaunched).
 
 public sealed partial class SettingsWindow : Window
 {
@@ -45,29 +49,27 @@ public sealed partial class SettingsWindow : Window
 
         // Title bar natif : hauteur/drag/caption gérés par le contrôle.
         // PreferredHeightOption=Tall agrandit les caption buttons système pour
-        // rester alignés avec le contenu interactif (SearchBox) du TitleBar.
+        // rester alignés avec le contenu interactif (AutoSuggestBox hébergé
+        // par NavigationView juste en dessous).
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
 
         SystemBackdrop = new MicaBackdrop();
 
-        // Sélection initiale — on navigue d'abord, puis on synchronise la
-        // sélection. L'ordre évite un double Navigate si SelectionChanged
-        // déclenche une seconde navigation vers le même type.
-        PageFrame.Navigate(typeof(Settings.GeneralPage));
-        Nav.SelectedItem = NavGeneral;
-        PageTitle.Text = "General";
+        // Sélection initiale → déclenche SelectionChanged → navigation vers
+        // GeneralPage. Un seul chemin de navigation, pas de double-nav.
+        Nav.SelectedItem = Nav.MenuItems[0];
 
         Title = "WhispUI Settings";
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1100, 760));
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min cohérent Task Manager : on veut pouvoir descendre assez bas
-        // pour exposer le breakpoint search-en-icône et titre masqué.
+        // Min cohérent avec les breakpoints NavigationView Auto (640/1008).
+        // On descend sous 640 pour exposer le mode LeftMinimal natif.
         presenter.PreferredMinimumWidth  = 320;
         presenter.PreferredMinimumHeight = 400;
         AppWindow.SetPresenter(presenter);
@@ -78,15 +80,6 @@ public sealed partial class SettingsWindow : Window
             args.Cancel = true;
             AppWindow.Hide();
         };
-
-    }
-
-    // Pattern canonique Microsoft Learn : le burger vit dans la TitleBar native
-    // (slot gauche, à côté de l'icône, comme Task Manager). NavigationView cache
-    // le sien via IsPaneToggleButtonVisible=False. On relaie le toggle ici.
-    private void OnPaneToggleRequested(Microsoft.UI.Xaml.Controls.TitleBar sender, object args)
-    {
-        Nav.IsPaneOpen = !Nav.IsPaneOpen;
     }
 
     public void ShowAndActivate()
@@ -103,30 +96,61 @@ public sealed partial class SettingsWindow : Window
     }
 
     // ── NavigationView : swap de page ────────────────────────────────────────
+    //
+    // Pattern canonique Microsoft Learn (sample §"Code example") : le Tag de
+    // l'item porte le nom complet du type de Page, résolu par Type.GetType.
+    // Garde CurrentSourcePageType != pageType pour éviter un re-Navigate
+    // redondant au setup initial.
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (args.SelectedItem is not NavigationViewItem item) return;
-        var tag = item.Tag as string;
+        App.Log?.LogVerbose($"[SETTINGS] SelectionChanged fired, item={(args.SelectedItem as NavigationViewItem)?.Content}");
 
-        (Type pageType, string title) = tag switch
+        if (args.SelectedItem is not NavigationViewItem item)
         {
-            "general"  => (typeof(Settings.GeneralPage), "General"),
-            "whisper"  => (typeof(Settings.WhisperPage), "Whisper configuration"),
-            "llm"      => (typeof(Settings.LlmPage),     "LLM Rewriting"),
-            _          => (typeof(Settings.GeneralPage), "General"),
-        };
-
-        // Évite un re-Navigate redondant si on est déjà sur la page cible
-        // (SelectionChanged peut se déclencher plusieurs fois lors du setup).
-        if (PageFrame.CurrentSourcePageType != pageType)
-        {
-            PageFrame.Navigate(
-                pageType,
-                null,
-                new Microsoft.UI.Xaml.Media.Animation.EntranceNavigationTransitionInfo());
+            App.Log?.LogVerbose("[SETTINGS] SelectedItem n'est pas un NavigationViewItem — ignoré");
+            return;
         }
-        PageTitle.Text = title;
+        if (item.Tag is not string tag)
+        {
+            App.Log?.LogWarning($"[SETTINGS] Item '{item.Content}' sans Tag — nav impossible");
+            return;
+        }
+        if (tag == "logs") return;
+
+        var pageType = Type.GetType(tag);
+        if (pageType is null)
+        {
+            App.Log?.LogError($"[SETTINGS] Type introuvable pour tag '{tag}'");
+            return;
+        }
+
+        if (PageFrame.CurrentSourcePageType == pageType)
+        {
+            App.Log?.LogVerbose($"[SETTINGS] {pageType.Name} déjà courante — pas de re-nav");
+            return;
+        }
+
+        App.Log?.Log($"[SETTINGS] Navigate → {pageType.Name}");
+        try
+        {
+            bool ok = PageFrame.Navigate(pageType, null, new EntranceNavigationTransitionInfo());
+            if (!ok)
+            {
+                App.Log?.LogError($"[SETTINGS] Navigate({pageType.Name}) a retourné false");
+            }
+            else
+            {
+                App.Log?.LogStep($"[SETTINGS] {pageType.Name} navigation OK");
+            }
+        }
+        catch (Exception ex)
+        {
+            App.Log?.LogError($"[SETTINGS] Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
+            App.Log?.LogError(ex.StackTrace ?? "(no stack)");
+            // Fallback fichier — au cas où la LogWindow elle-même est dans un état pourri.
+            DebugLog.Write("SETTINGS", $"Navigate({pageType.Name}) THREW: {ex}");
+        }
     }
 
     // Item footer "Logs" : SelectsOnInvoked=False donc pas de SelectionChanged,
@@ -134,32 +158,12 @@ public sealed partial class SettingsWindow : Window
     // ouvre la LogWindow partagée.
     private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
-        if (args.InvokedItemContainer is NavigationViewItem item &&
-            item.Tag as string == "logs")
+        var item = args.InvokedItemContainer as NavigationViewItem;
+        App.Log?.LogVerbose($"[SETTINGS] ItemInvoked: {item?.Content} (tag={item?.Tag})");
+        if (item?.Tag as string == "logs")
         {
+            App.Log?.Log("[SETTINGS] Ouverture LogWindow via footer");
             OnShowLogsRequested?.Invoke();
         }
     }
-
-    // ── Boutons header / footer (stubs) ──────────────────────────────────────
-
-    private void OnResetAllClick(object sender, RoutedEventArgs e)
-    {
-        // TODO : reset des paramètres de la page courante quand le contenu
-        // réel sera branché.
-        DebugLog.Write("SETTINGS", "Reset all (stub)");
-    }
-
-    private void OnCancelClick(object sender, RoutedEventArgs e)
-    {
-        AppWindow.Hide();
-    }
-
-    private void OnSaveClick(object sender, RoutedEventArgs e)
-    {
-        // TODO : persistance quand le contenu réel sera branché.
-        DebugLog.Write("SETTINGS", "Save (stub)");
-        AppWindow.Hide();
-    }
-
 }

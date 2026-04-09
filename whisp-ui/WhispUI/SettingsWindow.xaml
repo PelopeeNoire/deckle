@@ -2,7 +2,6 @@
     x:Class="WhispUI.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     Title="WhispUI Settings">
 
     <Grid x:Name="RootGrid">
@@ -11,51 +10,50 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ── Title bar natif — pas de hamburger : en PaneDisplayMode=Left
-             le NavigationView tient son pane toujours visible et inline,
-             donc aucun toggle n'est nécessaire. -->
-        <!-- TitleBar natif. Hamburger, titre et zone Content basculent via
-             OnRootSizeChanged selon 3 breakpoints : 960, 580, 390. -->
-        <!-- TitleBar natif. Icône + titre à gauche, search centrée. Aucun
-             burger ici : c'est le NavigationView qui porte le sien. -->
+        <!-- TitleBar natif : icône + titre uniquement. La recherche vit dans
+             NavigationView.AutoSuggestBox (pattern canonique Microsoft Learn
+             "NavigationView → Pane" : slot dédié AutoSuggestBox). -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
-                  Title="WhispUI Settings"
-                  IsPaneToggleButtonVisible="True"
-                  PaneToggleRequested="OnPaneToggleRequested">
+                  Title="WhispUI Settings">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
-            <TitleBar.Content>
-                <AutoSuggestBox x:Name="SearchBox"
-                                QueryIcon="Find"
-                                PlaceholderText="Rechercher un paramètre" />
-            </TitleBar.Content>
         </TitleBar>
 
-        <!-- ── NavigationView nu. PaneDisplayMode par défaut (Auto) :
-             NavigationView gère lui-même la bascule Left ↔ LeftMinimal
-             selon la largeur disponible, avec son propre burger. Pattern
-             Task Manager Windows 11 : aucun override custom. -->
+        <!-- NavigationView. PaneDisplayMode=Auto (défaut) → Left ≥1008,
+             LeftCompact 641-1007, LeftMinimal ≤640 (valeurs système, doc
+             Microsoft Learn "Default adaptive behavior"). Tag = nom complet
+             du type de Page, résolu via Type.GetType dans le handler (pattern
+             du sample officiel Microsoft Learn §"Code example"). -->
         <NavigationView Grid.Row="1"
                         x:Name="Nav"
                         IsBackButtonVisible="Collapsed"
-                        IsPaneToggleButtonVisible="False"
                         IsSettingsVisible="False"
                         SelectionChanged="OnNavSelectionChanged"
                         ItemInvoked="OnNavItemInvoked">
+
+            <NavigationView.AutoSuggestBox>
+                <AutoSuggestBox x:Name="SearchBox"
+                                QueryIcon="Find"
+                                PlaceholderText="Search settings" />
+            </NavigationView.AutoSuggestBox>
+
             <NavigationView.MenuItems>
-                <NavigationViewItem x:Name="NavGeneral" Content="General" Tag="general">
+                <NavigationViewItem Content="General"
+                                    Tag="WhispUI.Settings.GeneralPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="NavWhisper" Content="Whisper configuration" Tag="whisper">
+                <NavigationViewItem Content="Whisper configuration"
+                                    Tag="WhispUI.Settings.WhisperPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF61F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="NavLlm" Content="LLM Rewriting" Tag="llm">
+                <NavigationViewItem Content="LLM Rewriting"
+                                    Tag="WhispUI.Settings.LlmPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF6C7;" />
                     </NavigationViewItem.Icon>
@@ -63,11 +61,11 @@
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
-                <!-- Item "Logs" : ouvre la LogWindow partagée via callback App.
-                     SelectsOnInvoked=False pour que le clic ne le marque pas
-                     comme page sélectionnée (ce n'est pas une page interne). -->
-                <NavigationViewItem x:Name="NavLogs"
-                                    Content="Logs"
+                <!-- Logs : ouvre la LogWindow partagée via callback App.
+                     SelectsOnInvoked=False → pas de sélection persistante,
+                     pas de navigation Frame, on récupère le clic via
+                     ItemInvoked. -->
+                <NavigationViewItem Content="Logs"
                                     Tag="logs"
                                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
@@ -76,62 +74,13 @@
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
-            <!-- Layer Fill comme LogWindow pour la hiérarchie de surfaces -->
-            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                    BorderThickness="1,1,0,0"
-                    CornerRadius="7,0,0,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <!-- Sticky header : H1 + Set to defaults global -->
-                    <Grid Grid.Row="0" Padding="32,24,32,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="PageTitle"
-                                   Grid.Column="0"
-                                   Text="General"
-                                   Style="{StaticResource TitleTextBlockStyle}"
-                                   VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Click="OnResetAllClick">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE10E;" FontSize="14" />
-                                <TextBlock Text="Set to defaults" />
-                            </StackPanel>
-                        </Button>
-                    </Grid>
-
-                    <!-- Zone scrollable : chaque Page porte son propre ScrollViewer
-                         et son padding interne (pattern canonique Microsoft Learn).
-                         Le Frame gère le cycle de vie et les transitions natives. -->
-                    <Frame Grid.Row="1" x:Name="PageFrame" />
-
-                    <!-- Sticky footer : séparateur + Cancel / Save -->
-                    <Grid Grid.Row="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="1" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Border Grid.Row="0"
-                                Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                        <StackPanel Grid.Row="1"
-                                    Orientation="Horizontal"
-                                    HorizontalAlignment="Right"
-                                    Spacing="12"
-                                    Padding="32,16,32,16">
-                            <Button Content="Cancel" Click="OnCancelClick" MinWidth="96" />
-                            <Button Content="Save" Style="{StaticResource AccentButtonStyle}"
-                                    Click="OnSaveClick" MinWidth="96" />
-                        </StackPanel>
-                    </Grid>
-                </Grid>
-            </Border>
+            <!-- Content area : le NavigationView pose déjà sa surface Layer
+                 avec coin supérieur-gauche arrondi DWM. Pas de Border wrapper,
+                 pas de CornerRadius custom, pas de sticky header/footer.
+                 Chaque Page gère son propre titre H1 et son ScrollViewer
+                 (pattern Win11 Settings). Auto-save partout → pas de
+                 Cancel/Save global. -->
+            <Frame x:Name="PageFrame" />
         </NavigationView>
     </Grid>
 </Window>

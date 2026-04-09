@@ -48,13 +48,17 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer Padding="32,0,32,24"
+    <ScrollViewer Padding="32,24,32,24"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
         <Grid>
             <StackPanel MaxWidth="1000"
                         HorizontalAlignment="Stretch"
                         Spacing="{StaticResource SettingsCardSpacing}">
+
+                <TextBlock Text="Whisper configuration"
+                           Style="{StaticResource TitleTextBlockStyle}"
+                           Margin="0,0,0,16" />
 
                 <!-- ── Transcription ───────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
@@ -259,9 +263,19 @@
                                                Header="Durée maximum d'un segment"
                                                Description="En secondes. Plafond avant découpe forcée.">
                             <StackPanel Orientation="Horizontal" Spacing="12">
+                                <!-- Bug WinUI 3 release (net10 / trimming) :
+                                     poser Minimum="5" ou Value="5" en XAML
+                                     fait throw le parser à InitializeComponent
+                                     ("Failed to assign to property RangeBase.
+                                     Minimum/Value"). Seul Slider du fichier
+                                     avec Minimum > defaultValue. Fix : on
+                                     laisse en XAML uniquement Maximum et les
+                                     steps ; Minimum et Value sont posés en
+                                     code-behind dans le ctor via
+                                     ConfigureMinValueSlider() (après
+                                     InitializeComponent). -->
                                 <Slider x:Name="VadMaxSpeechSlider"
                                         Style="{StaticResource SettingSliderStyle}"
-                                        Minimum="5"
                                         Maximum="60"
                                         StepFrequency="1"
                                         TickFrequency="5"
