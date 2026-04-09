@@ -1,20 +1,14 @@
 # CLAUDE.md — WhispUI
 
-Projet WinUI 3 unpackaged destiné à remplacer WhispInteropTest. Lire d'abord
-[../../CLAUDE.md](../../CLAUDE.md) puis ce fichier.
+Projet WinUI 3 unpackaged, remplaçant de WhispInteropTest. Lire d'abord [../../CLAUDE.md](../../CLAUDE.md) puis ce fichier. **La doctrine de travail** (réflexion obligatoire, skills, MCP Microsoft Learn, casquettes, custom en dernier recours, zéro valeur magique) est dans le CLAUDE.md racine — elle s'applique intégralement à ce sous-projet.
 
-**WhispInteropTest reste l'app de production** tant que WhispUI n'est pas validé end-to-end.
-Il tourne via la tâche planifiée `Whisp` et doit être tué avant tout test runtime de WhispUI
-(sinon `RegisterHotKey` échoue avec err 1409).
+**WhispInteropTest reste l'app de production** tant que WhispUI n'est pas packagé et validé à froid. Il tourne via la tâche planifiée `Whisp` et doit être tué avant tout test runtime de WhispUI (collision hotkey `RegisterHotKey` err 1409).
 
 ---
 
 ## Build
 
-`dotnet build` est cassé sur ce projet (bug Microsoft `XamlCompiler.exe` MSB3073, voir
-`../../CLAUDE.md`). Installer Visual Studio ne le débloque pas — `dotnet build` reste sur
-`MSBuildRuntimeType=Core`. **Builder uniquement via le `MSBuild.exe` de VS 2026** (Framework,
-`MSBuildRuntimeType=Full`).
+`dotnet build` est cassé sur ce projet (bug Microsoft `XamlCompiler.exe` MSB3073, détail dans [../../CLAUDE.md](../../CLAUDE.md)). **Builder uniquement via le `MSBuild.exe` de VS 2026** (MSBuild Framework, `MSBuildRuntimeType=Full`).
 
 Depuis `whisp-ui/WhispUI/` (PowerShell, sans admin) :
 
@@ -28,343 +22,93 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe` (self-contain
 État du csproj :
 - `Microsoft.WindowsAppSDK` : `1.8.260317003` (stable officielle).
 - `global.json` épingle SDK `10.0.104` : conserver.
+- `<EnableMsixTooling>true</EnableMsixTooling>` — force le pipeline Publish à générer `WhispUI.pri` dans `PublishDir`. Sans ça, en WindowsAppSDK 1.8 unpackaged, les `.xbf` embarqués dans le `.pri` sont injoignables et l'app démarre sans aucune fenêtre. Cf. `microsoft/WindowsAppSDK#3451`.
+
+**Scripts** `whisp-ui/build-run.ps1` et `whisp-ui/publish.ps1` (un cran au-dessus du projet, non versionnés — chemins machine). `build-run` : tue WhispUI s'il tourne, build via MSBuild VS, lance l'exe. Switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`, `-MsBuild`. `publish` : même logique, target `Restore;Publish` vers `whisp-ui/publish/`. MSBuild résolu via `-MsBuild` > `$env:WHISPUI_MSBUILD` > `vswhere`. Chez Louis : `setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
+
+**Rappel feedback** : je ne lance jamais le build — Louis s'en charge.
 
 ---
 
-## État actuel
+## État actuel — condensé
 
-**V1 atteinte. Étapes 1 → 7 validées runtime. Transcription fonctionnelle de bout en bout, HUD complet, prêt pour publication (étape 8).**
+**V1 atteinte.** Transcription fonctionnelle de bout en bout, HUD complet, LogWindow v3, SettingsWindow skeleton + refacto natif livrés, publish OK. Toutes les briques WinUI sont passées sur le natif Microsoft : `Microsoft.UI.Xaml.Controls.TitleBar`, `NavigationView` adaptatif, `Frame`+`Page`, `SettingsCard` (CommunityToolkit), brushes via `ThemeDictionaries`.
 
-**HUD — coloration progressive des chiffres** : chaque chiffre du chrono qui change au moins une fois passe en rouge `SystemFillColorCriticalBrush` (theme resource Windows, suit light/dark) et y reste jusqu'au prochain `ShowRecording`. Le `0` initial reste neutre tant qu'il n'a pas bougé. Les Run idle ne portent pas de Foreground local — ils héritent de `ClockText.Foreground = {ThemeResource TextFillColorPrimaryBrush}`, donc auto-réactif au thème. Reset = `ClearValue(TextElement.ForegroundProperty)` sur chaque Run nommé. **Theme switch runtime** : `RootGrid.ActualThemeChanged` re-résout le brush critical et le réapplique aux chiffres déjà allumés (un Foreground assigné en code ne suit pas un ThemeResource binding, il faut le réassigner manuellement).
+**Étape courante — combat des hallucinations** (voir roadmap ci-dessous). Dépend d'un bloquant : le **bug de navigation runtime vers WhisperPage** (détail dans `docs/settings.md` section *Bug runtime récurrent*), à fixer en premier.
 
-Bootstrap (AnchorWindow invisible + ancre lifetime), pipeline complet
-(`WhispEngine` + tray + LogWindow + hotkey Alt+\` toggle Start/Stop), HUD complet :
-layout Figma (chrono Bitcount Single Light + beacon/ProgressRing dans Mica arrondi),
-chrono câblé `MM.SS.cc` via `CompositionTarget.Rendering` (cadence vsync, pas de
-`DispatcherTimer` → pas de jitter), fige à la transition record→transcribe.
-
-**Fade proximité souris (étape 7)** : approche event-driven via Raw Input
-(`RegisterRawInputDevices` + `RIDEV_INPUTSINK`) interceptée par subclass HWND
-(SubclassProc en champ d'instance, ID `0x48554450`). Alpha layered global
-(`WS_EX_LAYERED` + `SetLayeredWindowAttributes(LWA_ALPHA)`) qui couvre Mica + content,
-mappé à la distance curseur via smoothstep (`NEAR_RADIUS_DIP=10`, `FAR_RADIUS_DIP=200`).
-Pas de polling, pas d'animation timer — la fluidité vient de la fréquence des `WM_INPUT`.
-Approche inspirée de `D:\projects\environment\taskbar-overlay-cs`.
-
-**Scripts `whisp-ui/build-run.ps1` et `whisp-ui/publish.ps1`** (un cran au-dessus du
-projet, non versionnés — chemins machine). `build-run` : tue WhispUI s'il tourne, build
-via MSBuild VS, lance l'exe. Switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`,
-`-MsBuild`. `publish` : même logique, target `Restore;Publish` vers `whisp-ui/publish/`,
-switches `-Configuration`, `-Open`, `-MsBuild`. MSBuild résolu via `-MsBuild` >
-`$env:WHISPUI_MSBUILD` > `vswhere` (cf. section commentée en tête de chaque script).
-Chez Louis : `setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
-
-**Cible paste — re-capture au Stop avec filet PID** : `_pasteTarget` est captée au Start
-puis **re-capturée au Stop** via `GetForegroundWindow()`. Permet de coller dans le champ
-texte courant si l'utilisateur a basculé d'app pendant l'enregistrement. Filet : si le
-foreground au Stop appartient au process WhispUI (HUD/LogWindow activé par un clic), on
-garde la cible Start — évite le faux positif "collé dans nos propres logs". Voir
-[WhispEngine.cs:169](WhispEngine.cs#L169).
-
-**Fix race paste / Hide HUD (rendez-vous synchrone)** : avant, `HudWindow.Hide()` était
-déclenché en async via `TranscriptionFinished` après `PasteFromClipboard`. `SendInput`
-étant asynchrone (il enfile les frappes dans la queue d'input du thread cible), le `SW_HIDE`
-async pouvait redistribuer l'activation pendant que le Ctrl+V était encore en vol — la
-LogWindow ouverte à côté pouvait récupérer le focus, le coller atterrissait là, et le log
-vert "Bout en bout OK" mentait. Fix : nouveau callback `WhispEngine.OnReadyToPaste` invoqué
-synchronement entre `CopyToClipboard` et `PasteFromClipboard` ; câblé dans `App.xaml.cs` à
-`HudWindow.HideSync()` qui marshalle le `Hide` sur le thread UI via `DispatcherQueue` et
-**bloque l'appelant** sur un `ManualResetEventSlim` jusqu'à ce que `SW_HIDE` soit effectif.
-Plus rien dans WhispUI ne touche à l'activation entre `SetForegroundWindow(target)` et la
-livraison des frappes. Pas de sleep, pas de polling — rendez-vous explicite par signal OS.
-Voir [HudWindow.xaml.cs:255](HudWindow.xaml.cs#L255), [WhispEngine.cs:36](WhispEngine.cs#L36),
-[WhispEngine.cs:494](WhispEngine.cs#L494), [App.xaml.cs:81](App.xaml.cs#L81).
-
-**LogWindow v3** : refonte basée sur design Figma (`fAjzDDUpFW1InvLl5xL83R`, node `98:9790`).
-Fenêtre classique (`OverlappedPresenter`), Close→Cancel+Hide, **thème système** (plus de
-`RequestedTheme="Dark"` forcé), `SystemBackdrop = MicaBackdrop`. Title bar custom
-(`ExtendsContentIntoTitleBar=true`) en 3 colonnes : icône+titre draggable à gauche,
-`AutoSuggestBox` de recherche centrée, réserve 138px à droite pour les caption buttons
-système. Drag region limitée à la colonne gauche (`SetTitleBar(AppTitleBarLeftDrag)`)
-pour que le SearchBox reçoive les clics. Sous la title bar, command bar en 2 zones :
-`SelectorBar` Full / Filtered à gauche + `CommandBar` (icônes Segoe Fluent) à droite avec
-deux groupes séparés par `AppBarSeparator` — édition (Copy E8C8 / Save E74E / Clear E74D)
-puis affichage (Auto scroll E70D / Wrap E751 toggles). Cap 5000 entrées. Tray "Logs" →
-`ShowAndActivate`.
-
-**Modèle de données** : `enum LogLevel { Info, Warning, Error }` (public). API thread-safe
-`Log` / `LogWarning` / `LogError`. Deux collections : `_entries` (List, tampon complet) et
-`_visible` (ObservableCollection bindée à `LogItems`). Filtre = `Matches()` qui combine
-selector (Filtered masque Info, garde Warning+Error) + recherche live (`IndexOf` case-insensitive).
-`ApplyFilter()` rebuild `_visible`. Sur overflow, on retire la plus vieille entrée des deux
-collections (LogEntry est une `class`, ref equality, pas de collision). **Copy/Save opèrent
-sur `_visible`** — l'utilisateur copie/exporte ce qu'il voit.
-
-**Couleurs** via theme resources Windows résolus une fois en constructeur (snapshot, ne
-réagit pas au theme switch runtime — acceptable pour debug) : `TextFillColorPrimaryBrush`
-(Info), `SystemFillColorCautionBrush` (Warning), `SystemFillColorCriticalBrush` (Error).
-**Wrap** : le toggle swap `NoWrapTemplate`/`WrapTemplate` **et** bascule
-`HorizontalScrollBarVisibility` entre `Auto` et `Disabled` — sinon `TextWrapping="Wrap"`
-ne s'applique pas (le `ScrollViewer` mesure son contenu en largeur infinie tant que le
-scroll horizontal est autorisé). `LogWarning` exposé mais pas encore appelé par `WhispEngine`
-— prêt pour la passe debug à venir.
-
-Filets de diagnostic dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`,
-`TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH`/`CRASH-AD`/`CRASH-TS`).
-
-**Passe debug logs A→Z (faite)** : 5 niveaux côté API (`Verbose` / `Info` / `Step` / `Warning` / `Error`)
-et 3 modes de filtre dans le `SelectorBar` (Full / Filtered / Critical). Sémantique couleur :
-**Verbose blanc** = bruit / durée de vie (heartbeats RECORD `+Ns capturés`, dumps par segment Whisper,
-plomberie clipboard `GlobalAlloc`/`OpenClipboard`, plomberie PASTE `cible attendue`/`SetForegroundWindow`/
-`contrôle focusé`, `Mémoire passée au chunk suivant`, `[DONE]` recap timings non vérifié) — masqué en
-Filtered ; **Info bleu sémantique Fluent** (`#005FB7` light / `#60CDFF` dark, brush construit en code car
-le `SystemFillColorAttentionBrush` de la theme dictionary peut résoudre sur l'accent système chez
-certains users) = jalons rares et importants (`Enregistrement démarré`, `Chunk N extrait → pipeline`,
-`Chunk final extrait`, `Capture terminée`, `Chunk N → texte recollé`, `Texte copié`, `Ctrl+V envoyé`) ;
-**Step vert** = jalons rares et **vérifiés** — exactement deux par session normale : `Modèle chargé en
-N ms` (init, vérifié `_ctx ≠ 0`) et `Bout en bout OK — N chars collés dans <cible>` (émis uniquement si
-`PasteFromClipboard` retourne `true`). Filtered masque uniquement Verbose. Critical = Warning + Error.
-
-**`PasteFromClipboard` retourne `bool`** et refuse de coller (Warn avec mode opératoire « le presse-papier
-contient le texte — colle manuellement avec Ctrl+V ») dans tous ces cas : `_pasteTarget == 0`, cible
-appartient au process WhispUI lui-même (`GetWindowThreadProcessId == GetCurrentProcess().Id` — filet
-contre le faux positif « collé dans WhispUI logs »), `SetForegroundWindow` n'a pas réellement ramené
-la cible au foreground (vérifié via `GetForegroundWindow()` après sleep, pas via le retour bool),
-`GetFocusedClass == null`, `SendInput` partiel. Si tout passe, le récap final devient le Step vert
-de bout en bout ; sinon `[DONE]` Verbose timings + le Warn orange explicatif.
-
-**Pipeline monobloc (refonte)** : plus de chunking externe 30s. `Record()` accumule
-tout l'audio capturé dans un unique `List<byte>` et retourne un `float[]` au Stop.
-`Transcribe(float[])` fait **un seul** appel `whisper_full()` — Whisper gère son propre
-fenêtrage interne (30s + seek dynamique) et la propagation de contexte inter-fenêtres
-via tokens. La récupération progressive passe par `new_segment_callback` (binding du
-champ `WhisperFullParams.new_segment_callback` via `Marshal.GetFunctionPointerForDelegate` ;
-délégué stocké en champ d'instance `_newSegmentCallback` pour échapper au GC pendant
-l'appel natif). Chaque segment est poussé sous lock dans `List<TranscribedSegment>
-_segments` (Text / T0 / T1 / NoSpeechProb), depuis le thread d'inférence de whisper.cpp.
-Le texte final est assemblé à partir de cette liste — garantit qu'un segment loggé est
-exactement un segment du texte produit. Un seul thread worker `Record → Transcribe` au
-lieu de deux threads parallèles (plus de `BlockingCollection`). `MatchHallucination` et
-la mémoire `initial_prompt` chunk-par-chunk supprimées. `LooksRepeated` conservée en
-log-only sur le texte complet. Cartographie de logs à reprendre — voir *Tâches ouvertes*.
-
-Cartographie historique (à actualiser) : `WhispEngine` expose `LogStepLine` +
-`LogWarningLine` en plus de `LogLine` / `LogErrorLine`. MODEL (path/taille/use_gpu, Step
-au succès, Warn si fichier absent), HOTKEY (`DescribeHwnd` cible + Warn si pas de focus
-clavier), CLIPBOARD (méthode d'instance, instrumentation `GlobalAlloc`/`OpenClipboard`/
-`SetClipboardData` + re-lecture de vérification post-copie), PASTE (`DescribeHwnd` cible,
-foreground avant/après, retours `SetForegroundWindow`/`SendInput`, focus clavier vérifié
-via `GetFocusedClass`), LLM (callbacks `onWarn`/`onStep`/`onInfo`, fallback détaillé avec
-type d'exception). Helper `Win32Util.DescribeHwnd` (exe / titre / classe focusée). Step
-coloré en `SystemFillColorSuccessBrush` (vert) — pas l'accent système qui peut être gris.
+**Régressions post-refacto** : trois à traiter en parallèle de la piste fonctionnelle — démarrage qui flashe une fenêtre, HudWindow qui apparaît trop tôt, HudWindow qui ne suit pas les bureaux virtuels. Détail dans `docs/hud.md` et mémoire `project_roadmap.md` piste *régressions techniques*.
 
 ---
 
-## Tâches ouvertes
+## Roadmap
 
-- **Paste "fantôme" intermittent**. Symptôme : le pipeline log vert "Bout en bout OK" +
-  PASTE "Ctrl+V envoyé à <cible>", mais rien n'apparaît dans le champ cible. Récurrent,
-  pas systématique. Hypothèse Louis : la transcription n'a peut-être pas eu lieu (chunks
-  capturés mais pas de texte recollé final), donc le clipboard contiendrait l'ancienne
-  valeur ou rien — et le `SendInput` Ctrl+V ne ferait "rien" côté cible. À investiguer
-  au prochain occurrence : capturer les logs complets de la session fautive (vérifier
-  présence de la ligne TRANSCRIBE "texte recollé" et de la ligne CLIPBOARD "Texte copié
-  (N chars)" avec `N > 0`). Si N = 0 ou ligne absente → bug en amont (Whisper / pipeline).
-  Si N > 0 mais paste vide → bug `SendInput` ou délivrance, malgré le réordonnancement.
-- **Filtrage par segment + seuils Whisper.** Le chunking externe et `MatchHallucination` ont
-  été supprimés (voir *Pipeline monobloc* ci-dessous). Plus de filtrage textuel par patterns
-  — on s'appuie sur `entropy_thold=1.9` et `no_speech_thold=0.7`. À valider en usage réel ;
-  sinon, brancher un filtre **par segment** basé sur `no_speech_prob` (déjà accessible via
-  `_segments`) plutôt que rejeter tout le texte.
-- **Refonte logs post-pipeline-monobloc.** La cartographie debug actuelle référence des
-  événements qui n'existent plus (`Chunk N extrait`, `Mémoire passée au chunk suivant`,
-  `Chunk N → texte recollé`). Nouvelle réalité : `RECORD` heartbeat 5s + capture terminée,
-  `TRANSCRIBE` audio reçu + un Verbose par segment via callback + récap final. Repasser sur
-  les niveaux (Verbose/Info/Step) une fois que le nouvel usage aura révélé ce qui est utile.
-- **Quitter depuis le tray ne tue pas tout le process** : `Application.Current.Exit()` dans
-  `TrayIconManager.OnQuit` ne termine pas proprement. Suspects : threads WhispEngine
-  (Record/Transcribe) non background ou bloqués, icône tray non supprimée via `NIM_DELETE`,
-  Windows non fermées explicitement avant Exit. À investiguer : `Dispose`/`Shutdown` explicite
-  avant `Exit`, ou fallback `Environment.Exit(0)`.
-- **Icône tray manquante** : placeholder à remplacer par un vrai .ico.
-- **HudWindow — ombre Shell manquante** : HudWindow n'a qu'une ombre plate alors que
-  LogWindow (même projet, même plateforme WinUI 3 unpackaged) a une ombre Shell riche.
-  **Cause confirmée** : `WS_EX_LAYERED` (requis pour le fade à la proximité souris via
-  `SetLayeredWindowAttributes LWA_ALPHA`) désactive par design l'ombre DWM Shell système —
-  c'est une contrainte Win32 de base, aucune API DWM ne la contourne
-  (`DWMWA_SYSTEMBACKDROP_TYPE`, `DWMWA_BORDER_COLOR`, corner preference : aucun effet sur
-  une fenêtre layered). Travaux déjà tentés sans succès : passage à `DesktopAcrylicBackdrop`
-  + signal DWM `DWMSBT_TRANSIENTWINDOW` + interception `WM_NCACTIVATE` forçant wParam=TRUE.
-  Compromis accepté pour cette itération : ombre plate conservée. **Deux voies de sortie
-  propres, mutuellement exclusives, à trancher en session future** — détail complet dans
-  `project_next_session.md` section *2bis*. Voie A : agrandir le HWND + `DropShadow`
-  Composition interne (ex. 354×118 avec contenu centré à 314×78, pourtour 20 px pour
-  l'ombre) — la doc confirme qu'une DropShadow n'est pas clippée par la taille du visual,
-  mais reste clippée au rect du HWND, d'où l'agrandissement. Voie B : retirer `WS_EX_LAYERED`
-  et réimplémenter le fade via `ElementCompositionPreview.GetElementVisual(RootGrid).Opacity`
-  — récupère l'ombre DWM native gratuite, mais incertitude à prototyper : est-ce que
-  Composition opacity fade correctement un `DesktopAcrylicBackdrop` (backdrop rendu par DWM
-  hors de l'arbre Composition XAML) ? Recommandation : tester Voie B en premier, bascule
-  Voie A si KO.
-- **HUD chrono coupé en haut** : malgré `TextLineBounds="Tight"` + `LineHeight="48"` +
-  sous-container `Grid 214x30` (taille bbox Figma exacte) qui laisse le glyphe déborder
-  dans les paddings, le haut des chiffres reste tronqué. Hypothèse : la cap-height réelle
-  de Bitcount Single Light à 48px est plus grande que les ~34 DIPs estimés, ou l'ascent
-  WinUI ne s'aligne pas comme prévu avec la baseline Figma. À investiguer : mesurer le
-  glyphe natif WinUI (`TextBlock.ActualHeight` après render), ou augmenter `HUD_HEIGHT`
-  de quelques DIPs en compensant côté padding pour garder le visuel Figma.
-- **HUD espacement chiffres** : visuellement très large (`00 . . 00 . . 00`). À comparer
-  avec un screenshot réel Figma — si Figma rend pareil, c'est juste le tracking faible
-  (-2.4 px = -5 % = `CharacterSpacing="-50"`) qui ne suffit pas à compenser les advances
-  natifs Bitcount. Sinon, vérifier l'unité du `letterSpacing: -5` Figma (% vs px).
-- **LogWindow caption buttons** : avec title bar 48px et `ExtendsContentIntoTitleBar=true`,
-  les caption buttons système peuvent ressortir à 32px en haut (gap visuel). Si c'est moche,
-  ajouter `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall` après
-  `ExtendsContentIntoTitleBar = true`. Laissé en mode auto pour partir simple.
-- **LogWindow drag region partielle** : seule la colonne icône+titre est draggable. La bande
-  vide entre le SearchBox et les caption buttons ne déplace pas la fenêtre. Fixable via
-  `InputNonClientPointerSource` si besoin.
+**Source unique de vérité** : mémoire `project_roadmap.md` (sous `C:\Users\Louis\.claude\projects\d--projects-ai-transcription\memory\`). La lire avant toute décision d'ordre.
+
+**Piste fonctionnelle** (ordre strict) :
+1. Combat des hallucinations (bloqué par bug nav WhisperPage)
+2. Transcription progressive (exploratoire)
+3. Réécriture LLM (Ollama)
+4. Contour animé HUD
+5. Finition Settings (dégrisage, FR→EN, GeneralPage réelle, LlmPage réelle)
+6. Package et partage
+
+**Piste régressions techniques** (en parallèle) : bootstrap silencieux, HudWindow comportement notification, ombre HudWindow (voies A/B), finitions SettingsWindow, icône tray, Quitter qui ne tue pas le process.
+
+Règle : ne pas sauter à la réécriture LLM tant que la transcription n'est pas fiable. Ne pas travailler sur le contour animé ou les finitions Settings tant que le pipeline fonctionnel n'est pas complet end-to-end.
 
 ---
 
-## Pièges connus
+## Pièges WinUI 3 connus — à ne jamais oublier
 
-- **AllowUnsafeBlocks obligatoire** : sans, SYSLIB1062/CS0227 sur LibraryImport.
-- **WhispInteropTest doit être tué** avant tout test (collision hotkey err 1409).
-- **Lifetime WinUI 3** : ne JAMAIS laisser fermer AnchorWindow (Closing→Cancel). Toutes les
-  Windows futures (HUD, LogWindow) suivent la même règle. Sortie unique = menu Quitter du
-  tray → `Application.Current.Exit()`.
-- **Délégué SubclassProc** : champ d'instance (jamais lambda locale) sinon GC.
+- **`AllowUnsafeBlocks` obligatoire** dans le csproj : sans, `SYSLIB1062` / `CS0227` sur `LibraryImport`.
+- **WhispInteropTest doit être tué** avant tout test (collision hotkey `RegisterHotKey` err 1409).
+- **Lifetime WinUI 3** : ne JAMAIS laisser fermer `AnchorWindow` (Closing→Cancel). Toutes les Windows (HUD, LogWindow, SettingsWindow) suivent la même règle. Sortie unique = menu Quitter du tray → `Application.Current.Exit()`.
+- **Délégué `SubclassProc`** : champ d'instance (jamais lambda locale) sinon GC.
 - **Pas de `UseWindowsForms`** dans le csproj (conflit XAML WinUI 3).
-- **Window n'a pas de `Resources` en WinUI 3** (contrairement à WPF) : déclarer les ressources
-  XAML sur le `Grid` racine (`<Grid.Resources>`), pas sur `<Window.Resources>` (erreur WMC0011).
-- **Objets UI WinUI 3 créés uniquement sur le thread UI** — y compris `SolidColorBrush`. Tout
-  objet UI instancié depuis un thread de fond lève `COMException` (`RPC_E_WRONG_THREAD`).
-  Pattern : créer brushes/objets dans le constructeur de la Window et les réutiliser dans les
-  handlers d'events venant des threads Record/Transcribe.
-- **LogWindow jamais affichée** : ne pas toucher à `LogScrollViewer.UpdateLayout()` tant que
-  la fenêtre n'a pas été montrée au moins une fois (flag `_isVisible`).
-- **Accessibilité constructeur public** : si `AnchorWindow` (public) prend un `TrayIconManager`
-  en paramètre, `TrayIconManager` doit être `public` (CS0051).
+- **`Window` n'a pas de `Resources` en WinUI 3** (contrairement à WPF) : déclarer les ressources XAML sur le `Grid` racine (`<Grid.Resources>`), pas sur `<Window.Resources>` (erreur WMC0011).
+- **Objets UI WinUI 3 créés uniquement sur le thread UI** — y compris `SolidColorBrush`. Tout objet UI instancié depuis un thread de fond lève `COMException` (`RPC_E_WRONG_THREAD`). Pattern : créer brushes/objets dans le constructeur de la Window et les réutiliser dans les handlers d'events venant des threads Record/Transcribe.
+- **LogWindow jamais affichée** : ne pas toucher à `LogScrollViewer.UpdateLayout()` tant que la fenêtre n'a pas été montrée au moins une fois (flag `_isVisible`).
+- **Accessibilité constructeur public** : si `AnchorWindow` (public) prend un `TrayIconManager` en paramètre, `TrayIconManager` doit être `public` (CS0051).
+- **Caption buttons Tall sur title bar custom** : `ExtendsContentIntoTitleBar=true` seul ne force pas la hauteur Tall des caption buttons système — ajouter explicitement `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall`. Vrai aussi avec le contrôle `Microsoft.UI.Xaml.Controls.TitleBar` natif — il ne gère pas cette hauteur tout seul.
 
 ---
 
-## Plan condensé — étapes restantes
+## HudWindow — rappel spec
 
-Plan complet (avec ancien nom "WispUI") : `C:\Users\Louis\.claude\plans\jazzy-giggling-widget.md`.
-Lire ce plan **avant de coder** chaque étape — il contient les justifications. Substituer
-mentalement `WispUI` → `WhispUI` partout.
+Window WinUI 3, ~320×64, bas-centre via `DisplayArea.Primary.WorkArea`, `OverlappedPresenter` non resizable, `ExtendsContentIntoTitleBar=true`.
 
-Étapes 1 → 5 : **faites** (cf. État actuel).
+- **Show** : `MoveAndResize` puis `ShowWindow(SW_SHOWNOACTIVATE)` + `SetWindowPos(HWND_TOP, SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE)`. **Jamais `SetForegroundWindow`**.
+- **Hide** : `ShowWindow(SW_HIDE)`.
+- Créée une fois dans `OnLaunched`, jamais détruite (Closing→Cancel).
+- Handlers UI marshalés via `DispatcherQueue.TryEnqueue` (events `WhispEngine` viennent de threads de fond).
 
-**Étape 6 — Niveau audio RMS.** *Reportée post-V1.* Nouvel événement
-`WhispEngine.AudioLevel(float rms)` calculé dans `Record()` (RMS sur PCM16).
-HUD : ProgressBar réactive.
-
-**Étape 7 — Proximité souris.** **Faite**, mais avec une approche différente du plan
-initial (qui prévoyait `MousePoller` polling 100 ms + animation `Opacity` 1.0↔0.25).
-Implémentation actuelle : Raw Input event-driven + alpha layered + smoothstep continu
-(cf. *État actuel*). Le plan initial reste obsolète sur ce point.
-
-**Étape 8 — Publish + validation end-to-end + autostart Windows + partage.** Publish vers
-`whisp-ui/publish/` via le MSBuild de VS (cf. section Build, avec `-t:Restore,Publish
--p:PublishDir=...`). Nettoyage du dépôt avant partage (vérifier qu'aucune info sensible
-ne traîne dans ce qui sera distribué — modèles Whisper exclus). Autostart Windows
-(tâche planifiée `Whisp` à mettre à jour vers WhispUI.exe, ou clé Run). Tests à froid
-après reboot. Tuer WhispInteropTest avant les tests. **C'est l'étape de la prochaine
-session de travail.**
-
-**Post-validation :** mettre à jour la tâche planifiée `Whisp` → exe WhispUI ; mettre à jour
-`../../CLAUDE.md` (point d'entrée).
-
-**SettingsWindow — refacto natif livré (2026-04-09).** Skeleton + migration aux briques
-natives Microsoft validée runtime. Détails complets dans la mémoire
-`project_refacto_winui_natif.md`. En résumé :
-
-- `Microsoft.UI.Xaml.Controls.TitleBar` natif (Windows App SDK 1.8), caption buttons Tall via
-  `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall` (le contrôle
-  TitleBar ne gère pas cette hauteur tout seul), icône app via `ImageIconSource` nommé.
-- NavigationView adaptatif 2 breakpoints : **≥960 `PaneDisplayMode=Left`** (240, inline, figé,
-  pas de hamburger) / **<960 `LeftCompact`** (rail 48, hamburger dans la TitleBar via
-  `PaneToggleRequested` → `Nav.IsPaneOpen`, overlay au déploiement). `LeftMinimal` supprimé
-  (inatteignable, `PreferredMinimumWidth=480`). Bascule live côté code-behind dans
-  `ApplyAdaptiveLayout(width)`. Search box : full ≥580, icône loupe sinon (expand au clic).
-- Contenu : `NavigationView.MenuItems` = General / Whisper / LLM Rewriting, `FooterMenuItems`
-  = Logs (`SelectsOnInvoked=False`, délègue à `App` qui ouvre la LogWindow partagée).
-- **Navigation `Frame`+`Page`** : `<Frame x:Name="PageFrame" />` à la place de l'ancien
-  `ContentPresenter`. Les Pages vivent sous `Settings/` (`GeneralPage`, `WhisperPage`,
-  `LlmPage`) et portent chacune leur propre `ScrollViewer` + padding interne. Toutes ont
-  `NavigationCacheMode.Required` pour préserver l'état. `PageFrame.Navigate(type, null,
-  new EntranceNavigationTransitionInfo())` avec garde `CurrentSourcePageType != pageType`
-  contre les re-Navigate redondants au setup.
-- **Contenu GeneralPage** : `SettingsCard` + `SettingsExpander` du package NuGet
-  `CommunityToolkit.WinUI.Controls.SettingsControls 8.2.250402`. Pattern canonique Microsoft
-  Learn appliqué à la lettre : ressource `SettingsCardSpacing=4`, style
-  `SettingsSectionHeaderTextBlockStyle` (`BodyStrongTextBlockStyle` + `Margin 1,30,0,6`),
-  `StackPanel MaxWidth=1000` dans un `Grid` wrapper (workaround bug
-  microsoft-ui-xaml#3842). Trois sections de démo non branchées : Démarrage, Apparence,
-  Raccourcis — **à trier à la prochaine session**.
-
-**LogWindow responsive** : même pattern SearchBox que Settings, single breakpoint 580.
-Caption buttons Tall aussi via `AppWindow.TitleBar.PreferredHeightOption`.
-
-**À faire — prochains chantiers** (voir mémoire `project_next_session.md`, ordre validé
-avec Louis) :
-
-1. **Bootstrap silencieux** — au démarrage à froid (login Windows ou lancement manuel) une
-   fenêtre apparaît alors que l'app doit démarrer uniquement dans le tray. Cible : 100 %
-   silencieux, seule l'icône tray visible. Référence : PowerToys. Investiguer l'enchaînement
-   `App.OnLaunched` et identifier lequel des `Show(false)` flashe.
-2. **HudWindow = notification, pas Window** — (A) elle apparaît au démarrage alors qu'aucun
-   enregistrement n'est en cours. (B) elle reste sur le bureau virtuel où elle a été lancée
-   au lieu de suivre l'utilisateur. Cible : comportement notification système (visible sur
-   tous les bureaux virtuels pendant l'enregistrement, invisible le reste du temps).
-   Investiguer `WS_EX_TOOLWINDOW`/`WS_EX_TOPMOST`/`WS_EX_NOACTIVATE`, `IVirtualDesktopManager`,
-   ou alternative AppNotification Windows App SDK. Regarder comment PowerToys le gère.
-3. **GeneralPage réelle + persistance** — supprimer les cards démo, décider le contenu réel
-   (s'inspirer de PowerToys pour "Démarrer avec Windows" et son mode admin), définir la
-   couche de persistance (JSON local probable, aligné émancipation cloud), hot-reload.
-4. **Finitions SettingsWindow** — retirer les transitions `EntranceThemeTransition` +
-   `RepositionThemeTransition` de GeneralPage (Louis les a enlevées dans son Figma). Masquer
-   Cancel/Save du footer par défaut (doctrine auto-save façon Settings Windows 11, garder
-   le code pour réactivation ultérieure). Revoir le positionnement du toggle de nav — Louis
-   pense que Windows 11 Settings le place au-dessus et pousse le contenu à un certain
-   breakpoint ; vérifier Figma DS Windows 11 node `169220-31361`.
-
-**Post-V1 — LogWindow responsive (et future SettingsWindow).** Rendre la `CommandBar` de
-LogWindow réactive à la largeur de la fenêtre, en s'appuyant au maximum sur le comportement
-standard WinUI : `AutoSuggestBox` qui se replie en icône loupe à gauche, et `AppBarButton`
-qui basculent dans le menu *More* (`…`) au fur et à mesure via `PrimaryCommands` /
-`SecondaryCommands` et `DefaultLabelPosition`. Si le mécanisme natif ne suffit pas, gérer
-manuellement via `SizeChanged` : à un premier seuil, déplacer Copy/Save/Clear en
-`SecondaryCommands` (AutoScroll + Wrap restent visibles) ; à un second seuil, basculer
-aussi AutoScroll + Wrap dans le menu More. `MinWidth` ~300–400 px. Même schéma à reprendre
-pour la future SettingsWindow — penser le pattern une fois, le réutiliser. Vérifier d'abord
-si WinUI 3 fournit déjà ce comportement clé en main avant de coder du custom ; sinon
-remonter à Louis pour qu'il fasse le design Figma.
+Détails (coloration progressive, fade proximité, ombre layered, régressions notification) dans [docs/hud.md](docs/hud.md).
 
 ---
 
-## HudWindow — rappel spécification
-
-Window WinUI 3, ~320×64, bas-centre via `DisplayArea.Primary.WorkArea`, `OverlappedPresenter`
-non resizable, `ExtendsContentIntoTitleBar=true`.
-
-- **Show :** `MoveAndResize` puis `ShowWindow(SW_SHOWNOACTIVATE)` + `SetWindowPos(HWND_TOP,
-  SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE)`. **Jamais `SetForegroundWindow`**.
-- **Hide :** `ShowWindow(SW_HIDE)`.
-- Créée une fois dans OnLaunched, jamais détruite (Closing→Cancel).
-- Tous les handlers UI marshalés via `DispatcherQueue.TryEnqueue` (events WhispEngine viennent
-  de threads de fond).
-
-## Lifetime — App.xaml.cs cible
+## Lifetime — `App.xaml.cs` cible
 
 Ordre `OnLaunched` :
+
 1. `_engine = new WhispEngine()`
-2. `_logWindow = new LogWindow()` hors écran + Show(false)
-3. `_hudWindow = new HudWindow(...)` hors écran + Show(false)
+2. `_logWindow = new LogWindow()` hors écran + `Show(false)`
+3. `_hudWindow = new HudWindow(...)` hors écran + `Show(false)`
 4. `_tray = new TrayIconManager()`
-5. `_anchor = new AnchorWindow(...)` hors écran + Show(false)
-6. Dans `AnchorWindow.OnRootLoaded` : `_tray.Register`, `_hotkeyManager.Register`, SW_HIDE
+5. `_anchor = new AnchorWindow(...)` hors écran + `Show(false)`
+6. Dans `AnchorWindow.OnRootLoaded` : `_tray.Register`, `_hotkeyManager.Register`, `SW_HIDE`
 7. Branchement events engine → tray + LogWindow + HudWindow
 8. Tray callbacks : Logs → `_logWindow.ShowAndActivate()` ; Quitter → `Application.Current.Exit()`
+
+**Filets de diagnostic globaux** dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH` / `CRASH-AD` / `CRASH-TS`).
+
+---
+
+## Journal d'implémentation — dossier `docs/`
+
+Les détails techniques par sous-système vivent dans `docs/`. **Ces fichiers sont lus à la demande**, uniquement quand je touche au sous-système concerné — ils ne sont pas chargés en contexte par défaut. Quand une tâche touche un sous-système, lire son fichier `docs/*.md` **avant** de modifier le code.
+
+- [docs/hud.md](docs/hud.md) — spec HudWindow, coloration progressive chrono, fade proximité souris (Raw Input + alpha layered), contrainte ombre layered + voies A/B, régressions bureau virtuel, contour animé exploratoire, tâches cosmétiques chrono.
+- [docs/logwindow.md](docs/logwindow.md) — refonte v3 (TitleBar natif, SelectorBar, CommandBar), modèle de données, couleurs `ThemeDictionaries`, wrap, debug logs A→Z (5 niveaux Verbose / Info / Step / Warning / Error + 3 modes de filtre).
+- [docs/pipeline-transcription.md](docs/pipeline-transcription.md) — refonte monobloc (`new_segment_callback`, plus de chunking externe), instrumentation par segment, defaults whisper.cpp restaurés (piège `entropy_thold` inversé), hot-reload via `SettingsService`, cartographie logs à actualiser.
+- [docs/paste.md](docs/paste.md) — re-capture cible au Stop avec filet PID, fix race `HideSync` (rendez-vous synchrone via `ManualResetEventSlim`), refus explicites de `PasteFromClipboard`, bug paste fantôme intermittent.
+- [docs/settings.md](docs/settings.md) — TitleBar natif, NavigationView 2 breakpoints, Frame+Page, SettingsCard CommunityToolkit, WhisperPage câblée, persistance JSON portable, **bug nav WhisperPage bloquant**, greying non-scope, finitions restantes, références Figma.
