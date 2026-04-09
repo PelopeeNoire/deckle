@@ -8,7 +8,9 @@
       "Bash(dotnet package:*)",
       "mcp__claude_ai_Figma__get_design_context",
       "Bash(git commit -m ':*)",
-      "mcp__claude_ai_Microsoft_Learn__microsoft_docs_search"
+      "mcp__claude_ai_Microsoft_Learn__microsoft_docs_search",
+      "mcp__claude_ai_Figma__get_screenshot",
+      "mcp__claude_ai_Microsoft_Learn__microsoft_docs_fetch"
     ]
   }
 }
