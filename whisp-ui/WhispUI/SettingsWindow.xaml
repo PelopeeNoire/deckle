@@ -11,34 +11,51 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ── Title bar natif avec hamburger délégué au NavigationView ─── -->
+        <!-- ── Title bar natif — pas de hamburger : en PaneDisplayMode=Left
+             le NavigationView tient son pane toujours visible et inline,
+             donc aucun toggle n'est nécessaire. -->
+        <!-- TitleBar natif. Hamburger, titre et zone Content basculent via
+             OnRootSizeChanged selon 3 breakpoints : 960, 580, 390. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
                   Title="WhispUI Settings"
-                  IsPaneToggleButtonVisible="False"
                   PaneToggleRequested="OnPaneToggleRequested">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <AutoSuggestBox x:Name="SearchBox"
-                                QueryIcon="Find"
-                                PlaceholderText="Rechercher un paramètre"
-                                MaxWidth="320"
-                                HorizontalAlignment="Stretch"
-                                VerticalAlignment="Center" />
+                <Grid VerticalAlignment="Center">
+                    <AutoSuggestBox x:Name="SearchBox"
+                                    QueryIcon="Find"
+                                    PlaceholderText="Rechercher un paramètre"
+                                    MinWidth="280"
+                                    MaxWidth="560"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Center" />
+                    <Button x:Name="SearchIconButton"
+                            Visibility="Collapsed"
+                            VerticalAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            Click="OnSearchIconClick"
+                            ToolTipService.ToolTip="Rechercher un paramètre">
+                        <FontIcon Glyph="&#xE721;" FontSize="16" />
+                    </Button>
+                </Grid>
             </TitleBar.Content>
         </TitleBar>
 
-        <!-- ── NavigationView + contenu ─────────────────────────────────────── -->
+        <!-- ── NavigationView — PaneDisplayMode=Left : pane toujours
+             inline (push content, jamais d'overlay). Pattern canonique
+             recommandé par Microsoft Learn pour un Settings à nav fixe. -->
         <NavigationView Grid.Row="1"
                         x:Name="Nav"
-                        PaneDisplayMode="Auto"
-                        OpenPaneLength="280"
+                        PaneDisplayMode="Left"
+                        OpenPaneLength="240"
+                        CompactPaneLength="48"
                         IsBackButtonVisible="Collapsed"
                         IsPaneToggleButtonVisible="False"
                         IsSettingsVisible="False"
-                        DisplayModeChanged="OnNavDisplayModeChanged"
                         SelectionChanged="OnNavSelectionChanged"
                         ItemInvoked="OnNavItemInvoked">
             <NavigationView.MenuItems>
@@ -104,13 +121,10 @@
                         </Button>
                     </Grid>
 
-                    <!-- Zone scrollable : contenu de page courant -->
-                    <ScrollViewer Grid.Row="1"
-                                  Padding="32,0,32,24"
-                                  VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
-                        <ContentPresenter x:Name="PageContent" />
-                    </ScrollViewer>
+                    <!-- Zone scrollable : chaque Page porte son propre ScrollViewer
+                         et son padding interne (pattern canonique Microsoft Learn).
+                         Le Frame gère le cycle de vie et les transitions natives. -->
+                    <Frame Grid.Row="1" x:Name="PageFrame" />
 
                     <!-- Sticky footer : séparateur + Cancel / Save -->
                     <Grid Grid.Row="2">

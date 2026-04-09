@@ -13,11 +13,10 @@ namespace WhispUI;
 // custom 48px en 3 colonnes (drag gauche / search centre / réserve 138 caption),
 // Close→Cancel+Hide (jamais détruite, créée une fois dans App.OnLaunched).
 //
-// Layout principal : NavigationView Left (responsive natif Auto → Compact →
-// Minimal selon largeur). Le contenu interne est un Grid sticky-header /
-// scrollable / sticky-footer qui se réutilise pour les 3 pages (General,
-// Whisper, LLM Rewriting). Les pages sont des UIElement placeholders pour
-// l'instant — le contenu réel sera ajouté plus tard.
+// Layout principal : NavigationView adaptatif (Left ≥960 / LeftCompact <960).
+// Le contenu interne est un Grid sticky-header / Frame de navigation / sticky
+// footer. Chaque Page (General, Whisper, LLM) gère son propre ScrollViewer et
+// son padding — pattern canonique Microsoft Learn pour une settings page.
 
 public sealed partial class SettingsWindow : Window
 {
@@ -25,11 +24,6 @@ public sealed partial class SettingsWindow : Window
 
     private BitmapImage? _iconIdle;
     private string? _iconIdlePath;
-
-    // Placeholders de pages — instanciés une fois, swap via PageContent.Content.
-    private readonly UIElement _pageGeneral;
-    private readonly UIElement _pageWhisper;
-    private readonly UIElement _pageLlm;
 
     // Callback injecté par App pour ouvrir la LogWindow partagée depuis l'item
     // footer "Logs" de la NavigationView. Laissé null = item sans effet.
@@ -50,20 +44,19 @@ public sealed partial class SettingsWindow : Window
         }
 
         // Title bar natif : hauteur/drag/caption gérés par le contrôle.
+        // PreferredHeightOption=Tall agrandit les caption buttons système pour
+        // rester alignés avec le contenu interactif (SearchBox) du TitleBar.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+        AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
 
         SystemBackdrop = new MicaBackdrop();
 
-        // Placeholders de pages — chacun expliqué en français pour rappeler
-        // que la vraie spec produit viendra dans une étape ultérieure.
-        _pageGeneral  = BuildPlaceholder("Paramètres généraux à venir.");
-        _pageWhisper  = BuildPlaceholder("Configuration Whisper à venir (modèle, threads, langue, paramètres avancés).");
-        _pageLlm      = BuildPlaceholder("Réécriture LLM à venir (provider, modèle, prompt système, hotkey).");
-
-        // Sélection initiale.
+        // Sélection initiale — on navigue d'abord, puis on synchronise la
+        // sélection. L'ordre évite un double Navigate si SelectionChanged
+        // déclenche une seconde navigation vers le même type.
+        PageFrame.Navigate(typeof(Settings.GeneralPage));
         Nav.SelectedItem = NavGeneral;
-        PageContent.Content = _pageGeneral;
         PageTitle.Text = "General";
 
         Title = "WhispUI Settings";
@@ -73,8 +66,10 @@ public sealed partial class SettingsWindow : Window
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min : sous ce seuil le NavigationView passe Minimal et le contenu
-        // reste lisible. La SearchBox disparaît à 650 (cf. OnRootSizeChanged).
+        // Min : avec PaneDisplayMode=Left le pane (280) reste toujours
+        // inline ; sous 640 le contenu devient illisible.
+        // Min 390 : on veut exposer le breakpoint <390 (LeftMinimal + hamburger
+        // titlebar). Hauteur gardée à 400 pour la lisibilité verticale.
         presenter.PreferredMinimumWidth  = 480;
         presenter.PreferredMinimumHeight = 400;
         AppWindow.SetPresenter(presenter);
@@ -85,16 +80,54 @@ public sealed partial class SettingsWindow : Window
             args.Cancel = true;
             AppWindow.Hide();
         };
+
+        // Adaptive layout : 4 breakpoints documentés dans le Figma.
+        RootGrid.SizeChanged += OnRootSizeChanged;
+        ApplyAdaptiveLayout(RootGrid.ActualWidth);
     }
 
-    private static UIElement BuildPlaceholder(string text)
+    // ── Adaptive layout ─────────────────────────────────────────────────────
+    //
+    //   ≥ 960 : PaneDisplayMode=Left (240, inline, figé, pas de hamburger)
+    //   < 960 : LeftCompact (48 rail) + hamburger dans la TitleBar pour ouvrir
+    //           le pane en overlay temporaire
+    //
+    // Recherche : full ≥ 580, icône loupe sinon (expand au clic).
+    //
+    // Pattern canonique Microsoft : PaneDisplayMode bascule live, aucun custom
+    // template. Cf. learn.microsoft.com/windows/apps/develop/ui/controls/navigationview.
+
+    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplyAdaptiveLayout(e.NewSize.Width);
+
+    private void ApplyAdaptiveLayout(double width)
     {
-        return new TextBlock
-        {
-            Text = text,
-            Style = (Style)Application.Current.Resources["BodyTextBlockStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        };
+        bool wide = width >= 960;
+        Nav.PaneDisplayMode = wide
+            ? NavigationViewPaneDisplayMode.Left
+            : NavigationViewPaneDisplayMode.LeftCompact;
+
+        // Hamburger dans la TitleBar dès qu'on est en Compact, pour pouvoir
+        // ouvrir le pane (sinon le rail 48 ne permet pas d'expand).
+        AppTitleBar.IsPaneToggleButtonVisible = !wide;
+
+        bool fullSearch = width >= 580;
+        SearchBox.Visibility = fullSearch ? Visibility.Visible : Visibility.Collapsed;
+        SearchIconButton.Visibility = fullSearch ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnPaneToggleRequested(Microsoft.UI.Xaml.Controls.TitleBar sender, object args)
+    {
+        Nav.IsPaneOpen = !Nav.IsPaneOpen;
+    }
+
+    private void OnSearchIconClick(object sender, RoutedEventArgs e)
+    {
+        // Expand temporaire : on bascule en full search le temps que l'utilisateur
+        // tape. Focus direct pour enchaîner.
+        SearchIconButton.Visibility = Visibility.Collapsed;
+        SearchBox.Visibility = Visibility.Visible;
+        SearchBox.Focus(FocusState.Programmatic);
     }
 
     public void ShowAndActivate()
@@ -117,15 +150,23 @@ public sealed partial class SettingsWindow : Window
         if (args.SelectedItem is not NavigationViewItem item) return;
         var tag = item.Tag as string;
 
-        (UIElement page, string title) = tag switch
+        (Type pageType, string title) = tag switch
         {
-            "general"  => (_pageGeneral,  "General"),
-            "whisper"  => (_pageWhisper,  "Whisper configuration"),
-            "llm"      => (_pageLlm,      "LLM Rewriting"),
-            _          => (_pageGeneral,  "General"),
+            "general"  => (typeof(Settings.GeneralPage), "General"),
+            "whisper"  => (typeof(Settings.WhisperPage), "Whisper configuration"),
+            "llm"      => (typeof(Settings.LlmPage),     "LLM Rewriting"),
+            _          => (typeof(Settings.GeneralPage), "General"),
         };
 
-        PageContent.Content = page;
+        // Évite un re-Navigate redondant si on est déjà sur la page cible
+        // (SelectionChanged peut se déclencher plusieurs fois lors du setup).
+        if (PageFrame.CurrentSourcePageType != pageType)
+        {
+            PageFrame.Navigate(
+                pageType,
+                null,
+                new Microsoft.UI.Xaml.Media.Animation.EntranceNavigationTransitionInfo());
+        }
         PageTitle.Text = title;
     }
 
@@ -162,20 +203,4 @@ public sealed partial class SettingsWindow : Window
         AppWindow.Hide();
     }
 
-    // ── TitleBar : délègue le hamburger au NavigationView ───────────────────
-
-    private void OnPaneToggleRequested(TitleBar sender, object args)
-        => Nav.IsPaneOpen = !Nav.IsPaneOpen;
-
-    // Le NavigationView gère lui-même son affichage responsive. Quand il a
-    // la place (Expanded), on masque le hamburger du TitleBar : la nav est
-    // déjà visible à gauche. Quand il rétrécit (Compact/Minimal), on bascule
-    // le hamburger dans le TitleBar pour récupérer la place et on collapse
-    // la SearchBox qui deviendrait écrasée.
-    private void OnNavDisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
-    {
-        bool compact = args.DisplayMode != NavigationViewDisplayMode.Expanded;
-        AppTitleBar.IsPaneToggleButtonVisible = compact;
-        SearchBox.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-    }
 }
