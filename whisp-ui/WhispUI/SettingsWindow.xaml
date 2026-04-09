@@ -16,43 +16,29 @@
              donc aucun toggle n'est nécessaire. -->
         <!-- TitleBar natif. Hamburger, titre et zone Content basculent via
              OnRootSizeChanged selon 3 breakpoints : 960, 580, 390. -->
+        <!-- TitleBar natif. Icône + titre à gauche, search centrée. Aucun
+             burger ici : c'est le NavigationView qui porte le sien. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
                   Title="WhispUI Settings"
+                  IsPaneToggleButtonVisible="True"
                   PaneToggleRequested="OnPaneToggleRequested">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <Grid VerticalAlignment="Center">
-                    <AutoSuggestBox x:Name="SearchBox"
-                                    QueryIcon="Find"
-                                    PlaceholderText="Rechercher un paramètre"
-                                    MinWidth="280"
-                                    MaxWidth="560"
-                                    HorizontalAlignment="Stretch"
-                                    VerticalAlignment="Center" />
-                    <Button x:Name="SearchIconButton"
-                            Visibility="Collapsed"
-                            VerticalAlignment="Center"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            Click="OnSearchIconClick"
-                            ToolTipService.ToolTip="Rechercher un paramètre">
-                        <FontIcon Glyph="&#xE721;" FontSize="16" />
-                    </Button>
-                </Grid>
+                <AutoSuggestBox x:Name="SearchBox"
+                                QueryIcon="Find"
+                                PlaceholderText="Rechercher un paramètre" />
             </TitleBar.Content>
         </TitleBar>
 
-        <!-- ── NavigationView — PaneDisplayMode=Left : pane toujours
-             inline (push content, jamais d'overlay). Pattern canonique
-             recommandé par Microsoft Learn pour un Settings à nav fixe. -->
+        <!-- ── NavigationView nu. PaneDisplayMode par défaut (Auto) :
+             NavigationView gère lui-même la bascule Left ↔ LeftMinimal
+             selon la largeur disponible, avec son propre burger. Pattern
+             Task Manager Windows 11 : aucun override custom. -->
         <NavigationView Grid.Row="1"
                         x:Name="Nav"
-                        PaneDisplayMode="Left"
-                        OpenPaneLength="240"
-                        CompactPaneLength="48"
                         IsBackButtonVisible="Collapsed"
                         IsPaneToggleButtonVisible="False"
                         IsSettingsVisible="False"

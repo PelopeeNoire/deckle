@@ -66,11 +66,9 @@ public sealed partial class SettingsWindow : Window
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min : avec PaneDisplayMode=Left le pane (280) reste toujours
-        // inline ; sous 640 le contenu devient illisible.
-        // Min 390 : on veut exposer le breakpoint <390 (LeftMinimal + hamburger
-        // titlebar). Hauteur gardée à 400 pour la lisibilité verticale.
-        presenter.PreferredMinimumWidth  = 480;
+        // Min cohérent Task Manager : on veut pouvoir descendre assez bas
+        // pour exposer le breakpoint search-en-icône et titre masqué.
+        presenter.PreferredMinimumWidth  = 320;
         presenter.PreferredMinimumHeight = 400;
         AppWindow.SetPresenter(presenter);
 
@@ -81,53 +79,14 @@ public sealed partial class SettingsWindow : Window
             AppWindow.Hide();
         };
 
-        // Adaptive layout : 4 breakpoints documentés dans le Figma.
-        RootGrid.SizeChanged += OnRootSizeChanged;
-        ApplyAdaptiveLayout(RootGrid.ActualWidth);
     }
 
-    // ── Adaptive layout ─────────────────────────────────────────────────────
-    //
-    //   ≥ 960 : PaneDisplayMode=Left (240, inline, figé, pas de hamburger)
-    //   < 960 : LeftCompact (48 rail) + hamburger dans la TitleBar pour ouvrir
-    //           le pane en overlay temporaire
-    //
-    // Recherche : full ≥ 580, icône loupe sinon (expand au clic).
-    //
-    // Pattern canonique Microsoft : PaneDisplayMode bascule live, aucun custom
-    // template. Cf. learn.microsoft.com/windows/apps/develop/ui/controls/navigationview.
-
-    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
-        => ApplyAdaptiveLayout(e.NewSize.Width);
-
-    private void ApplyAdaptiveLayout(double width)
-    {
-        bool wide = width >= 960;
-        Nav.PaneDisplayMode = wide
-            ? NavigationViewPaneDisplayMode.Left
-            : NavigationViewPaneDisplayMode.LeftCompact;
-
-        // Hamburger dans la TitleBar dès qu'on est en Compact, pour pouvoir
-        // ouvrir le pane (sinon le rail 48 ne permet pas d'expand).
-        AppTitleBar.IsPaneToggleButtonVisible = !wide;
-
-        bool fullSearch = width >= 580;
-        SearchBox.Visibility = fullSearch ? Visibility.Visible : Visibility.Collapsed;
-        SearchIconButton.Visibility = fullSearch ? Visibility.Collapsed : Visibility.Visible;
-    }
-
+    // Pattern canonique Microsoft Learn : le burger vit dans la TitleBar native
+    // (slot gauche, à côté de l'icône, comme Task Manager). NavigationView cache
+    // le sien via IsPaneToggleButtonVisible=False. On relaie le toggle ici.
     private void OnPaneToggleRequested(Microsoft.UI.Xaml.Controls.TitleBar sender, object args)
     {
         Nav.IsPaneOpen = !Nav.IsPaneOpen;
-    }
-
-    private void OnSearchIconClick(object sender, RoutedEventArgs e)
-    {
-        // Expand temporaire : on bascule en full search le temps que l'utilisateur
-        // tape. Focus direct pour enchaîner.
-        SearchIconButton.Visibility = Visibility.Collapsed;
-        SearchBox.Visibility = Visibility.Visible;
-        SearchBox.Focus(FocusState.Programmatic);
     }
 
     public void ShowAndActivate()
