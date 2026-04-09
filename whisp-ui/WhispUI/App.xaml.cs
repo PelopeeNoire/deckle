@@ -51,12 +51,12 @@ public partial class App : Microsoft.UI.Xaml.Application
             OnShowLogsRequested = () => _logWindow.ShowAndActivate(),
         };
 
-        // HudWindow créée une fois, jamais détruite. Pré-initialisée hors écran
-        // via Show(false) : l'arbre XAML se construit sans que la fenêtre soit
-        // visible (le Show réel passera par ShowNoActivate après positionnement).
+        // HudWindow créée une fois, jamais détruite. Pas de Show initial : le
+        // constructeur capture l'HWND et pose subclass / raw input / styles
+        // étendus directement sur le handle natif — aucun besoin d'afficher la
+        // fenêtre pour que ça marche. Le premier ShowRecording déclenchera
+        // ShowNoActivate, qui positionne bas-centre et appelle SW_SHOWNOACTIVATE.
         _hudWindow = new HudWindow();
-        _hudWindow.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 320, 64));
-        _hudWindow.AppWindow.Show(false);
 
         _tray = new TrayIconManager
         {

@@ -35,7 +35,7 @@ public sealed partial class HudWindow : Window
     // Dimensions Figma (node 64:1699) : 314 × 78.
     private const int HUD_WIDTH  = 314;
     private const int HUD_HEIGHT = 78;
-    private const int HUD_BOTTOM_MARGIN = 64; // légèrement au-dessus de la taskbar
+    private const int HUD_BOTTOM_MARGIN = 80; // au-dessus de la taskbar
 
     // ── Proximité souris ──────────────────────────────────────────────────────
     // Fade continu : alpha mappé sur la distance curseur/HUD via smoothstep.
@@ -123,16 +123,34 @@ public sealed partial class HudWindow : Window
         tb.ButtonBackgroundColor         = Colors.Transparent;
         tb.ButtonInactiveBackgroundColor = Colors.Transparent;
 
-        // Mica : fond translucide natif Windows 11. Le Border interne (CornerRadius=7)
-        // donne la forme arrondie ; le Mica le traverse via la racine transparente.
-        SystemBackdrop = new MicaBackdrop();
+        // DesktopAcrylicBackdrop : matériau canonique des fenêtres transient Windows 11
+        // (flyouts, menus contextuels, dialogs, notifications). DWM appaire ce backdrop
+        // au rendu système popup : Acrylic + ombre portée Shell + rayon + stroke, tout
+        // natif, tout automatique, suit light/dark. À préférer à MicaBackdrop pour toute
+        // surface éphémère comme une HUD — Mica est réservé aux fenêtres app longue vie.
+        SystemBackdrop = new DesktopAcrylicBackdrop();
+
+        // Signal DWM explicite : DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW.
+        // C'est la bonne intention cote DWM pour une fenetre transient popup, mais
+        // EN PRATIQUE ca ne donne pas l'ombre "Shell Shadows" riche qu'on voit sur
+        // les menus contextuels de l'Explorer : ces menus sont des HWND de classe
+        // popup systeme dessines par le shell via un chemin DWM prive, auquel une
+        // WinUI 3 Window unpackaged n'a pas acces. Validation runtime 2026-04-09 :
+        // l'appel ci-dessous n'ameliore pas visiblement l'ombre mais reste en place
+        // parce qu'il exprime la bonne intention cote doc officielle (DWMSBT_*).
+        int backdropType = NativeMethods.DWMSBT_TRANSIENTWINDOW;
+        NativeMethods.DwmSetWindowAttribute(
+            _hwnd,
+            NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE,
+            ref backdropType,
+            sizeof(int));
 
         // Marquer la fenêtre comme layered et set alpha initial à 255 (opaque).
         // Sans WS_EX_LAYERED, SetLayeredWindowAttributes est sans effet.
         var ex = NativeMethods.GetWindowLongPtr(_hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
         NativeMethods.SetWindowLongPtr(
             _hwnd, NativeMethods.GWL_EXSTYLE,
-            new IntPtr(ex | NativeMethods.WS_EX_LAYERED));
+            new IntPtr(ex | NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TOOLWINDOW));
         NativeMethods.SetLayeredWindowAttributes(
             _hwnd, 0, VISIBLE_ALPHA, NativeMethods.LWA_ALPHA);
 
@@ -368,6 +386,16 @@ public sealed partial class HudWindow : Window
             // Pas besoin de parser le RAWINPUT : on veut juste la position absolue
             // courante du curseur (les RAWMOUSE deltas seraient inutiles ici).
             UpdateProximity();
+        }
+        else if (uMsg == NativeMethods.WM_NCACTIVATE)
+        {
+            // Force DWM a peindre la HUD comme active en permanence : ombre portee
+            // "Shell Shadows / Active Window" riche (Win11) au lieu de l'ombre
+            // inactive aplatie. Sans ca, la HUD est cote DWM perpetuellement
+            // inactive (SW_SHOWNOACTIVATE + WS_EX_NOACTIVATE + jamais de focus
+            // clavier) et herite des ombres "non active window". On reecrit
+            // wParam=TRUE avant DefSubclassProc, lParam reste tel quel.
+            return NativeMethods.DefSubclassProc(hWnd, uMsg, new IntPtr(1), lParam);
         }
         return NativeMethods.DefSubclassProc(hWnd, uMsg, wParam, lParam);
     }

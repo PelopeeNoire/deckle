@@ -187,6 +187,25 @@ coloré en `SystemFillColorSuccessBrush` (vert) — pas l'accent système qui pe
   Windows non fermées explicitement avant Exit. À investiguer : `Dispose`/`Shutdown` explicite
   avant `Exit`, ou fallback `Environment.Exit(0)`.
 - **Icône tray manquante** : placeholder à remplacer par un vrai .ico.
+- **HudWindow — ombre Shell manquante** : HudWindow n'a qu'une ombre plate alors que
+  LogWindow (même projet, même plateforme WinUI 3 unpackaged) a une ombre Shell riche.
+  **Cause confirmée** : `WS_EX_LAYERED` (requis pour le fade à la proximité souris via
+  `SetLayeredWindowAttributes LWA_ALPHA`) désactive par design l'ombre DWM Shell système —
+  c'est une contrainte Win32 de base, aucune API DWM ne la contourne
+  (`DWMWA_SYSTEMBACKDROP_TYPE`, `DWMWA_BORDER_COLOR`, corner preference : aucun effet sur
+  une fenêtre layered). Travaux déjà tentés sans succès : passage à `DesktopAcrylicBackdrop`
+  + signal DWM `DWMSBT_TRANSIENTWINDOW` + interception `WM_NCACTIVATE` forçant wParam=TRUE.
+  Compromis accepté pour cette itération : ombre plate conservée. **Deux voies de sortie
+  propres, mutuellement exclusives, à trancher en session future** — détail complet dans
+  `project_next_session.md` section *2bis*. Voie A : agrandir le HWND + `DropShadow`
+  Composition interne (ex. 354×118 avec contenu centré à 314×78, pourtour 20 px pour
+  l'ombre) — la doc confirme qu'une DropShadow n'est pas clippée par la taille du visual,
+  mais reste clippée au rect du HWND, d'où l'agrandissement. Voie B : retirer `WS_EX_LAYERED`
+  et réimplémenter le fade via `ElementCompositionPreview.GetElementVisual(RootGrid).Opacity`
+  — récupère l'ombre DWM native gratuite, mais incertitude à prototyper : est-ce que
+  Composition opacity fade correctement un `DesktopAcrylicBackdrop` (backdrop rendu par DWM
+  hors de l'arbre Composition XAML) ? Recommandation : tester Voie B en premier, bascule
+  Voie A si KO.
 - **HUD chrono coupé en haut** : malgré `TextLineBounds="Tight"` + `LineHeight="48"` +
   sous-container `Grid 214x30` (taille bbox Figma exacte) qui laisse le glyphe déborder
   dans les paddings, le haut des chiffres reste tronqué. Hypothèse : la cap-height réelle
