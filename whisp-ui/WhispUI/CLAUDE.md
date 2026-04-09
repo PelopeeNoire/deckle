@@ -258,23 +258,59 @@ session de travail.**
 **Post-validation :** mettre à jour la tâche planifiée `Whisp` → exe WhispUI ; mettre à jour
 `../../CLAUDE.md` (point d'entrée).
 
-**SettingsWindow — skeleton livré.** `SettingsWindow.xaml` + `.cs` calqués sur LogWindow v3
-(Mica, thème système, title bar custom 48px 3 colonnes avec drag passthrough SearchBox,
-`OverlappedPresenter`, Close→Cancel+Hide, RefreshTitleBarButtonColors). Layout :
-`NavigationView PaneDisplayMode="Auto"` avec 3 items (General `\uE713`, Whisper configuration
-`\uF61F`, LLM Rewriting `\uF6C7`) + footer Settings `\uE115`. Contenu interne = Border
-LayerFill avec sticky header (H1 + Set to defaults `\uE10E`) / ScrollViewer + ContentPresenter
-swap / sticky footer (séparateur + Cancel/Save accent). Pages = placeholders TextBlock. Tray :
-nouvelle entrée "Settings" + `OnShowSettings` dans `TrayIconManager`. Instanciée une fois dans
-`App.OnLaunched`, jamais détruite.
+**SettingsWindow — refacto natif livré (2026-04-09).** Skeleton + migration aux briques
+natives Microsoft validée runtime. Détails complets dans la mémoire
+`project_refacto_winui_natif.md`. En résumé :
 
-**À faire — voir mémoire `project_settingswindow.md`** : (1) tray clic gauche → Settings au
-lieu de Logs, Logs déplacé en footer NavigationView. (2) Refonte responsive avec briques
-WinUI natives — la search bar reste dans la title bar custom au lieu de migrer dans le header
-quand le nav collapse ; étudier la page Figma DS Windows UI 3 node `169220-31361` avant tout
-code custom. **Règle posée : chercher la brique native avant de bricoler.** (3) Sticky footer
-Cancel/Save visible uniquement en état dirty. (4) Vérifier version Figma WhispUI à jour
-`117-15203`. (5) Contenu réel des 3 pages — reporté.
+- `Microsoft.UI.Xaml.Controls.TitleBar` natif (Windows App SDK 1.8), caption buttons Tall via
+  `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall` (le contrôle
+  TitleBar ne gère pas cette hauteur tout seul), icône app via `ImageIconSource` nommé.
+- NavigationView adaptatif 2 breakpoints : **≥960 `PaneDisplayMode=Left`** (240, inline, figé,
+  pas de hamburger) / **<960 `LeftCompact`** (rail 48, hamburger dans la TitleBar via
+  `PaneToggleRequested` → `Nav.IsPaneOpen`, overlay au déploiement). `LeftMinimal` supprimé
+  (inatteignable, `PreferredMinimumWidth=480`). Bascule live côté code-behind dans
+  `ApplyAdaptiveLayout(width)`. Search box : full ≥580, icône loupe sinon (expand au clic).
+- Contenu : `NavigationView.MenuItems` = General / Whisper / LLM Rewriting, `FooterMenuItems`
+  = Logs (`SelectsOnInvoked=False`, délègue à `App` qui ouvre la LogWindow partagée).
+- **Navigation `Frame`+`Page`** : `<Frame x:Name="PageFrame" />` à la place de l'ancien
+  `ContentPresenter`. Les Pages vivent sous `Settings/` (`GeneralPage`, `WhisperPage`,
+  `LlmPage`) et portent chacune leur propre `ScrollViewer` + padding interne. Toutes ont
+  `NavigationCacheMode.Required` pour préserver l'état. `PageFrame.Navigate(type, null,
+  new EntranceNavigationTransitionInfo())` avec garde `CurrentSourcePageType != pageType`
+  contre les re-Navigate redondants au setup.
+- **Contenu GeneralPage** : `SettingsCard` + `SettingsExpander` du package NuGet
+  `CommunityToolkit.WinUI.Controls.SettingsControls 8.2.250402`. Pattern canonique Microsoft
+  Learn appliqué à la lettre : ressource `SettingsCardSpacing=4`, style
+  `SettingsSectionHeaderTextBlockStyle` (`BodyStrongTextBlockStyle` + `Margin 1,30,0,6`),
+  `StackPanel MaxWidth=1000` dans un `Grid` wrapper (workaround bug
+  microsoft-ui-xaml#3842). Trois sections de démo non branchées : Démarrage, Apparence,
+  Raccourcis — **à trier à la prochaine session**.
+
+**LogWindow responsive** : même pattern SearchBox que Settings, single breakpoint 580.
+Caption buttons Tall aussi via `AppWindow.TitleBar.PreferredHeightOption`.
+
+**À faire — prochains chantiers** (voir mémoire `project_next_session.md`, ordre validé
+avec Louis) :
+
+1. **Bootstrap silencieux** — au démarrage à froid (login Windows ou lancement manuel) une
+   fenêtre apparaît alors que l'app doit démarrer uniquement dans le tray. Cible : 100 %
+   silencieux, seule l'icône tray visible. Référence : PowerToys. Investiguer l'enchaînement
+   `App.OnLaunched` et identifier lequel des `Show(false)` flashe.
+2. **HudWindow = notification, pas Window** — (A) elle apparaît au démarrage alors qu'aucun
+   enregistrement n'est en cours. (B) elle reste sur le bureau virtuel où elle a été lancée
+   au lieu de suivre l'utilisateur. Cible : comportement notification système (visible sur
+   tous les bureaux virtuels pendant l'enregistrement, invisible le reste du temps).
+   Investiguer `WS_EX_TOOLWINDOW`/`WS_EX_TOPMOST`/`WS_EX_NOACTIVATE`, `IVirtualDesktopManager`,
+   ou alternative AppNotification Windows App SDK. Regarder comment PowerToys le gère.
+3. **GeneralPage réelle + persistance** — supprimer les cards démo, décider le contenu réel
+   (s'inspirer de PowerToys pour "Démarrer avec Windows" et son mode admin), définir la
+   couche de persistance (JSON local probable, aligné émancipation cloud), hot-reload.
+4. **Finitions SettingsWindow** — retirer les transitions `EntranceThemeTransition` +
+   `RepositionThemeTransition` de GeneralPage (Louis les a enlevées dans son Figma). Masquer
+   Cancel/Save du footer par défaut (doctrine auto-save façon Settings Windows 11, garder
+   le code pour réactivation ultérieure). Revoir le positionnement du toggle de nav — Louis
+   pense que Windows 11 Settings le place au-dessus et pousse le contenu à un certain
+   breakpoint ; vérifier Figma DS Windows 11 node `169220-31361`.
 
 **Post-V1 — LogWindow responsive (et future SettingsWindow).** Rendre la `CommandBar` de
 LogWindow réactive à la largeur de la fenêtre, en s'appuyant au maximum sur le comportement

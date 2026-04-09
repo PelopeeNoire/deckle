@@ -139,6 +139,11 @@ public sealed partial class LogWindow : Window
         // drag region, caption buttons themés sont gérés par le contrôle.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+        // Caption buttons Tall pour rester alignés avec le contenu interactif
+        // (SearchBox) du TitleBar. Le contrôle TitleBar gère la hauteur de son
+        // propre chrome, mais les caption buttons système restent pilotés par
+        // AppWindow.TitleBar.PreferredHeightOption.
+        AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
 
         // Mica : fond translucide qui prend les couleurs du thème système.
         // Win11 requis (OK ici) ; sinon fallback transparent.
@@ -170,6 +175,30 @@ public sealed partial class LogWindow : Window
             _isVisible = false;
             AppWindow.Hide();
         };
+
+        // SearchBox responsive : full ≥ 580, icône loupe < 580.
+        RootGrid.SizeChanged += OnRootSizeChanged;
+        ApplySearchLayout(RootGrid.ActualWidth);
+    }
+
+    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplySearchLayout(e.NewSize.Width);
+
+    private void ApplySearchLayout(double width)
+    {
+        bool fullSearch = width >= 580;
+        SearchBox.Visibility = fullSearch ? Visibility.Visible : Visibility.Collapsed;
+        SearchIconButton.Visibility = fullSearch ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnSearchIconClick(object sender, RoutedEventArgs e)
+    {
+        // Expand temporaire : la SearchBox prend la place le temps de taper.
+        // Au prochain SizeChanged < 580 elle recollapse (comportement volontaire,
+        // on peut affiner si besoin).
+        SearchIconButton.Visibility = Visibility.Collapsed;
+        SearchBox.Visibility = Visibility.Visible;
+        SearchBox.Focus(FocusState.Programmatic);
     }
 
     // ── API publique (thread-safe) ────────────────────────────────────────────
@@ -197,7 +226,13 @@ public sealed partial class LogWindow : Window
     private void ApplyRecordingState(bool isRecording)
     {
         _isRecording = isRecording;
-        AppTitleBarIcon.ImageSource = isRecording ? _iconRecording : _iconIdle;
+        // Muter ImageSource in-place sur l'ImageIconSource existant ne propage
+        // pas visuellement au TitleBar (pas de PropertyChanged routé). Fix :
+        // reconstruire un ImageIconSource complet et réassigner IconSource.
+        AppTitleBar.IconSource = new Microsoft.UI.Xaml.Controls.ImageIconSource
+        {
+            ImageSource = isRecording ? _iconRecording : _iconIdle,
+        };
 
         // Icône de fenêtre (titlebar Windows + taskbar + alt-tab) : suit le
         // même état. AppWindow.SetIcon attend un chemin .ico sur disque.

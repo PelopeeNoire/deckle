@@ -134,12 +134,25 @@
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <AutoSuggestBox x:Name="SearchBox"
-                                QueryIcon="Find"
-                                PlaceholderText="Rechercher"
-                                MaxWidth="320"
-                                VerticalAlignment="Center"
-                                TextChanged="OnSearchTextChanged" />
+                <Grid VerticalAlignment="Center">
+                    <AutoSuggestBox x:Name="SearchBox"
+                                    QueryIcon="Find"
+                                    PlaceholderText="Rechercher"
+                                    MinWidth="280"
+                                    MaxWidth="760"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Center"
+                                    TextChanged="OnSearchTextChanged" />
+                    <Button x:Name="SearchIconButton"
+                            Visibility="Collapsed"
+                            VerticalAlignment="Center"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            Click="OnSearchIconClick"
+                            ToolTipService.ToolTip="Rechercher">
+                        <FontIcon Glyph="&#xE721;" FontSize="16" />
+                    </Button>
+                </Grid>
             </TitleBar.Content>
         </TitleBar>
 
@@ -195,7 +208,7 @@
                                     DynamicOverflowOrder="1"
                                     IsChecked="True">
                     <AppBarToggleButton.Icon>
-                        <FontIcon Glyph="&#xE70D;" />
+                        <FontIcon Glyph="&#xEC8F;" />
                     </AppBarToggleButton.Icon>
                 </AppBarToggleButton>
                 <AppBarToggleButton x:Name="WrapToggle"

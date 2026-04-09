@@ -90,6 +90,7 @@ Diagnostic d'un futur problème de build : `MSBuild ... -bl:fresh.binlog` puis
 
 ## Contraintes de travail (non négociables)
 
+0. **Source primaire = Microsoft Learn + skills.** Avant toute implémentation UI/plateforme (WinUI 3, Windows App SDK, .NET), interroger en premier lieu le MCP Microsoft Learn (`microsoft_docs_search` / `microsoft_code_sample_search` / `microsoft_docs_fetch`) et les skills disponibles (notamment `microsoft-docs`, `winui3-migration-guide`). Le pattern canonique Microsoft prime toujours sur le custom. Le custom vient **après**, et seulement si aucune brique native ne couvre le besoin. Référence de qualité typique : WinUI 3 Gallery (github.com/microsoft/WinUI-Gallery).
 1. **1 ou 2 tâches à la fois.** Validation explicite avant de continuer.
 2. **Toujours préciser : admin ou sans admin**, avec raison courte.
 3. **Toujours préciser dans quel dossier lancer la console.**

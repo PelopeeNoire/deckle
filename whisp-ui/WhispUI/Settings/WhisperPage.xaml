@@ -1,0 +1,12 @@
+<Page
+    x:Class="WhispUI.Settings.WhisperPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="32,0,32,24"
+                  VerticalScrollBarVisibility="Auto">
+        <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                   TextWrapping="Wrap"
+                   Text="Configuration Whisper à venir (modèle, threads, langue, paramètres avancés)." />
+    </ScrollViewer>
+</Page>
