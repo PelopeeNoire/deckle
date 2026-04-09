@@ -4,6 +4,13 @@ public partial class App : Microsoft.UI.Xaml.Application
 {
     private AnchorWindow? _anchor;
     private LogWindow? _logWindow;
+
+    // Accesseur statique pour que les autres Windows/Pages puissent logger
+    // directement dans la LogWindow UI (pas seulement dans %TEMP%\whisp-debug.log
+    // via DebugLog). Utilisé par SettingsWindow et WhisperPage pour instrumenter
+    // les actions utilisateur. Peut être null pendant le tout début du boot ;
+    // chaque appel doit donc utiliser le null-conditional `App.Log?.`.
+    public static LogWindow? Log => (Current as App)?._logWindow;
     private SettingsWindow? _settingsWindow;
     private HudWindow? _hudWindow;
     private TrayIconManager? _tray;

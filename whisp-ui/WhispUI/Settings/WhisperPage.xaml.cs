@@ -28,10 +28,32 @@ public sealed partial class WhisperPage : Page
 
     public WhisperPage()
     {
-        InitializeComponent();
+        App.Log?.Log("[WHISPERPAGE] ctor start");
+        try
+        {
+            InitializeComponent();
+            App.Log?.LogVerbose("[WHISPERPAGE] InitializeComponent OK");
+            // Bug WinUI 3 release : impossible de poser Minimum > defaultValue
+            // en XAML pour VadMaxSpeechSlider sans crash du parser. On le fait
+            // ici maintenant que le Slider est construit et en-dehors du
+            // chemin LoadComponent. Maximum=60 vient déjà du XAML.
+            VadMaxSpeechSlider.Minimum = 5;
+            VadMaxSpeechSlider.Value   = 5;
+            App.Log?.LogVerbose("[WHISPERPAGE] VadMaxSpeechSlider Min/Value posés en code");
+        }
+        catch (Exception ex)
+        {
+            App.Log?.LogError($"[WHISPERPAGE] InitializeComponent THREW {ex.GetType().Name}: {ex.Message}");
+            App.Log?.LogError(ex.StackTrace ?? "(no stack)");
+            DebugLog.Write("WHISPERPAGE", $"InitializeComponent THREW: {ex}");
+            throw;
+        }
         NavigationCacheMode = NavigationCacheMode.Required;
         Loaded += (_, _) =>
         {
+            App.Log?.LogVerbose("[WHISPERPAGE] Loaded fired");
+            try
+            {
             PopulateModelCombo();
             Hydrate();
             // Transcription
@@ -62,7 +84,39 @@ public sealed partial class WhisperPage : Page
             WireHover(MaxTokensCard, MaxTokensReset);
             SuppressRegexCard.PointerEntered += (_, _) => SuppressRegexReset.Opacity = 1;
             SuppressRegexCard.PointerExited += (_, _) => SuppressRegexReset.Opacity = 0;
+                App.Log?.LogStep("[WHISPERPAGE] Loaded complet — page prête");
+            }
+            catch (Exception ex)
+            {
+                App.Log?.LogError($"[WHISPERPAGE] Loaded THREW {ex.GetType().Name}: {ex.Message}");
+                App.Log?.LogError(ex.StackTrace ?? "(no stack)");
+                DebugLog.Write("WHISPERPAGE", $"Loaded THREW: {ex}");
+            }
         };
+    }
+
+    // Helper commun pour instrumenter chaque handler utilisateur :
+    //   - log Verbose de l'action tentée (avec la valeur)
+    //   - exécute l'action
+    //   - log Error si exception (l'UI a déjà changé, mais SettingsService.Save
+    //     peut lever sur I/O — on loggue la trace sans masquer l'exception)
+    // Retourne false si une exception a été capturée, pour que l'appelant puisse
+    // éventuellement rollback sa valeur UI.
+    private bool TryApply(string action, System.Action body)
+    {
+        App.Log?.LogVerbose($"[WHISPERPAGE] {action}");
+        try
+        {
+            body();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            App.Log?.LogError($"[WHISPERPAGE] {action} THREW {ex.GetType().Name}: {ex.Message}");
+            App.Log?.LogError(ex.StackTrace ?? "(no stack)");
+            DebugLog.Write("WHISPERPAGE", $"{action} THREW: {ex}");
+            return false;
+        }
     }
 
     // Reset button visible uniquement quand la SettingsCard parente est survolée.
@@ -188,68 +242,85 @@ public sealed partial class WhisperPage : Page
     private void ModelsDirectoryBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.Paths.ModelsDirectory = ModelsDirectoryBox.Text;
-        SettingsService.Instance.Save();
+        TryApply($"Paths.ModelsDirectory ← \"{ModelsDirectoryBox.Text}\"", () =>
+        {
+            SettingsService.Instance.Current.Paths.ModelsDirectory = ModelsDirectoryBox.Text;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Paths.ModelsDirectory → \"{_pathsDefaults.ModelsDirectory}\"");
         ModelsDirectoryBox.Text = _pathsDefaults.ModelsDirectory;
     }
 
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || ModelCombo.SelectedItem is not string model) return;
-        SettingsService.Instance.Current.Transcription.Model = model;
-        SettingsService.Instance.Save();
-        MarkRestartPending();
+        TryApply($"Transcription.Model ← \"{model}\"", () =>
+        {
+            SettingsService.Instance.Current.Transcription.Model = model;
+            SettingsService.Instance.Save();
+            MarkRestartPending();
+        });
     }
 
     private void ModelReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Transcription.Model → \"{_transcriptionDefaults.Model}\"");
         ModelCombo.SelectedItem = _transcriptionDefaults.Model;
     }
 
     private void UseGpuToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.Transcription.UseGpu = UseGpuToggle.IsOn;
-        SettingsService.Instance.Save();
-        MarkRestartPending();
+        TryApply($"Transcription.UseGpu ← {UseGpuToggle.IsOn}", () =>
+        {
+            SettingsService.Instance.Current.Transcription.UseGpu = UseGpuToggle.IsOn;
+            SettingsService.Instance.Save();
+            MarkRestartPending();
+        });
     }
 
     private void UseGpuReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Transcription.UseGpu → {_transcriptionDefaults.UseGpu}");
         UseGpuToggle.IsOn = _transcriptionDefaults.UseGpu;
     }
 
     private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
-        // ComboBox editable : SelectedItem peut être un ComboBoxItem (frappe
-        // sur une entrée de la liste) ou null (saisie libre dans Text). Dans
-        // les deux cas on lit Text qui reflète la valeur courante affichée.
         string text = LanguageCombo.Text ?? "";
         if (LanguageCombo.SelectedItem is ComboBoxItem item && item.Content is string s)
             text = s;
-        SettingsService.Instance.Current.Transcription.Language = text;
-        SettingsService.Instance.Save();
+        TryApply($"Transcription.Language ← \"{text}\"", () =>
+        {
+            SettingsService.Instance.Current.Transcription.Language = text;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void LanguageReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Transcription.Language → \"{_transcriptionDefaults.Language}\"");
         LanguageCombo.Text = _transcriptionDefaults.Language;
     }
 
     private void InitialPromptBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.Transcription.InitialPrompt = InitialPromptBox.Text;
-        SettingsService.Instance.Save();
+        TryApply($"Transcription.InitialPrompt ← ({InitialPromptBox.Text.Length} chars)", () =>
+        {
+            SettingsService.Instance.Current.Transcription.InitialPrompt = InitialPromptBox.Text;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void InitialPromptReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log("[WHISPERPAGE] Reset Transcription.InitialPrompt");
         InitialPromptBox.Text = _transcriptionDefaults.InitialPrompt;
     }
 
@@ -258,12 +329,16 @@ public sealed partial class WhisperPage : Page
     private void VadEnabledToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.SpeechDetection.Enabled = VadEnabledToggle.IsOn;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.Enabled ← {VadEnabledToggle.IsOn}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.Enabled = VadEnabledToggle.IsOn;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void VadEnabledReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset SpeechDetection.Enabled → {_speechDefaults.Enabled}");
         VadEnabledToggle.IsOn = _speechDefaults.Enabled;
     }
 
@@ -271,8 +346,11 @@ public sealed partial class WhisperPage : Page
     {
         UpdateVadThresholdText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.SpeechDetection.Threshold = (float)e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.Threshold ← {e.NewValue:0.00}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.Threshold = (float)e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateVadThresholdText(double v) => VadThresholdValue.Text = FmtTwo(v);
@@ -285,24 +363,32 @@ public sealed partial class WhisperPage : Page
     private void VadMinSpeechBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_loading || double.IsNaN(args.NewValue)) return;
-        SettingsService.Instance.Current.SpeechDetection.MinSpeechDurationMs = (int)args.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.MinSpeechDurationMs ← {(int)args.NewValue}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.MinSpeechDurationMs = (int)args.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void VadMinSpeechReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset SpeechDetection.MinSpeechDurationMs → {_speechDefaults.MinSpeechDurationMs}");
         VadMinSpeechBox.Value = _speechDefaults.MinSpeechDurationMs;
     }
 
     private void VadMinSilenceBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_loading || double.IsNaN(args.NewValue)) return;
-        SettingsService.Instance.Current.SpeechDetection.MinSilenceDurationMs = (int)args.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.MinSilenceDurationMs ← {(int)args.NewValue}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.MinSilenceDurationMs = (int)args.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void VadMinSilenceReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset SpeechDetection.MinSilenceDurationMs → {_speechDefaults.MinSilenceDurationMs}");
         VadMinSilenceBox.Value = _speechDefaults.MinSilenceDurationMs;
     }
 
@@ -310,26 +396,34 @@ public sealed partial class WhisperPage : Page
     {
         UpdateVadMaxSpeechText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.SpeechDetection.MaxSpeechDurationSec = (float)e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.MaxSpeechDurationSec ← {(int)e.NewValue}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.MaxSpeechDurationSec = (float)e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateVadMaxSpeechText(double v) => VadMaxSpeechValue.Text = FmtSeconds(v);
 
     private void VadMaxSpeechReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset SpeechDetection.MaxSpeechDurationSec → {_speechDefaults.MaxSpeechDurationSec}");
         VadMaxSpeechSlider.Value = _speechDefaults.MaxSpeechDurationSec;
     }
 
     private void VadSpeechPadBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_loading || double.IsNaN(args.NewValue)) return;
-        SettingsService.Instance.Current.SpeechDetection.SpeechPadMs = (int)args.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.SpeechPadMs ← {(int)args.NewValue}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.SpeechPadMs = (int)args.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void VadSpeechPadReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset SpeechDetection.SpeechPadMs → {_speechDefaults.SpeechPadMs}");
         VadSpeechPadBox.Value = _speechDefaults.SpeechPadMs;
     }
 
@@ -337,14 +431,18 @@ public sealed partial class WhisperPage : Page
     {
         UpdateVadOverlapText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.SpeechDetection.SamplesOverlap = (float)e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"SpeechDetection.SamplesOverlap ← {e.NewValue:0.00}", () =>
+        {
+            SettingsService.Instance.Current.SpeechDetection.SamplesOverlap = (float)e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateVadOverlapText(double v) => VadOverlapValue.Text = FmtTwo(v);
 
     private void VadOverlapReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset SpeechDetection.SamplesOverlap → {_speechDefaults.SamplesOverlap}");
         VadOverlapSlider.Value = _speechDefaults.SamplesOverlap;
     }
 
@@ -354,14 +452,18 @@ public sealed partial class WhisperPage : Page
     {
         UpdateTemperatureText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.Decoding.Temperature = e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"Decoding.Temperature ← {e.NewValue:0.0}", () =>
+        {
+            SettingsService.Instance.Current.Decoding.Temperature = e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateTemperatureText(double v) => TemperatureValue.Text = Fmt(v);
 
     private void TemperatureReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Decoding.Temperature → {_decodingDefaults.Temperature}");
         TemperatureSlider.Value = _decodingDefaults.Temperature;
     }
 
@@ -370,8 +472,11 @@ public sealed partial class WhisperPage : Page
         UpdateTemperatureIncrementText(e.NewValue);
         UpdateTemperatureIncrementWarning(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.Decoding.TemperatureIncrement = e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"Decoding.TemperatureIncrement ← {e.NewValue:0.0}", () =>
+        {
+            SettingsService.Instance.Current.Decoding.TemperatureIncrement = e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateTemperatureIncrementText(double v) => TemperatureIncrementValue.Text = Fmt(v);
@@ -381,6 +486,7 @@ public sealed partial class WhisperPage : Page
 
     private void TemperatureIncrementReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Decoding.TemperatureIncrement → {_decodingDefaults.TemperatureIncrement}");
         TemperatureIncrementSlider.Value = _decodingDefaults.TemperatureIncrement;
     }
 
@@ -390,14 +496,18 @@ public sealed partial class WhisperPage : Page
     {
         UpdateEntropyText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.Confidence.EntropyThreshold = e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"Confidence.EntropyThreshold ← {e.NewValue:0.0}", () =>
+        {
+            SettingsService.Instance.Current.Confidence.EntropyThreshold = e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateEntropyText(double v) => EntropyValue.Text = Fmt(v);
 
     private void EntropyReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Confidence.EntropyThreshold → {_confidenceDefaults.EntropyThreshold}");
         EntropySlider.Value = _confidenceDefaults.EntropyThreshold;
     }
 
@@ -405,14 +515,18 @@ public sealed partial class WhisperPage : Page
     {
         UpdateLogprobText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.Confidence.LogprobThreshold = e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"Confidence.LogprobThreshold ← {e.NewValue:0.0}", () =>
+        {
+            SettingsService.Instance.Current.Confidence.LogprobThreshold = e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateLogprobText(double v) => LogprobValue.Text = Fmt(v);
 
     private void LogprobReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Confidence.LogprobThreshold → {_confidenceDefaults.LogprobThreshold}");
         LogprobSlider.Value = _confidenceDefaults.LogprobThreshold;
     }
 
@@ -420,14 +534,18 @@ public sealed partial class WhisperPage : Page
     {
         UpdateNoSpeechText(e.NewValue);
         if (_loading) return;
-        SettingsService.Instance.Current.Confidence.NoSpeechThreshold = e.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"Confidence.NoSpeechThreshold ← {e.NewValue:0.00}", () =>
+        {
+            SettingsService.Instance.Current.Confidence.NoSpeechThreshold = e.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UpdateNoSpeechText(double v) => NoSpeechValue.Text = FmtTwo(v);
 
     private void NoSpeechReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Confidence.NoSpeechThreshold → {_confidenceDefaults.NoSpeechThreshold}");
         NoSpeechSlider.Value = _confidenceDefaults.NoSpeechThreshold;
     }
 
@@ -436,36 +554,48 @@ public sealed partial class WhisperPage : Page
     private void SuppressNstToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.OutputFilters.SuppressNonSpeechTokens = SuppressNstToggle.IsOn;
-        SettingsService.Instance.Save();
+        TryApply($"OutputFilters.SuppressNonSpeechTokens ← {SuppressNstToggle.IsOn}", () =>
+        {
+            SettingsService.Instance.Current.OutputFilters.SuppressNonSpeechTokens = SuppressNstToggle.IsOn;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void SuppressNstReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset OutputFilters.SuppressNonSpeechTokens → {_outputDefaults.SuppressNonSpeechTokens}");
         SuppressNstToggle.IsOn = _outputDefaults.SuppressNonSpeechTokens;
     }
 
     private void SuppressBlankToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.OutputFilters.SuppressBlank = SuppressBlankToggle.IsOn;
-        SettingsService.Instance.Save();
+        TryApply($"OutputFilters.SuppressBlank ← {SuppressBlankToggle.IsOn}", () =>
+        {
+            SettingsService.Instance.Current.OutputFilters.SuppressBlank = SuppressBlankToggle.IsOn;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void SuppressBlankReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset OutputFilters.SuppressBlank → {_outputDefaults.SuppressBlank}");
         SuppressBlankToggle.IsOn = _outputDefaults.SuppressBlank;
     }
 
     private void SuppressRegexBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.OutputFilters.SuppressRegex = SuppressRegexBox.Text;
-        SettingsService.Instance.Save();
+        TryApply($"OutputFilters.SuppressRegex ← \"{SuppressRegexBox.Text}\"", () =>
+        {
+            SettingsService.Instance.Current.OutputFilters.SuppressRegex = SuppressRegexBox.Text;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void SuppressRegexReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log("[WHISPERPAGE] Reset OutputFilters.SuppressRegex");
         SuppressRegexBox.Text = _outputDefaults.SuppressRegex;
     }
 
@@ -474,24 +604,32 @@ public sealed partial class WhisperPage : Page
     private void UseContextToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.Context.UseContext = UseContextToggle.IsOn;
-        SettingsService.Instance.Save();
+        TryApply($"Context.UseContext ← {UseContextToggle.IsOn}", () =>
+        {
+            SettingsService.Instance.Current.Context.UseContext = UseContextToggle.IsOn;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void UseContextReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Context.UseContext → {_contextDefaults.UseContext}");
         UseContextToggle.IsOn = _contextDefaults.UseContext;
     }
 
     private void MaxTokensBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_loading || double.IsNaN(args.NewValue)) return;
-        SettingsService.Instance.Current.Context.MaxTokens = (int)args.NewValue;
-        SettingsService.Instance.Save();
+        TryApply($"Context.MaxTokens ← {(int)args.NewValue}", () =>
+        {
+            SettingsService.Instance.Current.Context.MaxTokens = (int)args.NewValue;
+            SettingsService.Instance.Save();
+        });
     }
 
     private void MaxTokensReset_Click(object sender, RoutedEventArgs e)
     {
+        App.Log?.Log($"[WHISPERPAGE] Reset Context.MaxTokens → {_contextDefaults.MaxTokens}");
         MaxTokensBox.Value = _contextDefaults.MaxTokens;
     }
 }
