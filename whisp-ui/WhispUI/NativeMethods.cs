@@ -259,7 +259,28 @@ internal static class NativeMethods
     // le RAWINPUT — on appelle GetCursorPos pour avoir la position absolue à jour.
 
     public const uint WM_INPUT       = 0x00FF;
+    // WM_NCACTIVATE : DWM l'envoie pour changer l'etat actif/inactif du chrome
+    // non-client (titlebar, border, shadow). Intercepte dans le subclass de la
+    // HudWindow pour forcer wParam=TRUE en permanence, afin que DWM peigne la
+    // HUD avec l'ombre "Shell Shadows / Active Window" meme quand elle n'a
+    // pas le focus clavier (HUD est toujours SW_SHOWNOACTIVATE + WS_EX_NOACTIVATE).
+    public const uint WM_NCACTIVATE  = 0x0086;
     public const uint RIDEV_INPUTSINK = 0x00000100;
+
+    // ── DWM : system backdrop type ────────────────────────────────────────────
+    // Signal canonique pour dire a DWM : "cette fenetre est un popup transient,
+    // peint-la comme un menu/flyout/dialog" — y compris l'ombre Shell riche.
+    // Sans ca, DWM reste en DWMSBT_AUTO et applique le rendu shell par defaut
+    // (ombre aplatie). Requis Windows 11 Build 22621+.
+    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    public const int DWMSBT_TRANSIENTWINDOW    = 3;
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int dwAttribute,
+        ref int pvAttribute,
+        int cbAttribute);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterRawInputDevices(
@@ -271,7 +292,12 @@ internal static class NativeMethods
     // (Mica compris). Sans ça, animer Content.Opacity ne touche pas le backdrop.
 
     public const int  GWL_EXSTYLE   = -20;
-    public const uint WS_EX_LAYERED = 0x00080000;
+    public const uint WS_EX_LAYERED    = 0x00080000;
+    // WS_EX_TOOLWINDOW : exclut la fenêtre d'Alt+Tab et de la taskbar. Effet
+    // de bord observé (non documenté) : les fenêtres tool topmost apparaissent
+    // sur tous les bureaux virtuels. C'est le mécanisme qu'utilise PowerToys
+    // pour ses overlays. Best-effort, peut casser sur futures builds Windows.
+    public const uint WS_EX_TOOLWINDOW = 0x00000080;
     public const uint LWA_ALPHA     = 0x00000002;
 
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
