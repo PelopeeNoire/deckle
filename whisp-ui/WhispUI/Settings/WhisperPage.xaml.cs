@@ -17,6 +17,16 @@ public sealed partial class WhisperPage : Page
     // un Save inutile) pendant qu'on pose les valeurs depuis le JSON.
     private bool _loading;
 
+    // Valeurs au démarrage des settings qui nécessitent un restart. L'InfoBar
+    // "Restart required" n'apparaît que quand la valeur courante diffère de
+    // la valeur startup, et disparaît si l'utilisateur revient en arrière.
+    private string _startupModel = "";
+    private bool _startupUseGpu;
+
+    // Initial Prompt : pas d'auto-save au keystroke. On stocke la valeur
+    // sauvegardée et on montre Save/Cancel quand le texte diffère.
+    private string _savedInitialPrompt = "";
+
     // Défauts résolus à partir des POCO — source de vérité unique.
     private static readonly PathsSettings _pathsDefaults = new();
     private static readonly TranscriptionSettings _transcriptionDefaults = new();
@@ -60,7 +70,8 @@ public sealed partial class WhisperPage : Page
             WireHover(ModelCard, ModelReset);
             WireHover(UseGpuCard, UseGpuReset);
             WireHover(LanguageCard, LanguageReset);
-            WireHover(InitialPromptCard, InitialPromptReset);
+            InitialPromptCard.PointerEntered += (_, _) => InitialPromptReset.Opacity = 1;
+            InitialPromptCard.PointerExited += (_, _) => InitialPromptReset.Opacity = 0;
             PathsCard.PointerEntered += (_, _) => ModelsDirectoryReset.Opacity = 1;
             PathsCard.PointerExited += (_, _) => ModelsDirectoryReset.Opacity = 0;
             // VAD
@@ -167,11 +178,16 @@ public sealed partial class WhisperPage : Page
         {
             var s = SettingsService.Instance.Current;
 
+            // Snapshot des valeurs restart-requiring au démarrage.
+            _startupModel = s.Transcription.Model;
+            _startupUseGpu = s.Transcription.UseGpu;
+
             // Transcription
             ModelsDirectoryBox.Text = s.Paths.ModelsDirectory;
             ModelCombo.SelectedItem = s.Transcription.Model;
             UseGpuToggle.IsOn = s.Transcription.UseGpu;
             LanguageCombo.Text = s.Transcription.Language;
+            _savedInitialPrompt = s.Transcription.InitialPrompt;
             InitialPromptBox.Text = s.Transcription.InitialPrompt;
 
             // VAD
@@ -227,16 +243,6 @@ public sealed partial class WhisperPage : Page
     private static string FmtSeconds(double v) =>
         ((int)v).ToString(CultureInfo.InvariantCulture) + "s";
 
-    // Signale un touchup d'un réglage lourd (Modèle, UseGpu). Affiche l'InfoBar
-    // "Restart required" au sommet de la page. Persistant tant que la page est
-    // montée (clear au re-nav). Le footer global Cancel/Restart later/now n'est
-    // pas encore branché — ce sera un chantier SettingsWindow.
-    private void MarkRestartPending()
-    {
-        if (_loading) return;
-        RestartPendingInfoBar.IsOpen = true;
-    }
-
     // ── Transcription ───────────────────────────────────────────────────────
 
     private void ModelsDirectoryBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -262,7 +268,7 @@ public sealed partial class WhisperPage : Page
         {
             SettingsService.Instance.Current.Transcription.Model = model;
             SettingsService.Instance.Save();
-            MarkRestartPending();
+            UpdateRestartState();
         });
     }
 
@@ -279,7 +285,7 @@ public sealed partial class WhisperPage : Page
         {
             SettingsService.Instance.Current.Transcription.UseGpu = UseGpuToggle.IsOn;
             SettingsService.Instance.Save();
-            MarkRestartPending();
+            UpdateRestartState();
         });
     }
 
@@ -311,16 +317,35 @@ public sealed partial class WhisperPage : Page
     private void InitialPromptBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading) return;
+        // Pas d'auto-save : on montre Save/Cancel quand le texte diffère
+        // de la valeur sauvegardée, on les cache quand il revient.
+        bool isDirty = InitialPromptBox.Text != _savedInitialPrompt;
+        InitialPromptActions.Visibility = isDirty ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void InitialPromptSave_Click(object sender, RoutedEventArgs e)
+    {
         TryApply($"Transcription.InitialPrompt ← ({InitialPromptBox.Text.Length} chars)", () =>
         {
+            _savedInitialPrompt = InitialPromptBox.Text;
             SettingsService.Instance.Current.Transcription.InitialPrompt = InitialPromptBox.Text;
             SettingsService.Instance.Save();
+            InitialPromptActions.Visibility = Visibility.Collapsed;
         });
+    }
+
+    private void InitialPromptCancel_Click(object sender, RoutedEventArgs e)
+    {
+        App.Log?.LogVerbose("[WHISPERPAGE] InitialPrompt Cancel — revert");
+        InitialPromptBox.Text = _savedInitialPrompt;
+        // TextChanged se déclenche → isDirty = false → actions masquées.
     }
 
     private void InitialPromptReset_Click(object sender, RoutedEventArgs e)
     {
         App.Log?.Log("[WHISPERPAGE] Reset Transcription.InitialPrompt");
+        // Pose le défaut dans le TextBox — TextChanged détecte le dirty state
+        // et affiche Save/Cancel si le défaut diffère de la valeur sauvée.
         InitialPromptBox.Text = _transcriptionDefaults.InitialPrompt;
     }
 
@@ -631,5 +656,86 @@ public sealed partial class WhisperPage : Page
     {
         App.Log?.Log($"[WHISPERPAGE] Reset Context.MaxTokens → {_contextDefaults.MaxTokens}");
         MaxTokensBox.Value = _contextDefaults.MaxTokens;
+    }
+
+    // ── Restart state — highlight + footer ─────────────────────────────────
+    //
+    // Les settings Model et GPU nécessitent un restart. Quand leur valeur
+    // Si la valeur courante diffère du snapshot startup, on affiche le
+    // footer avec Restart now / Discard (pattern Windows Terminal Settings).
+
+    private void UpdateRestartState()
+    {
+        if (_loading) return;
+
+        var s = SettingsService.Instance.Current;
+        bool dirty = s.Transcription.Model != _startupModel
+                  || s.Transcription.UseGpu != _startupUseGpu;
+
+        RestartFooter.Visibility = dirty
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void RestartNow_Click(object sender, RoutedEventArgs e)
+    {
+        App.RestartApp("WhispUI.Settings.WhisperPage");
+    }
+
+    private void RestartDiscard_Click(object sender, RoutedEventArgs e)
+    {
+        App.Log?.Log("[WHISPERPAGE] Discard restart-requiring changes");
+
+        _loading = true;
+        try
+        {
+            // Revert les valeurs aux snapshots startup.
+            SettingsService.Instance.Current.Transcription.Model = _startupModel;
+            SettingsService.Instance.Current.Transcription.UseGpu = _startupUseGpu;
+            SettingsService.Instance.Save();
+
+            // Re-poser les contrôles UI.
+            ModelCombo.SelectedItem = _startupModel;
+            UseGpuToggle.IsOn = _startupUseGpu;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        UpdateRestartState();
+    }
+
+    // ── Reset all ──────────────────────────────────────────────────────────
+
+    private async void ResetAll_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Reset all settings?",
+            Content = "This will restore every transcription setting on this page to its default value.",
+            PrimaryButtonText = "Reset all",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        App.Log?.Log("[WHISPERPAGE] Reset ALL to defaults");
+
+        var s = SettingsService.Instance.Current;
+        s.Transcription   = new TranscriptionSettings();
+        s.SpeechDetection  = new SpeechDetectionSettings();
+        s.Decoding         = new DecodingSettings();
+        s.Confidence       = new ConfidenceSettings();
+        s.OutputFilters    = new OutputFilterSettings();
+        s.Context          = new ContextSettings();
+        s.Paths            = new PathsSettings();
+        SettingsService.Instance.Save();
+
+        // Re-hydrater l'UI depuis les nouveaux défauts.
+        Hydrate();
+        UpdateRestartState();
     }
 }

@@ -48,17 +48,39 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer Padding="32,24,32,24"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
-        <Grid>
-            <StackPanel MaxWidth="1000"
-                        HorizontalAlignment="Stretch"
-                        Spacing="{StaticResource SettingsCardSpacing}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-                <TextBlock Text="Transcription"
-                           Style="{StaticResource TitleTextBlockStyle}"
-                           Margin="0,0,0,8" />
+        <ScrollViewer Grid.Row="0"
+                      Padding="32,24,32,24"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+                <StackPanel MaxWidth="1000"
+                            HorizontalAlignment="Stretch"
+                            Spacing="{StaticResource SettingsCardSpacing}">
+
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Transcription"
+                               Style="{StaticResource TitleTextBlockStyle}" />
+                    <Button Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            ToolTipService.ToolTip="Reset all transcription settings to defaults"
+                            Click="ResetAll_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <TextBlock Text="Reset all" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
 
                 <TextBlock Style="{StaticResource BodyTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -68,18 +90,11 @@
 
                 <!-- ── Transcription ───────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Transcription" />
-
-                <InfoBar x:Name="RestartPendingInfoBar"
-                         IsOpen="False"
-                         IsClosable="False"
-                         Severity="Informational"
-                         Title="Restart required"
-                         Message="The model and GPU setting are applied at startup. Close and reopen WhispUI for your changes to take effect." />
+                           Text="Model &amp; engine" />
 
                 <controls:SettingsCard x:Name="ModelCard"
-                                       Header="Whisper model"
-                                       Description="The model file used to transcribe your voice. Larger models are more accurate but slower and use more memory."
+                                       Header="Whisper model (requires restart)"
+                                       Description="The AI model that converts your voice to text. Larger models produce better results but take more time and memory."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ComboBox x:Name="ModelCombo"
@@ -95,7 +110,7 @@
 
                 <controls:SettingsCard x:Name="LanguageCard"
                                        Header="Language"
-                                       Description="Two-letter code (en, fr, es…) or 'auto' to let Whisper detect it from your voice."
+                                       Description="The language you're speaking. Set it to match your language for best accuracy, or use 'auto' to let WhispUI detect it."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xF2B7;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ComboBox x:Name="LanguageCombo"
@@ -121,29 +136,42 @@
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <controls:SettingsCard x:Name="InitialPromptCard"
-                                       ContentAlignment="Vertical"
-                                       Header="Initial prompt"
-                                       Description="A short sentence fed to Whisper before transcription to steer vocabulary, punctuation and casing."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE932;}">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBox x:Name="InitialPromptBox"
-                                 MinWidth="400"
-                                 AcceptsReturn="True"
-                                 TextWrapping="Wrap"
-                                 PlaceholderText="Transcription in English."
-                                 TextChanged="InitialPromptBox_TextChanged" />
-                        <Button x:Name="InitialPromptReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="InitialPromptReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
+                <controls:SettingsExpander x:Name="InitialPromptCard"
+                                           Header="Initial prompt"
+                                           Description="A hint sentence that guides how your speech is transcribed. Use it to teach proper names, set the language tone, or fix recurring mistakes."
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE932;}">
+                    <Button x:Name="InitialPromptReset"
+                            Style="{StaticResource ResetButtonStyle}"
+                            Click="InitialPromptReset_Click">
+                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                    </Button>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard ContentAlignment="Vertical">
+                            <StackPanel Spacing="8">
+                                <TextBox x:Name="InitialPromptBox"
+                                         MinHeight="80"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         PlaceholderText="Je parle en français, je dis parfois des mots anglais. Claude, pas cloud."
+                                         TextChanged="InitialPromptBox_TextChanged" />
+                                <StackPanel x:Name="InitialPromptActions"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            Visibility="Collapsed">
+                                    <Button Content="Save"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Click="InitialPromptSave_Click" />
+                                    <Button Content="Cancel"
+                                            Click="InitialPromptCancel_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
 
                 <controls:SettingsCard x:Name="UseGpuCard"
-                                       Header="GPU acceleration"
-                                       Description="Run Whisper on the GPU via Vulkan for faster transcription. Turn off if you see instability or crashes."
+                                       Header="GPU acceleration (requires restart)"
+                                       Description="Run Whisper on the GPU via Vulkan for faster transcription. Turn off if you see instability or crashes. Default: on."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE950;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="UseGpuToggle"
@@ -164,11 +192,11 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="1,0,0,8"
-                           Text="Silero VAD strips silence and background noise before transcription. This is the main tool to fight hallucinations on quiet stretches." />
+                           Text="Pre-filter your audio to strip silence and background noise before transcription — the main defense against phantom text on quiet stretches." />
 
                 <controls:SettingsExpander x:Name="VadEnabledCard"
                                            Header="Voice activity detection"
-                                           Description="Pre-filter audio so only speech is transcribed. Requires ggml-silero-v6.2.0.bin in the models folder."
+                                           Description="Pre-filter audio so only speech reaches the model. Reduces phantom text caused by silence or background noise. Default: on."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="VadEnabledToggle"
@@ -183,7 +211,7 @@
 
                         <controls:SettingsCard x:Name="VadThresholdCard"
                                                Header="Detection threshold"
-                                               Description="How confident WhispUI must be that a sound is speech. Higher values filter more noise but may miss quiet speech.">
+                                               Description="How confident WhispUI must be that a sound is speech. Higher values filter more noise but may miss quiet speech. Default: 0.5.">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <Slider x:Name="VadThresholdSlider"
                                         Style="{StaticResource SettingSliderStyle}"
@@ -204,7 +232,7 @@
 
                         <controls:SettingsCard x:Name="VadMinSpeechCard"
                                                Header="Minimum speech duration"
-                                               Description="Sounds shorter than this (in milliseconds) are ignored. Raise to filter out short clicks and pops.">
+                                               Description="Sounds shorter than this (in milliseconds) are ignored. Raise to filter out short clicks and pops. Default: 250 ms.">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <NumberBox x:Name="VadMinSpeechBox"
                                            Minimum="0"
@@ -224,7 +252,7 @@
 
                         <controls:SettingsCard x:Name="VadMinSilenceCard"
                                                Header="Minimum silence duration"
-                                               Description="Gaps shorter than this (in milliseconds) are kept as part of the same speech segment.">
+                                               Description="Gaps shorter than this (in milliseconds) are kept as part of the same speech segment. Default: 500 ms.">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <NumberBox x:Name="VadMinSilenceBox"
                                            Minimum="0"
@@ -244,7 +272,7 @@
 
                         <controls:SettingsCard x:Name="VadMaxSpeechCard"
                                                Header="Maximum segment length"
-                                               Description="Force-split a continuous speech segment after this many seconds.">
+                                               Description="Force-split a continuous speech segment after this many seconds. Default: 30 s.">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <!-- Bug WinUI 3 release (net10 / trimming) :
                                      poser Minimum="5" ou Value="5" en XAML
@@ -275,7 +303,7 @@
 
                         <controls:SettingsCard x:Name="VadSpeechPadCard"
                                                Header="Speech padding"
-                                               Description="Extra audio (in milliseconds) kept before and after each detected segment, so words aren't clipped at the edges.">
+                                               Description="Extra audio (in milliseconds) kept before and after each detected segment, so words aren't clipped at the edges. Default: 200 ms.">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <NumberBox x:Name="VadSpeechPadBox"
                                            Minimum="0"
@@ -295,7 +323,7 @@
 
                         <controls:SettingsCard x:Name="VadOverlapCard"
                                                Header="Window overlap"
-                                               Description="Fraction of overlap between consecutive analysis windows. Higher values catch fast transitions at a small CPU cost.">
+                                               Description="Fraction of overlap between consecutive analysis windows. Higher values catch fast transitions at a small CPU cost. Default: 0.1.">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <Slider x:Name="VadOverlapSlider"
                                         Style="{StaticResource SettingSliderStyle}"
@@ -323,7 +351,7 @@
 
                 <controls:SettingsCard x:Name="SuppressNstCard"
                                        Header="Suppress non-speech tokens"
-                                       Description="Remove tags like [Music] or (laughter) that Whisper sometimes adds to the transcription."
+                                       Description="Remove tags like [Music] or (laughter) that Whisper sometimes adds to the transcription. Default: on."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="SuppressNstToggle"
@@ -338,7 +366,7 @@
 
                 <controls:SettingsCard x:Name="SuppressBlankCard"
                                        Header="Suppress blank segments"
-                                       Description="Drop segments that contain only whitespace or punctuation."
+                                       Description="Drop segments that contain only whitespace or punctuation. Default: on."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="SuppressBlankToggle"
@@ -353,8 +381,8 @@
 
                 <controls:SettingsExpander x:Name="SuppressRegexCard"
                                            Header="Custom regex filter"
-                                           Description="Regular expression matched against each segment. Matches are removed from the final transcription."
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE8AF;}">
+                                           Description="A pattern to automatically remove unwanted text from the transcription. Uses regular expression syntax."
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE71C;}">
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard ContentAlignment="Vertical">
                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -378,8 +406,8 @@
 
                 <controls:SettingsCard x:Name="UseContextCard"
                                        Header="Carry previous context"
-                                       Description="Feed the previous segment's tokens as a prime for the next one. Turn off if the model starts looping on its own output."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8A5;}">
+                                       Description="Pass each segment's result as context for the next one, improving consistency across sentences. Turn off if the transcription starts repeating itself. Default: on."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE895;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="UseContextToggle"
                                       Toggled="UseContextToggle_Toggled" />
@@ -393,8 +421,8 @@
 
                 <controls:SettingsCard x:Name="MaxTokensCard"
                                        Header="Maximum tokens per segment"
-                                       Description="Hard cap on tokens generated per segment. Set to -1 to let Whisper decide (recommended)."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8A5;}">
+                                       Description="Limit how much text can be generated for each segment. Default: -1 (auto)."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B2;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <!-- SpinButtonPlacementMode=Hidden : pas de flyout qui pousse
                              le layout ; saisie clavier + molette. -->
@@ -420,7 +448,7 @@
 
                 <controls:SettingsCard x:Name="TemperatureCard"
                                        Header="Temperature"
-                                       Description="Randomness of the decoder. 0 is deterministic and safest — raise only if the model gets stuck repeating the same phrase."
+                                       Description="Randomness of the decoder. 0 is deterministic and safest — raise only if the model gets stuck repeating the same phrase. Default: 0.0."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9CA;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="TemperatureSlider"
@@ -442,8 +470,8 @@
 
                 <controls:SettingsCard x:Name="TemperatureIncrementCard"
                                        Header="Fallback temperature step"
-                                       Description="When a segment looks uncertain, Whisper retries with a higher temperature in steps of this size. Set to 0 to disable the fallback."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9CE;}">
+                                       Description="When a segment seems uncertain, the model retries with increasing randomness in steps of this size. Set to 0 to disable retries. Default: 0.2."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE72C;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="TemperatureIncrementSlider"
                                 Style="{StaticResource SettingSliderStyle}"
@@ -475,7 +503,7 @@
 
                 <controls:SettingsCard x:Name="EntropyCard"
                                        Header="Entropy threshold"
-                                       Description="Above this value Whisper treats the segment as uncertain and triggers the temperature fallback."
+                                       Description="Catch repetitive or garbled output. Segments below this entropy are retried at higher temperature. Raise to be stricter. Default: 2.4."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="EntropySlider"
@@ -497,7 +525,7 @@
 
                 <controls:SettingsCard x:Name="LogprobCard"
                                        Header="Log-probability threshold"
-                                       Description="Minimum average log-probability accepted per segment. Values are negative — lower means more uncertain transcriptions are accepted."
+                                       Description="Minimum average confidence per segment. If confidence is low and speech is detected, the segment is retried. Raise (toward 0) to be stricter. Default: -1.0."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="LogprobSlider"
@@ -519,7 +547,7 @@
 
                 <controls:SettingsCard x:Name="NoSpeechCard"
                                        Header="No-speech threshold"
-                                       Description="Above this probability a segment is treated as silence and dropped. Raise to cut more silent stretches."
+                                       Description="Works with the log-probability check. A low-confidence segment is retried only if the model also detects speech. Raise to retry more borderline cases. Default: 0.6."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="NoSpeechSlider"
@@ -550,7 +578,7 @@
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard ContentAlignment="Vertical"
                                                Header="Folder path"
-                                               Description="Leave empty to resolve automatically to ../../shared next to the executable.">
+                                               Description="Leave empty to use the default location next to the application.">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBox x:Name="ModelsDirectoryBox"
                                          MinWidth="400"
@@ -567,6 +595,29 @@
                 </controls:SettingsExpander>
 
             </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Footer restart — pattern Windows Terminal Settings.
+             56px de haut, DividerStrokeColorDefaultBrush en séparateur,
+             AccentButton primaire + Button standard, 8px gap, 32px marge droite. -->
+        <Grid x:Name="RestartFooter"
+              Grid.Row="1"
+              Height="56"
+              Visibility="Collapsed"
+              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+              BorderThickness="0,1,0,0">
+            <StackPanel Margin="0,0,32,0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                <Button Content="Discard"
+                        Click="RestartDiscard_Click" />
+                <Button Content="Restart now"
+                        Margin="8,0,0,0"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Click="RestartNow_Click" />
+            </StackPanel>
         </Grid>
-    </ScrollViewer>
+    </Grid>
 </Page>

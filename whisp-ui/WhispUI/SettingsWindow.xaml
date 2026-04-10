@@ -33,17 +33,11 @@
                         SelectionChanged="OnNavSelectionChanged"
                         ItemInvoked="OnNavItemInvoked">
 
-            <NavigationView.AutoSuggestBox>
-                <AutoSuggestBox x:Name="SearchBox"
-                                QueryIcon="Find"
-                                PlaceholderText="Search settings" />
-            </NavigationView.AutoSuggestBox>
-
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Recording"
+                <NavigationViewItem Content="General"
                                     Tag="WhispUI.Settings.GeneralPage">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE720;" />
+                        <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Transcription"

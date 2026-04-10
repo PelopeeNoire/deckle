@@ -109,6 +109,19 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         _anchor.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 100, 100));
         _anchor.AppWindow.Show(false);
+
+        // Si lancé avec --settings (restart depuis les Settings), rouvrir
+        // automatiquement la fenêtre Settings sur la bonne page.
+        var cliArgs = Environment.GetCommandLineArgs();
+        int settingsIdx = Array.IndexOf(cliArgs, "--settings");
+        if (settingsIdx >= 0)
+        {
+            string? pageTag = settingsIdx + 1 < cliArgs.Length
+                ? cliArgs[settingsIdx + 1]
+                : null;
+            DebugLog.Write("APP", $"--settings flag detected, page={pageTag ?? "(default)"}");
+            _settingsWindow?.ShowAndActivate(pageTag);
+        }
     }
 
     // ── Shutdown propre depuis tray > Quitter ────────────────────────────────
@@ -127,6 +140,28 @@ public partial class App : Microsoft.UI.Xaml.Application
         try { _tray?.Dispose();   } catch (Exception ex) { DebugLog.Write("APP", "tray dispose: " + ex.Message); }
         try { _engine?.Dispose(); } catch (Exception ex) { DebugLog.Write("APP", "engine dispose: " + ex.Message); }
         Environment.Exit(0);
+    }
+
+    // ── Restart depuis les Settings ─────────────────────────────────────────
+    //
+    // Lance un nouveau process WhispUI avec --settings pour que les Settings
+    // se rouvrent automatiquement au boot, puis shutdown propre du process
+    // courant via QuitApp().
+    public static void RestartApp(string? pageTag = null)
+    {
+        DebugLog.Write("APP", "Restart requested");
+        var exePath = Environment.ProcessPath;
+        if (exePath is not null)
+        {
+            var args = pageTag is not null
+                ? $"--settings {pageTag}"
+                : "--settings";
+            DebugLog.Write("APP", $"Starting new process: {exePath} {args}");
+            System.Diagnostics.Process.Start(exePath, args);
+        }
+
+        if (Current is App app)
+            app.QuitApp();
     }
 
     private void OnHotkey(int hotkeyId)

@@ -1,9 +1,12 @@
+using System.Linq;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.UI;
 using WinRT.Interop;
 
 namespace WhispUI;
@@ -57,6 +60,19 @@ public sealed partial class SettingsWindow : Window
 
         SystemBackdrop = new MicaBackdrop();
 
+        // Caption buttons : backgrounds transparents (Mica visible), foreground
+        // calé sur le thème courant. ActualThemeChanged met à jour en live si
+        // l'utilisateur bascule light/dark dans les Settings Windows.
+        UpdateCaptionButtonColors(RootGrid.ActualTheme);
+        RootGrid.ActualThemeChanged += (s, _) =>
+            UpdateCaptionButtonColors(((FrameworkElement)s).ActualTheme);
+
+        // NavigationView : quand le mode bascule en Minimal (hamburger visible),
+        // le pane toggle button occupe ~48 px en haut de la zone contenu.
+        // On pousse le Frame vers le bas pour que le titre de page ne chevauche
+        // pas le hamburger (pattern Windows Terminal Settings).
+        Nav.DisplayModeChanged += OnNavDisplayModeChanged;
+
         // Sélection initiale → déclenche SelectionChanged → navigation vers
         // GeneralPage. Un seul chemin de navigation, pas de double-nav.
         Nav.SelectedItem = Nav.MenuItems[0];
@@ -82,7 +98,7 @@ public sealed partial class SettingsWindow : Window
         };
     }
 
-    public void ShowAndActivate()
+    public void ShowAndActivate(string? pageTag = null)
     {
         if (AppWindow.Presenter is OverlappedPresenter op &&
             op.State == OverlappedPresenterState.Minimized)
@@ -90,9 +106,72 @@ public sealed partial class SettingsWindow : Window
             op.Restore();
         }
 
+        // Si un tag de page est demandé, sélectionner l'item nav correspondant.
+        // La sélection déclenche OnNavSelectionChanged → navigation Frame.
+        if (pageTag is not null)
+        {
+            foreach (var item in Nav.MenuItems.OfType<NavigationViewItem>())
+            {
+                if (item.Tag as string == pageTag)
+                {
+                    Nav.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+
         AppWindow.Show();
         this.Activate();
         NativeMethods.SetForegroundWindow(_hwnd);
+    }
+
+    // ── Caption buttons : couleurs calées sur le thème ─────────────────────
+    //
+    // Le contrôle TitleBar natif ne propage pas toujours le thème aux caption
+    // buttons système quand ExtendsContentIntoTitleBar est actif. On les pose
+    // explicitement : backgrounds transparents (Mica visible), foreground
+    // adapté au thème (pattern doc Microsoft Learn "Color and transparency in
+    // caption buttons").
+
+    private void UpdateCaptionButtonColors(ElementTheme theme)
+    {
+        var tb = AppWindow.TitleBar;
+
+        tb.ButtonBackgroundColor = Colors.Transparent;
+        tb.ButtonInactiveBackgroundColor = Colors.Transparent;
+
+        if (theme == ElementTheme.Dark)
+        {
+            tb.ButtonForegroundColor         = Colors.White;
+            tb.ButtonHoverForegroundColor     = Colors.White;
+            tb.ButtonPressedForegroundColor   = Colors.White;
+            tb.ButtonHoverBackgroundColor     = Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF);
+            tb.ButtonPressedBackgroundColor   = Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF);
+            tb.ButtonInactiveForegroundColor  = Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF);
+        }
+        else
+        {
+            tb.ButtonForegroundColor         = Colors.Black;
+            tb.ButtonHoverForegroundColor     = Colors.Black;
+            tb.ButtonPressedForegroundColor   = Colors.Black;
+            tb.ButtonHoverBackgroundColor     = Color.FromArgb(0x33, 0x00, 0x00, 0x00);
+            tb.ButtonPressedBackgroundColor   = Color.FromArgb(0x66, 0x00, 0x00, 0x00);
+            tb.ButtonInactiveForegroundColor  = Color.FromArgb(0x99, 0x00, 0x00, 0x00);
+        }
+    }
+
+    // ── NavigationView : marge contenu selon le DisplayMode ──────────────
+    //
+    // En mode Minimal, le pane toggle button (hamburger) est rendu en haut de
+    // la zone contenu et occupe ~48 px. On décale le Frame vers le bas pour
+    // que le titre H1 de la page ne soit pas à la même hauteur que le burger.
+    // Pattern identique à Windows Terminal Settings.
+
+    private void OnNavDisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
+    {
+        PageFrame.Margin = sender.DisplayMode == NavigationViewDisplayMode.Minimal
+            ? new Thickness(0, 48, 0, 0)
+            : new Thickness(0);
     }
 
     // ── NavigationView : swap de page ────────────────────────────────────────
@@ -127,7 +206,7 @@ public sealed partial class SettingsWindow : Window
 
         if (PageFrame.CurrentSourcePageType == pageType)
         {
-            App.Log?.LogVerbose($"[SETTINGS] {pageType.Name} déjà courante — pas de re-nav");
+            App.Log?.LogVerbose($"[SETTINGS] {pageType.Name} déjà courante — ignoré");
             return;
         }
 
@@ -148,7 +227,6 @@ public sealed partial class SettingsWindow : Window
         {
             App.Log?.LogError($"[SETTINGS] Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
             App.Log?.LogError(ex.StackTrace ?? "(no stack)");
-            // Fallback fichier — au cas où la LogWindow elle-même est dans un état pourri.
             DebugLog.Write("SETTINGS", $"Navigate({pageType.Name}) THREW: {ex}");
         }
     }
