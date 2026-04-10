@@ -34,9 +34,9 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe` (self-contain
 
 **V1 atteinte.** Transcription fonctionnelle de bout en bout, HUD complet, LogWindow v3, SettingsWindow skeleton + refacto natif livrés, publish OK. Toutes les briques WinUI sont passées sur le natif Microsoft : `Microsoft.UI.Xaml.Controls.TitleBar`, `NavigationView` adaptatif, `Frame`+`Page`, `SettingsCard` (CommunityToolkit), brushes via `ThemeDictionaries`.
 
-**Étape courante — combat des hallucinations** (voir roadmap ci-dessous). Dépend d'un bloquant : le **bug de navigation runtime vers WhisperPage** (détail dans `docs/settings.md` section *Bug runtime récurrent*), à fixer en premier.
+**Étape courante — combat des hallucinations** (voir roadmap ci-dessous). Bug de navigation WhisperPage résolu (détail dans mémoire `project_winui3_slider_bug.md`).
 
-**Régressions post-refacto** : trois à traiter en parallèle de la piste fonctionnelle — démarrage qui flashe une fenêtre, HudWindow qui apparaît trop tôt, HudWindow qui ne suit pas les bureaux virtuels. Détail dans `docs/hud.md` et mémoire `project_roadmap.md` piste *régressions techniques*.
+**Régressions post-refacto** : à traiter en parallèle de la piste fonctionnelle — démarrage qui flashe une fenêtre, HudWindow qui ne suit pas les bureaux virtuels. Détail dans mémoire `project_roadmap.md` piste *régressions techniques*.
 
 ---
 
@@ -107,8 +107,8 @@ Ordre `OnLaunched` :
 
 Les détails techniques par sous-système vivent dans `docs/`. **Ces fichiers sont lus à la demande**, uniquement quand je touche au sous-système concerné — ils ne sont pas chargés en contexte par défaut. Quand une tâche touche un sous-système, lire son fichier `docs/*.md` **avant** de modifier le code.
 
-- [docs/hud.md](docs/hud.md) — spec HudWindow, coloration progressive chrono, fade proximité souris (Raw Input + alpha layered), contrainte ombre layered + voies A/B, régressions bureau virtuel, contour animé exploratoire, tâches cosmétiques chrono.
-- [docs/logwindow.md](docs/logwindow.md) — refonte v3 (TitleBar natif, SelectorBar, CommandBar), modèle de données, couleurs `ThemeDictionaries`, wrap, debug logs A→Z (5 niveaux Verbose / Info / Step / Warning / Error + 3 modes de filtre).
-- [docs/pipeline-transcription.md](docs/pipeline-transcription.md) — refonte monobloc (`new_segment_callback`, plus de chunking externe), instrumentation par segment, defaults whisper.cpp restaurés (piège `entropy_thold` inversé), hot-reload via `SettingsService`, cartographie logs à actualiser.
+- [docs/hud.md](docs/hud.md) — spec HudWindow (positioning, backdrop Acrylic, DPI), coloration progressive chrono, fade proximité souris (Raw Input + alpha layered + smoothstep), contrainte ombre layered.
+- [docs/logwindow.md](docs/logwindow.md) — TitleBar natif + SearchBox, SelectorBar + CommandBar responsive, modèle de données (5 niveaux, cap 5000), couleurs `ThemeDictionaries`, templates/selector, piège wrap/scroll.
+- [docs/pipeline-transcription.md](docs/pipeline-transcription.md) — pipeline monobloc (`new_segment_callback`, plus de chunking externe), instrumentation par segment, defaults whisper.cpp restaurés (piège `entropy_thold` inversé), hot-reload via `SettingsService`.
 - [docs/paste.md](docs/paste.md) — re-capture cible au Stop avec filet PID, fix race `HideSync` (rendez-vous synchrone via `ManualResetEventSlim`), refus explicites de `PasteFromClipboard`, bug paste fantôme intermittent.
-- [docs/settings.md](docs/settings.md) — TitleBar natif, NavigationView 2 breakpoints, Frame+Page, SettingsCard CommunityToolkit, WhisperPage câblée, persistance JSON portable, **bug nav WhisperPage bloquant**, greying non-scope, finitions restantes, références Figma.
+- [docs/settings.md](docs/settings.md) — NavigationView Auto (natif, 3 modes), TitleBar natif Standard, Frame+Page, SettingsCard CommunityToolkit, GeneralPage 4 sections câblées, WhisperPage 6 sections, persistance JSON portable, restart ciblé.
