@@ -1,77 +1,59 @@
-# LogWindow — refonte v3 + debug logs A→Z
+# LogWindow — structure et modele de donnees
 
-## Structure générale
+## Structure generale
 
-Refonte basée sur design Figma (`fAjzDDUpFW1InvLl5xL83R`, node `98:9790`). Fenêtre classique (`OverlappedPresenter`), Close→Cancel+Hide, **thème système** (plus de `RequestedTheme="Dark"` forcé), `SystemBackdrop = MicaBackdrop`.
-
-Depuis le refacto natif (2026-04-09) : utilise `Microsoft.UI.Xaml.Controls.TitleBar` natif (Windows App SDK 1.8), drag passthrough custom supprimé, `RefreshTitleBarButtonColors` supprimé. Caption buttons Tall via `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall`.
+Fenetre classique (`OverlappedPresenter`, min/max/resize), Close->Cancel+Hide, theme systeme, `SystemBackdrop = MicaBackdrop`. `PreferredMinimumWidth=400`, `PreferredMinimumHeight=300`.
 
 ## Title bar
 
-Custom (`ExtendsContentIntoTitleBar=true`) en 3 colonnes : icône + titre draggable à gauche, `AutoSuggestBox` de recherche centrée, réserve 138 px à droite pour les caption buttons système. Drag region limitée à la colonne gauche (`SetTitleBar(AppTitleBarLeftDrag)`) pour que la SearchBox reçoive les clics.
+`Microsoft.UI.Xaml.Controls.TitleBar` natif (Windows App SDK 1.8). Caption buttons **Tall** via `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall`. `ExtendsContentIntoTitleBar=true` + `SetTitleBar(AppTitleBar)`.
 
-SearchBox responsive : single breakpoint 580. Full ≥580, icône loupe sinon (même pattern que SettingsWindow).
+Icone app : beacon enregistrement (rouge) / idle (gris) via `SetRecordingState`, reconstruit un `ImageIconSource` complet a chaque bascule (muter `ImageSource` in-place ne propage pas visuellement). Icone fenetre (`AppWindow.SetIcon`) suit le meme etat.
+
+La recherche (`AutoSuggestBox`) est dans `TitleBar.Content`, pas dans un slot custom. Pattern Win11 Settings. Pas de swap icone/field, l'AutoSuggestBox retrecit naturellement jusqu'a `MinWidth=240`.
 
 ## Command bar
 
 Sous la title bar, 2 zones :
 - **Gauche** — `SelectorBar` Full / Filtered / Critical
-- **Droite** — `CommandBar` (icônes Segoe Fluent) avec deux groupes séparés par `AppBarSeparator` : édition (Copy E8C8 / Save E74E / Clear E74D) puis affichage (Auto scroll E70D / Wrap E751 toggles)
+- **Droite** — `CommandBar` avec `IsDynamicOverflowEnabled` (true par defaut) + `DynamicOverflowOrder` pour l'overflow responsif. Groupe 2 (Copy/Save/Clear/Sep) migre en premier, puis groupe 1 (AutoScroll/Wrap).
 
-Cap 5000 entrées. Tray « Logs » → `ShowAndActivate`.
+Actions : Copy (E8C8) / Save (E74E) / Clear (E74D) + Auto scroll (EC8F toggle, on par defaut) / Wrap (E751 toggle).
 
-## Modèle de données
+## Modele de donnees
 
-`enum LogLevel { Verbose, Info, Step, Warning, Error }` (public). API thread-safe.
+`enum LogLevel { Verbose, Info, Step, Warning, Error }` (public). API thread-safe (marshal via `DispatcherQueue`).
 
 Deux collections :
-- `_entries` — `List`, tampon complet
-- `_visible` — `ObservableCollection` bindée à `LogItems`
+- `_entries` — `List<LogEntry>`, tampon complet
+- `_visible` — `ObservableCollection<LogEntry>` bindee a `LogItems.ItemsSource`
 
-Filtre = `Matches()` qui combine selector (Filtered masque Verbose, garde le reste ; Critical = Warning + Error seuls) + recherche live (`IndexOf` case-insensitive). `ApplyFilter()` rebuild `_visible`.
+Filtre = `Matches()` qui combine selector (All = tout, Steps = masque Verbose, Critical = Warning + Error) + recherche live (`IndexOf` case-insensitive). `ApplyFilter()` rebuild `_visible`.
 
-Sur overflow, on retire la plus vieille entrée des **deux** collections (`LogEntry` est une `class`, ref equality, pas de collision). **Copy/Save opèrent sur `_visible`** — l'utilisateur copie/exporte ce qu'il voit.
+Cap 5000 entrees. Sur overflow, retire la plus vieille des deux collections (ref equality, `LogEntry` est une classe). Copy/Save operent sur `_visible` — l'utilisateur copie ce qu'il voit.
 
-## Couleurs — ThemeDictionaries
+## Couleurs — ThemeDictionaries XAML
 
-Depuis le refacto natif : bindées via `ThemeResource` dans `Application.Resources.ThemeDictionaries` (plus de snapshot constructeur, plus de `RefreshBrushes()` ni `OnThemeChanged`).
+Bindees via `ThemeResource` dans les DataTemplates XAML (`Grid.Resources > ThemeDictionaries`). Theme switch runtime automatique.
 
-- **Verbose** → blanc neutre (hérite de `TextFillColorPrimaryBrush`)
-- **Info** → `LogInfoBrush` custom (bleu sémantique Fluent `#005FB7` light / `#60CDFF` dark, brush construit en code car `SystemFillColorAttentionBrush` de la theme dictionary peut résoudre sur l'accent système — chez Louis, gris)
-- **Step** → `SystemFillColorSuccessBrush` (vert — **pas** l'accent système qui peut être gris)
-- **Warning** → `SystemFillColorCautionBrush` (orange)
-- **Error** → `SystemFillColorCriticalBrush` (rouge)
+- **Verbose** — herite de `TextFillColorPrimaryBrush` (blanc/noir selon theme)
+- **Info** — `LogInfoBrush` custom (bleu semantique Fluent `#005FB7` light / `#60CDFF` dark, pas l'accent systeme)
+- **Step** — `SystemFillColorSuccessBrush` (vert)
+- **Warning** — `SystemFillColorCautionBrush` (orange)
+- **Error** — `SystemFillColorCriticalBrush` (rouge)
 
-Theme switch runtime OK automatiquement.
+## Templates et selector
 
-## Wrap — piège scroll horizontal
+10 DataTemplates (5 niveaux x 2 dimensions wrap). `LogLevelTemplateSelector` (classe C#, herite `DataTemplateSelector`) instancie deux fois en XAML (NoWrapSelector / WrapSelector).
 
-Le toggle swap `NoWrapTemplate`/`WrapTemplate` **et** bascule `HorizontalScrollBarVisibility` entre `Auto` et `Disabled`. Sinon `TextWrapping="Wrap"` ne s'applique pas — le `ScrollViewer` mesure son contenu en largeur infinie tant que le scroll horizontal est autorisé.
+Piege WinUI 3 : `ItemsControl.ItemTemplateSelector` n'est pas honore a l'execution (seul `ListViewBase` le respecte). Contournement : `ItemTemplate` pointe sur un `ContentControl` wrapper dont le `ContentTemplateSelector` est le bon selector. Le toggle Wrap swap `ItemTemplate` entre `NoWrapRoot` et `WrapRoot`.
 
-## Debug logs A→Z — sémantique des 5 niveaux
+## Wrap — piege scroll horizontal
 
-3 modes de filtre dans le `SelectorBar` (Full / Filtered / Critical).
+Le toggle swap le template **et** bascule `HorizontalScrollBarVisibility` entre `Auto` et `Disabled`. Sans ca, `TextWrapping="Wrap"` ne s'applique pas — le `ScrollViewer` mesure son contenu en largeur infinie tant que le scroll horizontal est autorise.
 
-**Verbose (blanc)** — bruit / durée de vie. Heartbeats RECORD `+Ns capturés`, dumps par segment Whisper, plomberie clipboard (`GlobalAlloc` / `OpenClipboard`), plomberie PASTE (`cible attendue` / `SetForegroundWindow` / `contrôle focusé`), `[DONE]` recap timings **non vérifié**. Masqué en Filtered.
-
-**Info (bleu)** — jalons rares et importants : `Enregistrement démarré`, `Capture terminée`, `Texte copié`, `Ctrl+V envoyé`.
-
-**Step (vert)** — jalons rares et **vérifiés**. Exactement deux par session normale : `Modèle chargé en N ms` (init, vérifié `_ctx ≠ 0`) et `Bout en bout OK — N chars collés dans <cible>` (émis uniquement si `PasteFromClipboard` retourne `true`).
-
-**Warning (orange)** — refus explicites avec mode opératoire (ex. paste refusé parce que la cible est dans WhispUI lui-même : « le presse-papier contient le texte — colle manuellement avec Ctrl+V »).
-
-**Error (rouge)** — exceptions, fallback critique, CRASH filets globaux.
-
-Filtered masque uniquement Verbose. Critical = Warning + Error.
-
-**À refaire post-pipeline-monobloc** : certains événements historiques n'existent plus (`Chunk N extrait`, `Mémoire passée au chunk suivant`, `Chunk N → texte recollé`). Voir `pipeline-transcription.md` pour la nouvelle cartographie (`RECORD` heartbeat 5 s + capture terminée, `TRANSCRIBE` audio reçu + Verbose par segment via callback + récap final).
-
-## Régressions connues
-
-- **Caption buttons Tall** — déjà appliqué via `AppWindow.TitleBar.PreferredHeightOption`. Si regression : title bar 48 px + `ExtendsContentIntoTitleBar=true` seuls font ressortir les caption buttons à 32 px (gap visuel).
-- **Drag region partielle** — seule la colonne icône+titre est draggable. La bande vide entre la SearchBox et les caption buttons ne déplace pas la fenêtre. Fixable via `InputNonClientPointerSource` si besoin.
-- **CommandBar overflow flyout pleine largeur** — limite WinUI connue, non résolue.
+Shift+molette -> scroll horizontal via `AddHandler(PointerWheelChangedEvent, ..., handledEventsToo: true)` car le ScrollViewer marque l'event handled pour son propre scroll vertical.
 
 ## Filets de diagnostic globaux
 
-Dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH` / `CRASH-AD` / `CRASH-TS`).
+Dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` -> `DebugLog` (prefixes `CRASH` / `CRASH-AD` / `CRASH-TS`).
