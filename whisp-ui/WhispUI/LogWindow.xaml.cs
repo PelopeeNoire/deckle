@@ -10,19 +10,21 @@ using System.Text;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using System.Threading.Tasks;
+using Microsoft.UI.Xaml.Data;
 using WinRT.Interop;
 
 namespace WhispUI;
 
 // ─── Niveaux de log ───────────────────────────────────────────────────────────
 // Step  : étapes importantes du workflow, marquées explicitement par le code
-//         pour la vue Filtered (ce qui s'est passé proprement).
-// Critical (selector) = Warning + Error.
+//         pour la vue Activity (ce qui s'est passé proprement).
+// Errors (selector) = Warning + Error.
 // LogWarning/LogStep sont exposés mais pas encore appelés par WhispEngine —
 // l'API est prête pour la passe debug à venir.
 // Verbose : bruit de fond (heartbeats, dumps par segment, plomberie clipboard…) —
-//           visible uniquement en mode Full.
-// Info    : étapes du déroulé qu'on veut voir en Filtered (lancements, codes
+//           visible uniquement en mode All.
+// Info    : étapes du déroulé qu'on veut voir en Activity (lancements, codes
 //           retour, textes, copies, paste).
 // Step    : jalons rares et vérifiés (modèle chargé, bout en bout OK).
 public enum LogLevel { Verbose, Info, Step, Warning, Error }
@@ -67,8 +69,8 @@ public sealed class LogLevelTemplateSelector : DataTemplateSelector
 //
 // Title bar custom (ExtendsContentIntoTitleBar) avec champ de recherche centré.
 // Mica + thème système (light/dark auto, pas de RequestedTheme forcé).
-// SelectorBar Full/Filtered.
-// CommandBar : Copy/Save/Clear (boutons) + Auto scroll/Wrap (toggles).
+// SelectorBar All/Activity/Errors.
+// CommandBar : Copy/Save/Clear (boutons) + Auto-scroll/Word wrap (toggles).
 // Recherche live via AutoSuggestBox.
 //
 // Modèle :
@@ -106,6 +108,9 @@ public sealed partial class LogWindow : Window
     private string? _iconIdlePath;
     private string? _iconRecordingPath;
 
+    private ScrollViewer? _listScrollViewer;
+    private ItemsStackPanel? _itemsPanel;
+
     private LogFilterMode _filterMode = LogFilterMode.All;
     private string _currentSearch = "";
     private bool _isRecording;
@@ -115,18 +120,26 @@ public sealed partial class LogWindow : Window
         InitializeComponent();
         _hwnd = WindowNative.GetWindowHandle(this);
 
-        LogItems.ItemsSource  = _visible;
-        // Wrap désactivé par défaut. Selector par niveau → couleur résolue via
-        // ThemeResource, re-résolue automatiquement par WinUI au theme switch.
-        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources["NoWrapRoot"];
-        LogScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+        LogItems.ItemsSource = _visible;
 
-        // Shift+molette → scroll horizontal. ScrollViewer marque PointerWheelChanged
-        // comme handled pour son propre scroll vertical, donc AddHandler avec
-        // handledEventsToo=true pour quand même intercepter.
-        LogScrollViewer.AddHandler(
+        // Shift+molette → scroll horizontal. Le ScrollViewer interne du ListView
+        // marque PointerWheelChanged comme handled ; AddHandler avec
+        // handledEventsToo=true pour intercepter quand même.
+        LogItems.AddHandler(
             UIElement.PointerWheelChangedEvent,
             new PointerEventHandler(OnLogPointerWheel),
+            handledEventsToo: true);
+
+        // Clic-to-copy + drag-to-select : PointerPressed/Released sont marqués
+        // handled par le ListView pour sa propre gestion de sélection, donc
+        // AddHandler avec handledEventsToo=true.
+        LogItems.AddHandler(
+            UIElement.PointerPressedEvent,
+            new PointerEventHandler(OnLogPointerPressed),
+            handledEventsToo: true);
+        LogItems.AddHandler(
+            UIElement.PointerReleasedEvent,
+            new PointerEventHandler(OnLogPointerReleased),
             handledEventsToo: true);
 
         // Icônes app : résolues une fois, partagées avec le tray.
@@ -152,7 +165,7 @@ public sealed partial class LogWindow : Window
         // Sélection initiale du SelectorBar.
         LevelSelector.SelectedItem = LevelFull;
 
-        Title = "WhispUI Logs";
+        Title = "Logs";
         // Format ~1:2 (vertical) — deux carrés empilés. Tient sur un écran 4K.
         AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
@@ -236,6 +249,7 @@ public sealed partial class LogWindow : Window
     {
         _entries.Clear();
         _visible.Clear();
+        _itemsPanel = null;
     }
 
     // Ouverture depuis le tray : restore si minimisée, affiche, active.
@@ -294,8 +308,8 @@ public sealed partial class LogWindow : Window
     {
         // Filtre niveau :
         //   All      → tout passe (y compris Verbose)
-        //   Steps    → déroulé principal : Info + Step + Warning + Error (Verbose masqué)
-        //   Critical → Warning + Error uniquement
+        //   Steps    → Activity : Info + Step + Warning + Error (Verbose masqué)
+        //   Critical → Errors : Warning + Error uniquement
         bool levelOk = _filterMode switch
         {
             LogFilterMode.All      => true,
@@ -322,10 +336,10 @@ public sealed partial class LogWindow : Window
 
     private void ScrollToBottom()
     {
+        if (_visible.Count == 0) return;
         try
         {
-            LogScrollViewer.UpdateLayout();
-            LogScrollViewer.ScrollToVerticalOffset(LogScrollViewer.ScrollableHeight);
+            LogItems.ScrollIntoView(_visible[_visible.Count - 1]);
         }
         catch (Exception ex)
         {
@@ -335,26 +349,54 @@ public sealed partial class LogWindow : Window
 
     // ── Handlers ──────────────────────────────────────────────────────────────
 
+    private ScrollViewer? GetListViewScrollViewer()
+    {
+        // Le ScrollViewer interne du ListView n'est disponible qu'après le premier
+        // layout. On le cherche dans l'arbre visuel et on le cache.
+        if (_listScrollViewer is not null) return _listScrollViewer;
+        _listScrollViewer = FindDescendant<ScrollViewer>(LogItems);
+        return _listScrollViewer;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
+    {
+        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is T found) return found;
+            var result = FindDescendant<T>(child);
+            if (result is not null) return result;
+        }
+        return null;
+    }
+
     private void OnLogPointerWheel(object sender, PointerRoutedEventArgs e)
     {
+        // Cacher le badge Copy pendant le scroll.
+        CopyBadge.Visibility = Visibility.Collapsed;
+
         // Shift non pressé → laisser le ScrollViewer faire son scroll vertical natif.
         var mods = e.KeyModifiers;
         if ((mods & VirtualKeyModifiers.Shift) == 0) return;
 
-        // En mode wrap, le scroll horizontal est désactivé : rien à faire.
-        if (LogScrollViewer.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
+        var sv = GetListViewScrollViewer();
+        if (sv is null) return;
 
-        var point = e.GetCurrentPoint(LogScrollViewer);
+        // En mode wrap, le scroll horizontal est désactivé : rien à faire.
+        if (sv.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
+
+        var point = e.GetCurrentPoint(LogItems);
         int delta = point.Properties.MouseWheelDelta;
         if (delta == 0) return;
 
         // Convention Windows : 120 unités = un cran. On scrolle ~80 px par cran,
         // dans le sens inverse du delta (delta>0 = molette vers le haut = scroll vers la gauche).
-        double offset = LogScrollViewer.HorizontalOffset - (delta / 120.0) * 80.0;
+        double offset = sv.HorizontalOffset - (delta / 120.0) * 80.0;
         if (offset < 0) offset = 0;
-        if (offset > LogScrollViewer.ScrollableWidth) offset = LogScrollViewer.ScrollableWidth;
+        if (offset > sv.ScrollableWidth) offset = sv.ScrollableWidth;
 
-        LogScrollViewer.ChangeView(offset, null, null, disableAnimation: true);
+        sv.ChangeView(offset, null, null, disableAnimation: true);
         e.Handled = true;
     }
 
@@ -363,14 +405,18 @@ public sealed partial class LogWindow : Window
     private void OnWrapToggleClick(object sender, RoutedEventArgs e)
     {
         bool wrap = WrapToggle.IsChecked == true;
-        string key = wrap ? "WrapRoot" : "NoWrapRoot";
-        LogItems.ItemTemplate = (DataTemplate)RootGrid.Resources[key];
+        string key = wrap ? "WrapSelector" : "NoWrapSelector";
+        LogItems.ItemTemplateSelector = (DataTemplateSelector)RootGrid.Resources[key];
 
         // En mode wrap : couper le scroll horizontal pour que le ScrollViewer
         // donne une largeur finie à son contenu (sinon TextWrapping ne sait pas
-        // où couper, le ScrollViewer mesure son contenu en largeur infinie).
-        LogScrollViewer.HorizontalScrollBarVisibility =
-            wrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
+        // où couper). Propriété attachée sur le ListView.
+        ScrollViewer.SetHorizontalScrollBarVisibility(LogItems,
+            wrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
+
+        // Invalider le cache du ScrollViewer interne (le même objet, mais
+        // sa visibility change).
+        _listScrollViewer = null;
     }
 
     private void OnLevelSelectorChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
@@ -389,14 +435,142 @@ public sealed partial class LogWindow : Window
         ApplyFilter();
     }
 
+    // ── Clic-to-copy + drag-to-select + badge flottant ─────────────────────
+    //
+    // Hover : badge "Copy" à droite de la ligne survolée.
+    // Clic simple (press+release) : copie 1 ligne, feedback "Copied".
+    // Clic+drag : sélection visuelle (Extended) des lignes traversées,
+    //   badge "Copy selection", copie au relâchement, déselection.
+
+    private bool _isDragging;
+    private int _dragStartIndex = -1;
+
+    private void OnLogPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(LogItems).Properties.IsLeftButtonPressed) return;
+
+        _isDragging = true;
+        var localY = e.GetCurrentPoint(LogItems).Position.Y;
+        var container = FindContainerAtY(localY);
+        _dragStartIndex = container?.Content is LogEntry entry
+            ? _visible.IndexOf(entry)
+            : -1;
+    }
+
+    private void OnLogPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        var localY = e.GetCurrentPoint(LogItems).Position.Y;
+        var container = FindContainerAtY(localY);
+
+        if (container is null)
+        {
+            if (!_isDragging) CopyBadge.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // Positionner le badge à droite de l'item sous le pointeur.
+        var transform = container.TransformToVisual(LogSurface);
+        var pos = transform.TransformPoint(default);
+        CopyBadgeTransform.Y = pos.Y + (container.ActualHeight - CopyBadge.ActualHeight) / 2;
+        CopyBadge.Visibility = Visibility.Visible;
+
+        if (_isDragging && _dragStartIndex >= 0 && container.Content is LogEntry currentEntry)
+        {
+            int currentIndex = _visible.IndexOf(currentEntry);
+            if (currentIndex >= 0)
+            {
+                int start = Math.Min(_dragStartIndex, currentIndex);
+                int end = Math.Max(_dragStartIndex, currentIndex);
+
+                // Sélection visuelle native via SelectRange (Extended mode).
+                LogItems.DeselectRange(new ItemIndexRange(0, (uint)_visible.Count));
+                LogItems.SelectRange(new ItemIndexRange(start, (uint)(end - start + 1)));
+
+                CopyBadgeText.Text = (end > start) ? "Copy selection" : "Copy";
+            }
+        }
+        else if (!_isDragging)
+        {
+            if (CopyBadgeText.Text != "Copied") CopyBadgeText.Text = "Copy";
+        }
+    }
+
+    private void OnLogPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isDragging) return;
+        _isDragging = false;
+
+        // Copier toutes les lignes sélectionnées, dans l'ordre d'affichage.
+        var selected = LogItems.SelectedItems;
+        if (selected.Count > 0)
+        {
+            var sb = new StringBuilder();
+            foreach (var item in _visible)
+            {
+                if (selected.Contains(item) && item is LogEntry entry)
+                    sb.AppendLine(entry.Text);
+            }
+            CopyToClipboard(sb.ToString());
+            ShowCopiedFeedback();
+        }
+
+        // Déselection complète — rien ne persiste.
+        if (_visible.Count > 0)
+            LogItems.DeselectRange(new ItemIndexRange(0, (uint)_visible.Count));
+        _dragStartIndex = -1;
+    }
+
+    private void OnLogPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isDragging)
+        {
+            CopyBadge.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private ListViewItem? FindContainerAtY(double localY)
+    {
+        _itemsPanel ??= FindDescendant<ItemsStackPanel>(LogItems);
+        if (_itemsPanel is null) return null;
+
+        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(_itemsPanel);
+        for (int i = 0; i < count; i++)
+        {
+            if (Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(_itemsPanel, i) is ListViewItem lvi)
+            {
+                var transform = lvi.TransformToVisual(LogItems);
+                var pos = transform.TransformPoint(default);
+                if (localY >= pos.Y && localY < pos.Y + lvi.ActualHeight)
+                    return lvi;
+            }
+        }
+        return null;
+    }
+
+    private static void CopyToClipboard(string text)
+    {
+        var dp = new DataPackage();
+        dp.SetText(text);
+        Clipboard.SetContent(dp);
+    }
+
+    private async void ShowCopiedFeedback()
+    {
+        CopyBadgeText.Text = "Copied";
+        CopyBadge.Visibility = Visibility.Visible;
+        await Task.Delay(800);
+        if (CopyBadgeText.Text == "Copied")
+            CopyBadgeText.Text = "Copy";
+    }
+
+    // ── Bouton Copy (CommandBar) ─────────────────────────────────────────────
+
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
+        // Copie toutes les entrées visibles.
         var sb = new StringBuilder();
         foreach (var entry in _visible) sb.AppendLine(entry.Text);
-
-        var dp = new DataPackage();
-        dp.SetText(sb.ToString());
-        Clipboard.SetContent(dp);
+        CopyToClipboard(sb.ToString());
     }
 
     private async void OnSaveClick(object sender, RoutedEventArgs e)
@@ -407,7 +581,7 @@ public sealed partial class LogWindow : Window
             // WinUI 3 unpackaged : le picker a besoin du HWND parent.
             InitializeWithWindow.Initialize(picker, _hwnd);
             picker.SuggestedFileName = $"whisp-logs-{DateTime.Now:yyyyMMdd-HHmmss}";
-            picker.FileTypeChoices.Add("Texte", new List<string> { ".txt" });
+            picker.FileTypeChoices.Add("Text", new List<string> { ".txt" });
 
             StorageFile? file = await picker.PickSaveFileAsync();
             if (file is null) return;
