@@ -49,7 +49,19 @@ public sealed partial class WhisperPage : Page
             // chemin LoadComponent. Maximum=60 vient déjà du XAML.
             VadMaxSpeechSlider.Minimum = 5;
             VadMaxSpeechSlider.Value   = 5;
-            App.Log?.LogVerbose("[WHISPERPAGE] VadMaxSpeechSlider Min/Value posés en code");
+
+            // Bug WinUI 3 release : Minimum != 0 en XAML crashe LoadComponent
+            // sous trimming. On pose Minimum en code-behind pour les 3 sliders
+            // de confiance dont la plage exclut 0.
+            EntropySlider.Minimum  = 1.5;
+            EntropySlider.Value    = 2.4;
+            LogprobSlider.Minimum  = -1.5;
+            LogprobSlider.Maximum  = -0.4;
+            LogprobSlider.Value    = -1.0;
+            NoSpeechSlider.Minimum = 0.05;
+            NoSpeechSlider.Value   = 0.6;
+
+            App.Log?.LogVerbose("[WHISPERPAGE] VadMaxSpeechSlider + Confidence sliders Min/Value posés en code");
         }
         catch (Exception ex)
         {
@@ -547,7 +559,7 @@ public sealed partial class WhisperPage : Page
         });
     }
 
-    private void UpdateLogprobText(double v) => LogprobValue.Text = Fmt(v);
+    private void UpdateLogprobText(double v) => LogprobValue.Text = FmtTwo(v);
 
     private void LogprobReset_Click(object sender, RoutedEventArgs e)
     {
