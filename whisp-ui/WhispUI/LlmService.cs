@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using WhispUI.Settings;
 
 namespace WhispUI;
 
@@ -10,22 +11,14 @@ namespace WhispUI;
 // Conçu pour être appelé depuis un thread de fond — .GetAwaiter().GetResult()
 // est sûr ici (pas de contexte de synchronisation sur ce thread).
 //
+// Le modèle et le system prompt sont déterminés par le RewriteProfile passé
+// par l'appelant. L'endpoint est lu depuis LlmSettings.
+//
 // En cas d'erreur (Ollama absent, timeout, etc.), retourne null et notifie
-// l'appelant via le callback _onError.
+// l'appelant via le callback _onWarn.
 
 internal class LlmService
 {
-    const string OLLAMA_MODEL = "ministral-3:3b--instruct--96k";
-    const string OLLAMA_URL   = "http://localhost:11434/api/chat";
-
-    const string SYSTEM_PROMPT =
-        "Tu reçois une transcription vocale brute en français. Réécris-la en texte fluide " +
-        "et cohérent : corrige les erreurs de transcription, les répétitions, les sauts de " +
-        "phrases, la syntaxe orale. Conserve le sens exact, tous les points abordés et le " +
-        "registre de la personne. Ne résume pas. Ne commente pas. Ne reformule pas avec moins " +
-        "d'informations. Ne commence pas ta réponse par 'Voici', un titre ou une introduction. " +
-        "Ta réponse commence directement par la première phrase du texte réécrit.";
-
     static readonly HttpClient _http = new();
 
     readonly Action<string>? _onWarn;
@@ -37,28 +30,28 @@ internal class LlmService
         _onInfo = onInfo;
     }
 
-    public string? Rewrite(string text)
+    public string? Rewrite(string text, string endpoint, RewriteProfile profile)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            _onInfo?.Invoke($"[LLM] requête {text.Length} chars → {OLLAMA_MODEL}");
+            _onInfo?.Invoke($"[LLM] requête {text.Length} chars → {profile.Model} (profil: {profile.Name})");
 
             var body = new
             {
-                model      = OLLAMA_MODEL,
+                model      = profile.Model,
                 stream     = false,
                 keep_alive = "5m",
                 messages   = new[]
                 {
-                    new { role = "system", content = SYSTEM_PROMPT },
+                    new { role = "system", content = profile.SystemPrompt },
                     new { role = "user",   content = text }
                 }
             };
 
             string json = JsonSerializer.Serialize(body);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var response = _http.PostAsync(OLLAMA_URL, content).GetAwaiter().GetResult();
+            using var response = _http.PostAsync(endpoint, content).GetAwaiter().GetResult();
             response.EnsureSuccessStatusCode();
 
             string responseJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -70,7 +63,7 @@ internal class LlmService
 
             sw.Stop();
             string trimmed = rewritten?.Trim() ?? "";
-            _onInfo?.Invoke($"[LLM] Réécriture OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars)");
+            _onInfo?.Invoke($"[LLM] Réécriture OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profil: {profile.Name})");
             return trimmed;
         }
         catch (Exception ex)

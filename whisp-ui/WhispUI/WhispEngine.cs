@@ -555,10 +555,38 @@ internal sealed class WhispEngine : IDisposable
         swClip.Stop();
 
         long llmMs = 0;
-        if (_useLlm)
+        var llmSettings = Settings.SettingsService.Instance.Current.Llm;
+        double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
+
+        // Résolution du profil de réécriture :
+        // - Alt+Ctrl+` (manuel) → profil ManualProfileName
+        // - Alt+` (normal) + auto-rewrite → première AutoRewriteRule qui matche
+        Settings.RewriteProfile? profile = null;
+        if (_useLlm && llmSettings.Enabled)
         {
+            profile = llmSettings.Profiles.Find(p =>
+                string.Equals(p.Name, llmSettings.ManualProfileName, StringComparison.OrdinalIgnoreCase));
+        }
+        else if (llmSettings.Enabled && llmSettings.AutoRewriteRules.Count > 0)
+        {
+            // Parcours décroissant : la règle la plus longue qui matche gagne.
+            foreach (var rule in llmSettings.AutoRewriteRules
+                .OrderByDescending(r => r.MinDurationSeconds))
+            {
+                if (recDurationSec >= rule.MinDurationSeconds)
+                {
+                    profile = llmSettings.Profiles.Find(p =>
+                        string.Equals(p.Name, rule.ProfileName, StringComparison.OrdinalIgnoreCase));
+                    break;
+                }
+            }
+        }
+
+        if (profile is not null)
+        {
+            StatusChanged?.Invoke($"Réécriture ({profile.Name})...");
             var swLlm = System.Diagnostics.Stopwatch.StartNew();
-            string? rewritten = _llm.Rewrite(fullText);
+            string? rewritten = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
             swLlm.Stop();
             llmMs = swLlm.ElapsedMilliseconds;
             if (!string.IsNullOrWhiteSpace(rewritten))
@@ -584,8 +612,7 @@ internal sealed class WhispEngine : IDisposable
             pasteMs = swPaste.ElapsedMilliseconds;
         }
 
-        double totalSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
-        string recap = $"total {totalSec:F1}s (trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
+        string recap = $"total {recDurationSec:F1}s (trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         if (_shouldPaste && pasteVerified)
             DbgStep($"Bout en bout OK — {fullText.Length} chars collés dans {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
         else

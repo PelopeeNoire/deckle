@@ -1,18 +1,129 @@
 <Page
     x:Class="WhispUI.Settings.LlmPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <Page.Resources>
+        <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+        <Style x:Key="SettingsSectionHeaderTextBlockStyle"
+               BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+               TargetType="TextBlock">
+            <Style.Setters>
+                <Setter Property="Margin" Value="1,30,0,6" />
+            </Style.Setters>
+        </Style>
+    </Page.Resources>
 
     <ScrollViewer Padding="32,24,32,24"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="1000" HorizontalAlignment="Stretch">
-            <TextBlock Text="Rewriting"
-                       Style="{StaticResource TitleTextBlockStyle}"
-                       Margin="0,0,0,8" />
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <Grid>
+            <StackPanel MaxWidth="1000"
+                        HorizontalAlignment="Stretch"
+                        Spacing="{StaticResource SettingsCardSpacing}">
+
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Rewriting"
+                           Style="{StaticResource TitleTextBlockStyle}" />
+                <Button Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        ToolTipService.ToolTip="Reset all rewriting settings to defaults"
+                        Click="ResetAll_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        <TextBlock Text="Reset all" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
             <TextBlock Style="{StaticResource BodyTextBlockStyle}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        TextWrapping="Wrap"
-                       Text="Clean up and restructure your transcription through a local language model. Coming soon — provider, model, system prompt, and a dedicated shortcut kept separate from plain transcription." />
+                       Margin="0,0,0,12"
+                       Text="Clean up and restructure your transcriptions through a local language model via Ollama. Configure rewrite profiles with different models and prompts, then assign them to duration-based rules or the manual shortcut." />
+
+            <!-- ── General ────────────────────────────────────────────── -->
+            <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="General" />
+
+            <controls:SettingsCard Header="Enable rewriting"
+                                   Description="Master switch for all LLM rewriting. When off, transcriptions are never sent to Ollama."
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                <ToggleSwitch x:Name="EnabledToggle"
+                              Toggled="EnabledToggle_Toggled" />
+            </controls:SettingsCard>
+
+            <controls:SettingsExpander Header="Ollama endpoint"
+                                       Description="The URL of your local Ollama instance."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE968;}">
+                <controls:SettingsExpander.Items>
+                    <controls:SettingsCard ContentAlignment="Vertical">
+                        <TextBox x:Name="EndpointBox"
+                                 MinWidth="400"
+                                 PlaceholderText="http://localhost:11434/api/chat"
+                                 TextChanged="EndpointBox_TextChanged" />
+                    </controls:SettingsCard>
+                </controls:SettingsExpander.Items>
+            </controls:SettingsExpander>
+
+            <!-- ── Manual shortcut ────────────────────────────────────── -->
+            <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="Manual shortcut" />
+
+            <controls:SettingsCard Header="Profile for Alt+Ctrl+`"
+                                   Description="The rewrite profile used when you trigger rewriting manually with the keyboard shortcut."
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                <ComboBox x:Name="ManualProfileCombo"
+                          MinWidth="200"
+                          SelectionChanged="ManualProfileCombo_SelectionChanged" />
+            </controls:SettingsCard>
+
+            <!-- ── Auto-rewrite rules ─────────────────────────────────── -->
+            <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="Auto-rewrite rules" />
+
+            <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Margin="1,0,0,8"
+                       Text="When you use the plain transcription shortcut (Alt+`), recordings longer than a threshold are automatically rewritten. Rules are checked from longest to shortest — the first match wins." />
+
+            <!-- Dynamic rule cards are inserted here by code-behind -->
+            <StackPanel x:Name="RulesContainer"
+                        Spacing="{StaticResource SettingsCardSpacing}" />
+
+            <Button x:Name="AddRuleButton"
+                    Content="Add rule"
+                    Click="AddRule_Click"
+                    Margin="0,4,0,0" />
+
+            <!-- ── Profiles ───────────────────────────────────────────── -->
+            <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="Profiles" />
+
+            <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Margin="1,0,0,8"
+                       Text="Each profile pairs an Ollama model with a system prompt tailored to a specific rewriting style. Expand a profile to edit its prompt." />
+
+            <!-- Dynamic profile cards are inserted here by code-behind -->
+            <StackPanel x:Name="ProfilesContainer"
+                        Spacing="{StaticResource SettingsCardSpacing}" />
+
+            <Button x:Name="AddProfileButton"
+                    Content="Add profile"
+                    Click="AddProfile_Click"
+                    Margin="0,4,0,0" />
+
         </StackPanel>
+        </Grid>
     </ScrollViewer>
 </Page>
