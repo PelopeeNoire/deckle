@@ -165,6 +165,27 @@ internal static class NativeMethods
     [DllImport("winmm.dll")]
     public static extern uint waveInClose(IntPtr hwi);
 
+    // ── waveIn : énumération des périphériques d'entrée ─────────────────────
+
+    [DllImport("winmm.dll")]
+    public static extern uint waveInGetNumDevs();
+
+    [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+    public static extern uint waveInGetDevCapsW(uint uDeviceID, ref WAVEINCAPSW pwic, uint cbwic);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct WAVEINCAPSW
+    {
+        public ushort wMid;
+        public ushort wPid;
+        public uint vDriverVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szPname;
+        public uint dwFormats;
+        public ushort wChannels;
+        public ushort wReserved1;
+    }
+
     // ── kernel32 (event, mémoire) ─────────────────────────────────────────────
 
     [DllImport("kernel32.dll")]

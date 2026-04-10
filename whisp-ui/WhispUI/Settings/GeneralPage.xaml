@@ -29,7 +29,7 @@
 
                 <!-- Titre de page — pattern Win11 Settings : le H1 vit dans la
                      Page, pas dans le chrome de la fenêtre. -->
-                <TextBlock Text="Recording"
+                <TextBlock Text="General"
                            Style="{StaticResource TitleTextBlockStyle}"
                            Margin="0,0,0,8" />
 
@@ -37,11 +37,11 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,12"
-                           Text="Everything that happens when you press the shortcut — the key combination, the overlay you see while capturing, and how WhispUI runs in the background." />
+                           Text="Keyboard shortcuts, recording overlay, startup behavior and appearance." />
 
-                <!-- ── Shortcut ────────────────────────────────────────────── -->
+                <!-- ── Shortcuts ───────────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Shortcut" />
+                           Text="Shortcuts" />
 
                 <controls:SettingsCard Header="Recording shortcut"
                                        Description="Global key combination to start and stop transcription."
@@ -51,9 +51,18 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
 
-                <!-- ── Recording overlay ───────────────────────────────────── -->
+                <!-- ── Recording ───────────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Recording overlay" />
+                           Text="Recording" />
+
+                <controls:SettingsCard x:Name="AudioInputCard"
+                                       Header="Microphone"
+                                       Description="Audio input device used for recording. Default: system default."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                    <ComboBox x:Name="AudioInputCombo"
+                              MinWidth="240"
+                              SelectionChanged="AudioInputCombo_SelectionChanged" />
+                </controls:SettingsCard>
 
                 <controls:SettingsExpander Header="Show the overlay while recording"
                                            Description="A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes."

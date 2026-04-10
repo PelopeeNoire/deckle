@@ -10,12 +10,20 @@ namespace WhispUI.Settings;
 public sealed class AppSettings
 {
     public PathsSettings Paths { get; set; } = new();
+    public RecordingSettings Recording { get; set; } = new();
     public TranscriptionSettings Transcription { get; set; } = new();
     public SpeechDetectionSettings SpeechDetection { get; set; } = new();
     public ConfidenceSettings Confidence { get; set; } = new();
     public OutputFilterSettings OutputFilters { get; set; } = new();
     public DecodingSettings Decoding { get; set; } = new();
     public ContextSettings Context { get; set; } = new();
+}
+
+// Paramètres d'enregistrement audio. AudioInputDeviceId = index du périphérique
+// waveIn à utiliser. -1 = WAVE_MAPPER (périphérique par défaut du système).
+public sealed class RecordingSettings
+{
+    public int AudioInputDeviceId { get; set; } = -1;
 }
 
 // Chemins utilisateur. ModelsDirectory = dossier où vivent les .bin (Whisper

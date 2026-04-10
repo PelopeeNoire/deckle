@@ -270,7 +270,11 @@ internal sealed class WhispEngine : IDisposable
 
         IntPtr hEvent = NativeMethods.CreateEvent(IntPtr.Zero, bManualReset: false, bInitialState: false, null);
 
-        uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, WAVE_MAPPER, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
+        // Périphérique sélectionné dans les Settings. -1 = WAVE_MAPPER (défaut système).
+        int configuredDevice = Settings.SettingsService.Instance.Current.Recording.AudioInputDeviceId;
+        uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
+
+        uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
         if (err != 0)
         {
             LogErrorLine?.Invoke($"[RECORD] waveInOpen erreur {err}");
