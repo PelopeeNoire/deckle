@@ -110,6 +110,9 @@ public partial class App : Microsoft.UI.Xaml.Application
         _anchor.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 100, 100));
         _anchor.AppWindow.Show(false);
 
+        // Appliquer le thème sauvegardé (System/Light/Dark).
+        ApplyTheme(Settings.SettingsService.Instance.Current.Appearance.Theme);
+
         // Si lancé avec --settings (restart depuis les Settings), rouvrir
         // automatiquement la fenêtre Settings sur la bonne page.
         var cliArgs = Environment.GetCommandLineArgs();
@@ -121,6 +124,32 @@ public partial class App : Microsoft.UI.Xaml.Application
                 : null;
             DebugLog.Write("APP", $"--settings flag detected, page={pageTag ?? "(default)"}");
             _settingsWindow?.ShowAndActivate(pageTag);
+        }
+    }
+
+    // ── Theme ────────────────────────────────────────────────────────────────
+    //
+    // Pose RequestedTheme sur le Content (FrameworkElement racine) de chaque
+    // fenêtre connue. ElementTheme.Default = suivre le système.
+    // Appelé au boot (OnLaunched) et quand l'utilisateur change le thème
+    // dans GeneralPage.
+
+    public static void ApplyTheme(string themeName)
+    {
+        var theme = themeName switch
+        {
+            "Light" => Microsoft.UI.Xaml.ElementTheme.Light,
+            "Dark"  => Microsoft.UI.Xaml.ElementTheme.Dark,
+            _       => Microsoft.UI.Xaml.ElementTheme.Default,
+        };
+
+        if (Current is not App app) return;
+
+        foreach (var window in new Microsoft.UI.Xaml.Window?[]
+                     { app._settingsWindow, app._logWindow, app._hudWindow, app._anchor })
+        {
+            if (window?.Content is Microsoft.UI.Xaml.FrameworkElement fe)
+                fe.RequestedTheme = theme;
         }
     }
 

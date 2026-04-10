@@ -17,6 +17,9 @@ public sealed partial class GeneralPage : Page
         try
         {
             PopulateAudioInputDevices();
+            LoadOverlaySettings();
+            LoadStartupSettings();
+            LoadThemeSettings();
         }
         finally
         {
@@ -64,5 +67,101 @@ public sealed partial class GeneralPage : Page
         App.Log?.Log($"[GENERAL] Audio input device ← {deviceId} ({AudioInputCombo.SelectedItem})");
         SettingsService.Instance.Current.Recording.AudioInputDeviceId = deviceId;
         SettingsService.Instance.Save();
+    }
+
+    // ── Overlay ──────────────────────────────────────────────────────────────
+
+    private void LoadOverlaySettings()
+    {
+        var overlay = SettingsService.Instance.Current.Overlay;
+        OverlayEnabledToggle.IsOn = overlay.Enabled;
+        OverlayFadeToggle.IsOn = overlay.FadeOnProximity;
+
+        // Position ComboBox : match par Tag
+        for (int i = 0; i < OverlayPositionCombo.Items.Count; i++)
+        {
+            if (OverlayPositionCombo.Items[i] is ComboBoxItem item &&
+                item.Tag as string == overlay.Position)
+            {
+                OverlayPositionCombo.SelectedIndex = i;
+                break;
+            }
+        }
+        if (OverlayPositionCombo.SelectedIndex < 0)
+            OverlayPositionCombo.SelectedIndex = 0;
+    }
+
+    private void OverlayEnabledToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        App.Log?.Log($"[GENERAL] Overlay enabled ← {OverlayEnabledToggle.IsOn}");
+        SettingsService.Instance.Current.Overlay.Enabled = OverlayEnabledToggle.IsOn;
+        SettingsService.Instance.Save();
+    }
+
+    private void OverlayFadeToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        App.Log?.Log($"[GENERAL] Overlay fade ← {OverlayFadeToggle.IsOn}");
+        SettingsService.Instance.Current.Overlay.FadeOnProximity = OverlayFadeToggle.IsOn;
+        SettingsService.Instance.Save();
+    }
+
+    private void OverlayPositionCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        if (OverlayPositionCombo.SelectedItem is ComboBoxItem item &&
+            item.Tag is string position)
+        {
+            App.Log?.Log($"[GENERAL] Overlay position ← {position}");
+            SettingsService.Instance.Current.Overlay.Position = position;
+            SettingsService.Instance.Save();
+        }
+    }
+
+    // ── Startup ──────────────────────────────────────────────────────────────
+
+    private void LoadStartupSettings()
+    {
+        StartMinimizedToggle.IsOn = SettingsService.Instance.Current.Startup.StartMinimized;
+    }
+
+    private void StartMinimizedToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        App.Log?.Log($"[GENERAL] Start minimized ← {StartMinimizedToggle.IsOn}");
+        SettingsService.Instance.Current.Startup.StartMinimized = StartMinimizedToggle.IsOn;
+        SettingsService.Instance.Save();
+    }
+
+    // ── Theme ────────────────────────────────────────────────────────────────
+
+    private void LoadThemeSettings()
+    {
+        string theme = SettingsService.Instance.Current.Appearance.Theme;
+        for (int i = 0; i < ThemeCombo.Items.Count; i++)
+        {
+            if (ThemeCombo.Items[i] is ComboBoxItem item &&
+                item.Tag as string == theme)
+            {
+                ThemeCombo.SelectedIndex = i;
+                break;
+            }
+        }
+        if (ThemeCombo.SelectedIndex < 0)
+            ThemeCombo.SelectedIndex = 0;
+    }
+
+    private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        if (ThemeCombo.SelectedItem is ComboBoxItem item &&
+            item.Tag is string theme)
+        {
+            App.Log?.Log($"[GENERAL] Theme ← {theme}");
+            SettingsService.Instance.Current.Appearance.Theme = theme;
+            SettingsService.Instance.Save();
+            App.ApplyTheme(theme);
+        }
     }
 }
