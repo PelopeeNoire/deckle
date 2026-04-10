@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:local="using:WhispUI"
-    Title="WhispUI Logs">
+    Title="Logs">
 
     <Grid x:Name="RootGrid">
         <Grid.Resources>
@@ -28,62 +28,62 @@
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="NoWrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="NoWrap_Info">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource LogInfoBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="NoWrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="NoWrap_Step">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="NoWrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="NoWrap_Warning">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="NoWrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="NoWrap_Error">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="NoWrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="NoWrap" />
                 </DataTemplate>
 
                 <DataTemplate x:Key="Wrap_Verbose">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource TextFillColorPrimaryBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="Wrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="Wrap_Info">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource LogInfoBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="Wrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="Wrap_Step">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="Wrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="Wrap_Warning">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="Wrap" />
                 </DataTemplate>
                 <DataTemplate x:Key="Wrap_Error">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                FontFamily="Consolas" FontSize="12"
-                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                               TextWrapping="Wrap" />
                 </DataTemplate>
 
                 <local:LogLevelTemplateSelector x:Key="NoWrapSelector"
@@ -99,23 +99,14 @@
                     Warning="{StaticResource Wrap_Warning}"
                     Error="{StaticResource Wrap_Error}" />
 
-                <!-- Wrappers appliqués via ItemsControl.ItemTemplate : un
-                     ContentControl dont le ContentTemplateSelector pointe sur
-                     notre selector. Raison : ItemsControl expose bien
-                     ItemTemplateSelector mais WinUI 3 ne l'honore pas à
-                     l'exécution (seul ListViewBase le respecte). Le swap
-                     Wrap/NoWrap change donc ItemTemplate entre ces deux
-                     wrappers. -->
-                <DataTemplate x:Key="NoWrapRoot">
-                    <ContentControl Content="{Binding}"
-                                    HorizontalContentAlignment="Stretch"
-                                    ContentTemplateSelector="{StaticResource NoWrapSelector}" />
-                </DataTemplate>
-                <DataTemplate x:Key="WrapRoot">
-                    <ContentControl Content="{Binding}"
-                                    HorizontalContentAlignment="Stretch"
-                                    ContentTemplateSelector="{StaticResource WrapSelector}" />
-                </DataTemplate>
+                <!-- Container compact pour un rendu log dense : padding réduit,
+                     hover highlight conservé (signale le clic-to-copy). -->
+                <Style x:Key="LogItemContainerStyle" TargetType="ListViewItem">
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="Padding" Value="4,1" />
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
             </ResourceDictionary>
         </Grid.Resources>
         <Grid.RowDefinitions>
@@ -129,7 +120,7 @@
              hauteur, et expose un slot Content où on place la SearchBox. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
-                  Title="WhispUI Logs">
+                  Title="Logs">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
@@ -140,7 +131,7 @@
                      icône/field custom — pattern Win11 Settings. -->
                 <AutoSuggestBox x:Name="SearchBox"
                                 QueryIcon="Find"
-                                PlaceholderText="Rechercher"
+                                PlaceholderText="Search logs"
                                 MinWidth="240"
                                 MaxWidth="760"
                                 HorizontalAlignment="Stretch"
@@ -161,9 +152,9 @@
                                   Margin="4,0,0,0"
                                   VerticalAlignment="Center"
                                   SelectionChanged="OnLevelSelectorChanged">
-                <controls:SelectorBarItem x:Name="LevelFull" Text="Full" />
-                <controls:SelectorBarItem x:Name="LevelFiltered" Text="Filtered" />
-                <controls:SelectorBarItem x:Name="LevelCritical" Text="Critical" />
+                <controls:SelectorBarItem x:Name="LevelFull" Text="All" />
+                <controls:SelectorBarItem x:Name="LevelFiltered" Text="Activity" />
+                <controls:SelectorBarItem x:Name="LevelCritical" Text="Errors" />
             </controls:SelectorBar>
 
             <!-- Migration native via IsDynamicOverflowEnabled (true par défaut)
@@ -197,7 +188,7 @@
                 </AppBarButton>
                 <AppBarSeparator DynamicOverflowOrder="2" />
                 <AppBarToggleButton x:Name="AutoScrollToggle"
-                                    Label="Auto scroll"
+                                    Label="Auto-scroll"
                                     DynamicOverflowOrder="1"
                                     IsChecked="True">
                     <AppBarToggleButton.Icon>
@@ -205,7 +196,7 @@
                     </AppBarToggleButton.Icon>
                 </AppBarToggleButton>
                 <AppBarToggleButton x:Name="WrapToggle"
-                                    Label="Wrap"
+                                    Label="Word wrap"
                                     DynamicOverflowOrder="1"
                                     IsChecked="False"
                                     Click="OnWrapToggleClick">
@@ -217,20 +208,52 @@
         </Grid>
 
         <!-- ── Surface logs ─────────────────────────────────────────────── -->
-        <!-- Layer Fill distinct du fond Mica + divider en haut, pour matcher
-             la hiérarchie de surfaces Figma (App Base → App Layer). -->
-        <Border Grid.Row="2"
-                Background="{ThemeResource LayerFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                BorderThickness="0,1,0,0">
-            <ScrollViewer x:Name="LogScrollViewer"
-                          Padding="12,8"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Auto"
-                          HorizontalContentAlignment="Left"
-                          HorizontalScrollMode="Enabled">
-                <ItemsControl x:Name="LogItems" HorizontalAlignment="Left" />
-            </ScrollViewer>
-        </Border>
+        <!-- ListView natif : virtualisation, scroll intégré, ItemTemplateSelector
+             honoré. Clic gauche = copie la ligne, clic droit = MenuFlyout natif.
+             Badge flottant "Copy" positionné à droite de l'item survolé. -->
+        <Grid Grid.Row="2" x:Name="LogSurface">
+            <ListView x:Name="LogItems"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}"
+                      BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                      BorderThickness="0,1,0,0"
+                      Padding="12,4"
+                      ItemContainerStyle="{StaticResource LogItemContainerStyle}"
+                      ItemTemplateSelector="{StaticResource NoWrapSelector}"
+                      SelectionMode="Extended"
+                      IsItemClickEnabled="False"
+                      PointerMoved="OnLogPointerMoved"
+                      PointerExited="OnLogPointerExited"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      ScrollViewer.HorizontalScrollMode="Enabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+            <!-- Badge flottant "Copy" — positionné par code à droite de l'item
+                 survolé. IsHitTestVisible=False pour laisser le clic passer au
+                 ListView. Theme resources uniquement, zéro valeur magique. -->
+            <!-- Badge flottant "Copy" / "Copy selection" — positionné par code
+                 à droite de l'item survolé. Fond opaque (LayerFill) pour
+                 couvrir le texte derrière. IsHitTestVisible=False pour
+                 laisser les clics passer au ListView. -->
+            <Border x:Name="CopyBadge"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Visibility="Collapsed"
+                    IsHitTestVisible="False"
+                    Canvas.ZIndex="1"
+                    Padding="8,2"
+                    Margin="0,0,18,0"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{ThemeResource ControlCornerRadius}">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="CopyBadgeTransform" />
+                </Border.RenderTransform>
+                <TextBlock x:Name="CopyBadgeText"
+                           Text="Copy"
+                           FontSize="11"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Border>
+        </Grid>
     </Grid>
 </Window>
