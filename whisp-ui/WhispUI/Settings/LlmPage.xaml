@@ -49,6 +49,14 @@
                        Margin="0,0,0,12"
                        Text="Clean up and restructure your transcriptions through a local language model via Ollama. Configure rewrite profiles with different models and prompts, then assign them to duration-based rules or the manual shortcut." />
 
+            <!-- Ollama status bar — shown when Ollama is not reachable -->
+            <InfoBar x:Name="OllamaStatusBar"
+                     Title="Ollama is not reachable"
+                     Severity="Warning"
+                     IsOpen="False"
+                     IsClosable="False"
+                     Margin="0,0,0,8" />
+
             <!-- ── General ────────────────────────────────────────────── -->
             <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
                        Text="General" />
@@ -122,6 +130,36 @@
                     Content="Add profile"
                     Click="AddProfile_Click"
                     Margin="0,4,0,0" />
+
+            <!-- ── Custom models ──────────────────────────────────────── -->
+            <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="Custom models" />
+
+            <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Margin="1,0,0,8"
+                       Text="Models available in your local Ollama instance. Use the import button to create a model from a GGUF file with the correct chat template." />
+
+            <!-- Dynamic model cards are inserted here by code-behind -->
+            <StackPanel x:Name="ModelsContainer"
+                        Spacing="{StaticResource SettingsCardSpacing}" />
+
+            <StackPanel x:Name="ModelsActionsPanel"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Margin="0,4,0,0">
+                <Button x:Name="ImportGgufButton"
+                        Content="Import GGUF"
+                        Click="ImportGguf_Click" />
+                <Button x:Name="RefreshModelsButton"
+                        Click="RefreshModels_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <TextBlock Text="Refresh" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
 
         </StackPanel>
         </Grid>

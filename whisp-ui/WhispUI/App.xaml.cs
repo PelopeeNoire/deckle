@@ -11,6 +11,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     // les actions utilisateur. Peut être null pendant le tout début du boot ;
     // chaque appel doit donc utiliser le null-conditional `App.Log?.`.
     public static LogWindow? Log => (Current as App)?._logWindow;
+    internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
     private SettingsWindow? _settingsWindow;
     private HudWindow? _hudWindow;
     private TrayIconManager? _tray;

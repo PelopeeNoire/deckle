@@ -107,14 +107,22 @@ public sealed class DecodingSettings
 
 // ── Réécriture LLM via Ollama ────────────────────────────────────────────────
 
-// Profil de réécriture : triplet {nom, modèle Ollama, system prompt}.
+// Profil de réécriture : modèle Ollama, system prompt, paramètres de génération.
 // Le system prompt est envoyé per-request (pas via Modelfile) — les modèles
 // viennent de HuggingFace en GGUF et Ollama ne détecte pas bien les TEMPLATE.
+// Les paramètres de génération (nullable) sont envoyés dans le champ `options`
+// de /api/chat et overrident les defaults du Modelfile côté Ollama.
 public sealed class RewriteProfile
 {
     public string Name { get; set; } = "";
     public string Model { get; set; } = "";
     public string SystemPrompt { get; set; } = "";
+
+    // Paramètres de génération — null = default Ollama (pas envoyé).
+    public double? Temperature { get; set; }
+    public int? NumCtxK { get; set; }            // en K (×1024 à l'envoi)
+    public double? TopP { get; set; }
+    public double? RepeatPenalty { get; set; }
 }
 
 // Règle d'auto-réécriture : quand la durée d'enregistrement dépasse
@@ -141,6 +149,8 @@ public sealed class LlmSettings
         {
             Name = "Nettoyage",
             Model = "ministral-3:3b--instruct--96k",
+            Temperature = 0.15,
+            NumCtxK = 4,
             SystemPrompt =
                 "Tu reçois une transcription vocale brute en français. Nettoie-la minimalement : " +
                 "corrige la ponctuation, les accents, les mots mal transcrits évidents et les " +
@@ -152,6 +162,8 @@ public sealed class LlmSettings
         {
             Name = "Restructuration",
             Model = "ministral-3:14b--instruct--128k",
+            Temperature = 0.15,
+            NumCtxK = 32,
             SystemPrompt =
                 "Tu reçois une transcription vocale brute en français, potentiellement longue. " +
                 "Réécris-la en texte structuré et cohérent : regroupe les idées liées, fais des " +
@@ -165,6 +177,8 @@ public sealed class LlmSettings
         {
             Name = "Prompt",
             Model = "ministral-3:14b--instruct--128k",
+            Temperature = 0.15,
+            NumCtxK = 32,
             SystemPrompt =
                 "Tu reçois une transcription vocale brute en français où la personne exprime une " +
                 "demande, une réflexion ou un besoin qu'elle veut formuler comme prompt pour un " +
