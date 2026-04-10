@@ -503,13 +503,12 @@
 
                 <controls:SettingsCard x:Name="EntropyCard"
                                        Header="Entropy threshold"
-                                       Description="Catch repetitive or garbled output. Segments below this entropy are retried at higher temperature. Raise to be stricter. Default: 2.4."
+                                       Description="Detects repetition loops by measuring token diversity. Low-diversity segments are retried at higher temperature. Raise to catch subtler repetitions. Default: 2.4."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="EntropySlider"
                                 Style="{StaticResource SettingSliderStyle}"
-                                Minimum="0"
-                                Maximum="5"
+                                Maximum="3.5"
                                 StepFrequency="0.1"
                                 TickFrequency="0.5"
                                 ValueChanged="EntropySlider_ValueChanged" />
@@ -525,15 +524,13 @@
 
                 <controls:SettingsCard x:Name="LogprobCard"
                                        Header="Log-probability threshold"
-                                       Description="Minimum average confidence per segment. If confidence is low and speech is detected, the segment is retried. Raise (toward 0) to be stricter. Default: -1.0."
+                                       Description="Average decoder confidence per segment. Low-confidence segments are retried at higher temperature. Also gates silence suppression with the no-speech check. Raise (toward 0) to be stricter. Default: -1.0."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="LogprobSlider"
                                 Style="{StaticResource SettingSliderStyle}"
-                                Minimum="-5"
-                                Maximum="0"
-                                StepFrequency="0.1"
-                                TickFrequency="0.5"
+                                StepFrequency="0.05"
+                                TickFrequency="0.1"
                                 ValueChanged="LogprobSlider_ValueChanged" />
                         <TextBlock x:Name="LogprobValue"
                                    Style="{StaticResource SliderValueTextStyle}" />
@@ -547,13 +544,12 @@
 
                 <controls:SettingsCard x:Name="NoSpeechCard"
                                        Header="No-speech threshold"
-                                       Description="Works with the log-probability check. A low-confidence segment is retried only if the model also detects speech. Raise to retry more borderline cases. Default: 0.6."
+                                       Description="Controls silence suppression. When the model flags a segment as silence and confidence is also low, the segment is dropped. Lower values suppress more aggressively. Default: 0.6."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="NoSpeechSlider"
                                 Style="{StaticResource SettingSliderStyle}"
-                                Minimum="0"
-                                Maximum="1"
+                                Maximum="0.80"
                                 StepFrequency="0.05"
                                 TickFrequency="0.1"
                                 ValueChanged="NoSpeechSlider_ValueChanged" />
