@@ -67,18 +67,22 @@
                 <controls:SettingsExpander Header="Show the overlay while recording"
                                            Description="A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
-                    <ToggleSwitch IsOn="True" />
+                    <ToggleSwitch x:Name="OverlayEnabledToggle"
+                                  Toggled="OverlayEnabledToggle_Toggled" />
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard Header="Fade when your cursor is near"
                                                Description="Make the overlay transparent when you move over it, so it never blocks what's underneath.">
-                            <ToggleSwitch IsOn="True" />
+                            <ToggleSwitch x:Name="OverlayFadeToggle"
+                                          Toggled="OverlayFadeToggle_Toggled" />
                         </controls:SettingsCard>
                         <controls:SettingsCard Header="Screen position"
                                                Description="Where the overlay appears on your primary display.">
-                            <ComboBox SelectedIndex="0" MinWidth="160">
-                                <ComboBoxItem>Bottom center</ComboBoxItem>
-                                <ComboBoxItem>Bottom right</ComboBoxItem>
-                                <ComboBoxItem>Top center</ComboBoxItem>
+                            <ComboBox x:Name="OverlayPositionCombo"
+                                      MinWidth="160"
+                                      SelectionChanged="OverlayPositionCombo_SelectionChanged">
+                                <ComboBoxItem Tag="BottomCenter">Bottom center</ComboBoxItem>
+                                <ComboBoxItem Tag="BottomRight">Bottom right</ComboBoxItem>
+                                <ComboBoxItem Tag="TopCenter">Top center</ComboBoxItem>
                             </ComboBox>
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
@@ -91,13 +95,14 @@
                 <controls:SettingsCard Header="Start with Windows"
                                        Description="Launch WhispUI automatically when you sign in."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
-                    <ToggleSwitch />
+                    <ToggleSwitch IsEnabled="False" />
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Start minimized"
-                                       Description="Open straight to the system tray, without any visible window."
+                                       Description="Open straight to the system tray, without any visible window. Default: on."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
-                    <ToggleSwitch IsOn="True" />
+                    <ToggleSwitch x:Name="StartMinimizedToggle"
+                                  Toggled="StartMinimizedToggle_Toggled" />
                 </controls:SettingsCard>
 
                 <!-- ── Appearance ──────────────────────────────────────────── -->
@@ -107,10 +112,12 @@
                 <controls:SettingsCard Header="App theme"
                                        Description="Light, dark, or follow your Windows theme."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
-                    <ComboBox SelectedIndex="0" MinWidth="160">
-                        <ComboBoxItem>System</ComboBoxItem>
-                        <ComboBoxItem>Light</ComboBoxItem>
-                        <ComboBoxItem>Dark</ComboBoxItem>
+                    <ComboBox x:Name="ThemeCombo"
+                              MinWidth="160"
+                              SelectionChanged="ThemeCombo_SelectionChanged">
+                        <ComboBoxItem Tag="System">System</ComboBoxItem>
+                        <ComboBoxItem Tag="Light">Light</ComboBoxItem>
+                        <ComboBoxItem Tag="Dark">Dark</ComboBoxItem>
                     </ComboBox>
                 </controls:SettingsCard>
 

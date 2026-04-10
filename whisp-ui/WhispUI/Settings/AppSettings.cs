@@ -11,6 +11,9 @@ public sealed class AppSettings
 {
     public PathsSettings Paths { get; set; } = new();
     public RecordingSettings Recording { get; set; } = new();
+    public AppearanceSettings Appearance { get; set; } = new();
+    public StartupSettings Startup { get; set; } = new();
+    public OverlaySettings Overlay { get; set; } = new();
     public TranscriptionSettings Transcription { get; set; } = new();
     public SpeechDetectionSettings SpeechDetection { get; set; } = new();
     public ConfidenceSettings Confidence { get; set; } = new();
@@ -24,6 +27,27 @@ public sealed class AppSettings
 public sealed class RecordingSettings
 {
     public int AudioInputDeviceId { get; set; } = -1;
+}
+
+// Apparence globale. Theme = "System" | "Light" | "Dark".
+public sealed class AppearanceSettings
+{
+    public string Theme { get; set; } = "System";
+}
+
+// Comportement au démarrage.
+public sealed class StartupSettings
+{
+    public bool StartMinimized { get; set; } = true;
+}
+
+// Overlay HUD affiché pendant l'enregistrement/transcription.
+// Position = "BottomCenter" | "BottomRight" | "TopCenter".
+public sealed class OverlaySettings
+{
+    public bool Enabled { get; set; } = true;
+    public bool FadeOnProximity { get; set; } = true;
+    public string Position { get; set; } = "BottomCenter";
 }
 
 // Chemins utilisateur. ModelsDirectory = dossier où vivent les .bin (Whisper

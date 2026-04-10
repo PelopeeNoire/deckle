@@ -204,6 +204,10 @@ public sealed partial class HudWindow : Window
 
     public void ShowRecording()
     {
+        // Overlay désactivé dans les Settings → ne pas afficher le HUD.
+        if (!Settings.SettingsService.Instance.Current.Overlay.Enabled)
+            return;
+
         EnqueueUI(() =>
         {
             StatusDot.Fill = _recordingBrush;
@@ -239,13 +243,12 @@ public sealed partial class HudWindow : Window
             IconAssets.ApplyToWindow(AppWindow, recording: true);
             ShowNoActivate();
 
-            // Reset alpha à 255 et arme la proximité.
+            // Reset alpha à 255 et arme la proximité (si fade activé dans les Settings).
             SetAlphaImmediate(MAX_ALPHA);
-            _proximityActive = true;
+            _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
 
-            // Évalue une fois manuellement : si la souris est déjà sous/près
-            // du HUD au moment du show, aucun WM_INPUT ne viendra avant un mouvement.
-            UpdateProximity();
+            if (_proximityActive)
+                UpdateProximity();
         });
     }
 
@@ -327,8 +330,23 @@ public sealed partial class HudWindow : Window
         int h = (int)Math.Round(HUD_HEIGHT * scale);
         int margin = (int)Math.Round(HUD_BOTTOM_MARGIN * scale);
 
-        int x = wa.X + (wa.Width  - w) / 2;
-        int y = wa.Y +  wa.Height - h - margin;
+        string position = Settings.SettingsService.Instance.Current.Overlay.Position;
+        int x, y;
+        switch (position)
+        {
+            case "BottomRight":
+                x = wa.X + wa.Width - w - margin;
+                y = wa.Y + wa.Height - h - margin;
+                break;
+            case "TopCenter":
+                x = wa.X + (wa.Width - w) / 2;
+                y = wa.Y + margin;
+                break;
+            default: // BottomCenter
+                x = wa.X + (wa.Width - w) / 2;
+                y = wa.Y + wa.Height - h - margin;
+                break;
+        }
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
 
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNOACTIVATE);
