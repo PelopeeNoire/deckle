@@ -51,6 +51,14 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
 
+                <controls:SettingsCard Header="Rewrite shortcut"
+                                       Description="Same as recording, but the transcription is rewritten by a language model before pasting."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                    <TextBlock Text="Alt + Ctrl + `"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </controls:SettingsCard>
+
                 <!-- ── Recording ───────────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
                            Text="Recording" />

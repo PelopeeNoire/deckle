@@ -73,6 +73,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             // Clic gauche tray = toggle transcription via le même chemin que la
             // hotkey standard. Permet de lancer à la souris avec une seule main.
             OnToggleRecording = () => OnHotkey(NativeMethods.HOTKEY_ID_TRANSCRIBE),
+            OnRestart         = () => RestartAppFromTray(),
             OnQuit            = () => QuitApp(),
         };
 
@@ -192,6 +193,22 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         if (Current is App app)
             app.QuitApp();
+    }
+
+    // ── Restart depuis le tray ─────────────────────────────────────────────
+    //
+    // Relance un nouveau process WhispUI nu (sans --settings) puis shutdown
+    // propre du process courant.
+    private void RestartAppFromTray()
+    {
+        DebugLog.Write("APP", "Restart from tray requested");
+        var exePath = Environment.ProcessPath;
+        if (exePath is not null)
+        {
+            DebugLog.Write("APP", $"Starting new process: {exePath}");
+            System.Diagnostics.Process.Start(exePath);
+        }
+        QuitApp();
     }
 
     private void OnHotkey(int hotkeyId)

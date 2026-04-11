@@ -19,6 +19,7 @@ public sealed class TrayIconManager : IDisposable
     // IDs des commandes du menu contextuel
     private const uint CMD_LOGS     = 1;
     private const uint CMD_SETTINGS = 3;
+    private const uint CMD_RESTART  = 4;
     private const uint CMD_QUIT     = 2;
 
     private IntPtr _hwnd;
@@ -36,6 +37,7 @@ public sealed class TrayIconManager : IDisposable
     public Action? OnShowLogs         { get; set; }
     public Action? OnShowSettings     { get; set; }
     public Action? OnToggleRecording  { get; set; }
+    public Action? OnRestart          { get; set; }
     public Action? OnQuit             { get; set; }
 
     // ── Initialisation ────────────────────────────────────────────────────────
@@ -113,6 +115,7 @@ public sealed class TrayIconManager : IDisposable
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_LOGS,     "Logs");
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_SETTINGS, "Settings");
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_SEPARATOR, 0,            null);
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_RESTART,  "Redémarrer");
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_QUIT,     "Quitter");
 
         NativeMethods.GetCursorPos(out POINT pt);
@@ -132,6 +135,7 @@ public sealed class TrayIconManager : IDisposable
         {
             case CMD_LOGS:     OnShowLogs?.Invoke();     break;
             case CMD_SETTINGS: OnShowSettings?.Invoke(); break;
+            case CMD_RESTART:  OnRestart?.Invoke();      break;
             case CMD_QUIT:     OnQuit?.Invoke();         break;
         }
     }
