@@ -391,4 +391,20 @@ internal static class NativeMethods
 
     [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
     public static extern void whisper_free(IntPtr ctx);
+
+    // ── whisper_log_set : callback global pour les logs internes ──────────────
+    //
+    // whisper.cpp émet en permanence des lignes de log (chargement modèle,
+    // démarrage du décodage, métriques GPU, timings, etc.). Par défaut elles
+    // partent sur stderr où elles sont perdues. En branchant un callback on
+    // redirige tout ça vers la LogWindow.
+    //
+    // Signature C : void (*)(enum ggml_log_level level, const char *text, void *user_data)
+    // Niveaux ggml_log_level : 0=None, 1=Info, 2=Warn, 3=Error, 4=Debug, 5=Cont.
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void WhisperLogCallback(int level, IntPtr text, IntPtr user_data);
+
+    [DllImport("libwhisper", CallingConvention = CallingConvention.Cdecl)]
+    public static extern void whisper_log_set(WhisperLogCallback log_callback, IntPtr user_data);
 }

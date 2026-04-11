@@ -227,13 +227,11 @@
                       ScrollViewer.HorizontalScrollMode="Enabled"
                       ScrollViewer.VerticalScrollBarVisibility="Auto" />
 
-            <!-- Badge flottant "Copy" — positionné par code à droite de l'item
-                 survolé. IsHitTestVisible=False pour laisser le clic passer au
-                 ListView. Theme resources uniquement, zéro valeur magique. -->
             <!-- Badge flottant "Copy" / "Copy selection" — positionné par code
-                 à droite de l'item survolé. Fond opaque (LayerFill) pour
-                 couvrir le texte derrière. IsHitTestVisible=False pour
-                 laisser les clics passer au ListView. -->
+                 à droite de l'item survolé. Fond 100% opaque (SolidBackgroundFill
+                 Base) pour masquer complètement le texte et le surligné de
+                 sélection qui passent dessous. IsHitTestVisible=False pour
+                 laisser les clics traverser au ListView. -->
             <Border x:Name="CopyBadge"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"
@@ -242,7 +240,7 @@
                     Canvas.ZIndex="1"
                     Padding="8,2"
                     Margin="0,0,18,0"
-                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
                     BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                     BorderThickness="1"
                     CornerRadius="{ThemeResource ControlCornerRadius}">

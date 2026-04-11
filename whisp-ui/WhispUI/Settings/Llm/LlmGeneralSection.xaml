@@ -1,0 +1,32 @@
+<UserControl
+    x:Class="WhispUI.Settings.Llm.LlmGeneralSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                   Text="General" />
+
+        <controls:SettingsCard Header="Enable rewriting"
+                               Description="Master switch for all LLM rewriting. When off, transcriptions are never sent to Ollama."
+                               HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+            <ToggleSwitch x:Name="EnabledToggle"
+                          Toggled="EnabledToggle_Toggled" />
+        </controls:SettingsCard>
+
+        <controls:SettingsExpander Header="Ollama endpoint"
+                                   Description="The URL of your local Ollama instance."
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE968;}">
+            <controls:SettingsExpander.Items>
+                <controls:SettingsCard ContentAlignment="Vertical">
+                    <TextBox x:Name="EndpointBox"
+                             MinWidth="400"
+                             PlaceholderText="http://localhost:11434/api/chat"
+                             TextChanged="EndpointBox_TextChanged" />
+                </controls:SettingsCard>
+            </controls:SettingsExpander.Items>
+        </controls:SettingsExpander>
+    </StackPanel>
+</UserControl>

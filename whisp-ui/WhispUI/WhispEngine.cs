@@ -29,6 +29,12 @@ internal sealed class WhispEngine : IDisposable
     // pour se masquer. Thread de fond → abonné responsable du marshaling.
     public event Action?          TranscriptionFinished;
 
+    // Levé quand StartRecording détecte (via probe waveInOpen) que le
+    // périphérique audio est indisponible. L'abonné (HudWindow) affiche un
+    // message d'erreur explicite à la place du chrono. Thread hotkey →
+    // abonné responsable du marshaling.
+    public event Action<string, string>? MicrophoneUnavailable;
+
     // Rendez-vous synchrone juste avant PasteFromClipboard. L'appelant
     // (App.xaml.cs) y branche HudWindow.HideSync() pour garantir qu'aucune
     // mutation d'activation côté WhispUI ne survienne pendant que SendInput
@@ -65,6 +71,10 @@ internal sealed class WhispEngine : IDisposable
     // pendant que whisper.cpp détient son pointeur natif (même piège que SubclassProc).
     private WhisperNewSegmentCallback? _newSegmentCallback;
 
+    // Callback whisper_log_set — même contrainte GC. Stocké à vie puisque le
+    // hook est global (process-wide) et installé une fois au démarrage.
+    private NativeMethods.WhisperLogCallback? _whisperLogCallback;
+
     // Borne basse des ids de tokens timestamp pour le modèle courant. Cachée au début
     // de chaque Transcribe et lue par OnNewSegment pour filtrer les tokens non-texte.
     private int _tokenBeg;
@@ -100,7 +110,53 @@ internal sealed class WhispEngine : IDisposable
             onWarn: msg  => LogWarningLine?.Invoke($"[LLM] {msg}"),
             onInfo: msg  => LogLine?.Invoke(msg));
 
+        // Branche le callback de log global de whisper.cpp avant LoadModelAsync,
+        // pour attraper les logs d'initialisation Vulkan/CUDA et les warnings
+        // de parsing du modèle. Install-once, process-wide.
+        InstallWhisperLogHook();
+
         LoadModelAsync();
+    }
+
+    // Redirige les logs internes de whisper.cpp (ggml_log) vers LogVerbose.
+    // Ces lignes contiennent le détail du backend (Vulkan device, mem, threads),
+    // les progress updates pendant whisper_full, et les warnings runtime.
+    // Classées en verbose par défaut — niveau trop bavard pour le flux normal.
+    private void InstallWhisperLogHook()
+    {
+        _whisperLogCallback = (level, textPtr, _) =>
+        {
+            try
+            {
+                string msg = Marshal.PtrToStringUTF8(textPtr)?.TrimEnd('\r', '\n', ' ') ?? "";
+                if (string.IsNullOrEmpty(msg)) return;
+
+                // Niveaux ggml : 0=None, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Cont.
+                // Warn/Error remontent en log normal pour être visibles sans
+                // activer le filtre verbose. Info/Debug/Cont restent en verbose.
+                switch (level)
+                {
+                    case 4: LogErrorLine?.Invoke($"[WHISPER] {msg}"); break;
+                    case 3: LogWarningLine?.Invoke($"[WHISPER] {msg}"); break;
+                    default: LogVerboseLine?.Invoke($"[WHISPER] {msg}"); break;
+                }
+            }
+            catch
+            {
+                // Ne jamais laisser une exception traverser la frontière native.
+            }
+        };
+
+        try
+        {
+            NativeMethods.whisper_log_set(_whisperLogCallback, IntPtr.Zero);
+        }
+        catch (Exception ex)
+        {
+            // whisper_log_set absent d'une très vieille libwhisper : on log et
+            // on continue — le reste du pipeline n'en dépend pas.
+            DebugLog.Write("ENGINE", $"whisper_log_set unavailable: {ex.Message}");
+        }
     }
 
     // ── Chargement du modèle (thread de fond) ─────────────────────────────────
@@ -154,6 +210,19 @@ internal sealed class WhispEngine : IDisposable
     public void StartRecording(bool useLlm, bool shouldPaste, IntPtr pasteTarget)
     {
         if (_isRecording) return;
+
+        // Probe du périphérique audio AVANT de fire StatusChanged("Enregistrement...").
+        // Si le micro est absent / occupé, on court-circuite tout le pipeline :
+        // pas de HUD chrono, pas de worker thread, pas de Transcribe(empty).
+        // À la place, MicrophoneUnavailable est levé → HudWindow affiche un
+        // message d'erreur dédié qui reste visible quelques secondes.
+        if (!TryProbeMicrophone(out uint probeErr))
+        {
+            var (title, body) = DescribeMicError(probeErr);
+            LogErrorLine?.Invoke($"[RECORD] probe MMSYSERR={probeErr} — {title}");
+            MicrophoneUnavailable?.Invoke(title, body);
+            return;
+        }
 
         _isRecording   = true;
         _stopRecording = false;
@@ -240,6 +309,48 @@ internal sealed class WhispEngine : IDisposable
     private void DbgVerbose(string phase, string msg) => LogVerboseLine?.Invoke(FormatLine(phase, msg));
     private void DbgStep(string msg) => LogStepLine?.Invoke(msg);
     private void DbgWarn(string msg) => LogWarningLine?.Invoke(msg);
+
+    // ── Probe périphérique audio (avant StartRecording) ────────────────────────
+    //
+    // Tente un waveInOpen + waveInClose en séquence avec le format cible et le
+    // périphérique configuré. Si ça passe, on sait que la session d'enregistrement
+    // peut démarrer ; sinon, on récupère le code MMSYSERR pour message détaillé.
+    // Coût mesuré ~1-2 ms sur un device sain — négligeable face à la latence
+    // perçue de Whisper.
+
+    private bool TryProbeMicrophone(out uint err)
+    {
+        const uint WAVE_MAPPER = 0xFFFFFFFF;
+        var wfx = new WAVEFORMATEX
+        {
+            wFormatTag      = 1,
+            nChannels       = 1,
+            nSamplesPerSec  = 16000,
+            nAvgBytesPerSec = 32000,
+            nBlockAlign     = 2,
+            wBitsPerSample  = 16,
+            cbSize          = 0,
+        };
+
+        int configuredDevice = Settings.SettingsService.Instance.Current.Recording.AudioInputDeviceId;
+        uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
+
+        err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, IntPtr.Zero, IntPtr.Zero, 0u);
+        if (err != 0) return false;
+
+        NativeMethods.waveInClose(hWaveIn);
+        return true;
+    }
+
+    // MMSYSERR → (title, body) pour UI. Messages formulés pour l'utilisateur
+    // final — pas de jargon Win32. Le code brut est loggé ailleurs pour le debug.
+    private static (string Title, string Body) DescribeMicError(uint err) => err switch
+    {
+        2 => ("Aucun microphone détecté", "Branche un micro ou vérifie l'entrée audio sélectionnée dans les paramètres de transcription."),
+        6 => ("Aucun microphone détecté", "Branche un micro ou vérifie l'entrée audio sélectionnée dans les paramètres de transcription."),
+        4 => ("Microphone occupé", "Un autre logiciel utilise déjà le microphone. Ferme-le puis relance l'enregistrement."),
+        _ => ("Microphone indisponible", $"L'ouverture du périphérique audio a échoué (code MMSYSERR {err}).")
+    };
 
     // ── Enregistrement audio ──────────────────────────────────────────────────
     //
@@ -369,6 +480,33 @@ internal sealed class WhispEngine : IDisposable
 
         double totalSec = allBytes.Count / 32000.0;
         DbgLog("RECORD", $"Capture terminée — {totalSec:F1}s d'audio ({allBytes.Count} octets)");
+
+        // Tail RMS : mesure l'énergie des 600ms finales pour observer si on
+        // coupe pendant une syllabe (ponctuation perdue) ou dans un silence
+        // bien net. Purement diagnostique — ne change rien au buffer envoyé
+        // à whisper.cpp. 600ms = durée typique d'un bloc de respiration /
+        // pause inter-phrase, suffisant pour voir si le dernier mot a pu
+        // être prononcé complètement avant le Stop.
+        {
+            const int TailMs = 600;
+            int tailBytes = Math.Min(allBytes.Count, 16000 * 2 * TailMs / 1000);
+            if (tailBytes >= 400) // au moins ~12ms
+            {
+                int start = allBytes.Count - tailBytes;
+                double sumSq = 0;
+                int nSamples = tailBytes / 2;
+                for (int i = 0; i < nSamples; i++)
+                {
+                    short s = (short)(allBytes[start + i * 2] | (allBytes[start + i * 2 + 1] << 8));
+                    double v = s / 32768.0;
+                    sumSq += v * v;
+                }
+                double rms = Math.Sqrt(sumSq / nSamples);
+                double dbfs = rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
+                double tailSec = tailBytes / 32000.0;
+                DbgLog("RECORD", $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "actif" : "silencieux")} au moment du Stop");
+            }
+        }
 
         return PcmToFloat(allBytes.ToArray());
     }

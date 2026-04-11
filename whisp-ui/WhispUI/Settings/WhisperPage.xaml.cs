@@ -181,6 +181,12 @@ public sealed partial class WhisperPage : Page
             items.Insert(0, current);
 
         ModelCombo.ItemsSource = items;
+
+        // Re-applique la sélection après assignation de l'ItemsSource. Sans ça,
+        // un re-scan (ex. changement de dossier) laisserait SelectedItem à null
+        // et ferait croire à l'utilisateur que le modèle a été perdu.
+        if (!string.IsNullOrEmpty(current))
+            ModelCombo.SelectedItem = current;
     }
 
     private void Hydrate()
@@ -265,6 +271,11 @@ public sealed partial class WhisperPage : Page
             SettingsService.Instance.Current.Paths.ModelsDirectory = ModelsDirectoryBox.Text;
             SettingsService.Instance.Save();
         });
+
+        // Re-scan immédiat : sinon l'utilisateur change le dossier et le combo
+        // reste figé sur l'ancien contenu jusqu'au prochain load de la page.
+        _loading = true;
+        try { PopulateModelCombo(); } finally { _loading = false; }
     }
 
     private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e)

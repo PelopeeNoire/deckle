@@ -7,6 +7,19 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Ressources partagées par toutes les Settings pages et leurs UserControls.
+                 Promues au niveau App pour que les UserControls (Settings/Llm/*) y accèdent
+                 sans duplication. WhisperPage/GeneralPage redéfinissent encore localement
+                 les mêmes clés (shadow sans effet), sera nettoyé lors de leur refacto. -->
+            <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+            <Style x:Key="SettingsSectionHeaderTextBlockStyle"
+                   BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+                   TargetType="TextBlock">
+                <Style.Setters>
+                    <Setter Property="Margin" Value="1,30,0,6" />
+                </Style.Setters>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

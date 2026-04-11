@@ -138,10 +138,24 @@ public sealed class AutoRewriteRule
 public sealed class LlmSettings
 {
     public bool Enabled { get; set; } = true;
-    public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/chat";
+    public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
 
     // Profil utilisé par le raccourci manuel (Alt+Ctrl+`).
     public string ManualProfileName { get; set; } = "Prompt";
+
+    // Bloc anti-préambule partagé par tous les profils par défaut. Répété en
+    // tête de chaque system prompt parce que les modèles instruct sont
+    // entraînés à saluer/introduire — sans cette contrainte explicite et
+    // répétée, ils préfixent systématiquement la sortie par "Voici", "Bien
+    // sûr", "La transcription corrigée est :", ou encadrent tout par des
+    // guillemets ou des backticks.
+    private const string AntiPreamble =
+        "SORTIE : texte brut uniquement. Pas d'introduction, pas de méta-commentaire, " +
+        "pas de balise, pas de guillemets ni de backticks englobants, pas de phrase " +
+        "d'acquiescement. Interdit : 'Voici', 'Bien sûr', 'D'accord', 'Je vais', " +
+        "'La transcription corrigée est', 'En voici une version'. Ta toute première " +
+        "sortie doit être directement le premier mot du texte demandé. Ta dernière " +
+        "sortie doit être le dernier mot du texte demandé.\n\n";
 
     public List<RewriteProfile> Profiles { get; set; } = new()
     {
@@ -151,12 +165,12 @@ public sealed class LlmSettings
             Model = "ministral-3:3b--instruct--96k",
             Temperature = 0.15,
             NumCtxK = 4,
-            SystemPrompt =
+            SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français. Nettoie-la minimalement : " +
                 "corrige la ponctuation, les accents, les mots mal transcrits évidents et les " +
                 "répétitions immédiates. Ne restructure pas. Ne reformule pas les phrases. " +
-                "Conserve l'ordre, le registre et tous les éléments. Ta réponse commence " +
-                "directement par la première phrase corrigée."
+                "Conserve l'ordre, le registre, le vocabulaire et tous les éléments. Ne " +
+                "supprime rien et n'ajoute rien."
         },
         new()
         {
@@ -164,14 +178,13 @@ public sealed class LlmSettings
             Model = "ministral-3:14b--instruct--128k",
             Temperature = 0.15,
             NumCtxK = 32,
-            SystemPrompt =
+            SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français, potentiellement longue. " +
                 "Réécris-la en texte structuré et cohérent : regroupe les idées liées, fais des " +
                 "paragraphes, élimine les répétitions orales, corrige la syntaxe. Tu peux " +
                 "réordonner pour plus de clarté. MAIS tu dois impérativement conserver TOUS les " +
                 "concepts, notions, exemples et détails mentionnés — rien ne doit être perdu. " +
-                "Ne résume pas. Ne commente pas. Ta réponse commence directement par la première " +
-                "phrase du texte réécrit."
+                "Ne résume pas. Ne commente pas."
         },
         new()
         {
@@ -179,15 +192,14 @@ public sealed class LlmSettings
             Model = "ministral-3:14b--instruct--128k",
             Temperature = 0.15,
             NumCtxK = 32,
-            SystemPrompt =
+            SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français où la personne exprime une " +
                 "demande, une réflexion ou un besoin qu'elle veut formuler comme prompt pour un " +
                 "LLM. Réécris-la en prompt structuré et qualitatif : identifie la demande " +
                 "centrale, organise les contraintes et le contexte en points clairs, explicite " +
                 "ce qui est implicite dans le discours oral. Si la personne mentionne des " +
                 "attentes de format (listes, code, etc.), intègre-les. Élimine le superflu oral " +
-                "mais conserve toutes les nuances et tous les points évoqués. Ta réponse est le " +
-                "prompt prêt à envoyer, sans méta-commentaire."
+                "mais conserve toutes les nuances et tous les points évoqués."
         }
     };
 

@@ -1,0 +1,25 @@
+<UserControl
+    x:Class="WhispUI.Settings.Llm.LlmRulesSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                   Text="Auto-rewrite rules" />
+
+        <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   Margin="1,0,0,8"
+                   Text="When you use the plain transcription shortcut (Alt+`), recordings longer than a threshold are automatically rewritten. Rules are listed from shortest to longest — evaluation picks the longest matching threshold first." />
+
+        <!-- Dynamic rule cards are inserted here by code-behind -->
+        <StackPanel x:Name="RulesContainer"
+                    Spacing="{StaticResource SettingsCardSpacing}" />
+
+        <Button x:Name="AddRuleButton"
+                Content="Add rule"
+                Click="AddRule_Click"
+                Margin="0,4,0,0" />
+    </StackPanel>
+</UserControl>
