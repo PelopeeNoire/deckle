@@ -35,6 +35,9 @@ public sealed partial class HudWindow : Window
     // Dimensions Figma (node 64:1699) : 314 × 78.
     private const int HUD_WIDTH  = 314;
     private const int HUD_HEIGHT = 78;
+    // Mode erreur : plus large pour accommoder titre + message sur une ligne
+    // (micro absent / micro occupé). Même hauteur pour rester cohérent visuellement.
+    private const int HUD_WIDTH_ERROR = 480;
     private const int HUD_BOTTOM_MARGIN = 96; // au-dessus de la taskbar
 
     // ── Proximité souris ──────────────────────────────────────────────────────
@@ -82,6 +85,12 @@ public sealed partial class HudWindow : Window
     // ne réagissent pas aux ThemeResource binding).
     private Brush _digitAccentBrush = null!;
     private bool _tMin1, _tMin2, _tSec1, _tSec2, _tCs1, _tCs2;
+
+    // Mode erreur (micro absent/occupé) : swap de layout + auto-hide après
+    // quelques secondes. Le flag gate aussi le calcul de taille dans
+    // ShowNoActivate pour élargir le HUD uniquement en mode erreur.
+    private bool _inErrorMode;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _errorHideTimer;
 
     public HudWindow()
     {
@@ -210,6 +219,16 @@ public sealed partial class HudWindow : Window
 
         EnqueueUI(() =>
         {
+            // Sortir d'un éventuel état d'erreur résiduel (message micro qui
+            // serait encore à l'écran si l'utilisateur relance vite fait).
+            if (_inErrorMode)
+            {
+                _errorHideTimer?.Stop();
+                _inErrorMode = false;
+                ErrorLayout.Visibility = Visibility.Collapsed;
+                NormalLayout.Visibility = Visibility.Visible;
+            }
+
             StatusDot.Fill = _recordingBrush;
             TranscribeRing.IsActive  = false;
             TranscribeRing.Visibility = Visibility.Collapsed;
@@ -275,6 +294,61 @@ public sealed partial class HudWindow : Window
         });
     }
 
+    // Affiche le HUD en mode erreur (micro absent/occupé). Swap de layout :
+    // le chrono et l'indicateur sont cachés, remplacés par une icône critique
+    // + titre + message. Le HUD s'élargit automatiquement (HUD_WIDTH_ERROR)
+    // pour laisser respirer le texte. Auto-hide après 5s — l'utilisateur a le
+    // temps de lire mais n'a pas à cliquer pour fermer.
+    //
+    // Appelé depuis WhispEngine.StartRecording quand le probe waveInOpen
+    // échoue — thread hotkey, donc marshal obligatoire via EnqueueUI.
+    public void ShowError(string title, string body)
+    {
+        if (!Settings.SettingsService.Instance.Current.Overlay.Enabled)
+            return;
+
+        EnqueueUI(() =>
+        {
+            // Arrêt de tout ce qui tourne côté mode normal.
+            if (_clockRenderingHooked)
+            {
+                CompositionTarget.Rendering -= OnClockRendering;
+                _clockRenderingHooked = false;
+            }
+            _stopwatch.Stop();
+            _proximityActive = false;
+            TranscribeRing.IsActive   = false;
+            TranscribeRing.Visibility = Visibility.Collapsed;
+
+            ErrorTitle.Text = title ?? "";
+            ErrorBody.Text  = body  ?? "";
+
+            NormalLayout.Visibility = Visibility.Collapsed;
+            ErrorLayout.Visibility  = Visibility.Visible;
+            _inErrorMode = true;
+
+            IconAssets.ApplyToWindow(AppWindow, recording: false);
+            SetAlphaImmediate(MAX_ALPHA);
+            ShowNoActivate();
+
+            // Timer d'auto-hide. DispatcherQueueTimer (pas System.Timers) pour
+            // que le tick se fasse directement sur le thread UI.
+            _errorHideTimer ??= DispatcherQueue.CreateTimer();
+            _errorHideTimer.Stop();
+            _errorHideTimer.Interval = TimeSpan.FromSeconds(5);
+            _errorHideTimer.IsRepeating = false;
+            _errorHideTimer.Tick -= OnErrorHideTick;
+            _errorHideTimer.Tick += OnErrorHideTick;
+            _errorHideTimer.Start();
+        });
+    }
+
+    private void OnErrorHideTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        sender.Stop();
+        HideCore();
+    }
+
     public void Hide() => EnqueueUI(HideCore);
 
     // Variante bloquante : rendez-vous explicite entre un thread de fond
@@ -308,6 +382,17 @@ public sealed partial class HudWindow : Window
         TranscribeRing.Visibility = Visibility.Collapsed;
         IconAssets.ApplyToWindow(AppWindow, recording: false);
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
+
+        // Sortie de mode erreur : rebascule sur le layout normal pour la
+        // prochaine session d'enregistrement (qui s'ouvrira à la largeur
+        // normale HUD_WIDTH).
+        if (_inErrorMode)
+        {
+            _errorHideTimer?.Stop();
+            _inErrorMode = false;
+            ErrorLayout.Visibility  = Visibility.Collapsed;
+            NormalLayout.Visibility = Visibility.Visible;
+        }
     }
 
     // ── Implémentation ────────────────────────────────────────────────────────
@@ -326,7 +411,8 @@ public sealed partial class HudWindow : Window
 
         uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
         double scale = dpi / 96.0;
-        int w = (int)Math.Round(HUD_WIDTH  * scale);
+        int widthDips = _inErrorMode ? HUD_WIDTH_ERROR : HUD_WIDTH;
+        int w = (int)Math.Round(widthDips * scale);
         int h = (int)Math.Round(HUD_HEIGHT * scale);
         int margin = (int)Math.Round(HUD_BOTTOM_MARGIN * scale);
 

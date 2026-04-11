@@ -100,6 +100,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         _engine.LogWarningLine       += msg => _logWindow.LogWarning(msg);
         _engine.LogErrorLine         += msg => _logWindow.LogError(msg);
         _engine.TranscriptionFinished += () => _hudWindow.Hide();
+        _engine.MicrophoneUnavailable += (title, body) => _hudWindow.ShowError(title, body);
         // Rendez-vous synchrone juste avant le paste : on cache le HUD et on
         // attend que SW_HIDE soit effectif côté thread UI avant que le moteur
         // n'envoie le SendInput. Évite la race où Hide() (déclenché en async

@@ -94,15 +94,29 @@ public sealed class SettingsService
     }
 
     // Résout le dossier où chercher les .bin (modèles Whisper + VAD Silero).
-    // Si l'utilisateur n'a rien défini (défaut), on retombe sur la disposition
-    // historique du dépôt : `../../shared` relatif à l'exe. Centralisé ici pour
-    // qu'un seul endroit connaisse la convention de fallback.
+    // Si l'utilisateur n'a rien défini, on remonte depuis le dossier de l'exe
+    // pour trouver un dossier `shared/` contenant au moins un .bin. Couvre à
+    // la fois la layout publish (exe dans `whisp-ui/publish/`, shared 2 niveaux
+    // plus haut) et la layout dev (exe dans `bin/x64/Release/net10.0-*/`,
+    // shared 6 niveaux plus haut). Sans ça, le combo "Whisper model" restait
+    // vide en dev et n'affichait que le modèle persisté via le filet de sécurité.
     public string ResolveModelsDirectory()
     {
         string user = Current.Paths.ModelsDirectory;
         if (!string.IsNullOrWhiteSpace(user))
             return user;
 
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (int i = 0; i < 8 && dir != null; i++, dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "shared");
+            if (Directory.Exists(candidate) &&
+                Directory.EnumerateFiles(candidate, "*.bin").Any())
+                return candidate;
+        }
+
+        // Rien trouvé : retombe sur le chemin legacy (peut ne pas exister — le
+        // scanner affichera une liste vide, et l'utilisateur devra configurer).
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "shared"));
     }
 

@@ -8,7 +8,10 @@
          stroke dessiné en doublon — sinon double liseré avec l'edge DWM. -->
     <Grid x:Name="RootGrid"
           Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-        <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <!-- Layout "normal" : chrono + indicateur. Caché en mode erreur. -->
+        <Grid x:Name="NormalLayout"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -51,6 +54,38 @@
                                   Visibility="Collapsed" />
                 </Grid>
             </Border>
+        </Grid>
+
+        <!-- Layout "erreur" : icône + titre + message. Visible uniquement
+             quand ShowError() est appelée (micro absent/occupé). Auto-hide
+             après ~5s côté code-behind. -->
+        <Grid x:Name="ErrorLayout"
+              Visibility="Collapsed"
+              Padding="16,10,16,10"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <FontIcon Grid.Column="0"
+                      Glyph="&#xF140;"
+                      FontSize="24"
+                      Margin="4,0,12,0"
+                      VerticalAlignment="Center"
+                      Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                <TextBlock x:Name="ErrorTitle"
+                           Style="{StaticResource BodyStrongTextBlockStyle}"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                <TextBlock x:Name="ErrorBody"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
         </Grid>
     </Grid>
 </Window>

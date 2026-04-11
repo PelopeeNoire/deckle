@@ -1,0 +1,70 @@
+<UserControl
+    x:Class="WhispUI.Settings.Llm.GgufImport.GgufImportView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="12" MinWidth="450">
+        <TextBox x:Name="NameBox"
+                 Header="Model name"
+                 PlaceholderText="my-model:latest"
+                 HorizontalAlignment="Stretch" />
+
+        <StackPanel Spacing="8">
+            <TextBox x:Name="PathBox"
+                     Header="GGUF file path"
+                     PlaceholderText="D:\models\model.gguf"
+                     IsReadOnly="True"
+                     HorizontalAlignment="Stretch" />
+            <Button x:Name="BrowseButton"
+                    Content="Browse..."
+                    Click="BrowseButton_Click" />
+        </StackPanel>
+
+        <TextBox x:Name="TemplateBox"
+                 Header="Template (optional)"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 MinHeight="80"
+                 MaxHeight="200"
+                 FontFamily="Consolas"
+                 PlaceholderText="{}{{ if .System }}...{{ end }}{{ .Prompt }}..."
+                 HorizontalAlignment="Stretch" />
+
+        <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,-4,0,0"
+                   Text="Go template that structures messages for the model. Copy from the model's page on HuggingFace or ollama.com. Leave empty to use the model's built-in template if available." />
+
+        <TextBox x:Name="SystemPromptBox"
+                 Header="System prompt (optional)"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 MinHeight="60"
+                 MaxHeight="150"
+                 PlaceholderText="Default behavior for this model..."
+                 HorizontalAlignment="Stretch" />
+
+        <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,-4,0,0"
+                   Text="Embedded in the model. Overridden by the profile's system prompt if one is set." />
+
+        <ProgressBar x:Name="ProgressBarControl"
+                     IsIndeterminate="True"
+                     Minimum="0"
+                     Maximum="100"
+                     Visibility="Collapsed" />
+
+        <TextBlock x:Name="StatusText"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Visibility="Collapsed" />
+
+        <InfoBar x:Name="ErrorBar"
+                 Severity="Error"
+                 IsOpen="False"
+                 IsClosable="True" />
+    </StackPanel>
+</UserControl>
