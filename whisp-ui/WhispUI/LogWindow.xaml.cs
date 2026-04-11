@@ -165,7 +165,7 @@ public sealed partial class LogWindow : Window
         // Sélection initiale du SelectorBar.
         LevelSelector.SelectedItem = LevelFull;
 
-        Title = "Logs";
+        Title = "WhispUI Logs";
         // Format ~1:2 (vertical) — deux carrés empilés. Tient sur un écran 4K.
         AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
