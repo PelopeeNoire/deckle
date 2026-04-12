@@ -10,8 +10,8 @@
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
-                    <!-- Bleu sémantique Fluent pour Info — pas l'accent système
-                         qui peut être gris / non-bleu chez l'utilisateur. -->
+                    <!-- Semantic Fluent blue for Info — not the system accent
+                         which may be grey / non-blue on the user's machine. -->
                     <ResourceDictionary x:Key="Light">
                         <SolidColorBrush x:Key="LogInfoBrush" Color="#005FB7" />
                     </ResourceDictionary>
@@ -20,13 +20,13 @@
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
 
-                <!-- 5 templates par dimension wrap, swap via DataTemplateSelector
-                     au toggle Wrap. Chaque template fige son Foreground sur un
-                     ThemeResource : WinUI re-résout automatiquement au theme
-                     switch, plus besoin de rebuilder les entrées en code. -->
+                <!-- 5 templates per wrap dimension, swapped via DataTemplateSelector
+                     on Wrap toggle. Each template binds its Foreground to a
+                     ThemeResource: WinUI re-resolves automatically on theme
+                     switch, no need to rebuild entries in code. -->
                 <DataTemplate x:Key="NoWrap_Verbose">
                     <TextBlock Text="{Binding Text}"
-                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                FontFamily="Consolas" FontSize="12"
                                TextWrapping="NoWrap" />
                 </DataTemplate>
@@ -57,7 +57,7 @@
 
                 <DataTemplate x:Key="Wrap_Verbose">
                     <TextBlock Text="{Binding Text}"
-                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                FontFamily="Consolas" FontSize="12"
                                TextWrapping="Wrap" />
                 </DataTemplate>
@@ -99,8 +99,8 @@
                     Warning="{StaticResource Wrap_Warning}"
                     Error="{StaticResource Wrap_Error}" />
 
-                <!-- Container compact pour un rendu log dense : padding réduit,
-                     hover highlight conservé (signale le clic-to-copy). -->
+                <!-- Compact container for dense log rendering: reduced padding,
+                     hover highlight preserved (signals click-to-copy). -->
                 <Style x:Key="LogItemContainerStyle" TargetType="ListViewItem">
                     <Setter Property="MinHeight" Value="0" />
                     <Setter Property="Padding" Value="4,1" />
@@ -115,9 +115,9 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- ── Title bar natif (Windows App SDK 1.6+) ─────────────────────── -->
-        <!-- Le contrôle TitleBar gère drag region, caption buttons themés,
-             hauteur, et expose un slot Content où on place la SearchBox. -->
+        <!-- ── Native title bar (Windows App SDK 1.6+) ────────────────────── -->
+        <!-- The TitleBar control handles drag region, themed caption buttons,
+             height, and exposes a Content slot where we place the SearchBox. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
                   Title="WhispUI Logs">
@@ -125,14 +125,14 @@
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <!-- AutoSuggestBox unique. Le TitleBar priorise la largeur de
-                     son Content vs caption buttons, et l'AutoSuggestBox
-                     rétrécit naturellement jusqu'à MinWidth. Pas de swap
-                     icône/field custom — pattern Win11 Settings. -->
+                <!-- Single AutoSuggestBox. The TitleBar prioritizes its Content
+                     width vs caption buttons, and the AutoSuggestBox shrinks
+                     naturally down to MinWidth. No custom icon/field swap
+                     — Win11 Settings pattern. -->
                 <AutoSuggestBox x:Name="SearchBox"
                                 QueryIcon="Find"
                                 PlaceholderText="Search logs"
-                                MinWidth="240"
+                                MinWidth="140"
                                 MaxWidth="760"
                                 HorizontalAlignment="Stretch"
                                 VerticalAlignment="Center"
@@ -140,7 +140,7 @@
             </TitleBar.Content>
         </TitleBar>
 
-        <!-- ── Command bar : selector niveau + actions ──────────────────── -->
+        <!-- ── Command bar: level selector + actions ─────────────────────── -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
@@ -157,11 +157,11 @@
                 <controls:SelectorBarItem x:Name="LevelCritical" Text="Errors" />
             </controls:SelectorBar>
 
-            <!-- Migration native via IsDynamicOverflowEnabled (true par défaut)
-                 + DynamicOverflowOrder. Plus haut = migre en premier.
-                 Groupe 2 (Copy/Save/Clear/Sep) part en premier, puis groupe 1
-                 (AutoScroll/Wrap). La CommandBar gère elle-même mesure, popup
-                 et placement. -->
+            <!-- Native overflow via IsDynamicOverflowEnabled (true by default)
+                 + DynamicOverflowOrder. Higher = migrates first.
+                 Group 2 (Copy/Save/Clear/Sep) goes first, then group 1
+                 (AutoScroll/Wrap). The CommandBar handles measure, popup
+                 and placement itself. -->
             <CommandBar Grid.Column="1"
                         x:Name="MainCommandBar"
                         DefaultLabelPosition="Right"
@@ -169,48 +169,47 @@
                         Background="Transparent"
                         IsOpen="False">
                 <AppBarButton x:Name="CopyButton" Label="Copy"
-                              DynamicOverflowOrder="2" Click="OnCopyClick">
+                              Click="OnCopyClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE8C8;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton x:Name="SaveButton" Label="Save"
-                              DynamicOverflowOrder="2" Click="OnSaveClick">
+                              Click="OnSaveClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE74E;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton x:Name="ClearButton" Label="Clear"
-                              DynamicOverflowOrder="2" Click="OnClearClick">
+                              Click="OnClearClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE74D;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarSeparator DynamicOverflowOrder="2" />
-                <AppBarToggleButton x:Name="AutoScrollToggle"
-                                    Label="Auto-scroll"
-                                    DynamicOverflowOrder="1"
-                                    IsChecked="True">
-                    <AppBarToggleButton.Icon>
-                        <FontIcon Glyph="&#xEC8F;" />
-                    </AppBarToggleButton.Icon>
-                </AppBarToggleButton>
-                <AppBarToggleButton x:Name="WrapToggle"
-                                    Label="Word wrap"
-                                    DynamicOverflowOrder="1"
-                                    IsChecked="False"
-                                    Click="OnWrapToggleClick">
-                    <AppBarToggleButton.Icon>
-                        <FontIcon Glyph="&#xE751;" />
-                    </AppBarToggleButton.Icon>
-                </AppBarToggleButton>
+                <CommandBar.SecondaryCommands>
+                    <AppBarToggleButton x:Name="AutoScrollToggle"
+                                        Label="Auto-scroll"
+                                        IsChecked="True">
+                        <AppBarToggleButton.Icon>
+                            <FontIcon Glyph="&#xEC8F;" />
+                        </AppBarToggleButton.Icon>
+                    </AppBarToggleButton>
+                    <AppBarToggleButton x:Name="WrapToggle"
+                                        Label="Word wrap"
+                                        IsChecked="False"
+                                        Click="OnWrapToggleClick">
+                        <AppBarToggleButton.Icon>
+                            <FontIcon Glyph="&#xE751;" />
+                        </AppBarToggleButton.Icon>
+                    </AppBarToggleButton>
+                </CommandBar.SecondaryCommands>
             </CommandBar>
         </Grid>
 
-        <!-- ── Surface logs ─────────────────────────────────────────────── -->
-        <!-- ListView natif : virtualisation, scroll intégré, ItemTemplateSelector
-             honoré. Clic gauche = copie la ligne, clic droit = MenuFlyout natif.
-             Badge flottant "Copy" positionné à droite de l'item survolé. -->
+        <!-- ── Log surface ────────────────────────────────────────────────── -->
+        <!-- Native ListView: virtualization, built-in scroll, ItemTemplateSelector
+             honored. Left click = copy line, right click = native MenuFlyout.
+             Floating "Copy" badge positioned to the right of the hovered item. -->
         <Grid Grid.Row="2" x:Name="LogSurface">
             <ListView x:Name="LogItems"
                       Background="{ThemeResource LayerFillColorDefaultBrush}"
@@ -227,11 +226,11 @@
                       ScrollViewer.HorizontalScrollMode="Enabled"
                       ScrollViewer.VerticalScrollBarVisibility="Auto" />
 
-            <!-- Badge flottant "Copy" / "Copy selection" — positionné par code
-                 à droite de l'item survolé. Fond 100% opaque (SolidBackgroundFill
-                 Base) pour masquer complètement le texte et le surligné de
-                 sélection qui passent dessous. IsHitTestVisible=False pour
-                 laisser les clics traverser au ListView. -->
+            <!-- Floating "Copy" / "Copy selection" badge — positioned by code
+                 to the right of the hovered item. Fully opaque background
+                 (SolidBackgroundFillBase) to completely mask the text and
+                 selection highlight underneath. IsHitTestVisible=False to
+                 let clicks pass through to the ListView. -->
             <Border x:Name="CopyBadge"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"

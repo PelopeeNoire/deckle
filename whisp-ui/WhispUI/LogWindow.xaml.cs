@@ -16,24 +16,20 @@ using WinRT.Interop;
 
 namespace WhispUI;
 
-// ─── Niveaux de log ───────────────────────────────────────────────────────────
-// Step  : étapes importantes du workflow, marquées explicitement par le code
-//         pour la vue Activity (ce qui s'est passé proprement).
-// Errors (selector) = Warning + Error.
-// LogWarning/LogStep sont exposés mais pas encore appelés par WhispEngine —
-// l'API est prête pour la passe debug à venir.
-// Verbose : bruit de fond (heartbeats, dumps par segment, plomberie clipboard…) —
-//           visible uniquement en mode All.
-// Info    : étapes du déroulé qu'on veut voir en Activity (lancements, codes
-//           retour, textes, copies, paste).
-// Step    : jalons rares et vérifiés (modèle chargé, bout en bout OK).
+// ─── Log levels ──────────────────────────────────────────────────────────────
+// Verbose : background noise (heartbeats, per-segment dumps, clipboard plumbing)
+//           — only visible in "All" filter.
+// Info    : normal workflow events (recording, return codes, text, copy, paste).
+// Step    : rare verified milestones (model loaded, end-to-end OK).
+// Warning : non-fatal issues (focus loss, empty buffers, repetition detected).
+// Error   : failures (init errors, transcription failures, mic unavailable).
 public enum LogLevel { Verbose, Info, Step, Warning, Error }
 
-// Mode du SelectorBar — un seul actif à la fois (sélection exclusive native).
+// SelectorBar mode — single active at a time (native exclusive selection).
 internal enum LogFilterMode { All, Steps, Critical }
 
-// Selector par niveau — 5 templates par dimension wrap. Instancié deux fois
-// dans les ressources XAML (NoWrapSelector / WrapSelector), swap au toggle.
+// Level-based template selector — 5 templates per wrap dimension. Instantiated
+// twice in XAML resources (NoWrapSelector / WrapSelector), swapped on toggle.
 public sealed class LogLevelTemplateSelector : DataTemplateSelector
 {
     public DataTemplate? Verbose { get; set; }
@@ -65,34 +61,40 @@ public sealed class LogLevelTemplateSelector : DataTemplateSelector
     }
 }
 
-// ─── Fenêtre de logs ──────────────────────────────────────────────────────────
+// ─── Log window ──────────────────────────────────────────────────────────────
 //
-// Title bar custom (ExtendsContentIntoTitleBar) avec champ de recherche centré.
-// Mica + thème système (light/dark auto, pas de RequestedTheme forcé).
+// Custom title bar (ExtendsContentIntoTitleBar) with centered search field.
+// Mica + system theme (light/dark auto, no forced RequestedTheme).
 // SelectorBar All/Activity/Errors.
-// CommandBar : Copy/Save/Clear (boutons) + Auto-scroll/Word wrap (toggles).
-// Recherche live via AutoSuggestBox.
+// CommandBar: Copy/Save/Clear (buttons) + Auto-scroll/Word wrap (toggles).
+// Live search via AutoSuggestBox.
 //
-// Modèle :
-//   _entries : tampon complet (cap 5000)
-//   _visible : sous-ensemble affiché (filtre niveau + recherche)
-// Copy/Save opèrent sur _visible — l'utilisateur copie ce qu'il voit.
-//
-// Brushes : résolus depuis les theme resources Windows une fois en constructeur.
-// Si l'utilisateur change le thème système pendant que la fenêtre est ouverte,
-// les anciennes entrées gardent leurs brushes — acceptable pour du debug.
+// Model:
+//   _entries : full buffer (cap 5000)
+//   _visible : displayed subset (level filter + search)
+// Copy/Save operate on _visible — the user copies what they see.
 
 public sealed partial class LogWindow : Window
 {
     internal sealed class LogEntry
     {
-        public string Text { get; }
+        public DateTimeOffset Timestamp { get; }
+        public string Source { get; }
+        public string Message { get; }
         public LogLevel Level { get; }
 
-        public LogEntry(string text, LogLevel level)
+        /// <summary>Formatted display text, computed once at creation.</summary>
+        public string Text { get; }
+
+        public LogEntry(string source, string message, LogLevel level)
         {
-            Text = text;
+            Timestamp = DateTimeOffset.Now;
+            Source = source;
+            Message = message;
             Level = level;
+            Text = source.Length > 0
+                ? $"{Timestamp:HH:mm:ss.fff} [{Source}] {Message}"
+                : $"{Timestamp:HH:mm:ss.fff} {Message}";
         }
     }
 
@@ -101,8 +103,8 @@ public sealed partial class LogWindow : Window
     private readonly IntPtr _hwnd;
     private bool _isVisible;
 
-    // Icônes app — mêmes assets que TrayIconManager via IconAssets.
-    // Source de vérité unique : changer un .ico le propage tray + beacon + window icon.
+    // App icons — same assets as TrayIconManager via IconAssets.
+    // Single source of truth: changing an .ico propagates to tray + beacon + window icon.
     private BitmapImage? _iconIdle;
     private BitmapImage? _iconRecording;
     private string? _iconIdlePath;
@@ -122,17 +124,17 @@ public sealed partial class LogWindow : Window
 
         LogItems.ItemsSource = _visible;
 
-        // Shift+molette → scroll horizontal. Le ScrollViewer interne du ListView
-        // marque PointerWheelChanged comme handled ; AddHandler avec
-        // handledEventsToo=true pour intercepter quand même.
+        // Shift+wheel → horizontal scroll. The ListView's internal ScrollViewer
+        // marks PointerWheelChanged as handled; AddHandler with
+        // handledEventsToo=true to intercept anyway.
         LogItems.AddHandler(
             UIElement.PointerWheelChangedEvent,
             new PointerEventHandler(OnLogPointerWheel),
             handledEventsToo: true);
 
-        // Clic-to-copy + drag-to-select : PointerPressed/Released sont marqués
-        // handled par le ListView pour sa propre gestion de sélection, donc
-        // AddHandler avec handledEventsToo=true.
+        // Click-to-copy + drag-to-select: PointerPressed/Released are marked
+        // handled by the ListView for its own selection management, so
+        // AddHandler with handledEventsToo=true.
         LogItems.AddHandler(
             UIElement.PointerPressedEvent,
             new PointerEventHandler(OnLogPointerPressed),
@@ -142,37 +144,37 @@ public sealed partial class LogWindow : Window
             new PointerEventHandler(OnLogPointerReleased),
             handledEventsToo: true);
 
-        // Icônes app : résolues une fois, partagées avec le tray.
+        // App icons: resolved once, shared with tray.
         LoadAppIcons();
         AppTitleBarIcon.ImageSource = _iconIdle;
         if (_iconIdlePath is not null) AppWindow.SetIcon(_iconIdlePath);
 
-        // Title bar natif : ExtendsContentIntoTitleBar + SetTitleBar reste requis
-        // pour que le contrôle TitleBar remplace la system title bar. Hauteur,
-        // drag region, caption buttons themés sont gérés par le contrôle.
+        // Native title bar: ExtendsContentIntoTitleBar + SetTitleBar is still
+        // required for the TitleBar control to replace the system title bar.
+        // Height, drag region, themed caption buttons are handled by the control.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        // Caption buttons Tall pour rester alignés avec le contenu interactif
-        // (SearchBox) du TitleBar. Le contrôle TitleBar gère la hauteur de son
-        // propre chrome, mais les caption buttons système restent pilotés par
+        // Tall caption buttons to stay aligned with the interactive content
+        // (SearchBox) in the TitleBar. The TitleBar control manages its own
+        // chrome height, but system caption buttons are still driven by
         // AppWindow.TitleBar.PreferredHeightOption.
         AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
 
-        // Mica : fond translucide qui prend les couleurs du thème système.
-        // Win11 requis (OK ici) ; sinon fallback transparent.
+        // Mica: translucent backdrop that follows system theme colors.
+        // Win11 required (OK here); falls back to transparent otherwise.
         SystemBackdrop = new MicaBackdrop();
 
-        // Sélection initiale du SelectorBar.
+        // Initial SelectorBar selection.
         LevelSelector.SelectedItem = LevelFull;
 
         Title = "WhispUI Logs";
-        // Format ~1:2 (vertical) — deux carrés empilés. Tient sur un écran 4K.
+        // ~1:2 aspect ratio (vertical) — two stacked squares. Fits on a 4K display.
         AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
-        // Fenêtre classique : min, max, resize.
-        // Min size : empêche que la barre de commandes responsive soit
-        // écrasée en dessous du seuil le plus serré (400 px = tout dans
-        // le flyout More, search masquée).
+        // Standard window: min, max, resize.
+        // Min size: prevents the responsive command bar from being crushed
+        // below its tightest threshold (400 px = everything in the More
+        // flyout, search hidden).
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
@@ -181,7 +183,7 @@ public sealed partial class LogWindow : Window
         presenter.PreferredMinimumHeight = 300;
         AppWindow.SetPresenter(presenter);
 
-        // Close → cache, ne détruit pas. L'instance est réutilisée via le tray.
+        // Close → hide, don't destroy. The instance is reused via tray.
         AppWindow.Closing += (_, args) =>
         {
             args.Cancel = true;
@@ -190,13 +192,13 @@ public sealed partial class LogWindow : Window
         };
     }
 
-    // ── API publique (thread-safe) ────────────────────────────────────────────
+    // ── Public API (thread-safe) ─────────────────────────────────────────────
 
-    public void LogVerbose(string message) => AppendEntry(message, LogLevel.Verbose);
-    public void Log(string message)        => AppendEntry(message, LogLevel.Info);
-    public void LogStep(string message)    => AppendEntry(message, LogLevel.Step);
-    public void LogWarning(string message) => AppendEntry(message, LogLevel.Warning);
-    public void LogError(string message)   => AppendEntry(message, LogLevel.Error);
+    public void LogVerbose(string source, string message) => AppendEntry(source, message, LogLevel.Verbose);
+    public void Log(string source, string message)        => AppendEntry(source, message, LogLevel.Info);
+    public void LogStep(string source, string message)    => AppendEntry(source, message, LogLevel.Step);
+    public void LogWarning(string source, string message) => AppendEntry(source, message, LogLevel.Warning);
+    public void LogError(string source, string message)   => AppendEntry(source, message, LogLevel.Error);
 
     public void Clear()
     {
@@ -204,8 +206,8 @@ public sealed partial class LogWindow : Window
         else DispatcherQueue.TryEnqueue(ClearAll);
     }
 
-    // Beacon "icône d'app" (rouge enregistrement / gris idle). Appelé depuis
-    // le StatusChanged de WhispEngine via App.xaml.cs. Thread-safe.
+    // Beacon app icon (red = recording / grey = idle). Called from
+    // WhispEngine.StatusChanged via App.xaml.cs. Thread-safe.
     public void SetRecordingState(bool isRecording)
     {
         if (DispatcherQueue.HasThreadAccess) ApplyRecordingState(isRecording);
@@ -215,16 +217,16 @@ public sealed partial class LogWindow : Window
     private void ApplyRecordingState(bool isRecording)
     {
         _isRecording = isRecording;
-        // Muter ImageSource in-place sur l'ImageIconSource existant ne propage
-        // pas visuellement au TitleBar (pas de PropertyChanged routé). Fix :
-        // reconstruire un ImageIconSource complet et réassigner IconSource.
+        // Mutating ImageSource in-place on the existing ImageIconSource does not
+        // propagate visually to TitleBar (no routed PropertyChanged). Fix:
+        // rebuild a complete ImageIconSource and reassign IconSource.
         AppTitleBar.IconSource = new Microsoft.UI.Xaml.Controls.ImageIconSource
         {
             ImageSource = isRecording ? _iconRecording : _iconIdle,
         };
 
-        // Icône de fenêtre (titlebar Windows + taskbar + alt-tab) : suit le
-        // même état. AppWindow.SetIcon attend un chemin .ico sur disque.
+        // Window icon (titlebar + taskbar + alt-tab): follows the same state.
+        // AppWindow.SetIcon expects an .ico file path on disk.
         var path = isRecording ? _iconRecordingPath : _iconIdlePath;
         if (path is not null) AppWindow.SetIcon(path);
     }
@@ -237,12 +239,12 @@ public sealed partial class LogWindow : Window
         if (_iconIdlePath is not null)
             _iconIdle = new BitmapImage(new Uri(_iconIdlePath));
         else
-            DebugLog.Write("LOGWIN", "icône idle introuvable");
+            DebugLog.Write("LOGWIN", "idle icon not found");
 
         if (_iconRecordingPath is not null)
             _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
         else
-            DebugLog.Write("LOGWIN", "icône recording introuvable");
+            DebugLog.Write("LOGWIN", "recording icon not found");
     }
 
     private void ClearAll()
@@ -252,7 +254,7 @@ public sealed partial class LogWindow : Window
         _itemsPanel = null;
     }
 
-    // Ouverture depuis le tray : restore si minimisée, affiche, active.
+    // Open from tray: restore if minimized, show, activate.
     public void ShowAndActivate()
     {
         _isVisible = true;
@@ -266,18 +268,17 @@ public sealed partial class LogWindow : Window
         AppWindow.Show();
         this.Activate();
 
-        // WinUI 3 : Activate() ne ramène pas toujours la fenêtre au premier
-        // plan quand l'appel vient d'un callback tray. SetForegroundWindow
-        // depuis le même process est autorisé (l'AnchorWindow détient déjà
-        // le foreground).
+        // WinUI 3: Activate() doesn't always bring the window to front when
+        // called from a tray callback. SetForegroundWindow from the same
+        // process is allowed (AnchorWindow already holds foreground).
         NativeMethods.SetForegroundWindow(_hwnd);
     }
 
-    // ── Implémentation ────────────────────────────────────────────────────────
+    // ── Implementation ─────────────────────────────────────────────────────────
 
-    private void AppendEntry(string message, LogLevel level)
+    private void AppendEntry(string source, string message, LogLevel level)
     {
-        var entry = new LogEntry(message, level);
+        var entry = new LogEntry(source, message, level);
         if (DispatcherQueue.HasThreadAccess) AddEntrySafe(entry);
         else DispatcherQueue.TryEnqueue(() => AddEntrySafe(entry));
     }
@@ -291,8 +292,8 @@ public sealed partial class LogWindow : Window
         {
             var removed = _entries[0];
             _entries.RemoveAt(0);
-            // Ref equality (LogEntry est une classe) → pas de collision possible
-            // sur deux entrées au même texte.
+            // Ref equality (LogEntry is a class) → no collision possible
+            // on two entries with the same text.
             _visible.Remove(removed);
         }
 
@@ -306,10 +307,10 @@ public sealed partial class LogWindow : Window
 
     private bool Matches(LogEntry e)
     {
-        // Filtre niveau :
-        //   All      → tout passe (y compris Verbose)
-        //   Steps    → Activity : Info + Step + Warning + Error (Verbose masqué)
-        //   Critical → Errors : Warning + Error uniquement
+        // Level filter:
+        //   All      → everything passes (including Verbose)
+        //   Steps    → Activity: Info + Step + Warning + Error (Verbose hidden)
+        //   Critical → Errors: Warning + Error only
         bool levelOk = _filterMode switch
         {
             LogFilterMode.All      => true,
@@ -351,8 +352,8 @@ public sealed partial class LogWindow : Window
 
     private ScrollViewer? GetListViewScrollViewer()
     {
-        // Le ScrollViewer interne du ListView n'est disponible qu'après le premier
-        // layout. On le cherche dans l'arbre visuel et on le cache.
+        // The ListView's internal ScrollViewer is only available after the first
+        // layout pass. We find it in the visual tree and cache it.
         if (_listScrollViewer is not null) return _listScrollViewer;
         _listScrollViewer = FindDescendant<ScrollViewer>(LogItems);
         return _listScrollViewer;
@@ -373,25 +374,25 @@ public sealed partial class LogWindow : Window
 
     private void OnLogPointerWheel(object sender, PointerRoutedEventArgs e)
     {
-        // Cacher le badge Copy pendant le scroll.
+        // Hide Copy badge during scroll.
         CopyBadge.Visibility = Visibility.Collapsed;
 
-        // Shift non pressé → laisser le ScrollViewer faire son scroll vertical natif.
+        // Shift not pressed → let the ScrollViewer handle native vertical scroll.
         var mods = e.KeyModifiers;
         if ((mods & VirtualKeyModifiers.Shift) == 0) return;
 
         var sv = GetListViewScrollViewer();
         if (sv is null) return;
 
-        // En mode wrap, le scroll horizontal est désactivé : rien à faire.
+        // In wrap mode, horizontal scroll is disabled: nothing to do.
         if (sv.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
 
         var point = e.GetCurrentPoint(LogItems);
         int delta = point.Properties.MouseWheelDelta;
         if (delta == 0) return;
 
-        // Convention Windows : 120 unités = un cran. On scrolle ~80 px par cran,
-        // dans le sens inverse du delta (delta>0 = molette vers le haut = scroll vers la gauche).
+        // Windows convention: 120 units = one notch. Scroll ~80 px per notch,
+        // inverted from delta (delta>0 = wheel up = scroll left).
         double offset = sv.HorizontalOffset - (delta / 120.0) * 80.0;
         if (offset < 0) offset = 0;
         if (offset > sv.ScrollableWidth) offset = sv.ScrollableWidth;
@@ -408,14 +409,14 @@ public sealed partial class LogWindow : Window
         string key = wrap ? "WrapSelector" : "NoWrapSelector";
         LogItems.ItemTemplateSelector = (DataTemplateSelector)RootGrid.Resources[key];
 
-        // En mode wrap : couper le scroll horizontal pour que le ScrollViewer
-        // donne une largeur finie à son contenu (sinon TextWrapping ne sait pas
-        // où couper). Propriété attachée sur le ListView.
+        // In wrap mode: disable horizontal scroll so the ScrollViewer gives
+        // finite width to its content (otherwise TextWrapping doesn't know
+        // where to break). Attached property on the ListView.
         ScrollViewer.SetHorizontalScrollBarVisibility(LogItems,
             wrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
 
-        // Invalider le cache du ScrollViewer interne (le même objet, mais
-        // sa visibility change).
+        // Invalidate the internal ScrollViewer cache (same object, but
+        // its visibility changed).
         _listScrollViewer = null;
     }
 
@@ -435,12 +436,12 @@ public sealed partial class LogWindow : Window
         ApplyFilter();
     }
 
-    // ── Clic-to-copy + drag-to-select + badge flottant ─────────────────────
+    // ── Click-to-copy + drag-to-select + floating badge ────────────────────
     //
-    // Hover : badge "Copy" à droite de la ligne survolée.
-    // Clic simple (press+release) : copie 1 ligne, feedback "Copied".
-    // Clic+drag : sélection visuelle (Extended) des lignes traversées,
-    //   badge "Copy selection", copie au relâchement, déselection.
+    // Hover: "Copy" badge to the right of the hovered line.
+    // Simple click (press+release): copies 1 line, "Copied" feedback.
+    // Click+drag: visual selection (Extended) of traversed lines,
+    //   "Copy selection" badge, copies on release, deselects.
 
     private bool _isDragging;
     private int _dragStartIndex = -1;
@@ -468,7 +469,7 @@ public sealed partial class LogWindow : Window
             return;
         }
 
-        // Positionner le badge à droite de l'item sous le pointeur.
+        // Position badge to the right of the item under the pointer.
         var transform = container.TransformToVisual(LogSurface);
         var pos = transform.TransformPoint(default);
         CopyBadgeTransform.Y = pos.Y + (container.ActualHeight - CopyBadge.ActualHeight) / 2;
@@ -482,7 +483,7 @@ public sealed partial class LogWindow : Window
                 int start = Math.Min(_dragStartIndex, currentIndex);
                 int end = Math.Max(_dragStartIndex, currentIndex);
 
-                // Sélection visuelle native via SelectRange (Extended mode).
+                // Native visual selection via SelectRange (Extended mode).
                 LogItems.DeselectRange(new ItemIndexRange(0, (uint)_visible.Count));
                 LogItems.SelectRange(new ItemIndexRange(start, (uint)(end - start + 1)));
 
@@ -500,7 +501,7 @@ public sealed partial class LogWindow : Window
         if (!_isDragging) return;
         _isDragging = false;
 
-        // Copier toutes les lignes sélectionnées, dans l'ordre d'affichage.
+        // Copy all selected lines in display order.
         var selected = LogItems.SelectedItems;
         if (selected.Count > 0)
         {
@@ -514,7 +515,7 @@ public sealed partial class LogWindow : Window
             ShowCopiedFeedback();
         }
 
-        // Déselection complète — rien ne persiste.
+        // Full deselection — nothing persists.
         if (_visible.Count > 0)
             LogItems.DeselectRange(new ItemIndexRange(0, (uint)_visible.Count));
         _dragStartIndex = -1;
@@ -563,11 +564,11 @@ public sealed partial class LogWindow : Window
             CopyBadgeText.Text = "Copy";
     }
 
-    // ── Bouton Copy (CommandBar) ─────────────────────────────────────────────
+    // ── Copy button (CommandBar) ─────────────────────────────────────────────
 
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
-        // Copie toutes les entrées visibles.
+        // Copy all visible entries.
         var sb = new StringBuilder();
         foreach (var entry in _visible) sb.AppendLine(entry.Text);
         CopyToClipboard(sb.ToString());
@@ -578,7 +579,7 @@ public sealed partial class LogWindow : Window
         try
         {
             var picker = new FileSavePicker();
-            // WinUI 3 unpackaged : le picker a besoin du HWND parent.
+            // WinUI 3 unpackaged: the picker needs the parent HWND.
             InitializeWithWindow.Initialize(picker, _hwnd);
             picker.SuggestedFileName = $"whisp-logs-{DateTime.Now:yyyyMMdd-HHmmss}";
             picker.FileTypeChoices.Add("Text", new List<string> { ".txt" });

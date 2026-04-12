@@ -2,43 +2,43 @@ using System.Runtime.InteropServices;
 
 namespace WhispUI;
 
-// ─── Moteur de transcription ──────────────────────────────────────────────────
+// ─── Transcription engine ─────────────────────────────────────────────────────
 //
-// Port du moteur de WhispInteropTest (WhispForm) vers une classe autonome.
-// Indépendant de tout framework UI — communique via des événements.
-// Les événements peuvent être déclenchés depuis un thread de fond :
-// les abonnés sont responsables du marshaling vers le thread UI.
+// Ported from WhispInteropTest (WhispForm) into a standalone class.
+// UI-framework independent — communicates via events.
+// Events may fire from background threads: subscribers are responsible
+// for marshaling to the UI thread.
 
 internal sealed class WhispEngine : IDisposable
 {
-    // ── Événements ────────────────────────────────────────────────────────────
+    // ── Events ────────────────────────────────────────────────────────────────
 
-    // Déclenché depuis le thread de chargement ou depuis StartRecording/Transcribe.
-    // L'abonné doit marshaler vers le thread UI via DispatcherQueue.TryEnqueue.
+    // Fired from the loading thread or from StartRecording/Transcribe.
+    // Subscriber must marshal to UI thread via DispatcherQueue.TryEnqueue.
     public event Action<string>?  StatusChanged;
 
-    // Logs textuels (thread de fond → LogWindow).
-    public event Action<string>?  LogVerboseLine;
-    public event Action<string>?  LogLine;
-    public event Action<string>?  LogStepLine;
-    public event Action<string>?  LogWarningLine;
-    public event Action<string>?  LogErrorLine;
+    // Structured log events (background thread → LogWindow).
+    // Parameters: (source, message). Timestamp is assigned by LogWindow.
+    public event Action<string, string>?  LogVerboseLine;
+    public event Action<string, string>?  LogLine;
+    public event Action<string, string>?  LogStepLine;
+    public event Action<string, string>?  LogWarningLine;
+    public event Action<string, string>?  LogErrorLine;
 
-    // Levé en toute fin de Transcribe(), quel que soit le chemin de sortie
-    // (modèle non prêt, texte vide, sortie normale). Utilisé par le HUD
-    // pour se masquer. Thread de fond → abonné responsable du marshaling.
+    // Fired at the very end of Transcribe(), regardless of exit path
+    // (model not ready, empty text, normal exit). Used by HUD to hide.
+    // Background thread → subscriber responsible for marshaling.
     public event Action?          TranscriptionFinished;
 
-    // Levé quand StartRecording détecte (via probe waveInOpen) que le
-    // périphérique audio est indisponible. L'abonné (HudWindow) affiche un
-    // message d'erreur explicite à la place du chrono. Thread hotkey →
-    // abonné responsable du marshaling.
+    // Fired when StartRecording detects (via waveInOpen probe) that the
+    // audio device is unavailable. Subscriber (HudWindow) shows an explicit
+    // error message instead of the chrono. Hotkey thread → subscriber
+    // responsible for marshaling.
     public event Action<string, string>? MicrophoneUnavailable;
 
-    // Rendez-vous synchrone juste avant PasteFromClipboard. L'appelant
-    // (App.xaml.cs) y branche HudWindow.HideSync() pour garantir qu'aucune
-    // mutation d'activation côté WhispUI ne survienne pendant que SendInput
-    // est en vol vers la cible.
+    // Synchronous rendezvous just before PasteFromClipboard. The caller
+    // (App.xaml.cs) hooks HudWindow.HideSync() to ensure no activation
+    // mutation from WhispUI occurs while SendInput is in flight to the target.
     public Action? OnReadyToPaste { get; set; }
 
     // ── Configuration ─────────────────────────────────────────────────────────
@@ -46,13 +46,13 @@ internal sealed class WhispEngine : IDisposable
     const string MODEL_FILE     = "ggml-large-v3.bin";
     const string DEFAULT_MODEL  = @"D:\projects\ai\transcription\shared\" + MODEL_FILE;
 
-    // ── État interne ──────────────────────────────────────────────────────────
+    // ── Internal state ───────────────────────────────────────────────────────
 
     private readonly string     _modelPath;
     private readonly LlmService _llm;
 
-    // volatile : interdit au compilateur de mettre ces valeurs en cache CPU.
-    // Sans volatile, un thread de fond pourrait lire une valeur obsolète.
+    // volatile: prevents the compiler from caching these values in CPU registers.
+    // Without volatile, a background thread could read a stale value.
     private volatile IntPtr _ctx           = IntPtr.Zero;
     private volatile bool   _isRecording   = false;
     private volatile bool   _stopRecording = false;
@@ -60,29 +60,29 @@ internal sealed class WhispEngine : IDisposable
     private volatile bool   _useLlm        = false;
     private volatile IntPtr _pasteTarget   = IntPtr.Zero;
 
-    // Segments produits par Whisper pendant whisper_full() via le callback natif.
-    // Accumulés au fil de l'eau depuis le thread d'inférence whisper.cpp — protégés
-    // par lock car le callback tourne sur un thread différent du nôtre. Sert à la
-    // fois de récupération progressive (logs) et de source pour le texte final.
+    // Segments produced by Whisper during whisper_full() via native callback.
+    // Accumulated progressively from the whisper.cpp inference thread — protected
+    // by lock since the callback runs on a different thread. Serves both as
+    // progressive recovery (logs) and source for the final text.
     private readonly List<TranscribedSegment> _segments = new();
     private readonly object _segmentsLock = new();
 
-    // Délégué stocké en champ d'instance pour empêcher le GC de le ramasser
-    // pendant que whisper.cpp détient son pointeur natif (même piège que SubclassProc).
+    // Delegate stored as instance field to prevent the GC from collecting it
+    // while whisper.cpp holds its native pointer (same pitfall as SubclassProc).
     private WhisperNewSegmentCallback? _newSegmentCallback;
 
-    // Callback whisper_log_set — même contrainte GC. Stocké à vie puisque le
-    // hook est global (process-wide) et installé une fois au démarrage.
+    // whisper_log_set callback — same GC constraint. Stored for lifetime since
+    // the hook is global (process-wide) and installed once at startup.
     private NativeMethods.WhisperLogCallback? _whisperLogCallback;
 
-    // Borne basse des ids de tokens timestamp pour le modèle courant. Cachée au début
-    // de chaque Transcribe et lue par OnNewSegment pour filtrer les tokens non-texte.
+    // Lower bound of timestamp token IDs for the current model. Cached at the
+    // start of each Transcribe and read by OnNewSegment to filter non-text tokens.
     private int _tokenBeg;
 
-    // t1 du segment précédent (centisecondes), pour calculer le gap inter-segments
-    // dans OnNewSegment. Reset à -1 au début de chaque Transcribe — la 1re itération
-    // affiche alors gap=+0,0s par convention. Lu/écrit uniquement depuis le thread
-    // d'inférence whisper.cpp (callback séquentiel), pas besoin de lock.
+    // t1 of the previous segment (centiseconds), used to compute inter-segment
+    // gap in OnNewSegment. Reset to -1 at the start of each Transcribe — first
+    // iteration shows gap=+0.0s by convention. Read/written only from the
+    // whisper.cpp inference thread (sequential callback), no lock needed.
     private long _lastSegmentT1;
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -90,38 +90,38 @@ internal sealed class WhispEngine : IDisposable
 
     private readonly record struct TranscribedSegment(string Text, long T0, long T1, float NoSpeechProb);
 
-    // Chronomètre démarré au début de chaque enregistrement (utilisé pour les logs).
+    // Stopwatch started at the beginning of each recording (used for logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
 
     private bool _disposed;
 
-    // ── Propriétés observables ─────────────────────────────────────────────────
+    // ── Observable properties ──────────────────────────────────────────────────
 
     public bool IsReady     => _ctx != IntPtr.Zero;
     public bool IsRecording => _isRecording;
 
-    // ── Constructeur ──────────────────────────────────────────────────────────
+    // ── Constructor ──────────────────────────────────────────────────────────
 
     public WhispEngine()
     {
         _modelPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH") ?? DEFAULT_MODEL;
 
         _llm = new LlmService(
-            onWarn: msg  => LogWarningLine?.Invoke($"[LLM] {msg}"),
-            onInfo: msg  => LogLine?.Invoke(msg));
+            onWarn: (source, msg) => LogWarningLine?.Invoke(source, msg),
+            onInfo: (source, msg) => LogLine?.Invoke(source, msg));
 
-        // Branche le callback de log global de whisper.cpp avant LoadModelAsync,
-        // pour attraper les logs d'initialisation Vulkan/CUDA et les warnings
-        // de parsing du modèle. Install-once, process-wide.
+        // Hook the global whisper.cpp log callback before LoadModelAsync to
+        // catch Vulkan/CUDA initialization logs and model parsing warnings.
+        // Install-once, process-wide.
         InstallWhisperLogHook();
 
         LoadModelAsync();
     }
 
-    // Redirige les logs internes de whisper.cpp (ggml_log) vers LogVerbose.
-    // Ces lignes contiennent le détail du backend (Vulkan device, mem, threads),
-    // les progress updates pendant whisper_full, et les warnings runtime.
-    // Classées en verbose par défaut — niveau trop bavard pour le flux normal.
+    // Redirects whisper.cpp internal logs (ggml_log) to LogVerbose.
+    // These lines contain backend details (Vulkan device, mem, threads),
+    // progress updates during whisper_full, and runtime warnings.
+    // Classified as Verbose by default — too chatty for normal flow.
     private void InstallWhisperLogHook()
     {
         _whisperLogCallback = (level, textPtr, _) =>
@@ -131,19 +131,19 @@ internal sealed class WhispEngine : IDisposable
                 string msg = Marshal.PtrToStringUTF8(textPtr)?.TrimEnd('\r', '\n', ' ') ?? "";
                 if (string.IsNullOrEmpty(msg)) return;
 
-                // Niveaux ggml : 0=None, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Cont.
-                // Warn/Error remontent en log normal pour être visibles sans
-                // activer le filtre verbose. Info/Debug/Cont restent en verbose.
+                // ggml levels: 0=None, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Cont.
+                // Warn/Error surface as normal logs to be visible without enabling
+                // Verbose filter. Info/Debug/Cont stay in Verbose.
                 switch (level)
                 {
-                    case 4: LogErrorLine?.Invoke($"[WHISPER] {msg}"); break;
-                    case 3: LogWarningLine?.Invoke($"[WHISPER] {msg}"); break;
-                    default: LogVerboseLine?.Invoke($"[WHISPER] {msg}"); break;
+                    case 4: LogErrorLine?.Invoke("WHISPER", msg); break;
+                    case 3: LogWarningLine?.Invoke("WHISPER", msg); break;
+                    default: LogVerboseLine?.Invoke("WHISPER", msg); break;
                 }
             }
             catch
             {
-                // Ne jamais laisser une exception traverser la frontière native.
+                // Never let an exception cross the native boundary.
             }
         };
 
@@ -153,13 +153,13 @@ internal sealed class WhispEngine : IDisposable
         }
         catch (Exception ex)
         {
-            // whisper_log_set absent d'une très vieille libwhisper : on log et
-            // on continue — le reste du pipeline n'en dépend pas.
+            // whisper_log_set missing from a very old libwhisper: log and
+            // continue — the rest of the pipeline doesn't depend on it.
             DebugLog.Write("ENGINE", $"whisper_log_set unavailable: {ex.Message}");
         }
     }
 
-    // ── Chargement du modèle (thread de fond) ─────────────────────────────────
+    // ── Model loading (background thread) ────────────────────────────────────
 
     private void LoadModelAsync()
     {
@@ -173,11 +173,11 @@ internal sealed class WhispEngine : IDisposable
             if (File.Exists(_modelPath))
             {
                 double mb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
-                DbgLog("MODEL", $"fichier: {mb:F1} MB");
+                DbgLog("MODEL", $"file: {mb:F1} MB");
             }
             else
             {
-                DbgWarn($"MODEL: fichier introuvable sur disque ({_modelPath})");
+                DbgWarn("MODEL", $"file not found on disk ({_modelPath})");
             }
             DbgLog("MODEL", "init whisper_init_from_file_with_params (use_gpu=1)");
 
@@ -192,12 +192,12 @@ internal sealed class WhispEngine : IDisposable
 
             if (_ctx == IntPtr.Zero)
             {
-                LogErrorLine?.Invoke($"[INIT] Impossible de charger le modèle : {_modelPath}");
+                DbgError("INIT", $"Failed to load model: {_modelPath}");
                 StatusChanged?.Invoke("Erreur : modèle non chargé");
             }
             else
             {
-                DbgStep($"Modèle chargé en {sw.ElapsedMilliseconds} ms");
+                DbgStep("MODEL", $"Model loaded in {sw.ElapsedMilliseconds} ms");
                 StatusChanged?.Invoke("En attente");
             }
         });
@@ -205,21 +205,21 @@ internal sealed class WhispEngine : IDisposable
         t.Start();
     }
 
-    // ── Démarrer l'enregistrement ─────────────────────────────────────────────
+    // ── Start recording ─────────────────────────────────────────────────────
 
     public void StartRecording(bool useLlm, bool shouldPaste, IntPtr pasteTarget)
     {
         if (_isRecording) return;
 
-        // Probe du périphérique audio AVANT de fire StatusChanged("Enregistrement...").
-        // Si le micro est absent / occupé, on court-circuite tout le pipeline :
-        // pas de HUD chrono, pas de worker thread, pas de Transcribe(empty).
-        // À la place, MicrophoneUnavailable est levé → HudWindow affiche un
-        // message d'erreur dédié qui reste visible quelques secondes.
+        // Probe the audio device BEFORE firing StatusChanged("Enregistrement...").
+        // If the mic is absent/busy, short-circuit the entire pipeline:
+        // no HUD chrono, no worker thread, no Transcribe(empty).
+        // Instead, MicrophoneUnavailable is raised → HudWindow shows a
+        // dedicated error message that stays visible for a few seconds.
         if (!TryProbeMicrophone(out uint probeErr))
         {
             var (title, body) = DescribeMicError(probeErr);
-            LogErrorLine?.Invoke($"[RECORD] probe MMSYSERR={probeErr} — {title}");
+            DbgError("RECORD", $"probe MMSYSERR={probeErr} — {title}");
             MicrophoneUnavailable?.Invoke(title, body);
             return;
         }
@@ -234,25 +234,25 @@ internal sealed class WhispEngine : IDisposable
         _recordingSw = System.Diagnostics.Stopwatch.StartNew();
         StatusChanged?.Invoke("Enregistrement...");
 
-        // Trace de la cible capturée au Start — symétrique du Step vert final.
-        // Permet de voir, dès le départ, quelle fenêtre / quel contrôle recevra
-        // le paste, et de diagnostiquer les cas où la cible Start est mauvaise.
+        // Trace the target captured at Start — symmetric with the green Step at the end.
+        // Shows from the start which window/control will receive the paste,
+        // and helps diagnose cases where the Start target is wrong.
         if (_pasteTarget != IntPtr.Zero)
         {
-            DbgVerbose("HOTKEY", $"cible capturée au Start: {Win32Util.DescribeHwnd(_pasteTarget)}");
+            DbgVerbose("HOTKEY", $"target captured at Start: {Win32Util.DescribeHwnd(_pasteTarget)}");
             string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
             DbgVerbose("HOTKEY", focusClass is null
-                ? "contrôle focusé au Start: <aucun focus clavier détecté>"
-                : $"contrôle focusé au Start: {focusClass}");
+                ? "focused control at Start: <no keyboard focus detected>"
+                : $"focused control at Start: {focusClass}");
         }
         else
         {
-            DbgVerbose("HOTKEY", "aucune cible capturée au Start (paste désactivé ou foreground = WhispUI)");
+            DbgVerbose("HOTKEY", "no target captured at Start (paste disabled or foreground = WhispUI)");
         }
 
-        // Un seul thread de fond : Record puis Transcribe en séquence.
-        // Whisper a besoin de la totalité de l'audio pour gérer son fenêtrage
-        // interne — pas de parallélisme possible, et plus simple à débuguer.
+        // Single background thread: Record then Transcribe in sequence.
+        // Whisper needs the full audio for its internal windowing —
+        // no parallelism possible, and simpler to debug.
         var worker = new Thread(() =>
         {
             float[] audio = Record();
@@ -264,17 +264,17 @@ internal sealed class WhispEngine : IDisposable
         worker.Start();
     }
 
-    // ── Arrêter l'enregistrement (deuxième appui hotkey) ──────────────────────
+    // ── Stop recording (second hotkey press) ────────────────────────────────
 
     public void StopRecording()
     {
-        // Re-capture la cible au Stop pour gérer le cas "j'ai changé de champ
-        // texte pendant l'enregistrement" : on veut coller dans le champ où
-        // l'utilisateur se trouve AU MOMENT du Stop, pas celui de Start. Le
-        // hotkey étant global, GetForegroundWindow() à cet instant renvoie
-        // l'app où il est. Filet : si le foreground appartient à WhispUI lui-
-        // même (HUD ou LogWindow activé par un clic), on garde la cible Start
-        // — sinon on aurait un faux positif "collé dans nos propres logs".
+        // Re-capture the target at Stop to handle "I switched text fields during
+        // recording": we want to paste in the field where the user IS at Stop
+        // time, not the one at Start. The hotkey is global, so
+        // GetForegroundWindow() at this point returns the user's app. Safety
+        // net: if foreground belongs to WhispUI itself (HUD or LogWindow
+        // activated by a click), keep the Start target — otherwise we'd get
+        // a false positive "pasted into our own logs".
         IntPtr fg = NativeMethods.GetForegroundWindow();
         if (fg != IntPtr.Zero)
         {
@@ -283,40 +283,32 @@ internal sealed class WhispEngine : IDisposable
             if (pid != ownPid)
             {
                 if (fg != _pasteTarget)
-                    DbgVerbose("HOTKEY", $"cible mise à jour au Stop: {Win32Util.DescribeHwnd(fg)}");
+                    DbgVerbose("HOTKEY", $"target updated at Stop: {Win32Util.DescribeHwnd(fg)}");
                 _pasteTarget = fg;
             }
             else
             {
-                DbgVerbose("HOTKEY", $"foreground au Stop = WhispUI ({Win32Util.DescribeHwnd(fg)}), cible Start conservée");
+                DbgVerbose("HOTKEY", $"foreground at Stop = WhispUI ({Win32Util.DescribeHwnd(fg)}), keeping Start target");
             }
         }
         _stopRecording = true;
     }
 
-    // ── Log horodaté ──────────────────────────────────────────────────────────
+    // ── Structured log helpers ──────────────────────────────────────────────
+    // Timestamp is assigned by LogWindow at entry creation — not here.
 
-    private string FormatLine(string phase, string msg)
-    {
-        string wallClock = DateTime.Now.ToString("HH:mm:ss.fff");
-        string ts = (_recordingSw != null && _recordingSw.IsRunning)
-            ? $"{wallClock} +{_recordingSw.Elapsed:hh\\:mm\\:ss\\.ff}"
-            : wallClock;
-        return $"[{ts}] [{phase}] {msg}";
-    }
+    private void DbgLog(string source, string msg)     => LogLine?.Invoke(source, msg);
+    private void DbgVerbose(string source, string msg) => LogVerboseLine?.Invoke(source, msg);
+    private void DbgStep(string source, string msg)    => LogStepLine?.Invoke(source, msg);
+    private void DbgWarn(string source, string msg)    => LogWarningLine?.Invoke(source, msg);
+    private void DbgError(string source, string msg)   => LogErrorLine?.Invoke(source, msg);
 
-    private void DbgLog(string phase, string msg)     => LogLine?.Invoke(FormatLine(phase, msg));
-    private void DbgVerbose(string phase, string msg) => LogVerboseLine?.Invoke(FormatLine(phase, msg));
-    private void DbgStep(string msg) => LogStepLine?.Invoke(msg);
-    private void DbgWarn(string msg) => LogWarningLine?.Invoke(msg);
-
-    // ── Probe périphérique audio (avant StartRecording) ────────────────────────
+    // ── Audio device probe (before StartRecording) ─────────────────────────────
     //
-    // Tente un waveInOpen + waveInClose en séquence avec le format cible et le
-    // périphérique configuré. Si ça passe, on sait que la session d'enregistrement
-    // peut démarrer ; sinon, on récupère le code MMSYSERR pour message détaillé.
-    // Coût mesuré ~1-2 ms sur un device sain — négligeable face à la latence
-    // perçue de Whisper.
+    // Attempts waveInOpen + waveInClose in sequence with the target format and
+    // configured device. If it passes, we know the recording session can start;
+    // otherwise we get the MMSYSERR code for a detailed message.
+    // Measured cost ~1-2 ms on a healthy device — negligible vs Whisper latency.
 
     private bool TryProbeMicrophone(out uint err)
     {
@@ -342,8 +334,8 @@ internal sealed class WhispEngine : IDisposable
         return true;
     }
 
-    // MMSYSERR → (title, body) pour UI. Messages formulés pour l'utilisateur
-    // final — pas de jargon Win32. Le code brut est loggé ailleurs pour le debug.
+    // MMSYSERR → (title, body) for UI. Messages formulated for the end user
+    // — no Win32 jargon. Raw code is logged elsewhere for debug.
     private static (string Title, string Body) DescribeMicError(uint err) => err switch
     {
         2 => ("Aucun microphone détecté", "Branche un micro ou vérifie l'entrée audio sélectionnée dans les paramètres de transcription."),
@@ -352,13 +344,13 @@ internal sealed class WhispEngine : IDisposable
         _ => ("Microphone indisponible", $"L'ouverture du périphérique audio a échoué (code MMSYSERR {err}).")
     };
 
-    // ── Enregistrement audio ──────────────────────────────────────────────────
+    // ── Audio recording ─────────────────────────────────────────────────────
     //
-    // Capture le micro en continu dans un unique buffer redimensionnable.
-    // Quand _stopRecording passe à true, retourne tout l'audio accumulé en float[]
-    // (PCM16 → float [-1, 1]) pour être passé en un seul appel à whisper_full().
-    // Whisper gère son propre fenêtrage interne (30s + seek dynamique) et la
-    // propagation de contexte inter-fenêtres via tokens — pas de chunking ici.
+    // Captures the microphone continuously into a single resizable buffer.
+    // When _stopRecording becomes true, returns all accumulated audio as float[]
+    // (PCM16 → float [-1, 1]) to be passed in a single call to whisper_full().
+    // Whisper handles its own internal windowing (30s + dynamic seek) and
+    // inter-window context propagation via tokens — no chunking here.
 
     private float[] Record()
     {
@@ -370,7 +362,7 @@ internal sealed class WhispEngine : IDisposable
 
         var wfx = new WAVEFORMATEX
         {
-            wFormatTag      = 1,     // PCM non compressé
+            wFormatTag      = 1,     // uncompressed PCM
             nChannels       = 1,     // mono
             nSamplesPerSec  = 16000,
             nAvgBytesPerSec = 32000,
@@ -381,14 +373,14 @@ internal sealed class WhispEngine : IDisposable
 
         IntPtr hEvent = NativeMethods.CreateEvent(IntPtr.Zero, bManualReset: false, bInitialState: false, null);
 
-        // Périphérique sélectionné dans les Settings. -1 = WAVE_MAPPER (défaut système).
+        // Device selected in Settings. -1 = WAVE_MAPPER (system default).
         int configuredDevice = Settings.SettingsService.Instance.Current.Recording.AudioInputDeviceId;
         uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
 
         uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
         if (err != 0)
         {
-            LogErrorLine?.Invoke($"[RECORD] waveInOpen erreur {err}");
+            DbgError("RECORD", $"waveInOpen error {err}");
             NativeMethods.CloseHandle(hEvent);
             return Array.Empty<float>();
         }
@@ -411,10 +403,10 @@ internal sealed class WhispEngine : IDisposable
         }
 
         NativeMethods.waveInStart(hWaveIn);
-        // Buffer unique, croît tout au long de l'enregistrement.
-        // 1 sample = 2 octets PCM16. À 16 kHz, 1 minute = 1.92M octets.
-        var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pré-réserve ~1 min
-        DbgLog("RECORD", "Enregistrement démarré (16kHz mono PCM16)");
+        // Single buffer, grows throughout the recording.
+        // 1 sample = 2 bytes PCM16. At 16 kHz, 1 minute = 1.92M bytes.
+        var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
+        DbgLog("RECORD", "Recording started (16kHz mono PCM16)");
 
         double nextHeartbeatSec = 5.0;
 
@@ -431,7 +423,7 @@ internal sealed class WhispEngine : IDisposable
                     bufferDoneCount++;
                     if (hdr.dwBytesRecorded == 0)
                     {
-                        DbgWarn($"RECORD: buffer[{i}] vide reçu");
+                        DbgWarn("RECORD", $"empty buffer[{i}] received");
                     }
                     else
                     {
@@ -447,13 +439,13 @@ internal sealed class WhispEngine : IDisposable
             }
 
             if (bufferDoneCount > 1)
-                DbgWarn($"RECORD: retard, {bufferDoneCount} buffers prêts simultanément");
+                DbgWarn("RECORD", $"lag, {bufferDoneCount} buffers ready simultaneously");
 
-            // Heartbeat ~5s, Verbose → visible Full uniquement
+            // Heartbeat ~5s, Verbose → visible in All filter only
             double curSec = allBytes.Count / 32000.0;
             if (curSec >= nextHeartbeatSec)
             {
-                DbgVerbose("RECORD", $"+{curSec:F1}s capturés");
+                DbgVerbose("RECORD", $"+{curSec:F1}s captured");
                 nextHeartbeatSec += 5.0;
             }
         }
@@ -479,14 +471,13 @@ internal sealed class WhispEngine : IDisposable
         NativeMethods.CloseHandle(hEvent);
 
         double totalSec = allBytes.Count / 32000.0;
-        DbgLog("RECORD", $"Capture terminée — {totalSec:F1}s d'audio ({allBytes.Count} octets)");
+        DbgLog("RECORD", $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
 
-        // Tail RMS : mesure l'énergie des 600ms finales pour observer si on
-        // coupe pendant une syllabe (ponctuation perdue) ou dans un silence
-        // bien net. Purement diagnostique — ne change rien au buffer envoyé
-        // à whisper.cpp. 600ms = durée typique d'un bloc de respiration /
-        // pause inter-phrase, suffisant pour voir si le dernier mot a pu
-        // être prononcé complètement avant le Stop.
+        // Tail RMS: measures the energy of the final 600ms to see if we're
+        // cutting during a syllable (lost punctuation) or in a clean silence.
+        // Purely diagnostic — doesn't change the buffer sent to whisper.cpp.
+        // 600ms = typical breathing/inter-phrase pause duration, enough to
+        // check if the last word was fully spoken before Stop.
         {
             const int TailMs = 600;
             int tailBytes = Math.Min(allBytes.Count, 16000 * 2 * TailMs / 1000);
@@ -504,26 +495,26 @@ internal sealed class WhispEngine : IDisposable
                 double rms = Math.Sqrt(sumSq / nSamples);
                 double dbfs = rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
                 double tailSec = tailBytes / 32000.0;
-                DbgLog("RECORD", $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "actif" : "silencieux")} au moment du Stop");
+                DbgLog("RECORD", $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "active" : "silent")} at Stop");
             }
         }
 
         return PcmToFloat(allBytes.ToArray());
     }
 
-    // ── Transcription Whisper ─────────────────────────────────────────────────
+    // ── Whisper transcription ────────────────────────────────────────────────
     //
-    // Appel monobloc : tout l'audio passe en une fois à whisper_full(), qui gère
-    // son propre fenêtrage interne (30s + seek dynamique) et la propagation de
-    // contexte inter-fenêtres via tokens. Pas de chunking côté C#.
+    // Monolithic call: all audio is passed at once to whisper_full(), which
+    // handles its own internal windowing (30s + dynamic seek) and inter-window
+    // context propagation via tokens. No chunking on the C# side.
     //
-    // Récupération progressive via new_segment_callback : whisper.cpp invoque le
-    // callback à chaque nouveau segment validé pendant le décodage, sur SON thread
-    // d'inférence — d'où le lock sur _segments. Le texte final est assemblé à
-    // partir de ces segments à la fin de l'appel.
+    // Progressive recovery via new_segment_callback: whisper.cpp invokes the
+    // callback for each new validated segment during decoding, on ITS inference
+    // thread — hence the lock on _segments. Final text is assembled from these
+    // segments at the end of the call.
 
-    // Détecte une répétition simple : sous-séquence de ≥4 mots qui revient ≥3 fois.
-    // Conservée en log-only (warning) pour signal de diagnostic — ne filtre rien.
+    // Detects simple repetition: subsequence of >= 4 words recurring >= 3 times.
+    // Kept as log-only (warning) for diagnostic signal — doesn't filter anything.
     private static bool LooksRepeated(string text)
     {
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -543,15 +534,15 @@ internal sealed class WhispEngine : IDisposable
 
     private void OnNewSegment(IntPtr ctx, IntPtr state, int n_new, IntPtr user_data)
     {
-        // n_new = nb de segments produits depuis le dernier appel ; ils se trouvent
-        // à la fin de la liste totale exposée par whisper_full_n_segments.
+        // n_new = number of segments produced since last call; they sit at the
+        // end of the total list exposed by whisper_full_n_segments.
         try
         {
             int total = NativeMethods.whisper_full_n_segments(ctx);
             int from  = total - n_new;
-            // Borne basse des ids de tokens timestamp — au-delà, ce sont des <|t.tt|>,
-            // pas des tokens texte. Cachée par appel Transcribe pour éviter des P/Invoke
-            // répétés inutiles (dépend du modèle, pas du segment).
+            // Lower bound of timestamp token IDs — above this are <|t.tt|>,
+            // not text tokens. Cached per Transcribe call to avoid unnecessary
+            // repeated P/Invoke (depends on model, not segment).
             int tokenBeg = _tokenBeg;
             for (int i = from; i < total; i++)
             {
@@ -560,9 +551,9 @@ internal sealed class WhispEngine : IDisposable
                 long  t1  = NativeMethods.whisper_full_get_segment_t1(ctx, i);
                 float nsp = NativeMethods.whisper_full_get_segment_no_speech_prob(ctx, i);
 
-                // Confiance par segment, agrégée sur les seuls tokens texte.
-                // p = proba linéaire du token tel qu'échantillonné par Whisper.
-                // avg = signal "phrase globalement sûre ?", min = "maillon faible / mot bricolé ?".
+                // Per-segment confidence, aggregated over text tokens only.
+                // p = linear probability of the token as sampled by Whisper.
+                // avg = "is the sentence globally confident?", min = "weakest link / fabricated word?".
                 int nTok = NativeMethods.whisper_full_n_tokens(ctx, i);
                 float sumP = 0f, minP = 1f;
                 int textTok = 0;
@@ -576,29 +567,29 @@ internal sealed class WhispEngine : IDisposable
                     textTok++;
                 }
                 float avgP = textTok > 0 ? sumP / textTok : 0f;
-                if (textTok == 0) minP = 0f; // segment sans token texte → min "indéfini"
+                if (textTok == 0) minP = 0f; // segment without text tokens → min "undefined"
 
                 lock (_segmentsLock)
                     _segments.Add(new TranscribedSegment(segText, t0, t1, nsp));
 
-                // dur = durée du segment, gap = silence (ou recouvrement) avec le précédent.
-                // Sur une boucle d'hallucination type, on observe dur≈3,0s contiguë (gap=+0,0s)
-                // de façon métronomique — pattern visuellement repérable sans calcul mental.
-                // Un gros gap signale un saut de Whisper ou un blanc en entrée (à risque).
+                // dur = segment duration, gap = silence (or overlap) with the previous one.
+                // In a typical hallucination loop, dur≈3.0s contiguous (gap=+0.0s) repeats
+                // metronomically — visually recognizable pattern without mental math.
+                // A large gap signals a Whisper seek or an input silence (risky).
                 double dur = (t1 - t0) / 100.0;
                 double gap = _lastSegmentT1 < 0 ? 0.0 : (t0 - _lastSegmentT1) / 100.0;
                 _lastSegmentT1 = t1;
 
-                // no_speech : proba que le segment soit du silence/bruit (0 = parole sûre, 1 = silence sûr).
-                // p̄ / min : confiance moyenne et minimale sur les tokens texte du segment.
-                // t0/t1 sont en centisecondes (1 unité = 10 ms) côté whisper.cpp.
+                // no_speech: probability that the segment is silence/noise (0 = confident speech, 1 = confident silence).
+                // p̄ / min: average and minimum confidence over text tokens in the segment.
+                // t0/t1 are in centiseconds (1 unit = 10 ms) on the whisper.cpp side.
                 DbgVerbose("TRANSCRIBE", $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok] {segText.Trim()}");
             }
         }
         catch (Exception ex)
         {
-            // Ne JAMAIS laisser une exception traverser la frontière managed→native.
-            LogErrorLine?.Invoke($"[CALLBACK] {ex.GetType().Name}: {ex.Message}");
+            // NEVER let an exception cross the managed→native boundary.
+            DbgError("CALLBACK", $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -614,7 +605,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (audio.Length == 0)
         {
-            DbgWarn("TRANSCRIBE: buffer audio vide, rien à transcrire");
+            DbgWarn("TRANSCRIBE", "empty audio buffer, nothing to transcribe");
             StatusChanged?.Invoke("En attente");
             TranscriptionFinished?.Invoke();
             return;
@@ -626,20 +617,20 @@ internal sealed class WhispEngine : IDisposable
 
         wparams.print_progress = 0;
 
-        // Snapshot des settings utilisateur au début de la transcription.
-        // Les champs hot-reload (seuils, VAD, suppress, contexte, décodage)
-        // sont appliqués ici à chaque appel — aucune relance de contexte.
-        // Les réglages lourds (modèle, use_gpu) sont gérés au LoadModelAsync.
+        // Snapshot user settings at the start of transcription.
+        // Hot-reload fields (thresholds, VAD, suppress, context, decoding)
+        // are applied here on each call — no context restart needed.
+        // Heavy settings (model, use_gpu) are handled at LoadModelAsync.
         var settings = Settings.SettingsService.Instance.Current;
         var nativeAllocs = Settings.WhisperParamsMapper.Apply(ref wparams, settings);
 
-        // Cache la borne des tokens timestamp une fois pour tout l'appel — c'est une
-        // propriété du modèle, pas du segment, pas la peine d'appeler à chaque token.
+        // Cache the timestamp token bound once for the entire call — it's a model
+        // property, not per-segment, no need to call for each token.
         _tokenBeg = NativeMethods.whisper_token_beg(ctx);
         _lastSegmentT1 = -1;
 
-        // Branchement du callback natif. Délégué stocké en champ d'instance pour
-        // empêcher le GC de le ramasser pendant que whisper.cpp détient le pointeur.
+        // Hook the native callback. Delegate stored as instance field to prevent
+        // GC from collecting it while whisper.cpp holds the pointer.
         _newSegmentCallback = OnNewSegment;
         wparams.new_segment_callback = Marshal.GetFunctionPointerForDelegate(_newSegmentCallback);
         wparams.new_segment_callback_user_data = IntPtr.Zero;
@@ -657,16 +648,16 @@ internal sealed class WhispEngine : IDisposable
 
         if (result != 0)
         {
-            LogErrorLine?.Invoke($"[ERREUR] whisper_full code {result}");
+            DbgError("TRANSCRIBE", $"whisper_full returned code {result}");
             StatusChanged?.Invoke("Erreur transcription");
             TranscriptionFinished?.Invoke();
             return;
         }
 
-        // Assemble le texte final à partir des segments accumulés par le callback.
-        // On pourrait aussi re-itérer whisper_full_n_segments(ctx) ici, mais passer
-        // par _segments garantit qu'un segment loggé est exactement un segment du
-        // texte final — pas de divergence possible entre les deux sources.
+        // Assemble final text from segments accumulated by the callback.
+        // We could also re-iterate whisper_full_n_segments(ctx) here, but going
+        // through _segments guarantees that a logged segment is exactly a segment
+        // of the final text — no possible divergence between the two sources.
         string fullText;
         int nSeg;
         lock (_segmentsLock)
@@ -678,7 +669,7 @@ internal sealed class WhispEngine : IDisposable
         DbgLog("TRANSCRIBE", $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
 
         if (LooksRepeated(fullText))
-            DbgWarn("TRANSCRIBE: répétition détectée dans le texte (signal heuristique, aucun filtrage)");
+            DbgWarn("TRANSCRIBE", "repetition detected in text (heuristic signal, no filtering)");
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
@@ -687,7 +678,7 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        // Copie systématique du texte brut — filet de sécurité même si le LLM échoue
+        // Always copy raw text first — safety net even if LLM fails
         var swClip = System.Diagnostics.Stopwatch.StartNew();
         CopyToClipboard(fullText);
         swClip.Stop();
@@ -696,9 +687,9 @@ internal sealed class WhispEngine : IDisposable
         var llmSettings = Settings.SettingsService.Instance.Current.Llm;
         double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
 
-        // Résolution du profil de réécriture :
-        // - Alt+Ctrl+` (manuel) → profil ManualProfileName
-        // - Alt+` (normal) + auto-rewrite → première AutoRewriteRule qui matche
+        // Rewrite profile resolution:
+        // - Alt+Ctrl+` (manual) → ManualProfileName profile
+        // - Alt+` (normal) + auto-rewrite → first matching AutoRewriteRule
         Settings.RewriteProfile? profile = null;
         if (_useLlm && llmSettings.Enabled)
         {
@@ -707,7 +698,7 @@ internal sealed class WhispEngine : IDisposable
         }
         else if (llmSettings.Enabled && llmSettings.AutoRewriteRules.Count > 0)
         {
-            // Parcours décroissant : la règle la plus longue qui matche gagne.
+            // Descending scan: the longest matching rule wins.
             foreach (var rule in llmSettings.AutoRewriteRules
                 .OrderByDescending(r => r.MinDurationSeconds))
             {
@@ -738,12 +729,12 @@ internal sealed class WhispEngine : IDisposable
         bool pasteVerified = false;
         if (_shouldPaste)
         {
-            // Rendez-vous synchrone : l'handler (App) cache le HUD et ne rend
-            // la main qu'une fois SW_HIDE effectif sur le thread UI. Après ce
-            // point, plus rien dans WhispUI ne touche à l'activation jusqu'à
-            // la fin de Transcribe — la livraison du Ctrl+V est protégée.
+            // Synchronous rendezvous: the handler (App) hides the HUD and only
+            // returns once SW_HIDE is effective on the UI thread. After this
+            // point, nothing in WhispUI touches activation until the end of
+            // Transcribe — Ctrl+V delivery is protected.
             OnReadyToPaste?.Invoke();
-            DbgVerbose("PASTE", "HUD masqué (HideSync) — prêt à coller");
+            DbgVerbose("PASTE", "HUD hidden (HideSync) — ready to paste");
             var swPaste = System.Diagnostics.Stopwatch.StartNew();
             pasteVerified = PasteFromClipboard();
             swPaste.Stop();
@@ -752,7 +743,7 @@ internal sealed class WhispEngine : IDisposable
 
         string recap = $"total {recDurationSec:F1}s (trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         if (_shouldPaste && pasteVerified)
-            DbgStep($"Bout en bout OK — {fullText.Length} chars collés dans {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
+            DbgStep("TRANSCRIBE", $"End-to-end OK — {fullText.Length} chars pasted into {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
         else
             DbgVerbose("DONE", recap);
 
@@ -771,8 +762,8 @@ internal sealed class WhispEngine : IDisposable
         int byteCount = (text.Length + 1) * 2;
 
         IntPtr hMem = NativeMethods.GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)byteCount);
-        DbgVerbose("CLIPBOARD", $"GlobalAlloc {byteCount}o → hMem={hMem}");
-        if (hMem == IntPtr.Zero) { DbgWarn("Clipboard: GlobalAlloc échoué"); return; }
+        DbgVerbose("CLIPBOARD", $"GlobalAlloc {byteCount}b → hMem={hMem}");
+        if (hMem == IntPtr.Zero) { DbgWarn("CLIPBOARD", "GlobalAlloc failed"); return; }
 
         IntPtr ptr = NativeMethods.GlobalLock(hMem);
         Marshal.Copy(text.ToCharArray(), 0, ptr, text.Length);
@@ -781,20 +772,20 @@ internal sealed class WhispEngine : IDisposable
 
         bool opened = NativeMethods.OpenClipboard(IntPtr.Zero);
         DbgVerbose("CLIPBOARD", $"OpenClipboard → {opened}");
-        if (!opened) { DbgWarn("Clipboard: OpenClipboard échoué"); return; }
+        if (!opened) { DbgWarn("CLIPBOARD", "OpenClipboard failed"); return; }
 
         NativeMethods.EmptyClipboard();
         IntPtr setHandle = NativeMethods.SetClipboardData(CF_UNICODETEXT, hMem);
-        if (setHandle == IntPtr.Zero) DbgWarn("Clipboard: SetClipboardData échoué (handle 0)");
+        if (setHandle == IntPtr.Zero) DbgWarn("CLIPBOARD", "SetClipboardData failed (handle 0)");
         NativeMethods.CloseClipboard();
 
-        // Re-lecture immédiate pour vérifier que c'est bien dans le presse-papier
+        // Immediate read-back to verify the clipboard was set correctly
         if (NativeMethods.OpenClipboard(IntPtr.Zero))
         {
             IntPtr h = NativeMethods.GetClipboardData(CF_UNICODETEXT);
             if (h == IntPtr.Zero)
             {
-                DbgWarn("Clipboard: vérif post-copie → aucune donnée Unicode");
+                DbgWarn("CLIPBOARD", "post-copy verify → no Unicode data");
             }
             else
             {
@@ -802,18 +793,18 @@ internal sealed class WhispEngine : IDisposable
                 string? back = p != IntPtr.Zero ? Marshal.PtrToStringUni(p) : null;
                 NativeMethods.GlobalUnlock(h);
                 if (back is null || back.Length != text.Length)
-                    DbgWarn($"Clipboard: vérif post-copie → longueur {back?.Length ?? -1} != {text.Length}");
+                    DbgWarn("CLIPBOARD", $"post-copy verify → length {back?.Length ?? -1} != {text.Length}");
             }
             NativeMethods.CloseClipboard();
         }
 
-        DbgLog("CLIPBOARD", $"Texte copié ({text.Length} chars)");
+        DbgLog("CLIPBOARD", $"Text copied ({text.Length} chars)");
     }
 
-    // Retourne true uniquement si toutes les conditions de vérification sont
-    // réunies (cible valide, hors WhispUI, foreground restauré, focus clavier
-    // sur un contrôle plausiblement texte, SendInput intégral). Sinon false :
-    // l'appelant émet alors un Warn avec mode opératoire pour collage manuel.
+    // Returns true only if all verification conditions are met (valid target,
+    // not WhispUI, foreground restored, keyboard focus on a plausibly text
+    // control, complete SendInput). Otherwise false: the caller then emits a
+    // Warn with instructions for manual paste.
     private bool PasteFromClipboard()
     {
         const uint   INPUT_KEYBOARD  = 1;
@@ -821,23 +812,23 @@ internal sealed class WhispEngine : IDisposable
         const ushort VK_CONTROL      = 0x11;
         const ushort VK_V            = 0x56;
 
-        DbgVerbose("PASTE", $"cible attendue: {Win32Util.DescribeHwnd(_pasteTarget)}");
+        DbgVerbose("PASTE", $"expected target: {Win32Util.DescribeHwnd(_pasteTarget)}");
         IntPtr fgBefore = NativeMethods.GetForegroundWindow();
-        DbgVerbose("PASTE", $"foreground avant: {Win32Util.DescribeHwnd(fgBefore)}");
+        DbgVerbose("PASTE", $"foreground before: {Win32Util.DescribeHwnd(fgBefore)}");
 
         if (_pasteTarget == IntPtr.Zero)
         {
-            DbgWarn("PASTE refusé: aucune cible enregistrée. Le presse-papier contient le texte — colle manuellement avec Ctrl+V.");
+            DbgWarn("PASTE", "refused: no registered target. Clipboard contains the text — paste manually with Ctrl+V.");
             return false;
         }
 
-        // Refus si la cible est une fenêtre de WhispUI lui-même (LogWindow, HUD…).
-        // Évite le faux positif où on a "collé" dans nos propres logs.
+        // Refuse if the target is a WhispUI window itself (LogWindow, HUD...).
+        // Avoids the false positive where we "pasted" into our own logs.
         NativeMethods.GetWindowThreadProcessId(_pasteTarget, out uint targetPid);
         uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
         if (targetPid == ownPid)
         {
-            DbgWarn($"PASTE refusé: la cible appartient à WhispUI ({Win32Util.DescribeHwnd(_pasteTarget)}). Le presse-papier contient le texte — colle manuellement avec Ctrl+V dans la bonne fenêtre.");
+            DbgWarn("PASTE", $"refused: target belongs to WhispUI ({Win32Util.DescribeHwnd(_pasteTarget)}). Clipboard contains the text — paste manually with Ctrl+V in the right window.");
             return false;
         }
 
@@ -848,17 +839,17 @@ internal sealed class WhispEngine : IDisposable
         IntPtr fgAfter = NativeMethods.GetForegroundWindow();
         if (fgAfter != _pasteTarget)
         {
-            DbgWarn($"PASTE refusé: focus pas restauré (attendu {Win32Util.DescribeHwnd(_pasteTarget)}, actuel {Win32Util.DescribeHwnd(fgAfter)}). Le presse-papier contient le texte — colle manuellement avec Ctrl+V.");
+            DbgWarn("PASTE", $"refused: focus not restored (expected {Win32Util.DescribeHwnd(_pasteTarget)}, actual {Win32Util.DescribeHwnd(fgAfter)}). Clipboard contains the text — paste manually with Ctrl+V.");
             return false;
         }
 
         string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
         if (focusClass is null)
         {
-            DbgWarn("PASTE refusé: la cible n'a pas de focus clavier sur un contrôle texte. Le presse-papier contient le texte — clique dans un champ texte puis Ctrl+V.");
+            DbgWarn("PASTE", "refused: target has no keyboard focus on a text control. Clipboard contains the text — click in a text field then Ctrl+V.");
             return false;
         }
-        DbgVerbose("PASTE", $"contrôle focusé: {focusClass}");
+        DbgVerbose("PASTE", $"focused control: {focusClass}");
 
         int cbSize = Marshal.SizeOf<INPUT>();
 
@@ -873,16 +864,15 @@ internal sealed class WhispEngine : IDisposable
         uint sent = NativeMethods.SendInput((uint)inputs.Length, inputs, cbSize);
         if (sent != inputs.Length)
         {
-            DbgWarn($"PASTE partiel: SendInput a injecté {sent}/{inputs.Length} events. Le presse-papier contient le texte — colle manuellement avec Ctrl+V.");
+            DbgWarn("PASTE", $"partial: SendInput injected {sent}/{inputs.Length} events. Clipboard contains the text — paste manually with Ctrl+V.");
             return false;
         }
 
-        DbgLog("PASTE", $"Ctrl+V envoyé à {Win32Util.DescribeHwnd(_pasteTarget)} (focus={focusClass})");
-        // ↑ Info bleu : c'est l'événement "j'ai vraiment tiré le coup", important.
+        DbgLog("PASTE", $"Ctrl+V sent to {Win32Util.DescribeHwnd(_pasteTarget)} (focus={focusClass})");
         return true;
     }
 
-    // ── Conversion PCM → float ────────────────────────────────────────────────
+    // ── PCM → float conversion ─────────────────────────────────────────────
 
     private static float[] PcmToFloat(byte[] pcm)
     {
