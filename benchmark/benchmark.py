@@ -14,12 +14,19 @@ Sortie : une seule ligne "SCORE=X.XXXX" (pour autoresearch) + détails dans run.
 """
 
 import argparse
+import io
 import json
 import re
 import sys
 import time
 import urllib.request
 import unicodedata
+
+# Force UTF-8 stdout/stderr on Windows (sinon CP1252 crash sur les accents en redirection)
+if sys.stdout.encoding != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # ─── Configuration par défaut ─────────────────────────────────────────────────
 
