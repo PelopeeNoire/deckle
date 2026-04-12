@@ -45,6 +45,14 @@ public sealed partial class WhisperPage : Page
         {
             InitializeComponent();
             _log.Verbose(LogSource.SetWhisper, "InitializeComponent OK");
+
+            // Guard: XAML-wired ValueChanged handlers are active after
+            // InitializeComponent. Setting Minimum/Value below fires them.
+            // Without this guard, they write constructor defaults into the
+            // POCO and call Save(), overwriting the user's persisted values
+            // before Hydrate() gets a chance to load them.
+            _loading = true;
+
             // WinUI 3 release bug: cannot set Minimum > defaultValue in XAML
             // for VadMaxSpeechSlider without a parser crash. We do it here
             // now that the Slider is constructed and outside the LoadComponent
@@ -63,7 +71,8 @@ public sealed partial class WhisperPage : Page
             NoSpeechSlider.Minimum = 0.05;
             NoSpeechSlider.Value   = 0.6;
 
-            _log.Verbose(LogSource.SetWhisper, "VadMaxSpeechSlider + Confidence sliders Min/Value set in code-behind");
+            // _loading stays true — Hydrate() (in Loaded) will set it false.
+            _log.Verbose(LogSource.SetWhisper, "VadMaxSpeechSlider + Confidence sliders Min/Value set in code-behind (under _loading guard)");
         }
         catch (Exception ex)
         {
@@ -118,6 +127,19 @@ public sealed partial class WhisperPage : Page
                 DebugLog.Write("WHISPERPAGE", $"Loaded THREW: {ex}");
             }
         };
+    }
+
+    // NavigationCacheMode.Required reuses the page instance. Loaded + hover
+    // wiring only fire once (first navigation). On subsequent navigations we
+    // only need to re-hydrate settings from the POCO — the controls and hover
+    // handlers are already set up.
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _loading = true;
+        PopulateModelCombo();
+        // Hydrate sets _loading = true (redundant) then false at the end.
+        Hydrate();
     }
 
     // Helper commun pour instrumenter chaque handler utilisateur :

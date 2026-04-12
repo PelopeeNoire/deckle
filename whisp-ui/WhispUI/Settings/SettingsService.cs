@@ -120,7 +120,9 @@ public sealed class SettingsService
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "shared"));
     }
 
-    private void Flush()
+    // Public pour permettre un flush synchrone avant un arrêt du process
+    // (RestartApp, QuitApp) — le debounce timer ne survivrait pas à Environment.Exit.
+    public void Flush()
     {
         try
         {

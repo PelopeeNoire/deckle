@@ -3,7 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
-    xmlns:ui="using:CommunityToolkit.WinUI">
+    xmlns:ui="using:CommunityToolkit.WinUI"
+    xmlns:vm="using:WhispUI.Settings.ViewModels">
 
     <!-- Pattern canonique Microsoft Learn (SettingsExpander sample "Settings page
          example") : StackPanel max 1000 dans un Grid, Spacing=4 entre cards,
@@ -75,13 +76,11 @@
                 <controls:SettingsExpander Header="Show the overlay while recording"
                                            Description="A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
-                    <ToggleSwitch x:Name="OverlayEnabledToggle"
-                                  Toggled="OverlayEnabledToggle_Toggled" />
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard Header="Fade when your cursor is near"
                                                Description="Make the overlay transparent when you move over it, so it never blocks what's underneath.">
-                            <ToggleSwitch x:Name="OverlayFadeToggle"
-                                          Toggled="OverlayFadeToggle_Toggled" />
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
                         </controls:SettingsCard>
                         <controls:SettingsCard Header="Screen position"
                                                Description="Where the overlay appears on your primary display.">
@@ -109,8 +108,7 @@
                 <controls:SettingsCard Header="Start minimized"
                                        Description="Open straight to the system tray, without any visible window. Default: on."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
-                    <ToggleSwitch x:Name="StartMinimizedToggle"
-                                  Toggled="StartMinimizedToggle_Toggled" />
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
                 <!-- ── Appearance ──────────────────────────────────────────── -->
