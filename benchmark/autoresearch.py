@@ -11,6 +11,7 @@ Usage :
 """
 
 import argparse
+import io
 import json
 import os
 import re
@@ -19,6 +20,12 @@ import subprocess
 import sys
 import time
 import urllib.request
+
+# Force UTF-8 stdout/stderr on Windows (sinon CP1252 crash sur les accents en redirection)
+if sys.stdout.encoding != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
 PROMPT_FILE = os.path.join(BENCHMARK_DIR, "system_prompt.txt")
