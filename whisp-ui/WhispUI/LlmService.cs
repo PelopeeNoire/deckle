@@ -6,21 +6,20 @@ using WhispUI.Settings;
 
 namespace WhispUI;
 
-// ─── Service de réécriture LLM via Ollama (mode RAW) ──────────────────────────
+// ─── LLM rewrite service via Ollama (RAW mode) ───────────────────────────────
 //
-// Appelle /api/generate avec raw=true et un prompt pré-formaté côté client.
-// On contourne complètement le système TEMPLATE d'Ollama parce que les modèles
-// importés depuis HuggingFace en GGUF arrivent souvent avec un Modelfile
-// générique (TEMPLATE {{ .Prompt }}), ce qui casse silencieusement le format
-// d'entrée attendu par le modèle — symptôme typique : le modèle produit du
-// charabia, des échos ou boucle.
+// Calls /api/generate with raw=true and a client-side pre-formatted prompt.
+// Completely bypasses Ollama's TEMPLATE system because models imported from
+// HuggingFace as GGUF often come with a generic Modelfile
+// (TEMPLATE {{ .Prompt }}), which silently breaks the input format expected
+// by the model — typical symptom: the model produces gibberish, echoes or loops.
 //
-// Le template est déterminé côté client à partir du nom du modèle (famille
-// Mistral/Llama/Qwen/Gemma/Phi/ChatML), appliqué manuellement, et envoyé via
-// raw=true — Ollama ne touche pas au prompt.
+// The template is determined client-side from the model name (family
+// Mistral/Llama/Qwen/Gemma/Phi/ChatML), applied manually, and sent via
+// raw=true — Ollama doesn't touch the prompt.
 //
-// Conçu pour être appelé depuis un thread de fond — .GetAwaiter().GetResult()
-// est sûr ici (pas de contexte de synchronisation sur ce thread).
+// Designed to be called from a background thread — .GetAwaiter().GetResult()
+// is safe here (no synchronization context on this thread).
 
 internal class LlmService
 {
@@ -32,10 +31,10 @@ internal class LlmService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    readonly Action<string>? _onWarn;
-    readonly Action<string>? _onInfo;
+    readonly Action<string, string>? _onWarn;
+    readonly Action<string, string>? _onInfo;
 
-    public LlmService(Action<string>? onWarn = null, Action<string>? onInfo = null)
+    public LlmService(Action<string, string>? onWarn = null, Action<string, string>? onInfo = null)
     {
         _onWarn = onWarn;
         _onInfo = onInfo;
@@ -50,7 +49,7 @@ internal class LlmService
             string generateUrl = NormalizeGenerateUrl(endpoint);
             var options = BuildOptions(profile, stops);
 
-            _onInfo?.Invoke($"[LLM] requête {text.Length} chars → {profile.Model} (profil: {profile.Name}, famille: {family}) | {FormatOptions(options)}");
+            _onInfo?.Invoke("LLM", $"request {text.Length} chars → {profile.Model} (profile: {profile.Name}, family: {family}) | {FormatOptions(options)}");
 
             var body = new
             {
@@ -75,23 +74,22 @@ internal class LlmService
 
             sw.Stop();
             string trimmed = PromptTemplates.StripStops(rewritten ?? "", family).Trim();
-            _onInfo?.Invoke($"[LLM] Réécriture OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profil: {profile.Name})");
-            _onInfo?.Invoke($"[LLM] {FormatMetrics(doc.RootElement)}");
+            _onInfo?.Invoke("LLM", $"Rewrite OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profile: {profile.Name})");
+            _onInfo?.Invoke("LLM", FormatMetrics(doc.RootElement));
             return trimmed;
         }
         catch (Exception ex)
         {
             sw.Stop();
-            _onWarn?.Invoke($"LLM indisponible : {ex.GetType().Name} {ex.Message} — texte brut conservé");
+            _onWarn?.Invoke("LLM", $"unavailable: {ex.GetType().Name} {ex.Message} — raw text preserved");
             return null;
         }
     }
 
     /// <summary>
-    /// Convertit un endpoint configuré (qui peut pointer historiquement sur
-    /// /api/chat ou déjà sur /api/generate) vers /api/generate. Toute autre
-    /// forme est laissée telle quelle — l'utilisateur a peut-être un reverse
-    /// proxy exotique.
+    /// Converts a configured endpoint (which may historically point to
+    /// /api/chat or already to /api/generate) to /api/generate. Any other
+    /// form is left as-is — the user may have an exotic reverse proxy.
     /// </summary>
     static string NormalizeGenerateUrl(string endpoint)
     {
@@ -104,9 +102,9 @@ internal class LlmService
     }
 
     /// <summary>
-    /// Format lisible des options génération envoyées à Ollama. Retourne une
-    /// chaîne du type "temp=0.15 ctx=32768 top_p=0.90 rep=1.10". Seules les
-    /// options non-null sont affichées.
+    /// Human-readable format of generation options sent to Ollama. Returns a
+    /// string like "temp=0.15 ctx=32768 top_p=0.90 rep=1.10". Only non-null
+    /// options are displayed.
     /// </summary>
     static string FormatOptions(Dictionary<string, object>? opts)
     {
@@ -114,7 +112,7 @@ internal class LlmService
         var parts = new List<string>(opts.Count);
         foreach (var kv in opts)
         {
-            if (kv.Key == "stop") continue; // bruit dans les logs
+            if (kv.Key == "stop") continue; // noise in logs
             string key = kv.Key switch
             {
                 "temperature"    => "temp",
@@ -129,14 +127,14 @@ internal class LlmService
     }
 
     /// <summary>
-    /// Extrait et formate les métriques retournées par Ollama dans la réponse
-    /// /api/generate. Même sémantique que /api/chat (champs en nanosecondes).
-    ///   - total_duration    : temps total serveur
-    ///   - load_duration     : temps de chargement modèle (0 si déjà chaud)
-    ///   - prompt_eval_count : nb tokens du prompt (entrée)
-    ///   - prompt_eval_duration : temps d'évaluation du prompt
-    ///   - eval_count        : nb tokens générés (sortie)
-    ///   - eval_duration     : temps de génération (utile pour tok/s)
+    /// Extracts and formats metrics returned by Ollama in the /api/generate
+    /// response. Same semantics as /api/chat (fields in nanoseconds).
+    ///   - total_duration    : total server time
+    ///   - load_duration     : model load time (0 if already warm)
+    ///   - prompt_eval_count : prompt token count (input)
+    ///   - prompt_eval_duration : prompt evaluation time
+    ///   - eval_count        : generated token count (output)
+    ///   - eval_duration     : generation time (useful for tok/s)
     /// </summary>
     static string FormatMetrics(JsonElement root)
     {
@@ -168,10 +166,10 @@ internal class LlmService
     }
 
     /// <summary>
-    /// Construit le dictionnaire d'options de génération à partir des champs
-    /// nullable du profil. NumCtxK est stocké en K et multiplié par 1024.
-    /// Les stops de la famille sont ajoutés systématiquement pour éviter que
-    /// le modèle continue après son token de fin-de-tour.
+    /// Builds the generation options dictionary from the profile's nullable
+    /// fields. NumCtxK is stored in K and multiplied by 1024. Family stops
+    /// are always added to prevent the model from continuing past its
+    /// end-of-turn token.
     /// </summary>
     static Dictionary<string, object>? BuildOptions(RewriteProfile p, string[] stops)
     {

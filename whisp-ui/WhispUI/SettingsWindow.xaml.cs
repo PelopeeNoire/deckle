@@ -132,23 +132,23 @@ public sealed partial class SettingsWindow : Window
 
     // ── NavigationView : swap de page ────────────────────────────────────────
     //
-    // Pattern canonique Microsoft Learn (sample §"Code example") : le Tag de
-    // l'item porte le nom complet du type de Page, résolu par Type.GetType.
-    // Garde CurrentSourcePageType != pageType pour éviter un re-Navigate
-    // redondant au setup initial.
+    // Canonical Microsoft Learn pattern (sample §"Code example"): the item's Tag
+    // carries the full Page type name, resolved by Type.GetType.
+    // Keeps CurrentSourcePageType != pageType to avoid redundant re-Navigate
+    // on initial setup.
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        App.Log?.LogVerbose($"[SETTINGS] SelectionChanged fired, item={(args.SelectedItem as NavigationViewItem)?.Content}");
+        App.Log?.LogVerbose("SETTINGS", $"SelectionChanged fired, item={(args.SelectedItem as NavigationViewItem)?.Content}");
 
         if (args.SelectedItem is not NavigationViewItem item)
         {
-            App.Log?.LogVerbose("[SETTINGS] SelectedItem n'est pas un NavigationViewItem — ignoré");
+            App.Log?.LogVerbose("SETTINGS", "SelectedItem is not a NavigationViewItem — ignored");
             return;
         }
         if (item.Tag is not string tag)
         {
-            App.Log?.LogWarning($"[SETTINGS] Item '{item.Content}' sans Tag — nav impossible");
+            App.Log?.LogWarning("SETTINGS", $"Item '{item.Content}' has no Tag — nav impossible");
             return;
         }
         if (tag == "logs") return;
@@ -156,47 +156,47 @@ public sealed partial class SettingsWindow : Window
         var pageType = Type.GetType(tag);
         if (pageType is null)
         {
-            App.Log?.LogError($"[SETTINGS] Type introuvable pour tag '{tag}'");
+            App.Log?.LogError("SETTINGS", $"Type not found for tag '{tag}'");
             return;
         }
 
         if (PageFrame.CurrentSourcePageType == pageType)
         {
-            App.Log?.LogVerbose($"[SETTINGS] {pageType.Name} déjà courante — ignoré");
+            App.Log?.LogVerbose("SETTINGS", $"{pageType.Name} already current — ignored");
             return;
         }
 
-        App.Log?.Log($"[SETTINGS] Navigate → {pageType.Name}");
+        App.Log?.Log("SETTINGS", $"Navigate → {pageType.Name}");
         try
         {
             bool ok = PageFrame.Navigate(pageType, null, new EntranceNavigationTransitionInfo());
             if (!ok)
             {
-                App.Log?.LogError($"[SETTINGS] Navigate({pageType.Name}) a retourné false");
+                App.Log?.LogError("SETTINGS", $"Navigate({pageType.Name}) returned false");
             }
             else
             {
-                App.Log?.LogStep($"[SETTINGS] {pageType.Name} navigation OK");
+                App.Log?.LogStep("SETTINGS", $"{pageType.Name} navigation OK");
             }
         }
         catch (Exception ex)
         {
-            App.Log?.LogError($"[SETTINGS] Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
-            App.Log?.LogError(ex.StackTrace ?? "(no stack)");
+            App.Log?.LogError("SETTINGS", $"Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
+            App.Log?.LogError("SETTINGS", ex.StackTrace ?? "(no stack)");
             DebugLog.Write("SETTINGS", $"Navigate({pageType.Name}) THREW: {ex}");
         }
     }
 
-    // Item footer "Logs" : SelectsOnInvoked=False donc pas de SelectionChanged,
-    // on passe par ItemInvoked pour récupérer le clic et déléguer à App qui
-    // ouvre la LogWindow partagée.
+    // Footer item "Logs": SelectsOnInvoked=False so no SelectionChanged,
+    // we go through ItemInvoked to capture the click and delegate to App
+    // which opens the shared LogWindow.
     private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
         var item = args.InvokedItemContainer as NavigationViewItem;
-        App.Log?.LogVerbose($"[SETTINGS] ItemInvoked: {item?.Content} (tag={item?.Tag})");
+        App.Log?.LogVerbose("SETTINGS", $"ItemInvoked: {item?.Content} (tag={item?.Tag})");
         if (item?.Tag as string == "logs")
         {
-            App.Log?.Log("[SETTINGS] Ouverture LogWindow via footer");
+            App.Log?.Log("SETTINGS", "Opening LogWindow via footer");
             OnShowLogsRequested?.Invoke();
         }
     }

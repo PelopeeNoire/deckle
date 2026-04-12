@@ -5,11 +5,10 @@ public partial class App : Microsoft.UI.Xaml.Application
     private AnchorWindow? _anchor;
     private LogWindow? _logWindow;
 
-    // Accesseur statique pour que les autres Windows/Pages puissent logger
-    // directement dans la LogWindow UI (pas seulement dans %TEMP%\whisp-debug.log
-    // via DebugLog). Utilisé par SettingsWindow et WhisperPage pour instrumenter
-    // les actions utilisateur. Peut être null pendant le tout début du boot ;
-    // chaque appel doit donc utiliser le null-conditional `App.Log?.`.
+    // Static accessor so other Windows/Pages can log directly into the LogWindow
+    // UI (not just into %TEMP%\whisp-debug.log via DebugLog). Used by
+    // SettingsWindow and WhisperPage to instrument user actions. May be null
+    // during very early boot; each call must use null-conditional `App.Log?.`.
     public static LogWindow? Log => (Current as App)?._logWindow;
     internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
     private SettingsWindow? _settingsWindow;
@@ -21,8 +20,8 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         InitializeComponent();
 
-        // Filet de diagnostic — sans ça un crash dans un event WhispEngine
-        // disparaît silencieusement.
+        // Diagnostic safety net — without this, a crash in a WhispEngine
+        // event disappears silently.
         this.UnhandledException += (_, e) =>
         {
             DebugLog.Write("CRASH", $"{e.Exception.GetType().Name}: {e.Exception.Message}");
@@ -48,64 +47,63 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         _engine = new WhispEngine();
 
-        // LogWindow créée une fois, jamais détruite.
+        // LogWindow created once, never destroyed.
         _logWindow = new LogWindow();
 
-        // SettingsWindow créée une fois, jamais détruite. Pas de Show initial :
-        // ouverte uniquement à la demande via tray. L'item footer "Logs" de la
-        // NavigationView ouvre la LogWindow partagée via ce callback.
+        // SettingsWindow created once, never destroyed. No initial Show:
+        // opened only on demand via tray. The "Logs" footer item in
+        // NavigationView opens the shared LogWindow via this callback.
         _settingsWindow = new SettingsWindow
         {
             OnShowLogsRequested = () => _logWindow.ShowAndActivate(),
         };
 
-        // HudWindow créée une fois, jamais détruite. Pas de Show initial : le
-        // constructeur capture l'HWND et pose subclass / raw input / styles
-        // étendus directement sur le handle natif — aucun besoin d'afficher la
-        // fenêtre pour que ça marche. Le premier ShowRecording déclenchera
-        // ShowNoActivate, qui positionne bas-centre et appelle SW_SHOWNOACTIVATE.
+        // HudWindow created once, never destroyed. No initial Show: the
+        // constructor captures the HWND and sets up subclass / raw input /
+        // extended styles directly on the native handle — no need to show the
+        // window for this to work. The first ShowRecording triggers
+        // ShowNoActivate, which positions bottom-center and calls SW_SHOWNOACTIVATE.
         _hudWindow = new HudWindow();
 
         _tray = new TrayIconManager
         {
             OnShowLogs        = () => _logWindow.ShowAndActivate(),
             OnShowSettings    = () => _settingsWindow.ShowAndActivate(),
-            // Clic gauche tray = toggle transcription via le même chemin que la
-            // hotkey standard. Permet de lancer à la souris avec une seule main.
+            // Left-click tray = toggle transcription via the same path as the
+            // standard hotkey. Allows starting with the mouse one-handed.
             OnToggleRecording = () => OnHotkey(NativeMethods.HOTKEY_ID_TRANSCRIBE),
             OnRestart         = () => RestartAppFromTray(),
             OnQuit            = () => QuitApp(),
         };
 
-        // Events moteur → UI. LogWindow.Log/LogError et TrayIconManager.UpdateStatus
-        // sont appelés depuis des threads de fond ; LogWindow marshale en interne
-        // via DispatcherQueue, UpdateStatus n'appelle que Shell_NotifyIcon (thread-safe).
+        // Engine events → UI. LogWindow.Log/LogError and TrayIconManager.UpdateStatus
+        // are called from background threads; LogWindow marshals internally via
+        // DispatcherQueue, UpdateStatus only calls Shell_NotifyIcon (thread-safe).
         _engine.StatusChanged += status =>
         {
             _tray.UpdateStatus(status);
-            _logWindow.Log($"[STATUS] {status}");
-            // Beacon "icône d'app" du LogWindow : rouge enregistrement, gris idle.
+            _logWindow.Log("STATUS", status);
+            // Beacon app icon in LogWindow: red = recording, grey = idle.
             _logWindow.SetRecordingState(status == "Enregistrement...");
 
-            // HUD : piloté par la transition de statut. Thread de fond → HudWindow
-            // marshale en interne via DispatcherQueue.
+            // HUD: driven by status transition. Background thread → HudWindow
+            // marshals internally via DispatcherQueue.
             if (status == "Enregistrement...")
                 _hudWindow.ShowRecording();
             else if (status == "Transcription en cours...")
                 _hudWindow.SwitchToTranscribing();
         };
-        _engine.LogVerboseLine       += msg => _logWindow.LogVerbose(msg);
-        _engine.LogLine              += msg => _logWindow.Log(msg);
-        _engine.LogStepLine          += msg => _logWindow.LogStep(msg);
-        _engine.LogWarningLine       += msg => _logWindow.LogWarning(msg);
-        _engine.LogErrorLine         += msg => _logWindow.LogError(msg);
+        _engine.LogVerboseLine       += (source, msg) => _logWindow.LogVerbose(source, msg);
+        _engine.LogLine              += (source, msg) => _logWindow.Log(source, msg);
+        _engine.LogStepLine          += (source, msg) => _logWindow.LogStep(source, msg);
+        _engine.LogWarningLine       += (source, msg) => _logWindow.LogWarning(source, msg);
+        _engine.LogErrorLine         += (source, msg) => _logWindow.LogError(source, msg);
         _engine.TranscriptionFinished += () => _hudWindow.Hide();
         _engine.MicrophoneUnavailable += (title, body) => _hudWindow.ShowError(title, body);
-        // Rendez-vous synchrone juste avant le paste : on cache le HUD et on
-        // attend que SW_HIDE soit effectif côté thread UI avant que le moteur
-        // n'envoie le SendInput. Évite la race où Hide() (déclenché en async
-        // après le paste) redistribue l'activation pendant que le Ctrl+V est
-        // encore dans la queue d'input du thread cible.
+        // Synchronous rendezvous just before paste: hide the HUD and wait for
+        // SW_HIDE to be effective on the UI thread before the engine sends
+        // SendInput. Avoids the race where Hide() (triggered async after paste)
+        // redistributes activation while Ctrl+V is still in the target's input queue.
         _engine.OnReadyToPaste = () => _hudWindow.HideSync();
 
         _anchor = new AnchorWindow(_tray, OnHotkey);
@@ -113,11 +111,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         _anchor.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 100, 100));
         _anchor.AppWindow.Show(false);
 
-        // Appliquer le thème sauvegardé (System/Light/Dark).
+        // Apply saved theme (System/Light/Dark).
         ApplyTheme(Settings.SettingsService.Instance.Current.Appearance.Theme);
 
-        // Si lancé avec --settings (restart depuis les Settings), rouvrir
-        // automatiquement la fenêtre Settings sur la bonne page.
+        // If launched with --settings (restart from Settings), automatically
+        // reopen the Settings window on the right page.
         var cliArgs = Environment.GetCommandLineArgs();
         int settingsIdx = Array.IndexOf(cliArgs, "--settings");
         if (settingsIdx >= 0)
@@ -132,10 +130,10 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     // ── Theme ────────────────────────────────────────────────────────────────
     //
-    // Pose RequestedTheme sur le Content (FrameworkElement racine) de chaque
-    // fenêtre connue. ElementTheme.Default = suivre le système.
-    // Appelé au boot (OnLaunched) et quand l'utilisateur change le thème
-    // dans GeneralPage.
+    // Sets RequestedTheme on the Content (root FrameworkElement) of each known
+    // window. ElementTheme.Default = follow the system.
+    // Called at boot (OnLaunched) and when the user changes the theme
+    // in GeneralPage.
 
     public static void ApplyTheme(string themeName)
     {
@@ -156,16 +154,16 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 
-    // ── Shutdown propre depuis tray > Quitter ────────────────────────────────
+    // ── Clean shutdown from tray > Quit ──────────────────────────────────────
     //
-    // Application.Current.Exit() ne suffit pas sur WinUI 3 unpackaged quand des
-    // hooks natifs (SetWindowSubclass, RegisterHotKey, waveIn) sont actifs :
-    // le process survit et l'icône tray reste fantôme faute de NIM_DELETE.
+    // Application.Current.Exit() is not enough on WinUI 3 unpackaged when
+    // native hooks (SetWindowSubclass, RegisterHotKey, waveIn) are active:
+    // the process survives and the tray icon remains ghost without NIM_DELETE.
     //
-    // Séquence : (1) Dispose tray → envoie NIM_DELETE + RemoveWindowSubclass.
-    //            (2) Dispose engine → libère le ctx whisper et le pipeline.
-    //            (3) Environment.Exit(0) → sortie brutale garantie. Les threads
-    //                Record/Transcribe étant IsBackground=true, ils meurent avec.
+    // Sequence: (1) Dispose tray → sends NIM_DELETE + RemoveWindowSubclass.
+    //           (2) Dispose engine → frees the whisper ctx and pipeline.
+    //           (3) Environment.Exit(0) → guaranteed hard exit. Record/Transcribe
+    //               threads are IsBackground=true, they die with the process.
     private void QuitApp()
     {
         DebugLog.Write("APP", "Shutdown requested");
@@ -174,11 +172,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         Environment.Exit(0);
     }
 
-    // ── Restart depuis les Settings ─────────────────────────────────────────
+    // ── Restart from Settings ───────────────────────────────────────────────
     //
-    // Lance un nouveau process WhispUI avec --settings pour que les Settings
-    // se rouvrent automatiquement au boot, puis shutdown propre du process
-    // courant via QuitApp().
+    // Launches a new WhispUI process with --settings so Settings reopen
+    // automatically at boot, then clean shutdown of the current process
+    // via QuitApp().
     public static void RestartApp(string? pageTag = null)
     {
         DebugLog.Write("APP", "Restart requested");
@@ -196,10 +194,10 @@ public partial class App : Microsoft.UI.Xaml.Application
             app.QuitApp();
     }
 
-    // ── Restart depuis le tray ─────────────────────────────────────────────
+    // ── Restart from tray ──────────────────────────────────────────────────
     //
-    // Relance un nouveau process WhispUI nu (sans --settings) puis shutdown
-    // propre du process courant.
+    // Launches a new bare WhispUI process (no --settings) then clean
+    // shutdown of the current process.
     private void RestartAppFromTray()
     {
         DebugLog.Write("APP", "Restart from tray requested");
@@ -223,15 +221,15 @@ public partial class App : Microsoft.UI.Xaml.Application
             IntPtr target = NativeMethods.GetForegroundWindow();
             DebugLog.Write("HOTKEY", $"start id={hotkeyId} target={target}");
             string desc = Win32Util.DescribeHwnd(target);
-            _logWindow?.LogStep($"Hotkey start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
+            _logWindow?.LogStep("HOTKEY", $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
             if (Win32Util.GetFocusedClass(target) is null)
-                _logWindow?.LogWarning("Cible sans focus clavier — le paste risque d'échouer");
+                _logWindow?.LogWarning("HOTKEY", "target has no keyboard focus — paste may fail");
             _engine.StartRecording(useLlm: useLlm, shouldPaste: true, pasteTarget: target);
         }
         else
         {
             DebugLog.Write("HOTKEY", $"stop id={hotkeyId}");
-            _logWindow?.LogStep("Hotkey stop");
+            _logWindow?.LogStep("HOTKEY", "stop");
             _engine.StopRecording();
         }
     }
