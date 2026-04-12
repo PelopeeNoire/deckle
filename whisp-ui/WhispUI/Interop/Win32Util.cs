@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace WhispUI;
+namespace WhispUI.Interop;
 
 // ─── Helpers Win32 pour le debug ──────────────────────────────────────────────
 //

@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using WhispUI.Interop;
+using WhispUI.Llm;
 using WhispUI.Logging;
 
 namespace WhispUI;

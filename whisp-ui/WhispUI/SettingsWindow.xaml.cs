@@ -6,7 +6,9 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
+using WhispUI.Interop;
 using WhispUI.Logging;
+using WhispUI.Shell;
 
 namespace WhispUI;
 

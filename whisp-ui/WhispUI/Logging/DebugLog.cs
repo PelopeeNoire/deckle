@@ -1,4 +1,4 @@
-namespace WhispUI;
+namespace WhispUI.Logging;
 
 // Helper de diagnostic de démarrage.
 // Écriture synchrone dans %TEMP%\whisp-debug.log — conçu pour survivre à un crash

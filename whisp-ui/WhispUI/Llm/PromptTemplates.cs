@@ -1,4 +1,4 @@
-namespace WhispUI;
+namespace WhispUI.Llm;
 
 // ─── Templates de prompt par famille de modèle ────────────────────────────────
 //

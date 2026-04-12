@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace WhispUI;
+namespace WhispUI.Interop;
 
 // ── POINT ─────────────────────────────────────────────────────────────────────
 [StructLayout(LayoutKind.Sequential)]

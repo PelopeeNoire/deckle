@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Llm;
 
 namespace WhispUI.Settings.Llm.GgufImport;
 
