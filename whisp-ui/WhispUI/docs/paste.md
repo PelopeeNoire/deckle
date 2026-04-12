@@ -1,10 +1,10 @@
-# Paste — re-capture Stop, race fix, filet PID
+# Paste — cible figée au Start, race fix, filet PID
 
-## Cible paste — re-capture au Stop avec filet PID
+## Cible paste — figée au Start, jamais re-capturée
 
-`_pasteTarget` est captée au Start puis **re-capturée au Stop** via `GetForegroundWindow()`. Permet de coller dans le champ texte courant si l'utilisateur a basculé d'app pendant l'enregistrement.
+`_pasteTarget` est captée **une seule fois au Start** (1ère hotkey) via `GetForegroundWindow()` dans `App.OnHotkey`, puis passée à `StartRecording`. Elle ne change plus jamais ensuite.
 
-**Filet** : si le foreground au Stop appartient au process WhispUI (HUD/LogWindow activé par un clic), on garde la cible Start — évite le faux positif « collé dans nos propres logs ». Voir [WhispEngine.cs:169](../WhispEngine.cs#L169).
+L'utilisateur peut changer de fenêtre/champ pendant l'enregistrement et pendant que la transcription + LLM mouline — le paste ramènera toujours la fenêtre d'origine au premier plan via `SetForegroundWindow`. Si ça échoue (fenêtre fermée, focus non restaurable), le texte reste dans le clipboard et un Warning indique de coller manuellement.
 
 ## Fix race paste / Hide HUD — rendez-vous synchrone
 

@@ -263,29 +263,12 @@ internal sealed class WhispEngine : IDisposable
 
     public void StopRecording()
     {
-        // Re-capture the target at Stop to handle "I switched text fields during
-        // recording": we want to paste in the field where the user IS at Stop
-        // time, not the one at Start. The hotkey is global, so
-        // GetForegroundWindow() at this point returns the user's app. Safety
-        // net: if foreground belongs to WhispUI itself (HUD or LogWindow
-        // activated by a click), keep the Start target — otherwise we'd get
-        // a false positive "pasted into our own logs".
-        IntPtr fg = NativeMethods.GetForegroundWindow();
-        if (fg != IntPtr.Zero)
-        {
-            NativeMethods.GetWindowThreadProcessId(fg, out uint pid);
-            uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
-            if (pid != ownPid)
-            {
-                if (fg != _pasteTarget)
-                    _log.Verbose(LogSource.Hotkey, $"target updated at Stop: {Win32Util.DescribeHwnd(fg)}");
-                _pasteTarget = fg;
-            }
-            else
-            {
-                _log.Verbose(LogSource.Hotkey, $"foreground at Stop = WhispUI ({Win32Util.DescribeHwnd(fg)}), keeping Start target");
-            }
-        }
+        // _pasteTarget is frozen at Start and never updated afterwards.
+        // The user may switch windows/fields during recording or while the
+        // transcription + LLM pipeline runs — the paste always goes back to
+        // the window that was focused when the hotkey was first pressed.
+        // If SetForegroundWindow fails at paste time, the text is still in the
+        // clipboard and the user can paste manually.
         _stopRecording = true;
     }
 
