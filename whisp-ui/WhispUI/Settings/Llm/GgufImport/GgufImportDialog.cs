@@ -20,7 +20,6 @@ internal static class GgufImportDialog
     public static async Task<bool> ShowAsync(XamlRoot root, OllamaService service)
     {
         var view = new GgufImportView();
-        view.Initialize(service);
 
         bool importedOk = false;
 
@@ -33,6 +32,8 @@ internal static class GgufImportDialog
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root
         };
+
+        view.Initialize(service, dialog);
 
         dialog.PrimaryButtonClick += async (_, args) =>
         {

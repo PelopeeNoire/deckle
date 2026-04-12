@@ -82,6 +82,12 @@ public sealed partial class LlmPage : Page
         OllamaStatusBar.IsOpen = !available;
 
         _context.RaiseStateChanged();
+
+        // Update model ComboBoxes in profiles after Ollama responds.
+        var modelNames = new List<string>();
+        foreach (var m in models) modelNames.Add(m.Name);
+        ProfilesSection.AvailableModelNames = modelNames;
+        ProfilesSection.Reload();
     }
 
     private async void ResetAll_Click(object sender, RoutedEventArgs e)

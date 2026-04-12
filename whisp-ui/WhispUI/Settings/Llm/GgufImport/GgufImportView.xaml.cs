@@ -22,15 +22,37 @@ namespace WhispUI.Settings.Llm.GgufImport;
 public sealed partial class GgufImportView : UserControl
 {
     private OllamaService? _service;
+    private ContentDialog? _dialog;
+    private bool _importing;
 
     public GgufImportView()
     {
         InitializeComponent();
     }
 
-    internal void Initialize(OllamaService service)
+    internal void Initialize(OllamaService service, ContentDialog dialog)
     {
         _service = service;
+        _dialog = dialog;
+
+        // Create disabled until required fields are filled.
+        dialog.IsPrimaryButtonEnabled = false;
+        NameBox.TextChanged += (_, _) => UpdateCreateEnabled();
+        PathBox.TextChanged += (_, _) => UpdateCreateEnabled();
+
+        // Prevent closing during import (ESC, Cancel, or any other path).
+        dialog.Closing += (_, args) =>
+        {
+            if (_importing)
+                args.Cancel = true;
+        };
+    }
+
+    private void UpdateCreateEnabled()
+    {
+        if (_dialog != null && !_importing)
+            _dialog.IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(NameBox.Text)
+                                           && !string.IsNullOrWhiteSpace(PathBox.Text);
     }
 
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -77,9 +99,11 @@ public sealed partial class GgufImportView : UserControl
             return false;
         }
 
-        // Show progress — indéterminée + texte de préparation dès l'affichage,
-        // avant même que le premier Report() ne tombe. Évite l'aspect "barre
-        // vide / séparateur" au démarrage du hash.
+        // Lock UI during import.
+        _importing = true;
+        if (_dialog != null)
+            _dialog.IsPrimaryButtonEnabled = false;
+
         ProgressBarControl.IsIndeterminate = true;
         ProgressBarControl.Value = 0;
         ProgressBarControl.Visibility = Visibility.Visible;
@@ -108,15 +132,18 @@ public sealed partial class GgufImportView : UserControl
 
             await _service.ImportGgufAsync(modelName, ggufPath, tmpl, sys, progress);
 
+            _importing = false;
             ProgressBarControl.Visibility = Visibility.Collapsed;
             StatusText.Visibility = Visibility.Collapsed;
             return true;
         }
         catch (Exception ex)
         {
+            _importing = false;
             ProgressBarControl.Visibility = Visibility.Collapsed;
             StatusText.Visibility = Visibility.Collapsed;
             ShowError("Import failed", ex.Message);
+            UpdateCreateEnabled();
             return false;
         }
     }
