@@ -22,9 +22,9 @@ namespace WhispUI.Settings;
 //    Reload ciblé des sections dépendantes
 //  - le Reset all global
 //
-// Les sections qui dépendent d'Ollama (Profiles, Models) reçoivent le context
-// via Initialize() et s'abonnent à StateChanged. Les autres (General,
-// ManualShortcut, Rules) rechargent directement depuis SettingsService.
+// La section Models dépend d'Ollama et reçoit le context via Initialize()
+// + StateChanged. Les autres (General, Profiles, ManualShortcut, Rules)
+// rechargent directement depuis SettingsService.
 
 public sealed partial class LlmPage : Page
 {
@@ -35,7 +35,6 @@ public sealed partial class LlmPage : Page
         InitializeComponent();
         NavigationCacheMode = NavigationCacheMode.Required;
 
-        ProfilesSection.Initialize(_context);
         ModelsSection.Initialize(_context);
 
         GeneralSection.EndpointChanged += async (_, _) => await RefreshOllamaStateAsync();
@@ -57,6 +56,7 @@ public sealed partial class LlmPage : Page
     private void Hydrate()
     {
         GeneralSection.Reload();
+        ProfilesSection.Reload();
         ManualShortcutSection.Reload();
         RulesSection.Reload();
     }
