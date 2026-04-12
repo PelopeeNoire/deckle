@@ -1,15 +1,14 @@
+using WhispUI.Logging;
+
 namespace WhispUI;
 
 public partial class App : Microsoft.UI.Xaml.Application
 {
+    private static readonly LogService _log = LogService.Instance;
+
     private AnchorWindow? _anchor;
     private LogWindow? _logWindow;
 
-    // Static accessor so other Windows/Pages can log directly into the LogWindow
-    // UI (not just into %TEMP%\whisp-debug.log via DebugLog). Used by
-    // SettingsWindow and WhisperPage to instrument user actions. May be null
-    // during very early boot; each call must use null-conditional `App.Log?.`.
-    public static LogWindow? Log => (Current as App)?._logWindow;
     internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
     private SettingsWindow? _settingsWindow;
     private HudWindow? _hudWindow;
@@ -50,6 +49,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         // LogWindow created once, never destroyed.
         _logWindow = new LogWindow();
 
+        // Register logging sinks — DebugLogSink first (survives UI crashes).
+        _log.AddSink(new DebugLogSink());
+        _log.AddSink(_logWindow);
+
         // SettingsWindow created once, never destroyed. No initial Show:
         // opened only on demand via tray. The "Logs" footer item in
         // NavigationView opens the shared LogWindow via this callback.
@@ -76,13 +79,15 @@ public partial class App : Microsoft.UI.Xaml.Application
             OnQuit            = () => QuitApp(),
         };
 
-        // Engine events → UI. LogWindow.Log/LogError and TrayIconManager.UpdateStatus
-        // are called from background threads; LogWindow marshals internally via
-        // DispatcherQueue, UpdateStatus only calls Shell_NotifyIcon (thread-safe).
+        // Engine events → UI. StatusChanged, TranscriptionFinished, etc. are
+        // called from background threads; LogWindow and HudWindow marshal
+        // internally via DispatcherQueue, UpdateStatus only calls
+        // Shell_NotifyIcon (thread-safe). Logging events are gone — the engine
+        // now logs directly via LogService.
         _engine.StatusChanged += status =>
         {
             _tray.UpdateStatus(status);
-            _logWindow.Log("STATUS", status);
+            _log.Info(LogSource.Status, status);
             // Beacon app icon in LogWindow: red = recording, grey = idle.
             _logWindow.SetRecordingState(status == "Enregistrement...");
 
@@ -93,11 +98,6 @@ public partial class App : Microsoft.UI.Xaml.Application
             else if (status == "Transcription en cours...")
                 _hudWindow.SwitchToTranscribing();
         };
-        _engine.LogVerboseLine       += (source, msg) => _logWindow.LogVerbose(source, msg);
-        _engine.LogLine              += (source, msg) => _logWindow.Log(source, msg);
-        _engine.LogStepLine          += (source, msg) => _logWindow.LogStep(source, msg);
-        _engine.LogWarningLine       += (source, msg) => _logWindow.LogWarning(source, msg);
-        _engine.LogErrorLine         += (source, msg) => _logWindow.LogError(source, msg);
         _engine.TranscriptionFinished += () => _hudWindow.Hide();
         _engine.MicrophoneUnavailable += (title, body) => _hudWindow.ShowError(title, body);
         // Synchronous rendezvous just before paste: hide the HUD and wait for
@@ -219,17 +219,17 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (!_engine.IsRecording)
         {
             IntPtr target = NativeMethods.GetForegroundWindow();
-            DebugLog.Write("HOTKEY", $"start id={hotkeyId} target={target}");
             string desc = Win32Util.DescribeHwnd(target);
-            _logWindow?.LogStep("HOTKEY", $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
+            DebugLog.Write("HOTKEY", $"start id={hotkeyId} target={target}");
+            _log.Step(LogSource.Hotkey, $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
             if (Win32Util.GetFocusedClass(target) is null)
-                _logWindow?.LogWarning("HOTKEY", "target has no keyboard focus — paste may fail");
+                _log.Warning(LogSource.Hotkey, "target has no keyboard focus — paste may fail");
             _engine.StartRecording(useLlm: useLlm, shouldPaste: true, pasteTarget: target);
         }
         else
         {
             DebugLog.Write("HOTKEY", $"stop id={hotkeyId}");
-            _logWindow?.LogStep("HOTKEY", "stop");
+            _log.Step(LogSource.Hotkey, "stop");
             _engine.StopRecording();
         }
     }

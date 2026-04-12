@@ -1,11 +1,13 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using WhispUI.Logging;
 
 namespace WhispUI.Settings;
 
 public sealed partial class GeneralPage : Page
 {
+    private static readonly LogService _log = LogService.Instance;
     private bool _loading;
 
     public GeneralPage()
@@ -64,7 +66,7 @@ public sealed partial class GeneralPage : Page
         // index 0 = "System default" → deviceId -1; otherwise index - 1
         int deviceId = comboIndex <= 0 ? -1 : comboIndex - 1;
 
-        App.Log?.Log("GENERAL", $"Audio input device ← {deviceId} ({AudioInputCombo.SelectedItem})");
+        _log.Info(LogSource.SetGeneral, $"Audio input device ← {deviceId} ({AudioInputCombo.SelectedItem})");
         SettingsService.Instance.Current.Recording.AudioInputDeviceId = deviceId;
         SettingsService.Instance.Save();
     }
@@ -94,7 +96,7 @@ public sealed partial class GeneralPage : Page
     private void OverlayEnabledToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        App.Log?.Log("GENERAL", $"Overlay enabled ← {OverlayEnabledToggle.IsOn}");
+        _log.Info(LogSource.SetGeneral, $"Overlay enabled ← {OverlayEnabledToggle.IsOn}");
         SettingsService.Instance.Current.Overlay.Enabled = OverlayEnabledToggle.IsOn;
         SettingsService.Instance.Save();
     }
@@ -102,7 +104,7 @@ public sealed partial class GeneralPage : Page
     private void OverlayFadeToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        App.Log?.Log("GENERAL", $"Overlay fade ← {OverlayFadeToggle.IsOn}");
+        _log.Info(LogSource.SetGeneral, $"Overlay fade ← {OverlayFadeToggle.IsOn}");
         SettingsService.Instance.Current.Overlay.FadeOnProximity = OverlayFadeToggle.IsOn;
         SettingsService.Instance.Save();
     }
@@ -113,7 +115,7 @@ public sealed partial class GeneralPage : Page
         if (OverlayPositionCombo.SelectedItem is ComboBoxItem item &&
             item.Tag is string position)
         {
-            App.Log?.Log("GENERAL", $"Overlay position ← {position}");
+            _log.Info(LogSource.SetGeneral, $"Overlay position ← {position}");
             SettingsService.Instance.Current.Overlay.Position = position;
             SettingsService.Instance.Save();
         }
@@ -129,7 +131,7 @@ public sealed partial class GeneralPage : Page
     private void StartMinimizedToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        App.Log?.Log("GENERAL", $"Start minimized ← {StartMinimizedToggle.IsOn}");
+        _log.Info(LogSource.SetGeneral, $"Start minimized ← {StartMinimizedToggle.IsOn}");
         SettingsService.Instance.Current.Startup.StartMinimized = StartMinimizedToggle.IsOn;
         SettingsService.Instance.Save();
     }
@@ -158,7 +160,7 @@ public sealed partial class GeneralPage : Page
         if (ThemeCombo.SelectedItem is ComboBoxItem item &&
             item.Tag is string theme)
         {
-            App.Log?.Log("GENERAL", $"Theme ← {theme}");
+            _log.Info(LogSource.SetGeneral, $"Theme ← {theme}");
             SettingsService.Instance.Current.Appearance.Theme = theme;
             SettingsService.Instance.Save();
             App.ApplyTheme(theme);
