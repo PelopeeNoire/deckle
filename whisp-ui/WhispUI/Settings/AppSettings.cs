@@ -162,9 +162,9 @@ public sealed class LlmSettings
         new()
         {
             Name = "Nettoyage",
-            Model = "ministral-3:3b--instruct--96k",
+            Model = "",
             Temperature = 0.15,
-            NumCtxK = 4,
+            NumCtxK = 2,
             SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français. Nettoie-la minimalement : " +
                 "corrige la ponctuation, les accents, les mots mal transcrits évidents et les " +
@@ -175,9 +175,9 @@ public sealed class LlmSettings
         new()
         {
             Name = "Restructuration",
-            Model = "ministral-3:14b--instruct--128k",
-            Temperature = 0.15,
-            NumCtxK = 32,
+            Model = "",
+            Temperature = 0.20,
+            NumCtxK = 2,
             SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français, potentiellement longue. " +
                 "Réécris-la en texte structuré et cohérent : regroupe les idées liées, fais des " +
@@ -189,9 +189,9 @@ public sealed class LlmSettings
         new()
         {
             Name = "Prompt",
-            Model = "ministral-3:14b--instruct--128k",
-            Temperature = 0.15,
-            NumCtxK = 32,
+            Model = "",
+            Temperature = 0.30,
+            NumCtxK = 2,
             SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français où la personne exprime une " +
                 "demande, une réflexion ou un besoin qu'elle veut formuler comme prompt pour un " +
