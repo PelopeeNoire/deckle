@@ -169,6 +169,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private void QuitApp()
     {
         DebugLog.Write("APP", "Shutdown requested");
+        try { Settings.SettingsService.Instance.Flush(); } catch (Exception ex) { DebugLog.Write("APP", "settings flush: " + ex.Message); }
         try { _tray?.Dispose();   } catch (Exception ex) { DebugLog.Write("APP", "tray dispose: " + ex.Message); }
         try { _engine?.Dispose(); } catch (Exception ex) { DebugLog.Write("APP", "engine dispose: " + ex.Message); }
         Environment.Exit(0);
@@ -182,6 +183,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     public static void RestartApp(string? pageTag = null)
     {
         DebugLog.Write("APP", "Restart requested");
+
+        // Flush settings synchronously BEFORE launching the new process.
+        // Without this, the new process could read stale JSON if it starts
+        // faster than QuitApp's Flush completes (race on the same file).
+        try { Settings.SettingsService.Instance.Flush(); } catch { }
+
         var exePath = Environment.ProcessPath;
         if (exePath is not null)
         {
@@ -203,6 +210,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private void RestartAppFromTray()
     {
         DebugLog.Write("APP", "Restart from tray requested");
+        try { Settings.SettingsService.Instance.Flush(); } catch { }
         var exePath = Environment.ProcessPath;
         if (exePath is not null)
         {

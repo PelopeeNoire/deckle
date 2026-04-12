@@ -22,6 +22,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <!-- MVVM Toolkit — source generators [ObservableProperty], ObservableObject, [RelayCommand].
+         Élimine le boilerplate INotifyPropertyChanged dans les ViewModels. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- SettingsCard / SettingsExpander — pattern canonique Windows 11 pour les pages de
          paramètres (spacing, section headers, animations documentés Microsoft Learn). -->
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
