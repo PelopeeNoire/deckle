@@ -35,16 +35,26 @@ internal static class GgufImportDialog
 
         view.Initialize(service, dialog);
 
-        dialog.PrimaryButtonClick += async (_, args) =>
+        dialog.PrimaryButtonClick += (sender, args) =>
         {
-            var deferral = args.GetDeferral();
-            bool ok = await view.TryImportAsync();
-            if (!ok)
-                args.Cancel = true;
-            else
-                importedOk = true;
-            deferral.Complete();
+            // Cancel close immediately so the dialog stays open and the UI
+            // thread remains free to render progress bar updates.
+            args.Cancel = true;
+
+            // Fire-and-forget: TryImportAsync handles its own errors.
+            // On success it calls dialog.Hide() to close the dialog.
+            _ = RunImportAsync();
         };
+
+        async Task RunImportAsync()
+        {
+            bool ok = await view.TryImportAsync();
+            if (ok)
+            {
+                importedOk = true;
+                dialog.Hide();
+            }
+        }
 
         await dialog.ShowAsync();
         return importedOk;

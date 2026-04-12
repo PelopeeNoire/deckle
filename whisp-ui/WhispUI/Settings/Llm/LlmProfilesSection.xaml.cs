@@ -101,6 +101,24 @@ public sealed partial class LlmProfilesSection : UserControl
         }
     }
 
+    // ── TextChanged → push value immediately for dirty detection ──────────
+    //
+    // x:Bind TwoWay on TextBox updates the source on LostFocus only.
+    // These handlers push the value on every keystroke so IsDirty updates
+    // immediately and the Save/Cancel bar appears without waiting for blur.
+
+    private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is TextBox tb && tb.Tag is ProfileViewModel vm)
+            vm.Name = tb.Text;
+    }
+
+    private void SystemPromptBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is TextBox tb && tb.Tag is ProfileViewModel vm)
+            vm.SystemPrompt = tb.Text;
+    }
+
     // ── Model ComboBox (IsEditable) ────────────────────────────────────────
 
     private void ModelCombo_Loaded(object sender, RoutedEventArgs e)
