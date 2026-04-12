@@ -47,6 +47,8 @@
                                             HorizontalAlignment="Stretch">
                                     <TextBox Header="Name"
                                              Text="{x:Bind Name, Mode=TwoWay}"
+                                             Tag="{x:Bind}"
+                                             TextChanged="NameBox_TextChanged"
                                              PlaceholderText="Profile name"
                                              HorizontalAlignment="Stretch" />
 
@@ -61,12 +63,20 @@
 
                                     <TextBox Header="System prompt"
                                              Text="{x:Bind SystemPrompt, Mode=TwoWay}"
+                                             Tag="{x:Bind}"
+                                             TextChanged="SystemPromptBox_TextChanged"
                                              AcceptsReturn="True"
                                              TextWrapping="Wrap"
                                              MinHeight="100"
                                              MaxHeight="300"
                                              PlaceholderText="System prompt sent with every rewrite request..."
                                              HorizontalAlignment="Stretch" />
+
+                                    <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,-4,0,0"
+                                               Text="Instructions sent with every request to define the model's behavior and rewriting style." />
 
                                     <!-- Temperature -->
                                     <StackPanel Orientation="Horizontal"
@@ -86,6 +96,12 @@
                                                    Style="{StaticResource BodyTextBlockStyle}" />
                                     </StackPanel>
 
+                                    <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,-4,0,0"
+                                               Text="Controls randomness. Lower values produce more focused, deterministic output. Higher values increase creativity and variation." />
+
                                     <!-- Context size -->
                                     <StackPanel Orientation="Horizontal"
                                                 Spacing="12"
@@ -102,6 +118,12 @@
                                                    MinWidth="40"
                                                    Style="{StaticResource BodyTextBlockStyle}" />
                                     </StackPanel>
+
+                                    <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,-4,0,0"
+                                               Text="Maximum tokens the model considers at once. Larger context uses more memory and is slower." />
 
                                     <!-- Advanced parameters -->
                                     <Expander Header="Advanced parameters"

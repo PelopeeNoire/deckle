@@ -68,11 +68,11 @@ public sealed partial class GgufImportView : UserControl
     }
 
     /// <summary>
-    /// Valide les champs et lance l'import. Retourne true en cas de succès,
-    /// false si la validation échoue ou si l'import échoue.
-    /// Appelé par GgufImportDialog.PrimaryButtonClick avec un deferral.
+    /// Valide les champs et lance l'import. Retourne true en cas de succès.
+    /// Appelé depuis PrimaryButtonClick (sans deferral) pour que le thread UI
+    /// reste libre de rendre la ProgressBar.
     /// </summary>
-    public async Task<bool> TryImportAsync()
+    internal async Task<bool> TryImportAsync()
     {
         if (_service == null) return false;
 
@@ -130,7 +130,7 @@ public sealed partial class GgufImportView : UserControl
             string? tmpl = string.IsNullOrWhiteSpace(TemplateBox.Text) ? null : TemplateBox.Text;
             string? sys = string.IsNullOrWhiteSpace(SystemPromptBox.Text) ? null : SystemPromptBox.Text;
 
-            await _service.ImportGgufAsync(modelName, ggufPath, tmpl, sys, progress);
+            await Task.Run(() => _service.ImportGgufAsync(modelName, ggufPath, tmpl, sys, progress));
 
             _importing = false;
             ProgressBarControl.Visibility = Visibility.Collapsed;
