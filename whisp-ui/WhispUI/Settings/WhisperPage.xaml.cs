@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -8,28 +9,26 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Logging;
+using WhispUI.Settings.ViewModels;
 
 namespace WhispUI.Settings;
 
 public sealed partial class WhisperPage : Page
 {
     private static readonly LogService _log = LogService.Instance;
-    // _loading = true during initial hydration to prevent ValueChanged/Toggled
-    // handlers from writing back into SettingsService (and triggering an
-    // unnecessary Save) while we set values from JSON.
-    private bool _loading;
 
-    // Values at settings startup that require a restart. The "Restart required"
-    // InfoBar only appears when the current value differs from the startup value,
-    // and disappears if the user reverts.
+    public WhisperViewModel ViewModel { get; } = new();
+
+    // Guards combo SelectionChanged during initial sync — these handlers
+    // set VM properties which would trigger PushToSettings() needlessly.
+    private bool _initializing;
+
+    // Values at page load that require a restart. The footer only appears
+    // when the current value differs from the snapshot.
     private string _startupModel = "";
     private bool _startupUseGpu;
 
-    // Initial Prompt: no auto-save on keystroke. We store the saved value
-    // and show Save/Cancel when the text differs.
-    private string _savedInitialPrompt = "";
-
-    // Defaults resolved from POCOs — single source of truth.
+    // Defaults resolved from POCOs — single source of truth for Reset.
     private static readonly PathsSettings _pathsDefaults = new();
     private static readonly TranscriptionSettings _transcriptionDefaults = new();
     private static readonly SpeechDetectionSettings _speechDefaults = new();
@@ -46,33 +45,21 @@ public sealed partial class WhisperPage : Page
             InitializeComponent();
             _log.Verbose(LogSource.SetWhisper, "InitializeComponent OK");
 
-            // Guard: XAML-wired ValueChanged handlers are active after
-            // InitializeComponent. Setting Minimum/Value below fires them.
-            // Without this guard, they write constructor defaults into the
-            // POCO and call Save(), overwriting the user's persisted values
-            // before Hydrate() gets a chance to load them.
-            _loading = true;
-
             // WinUI 3 release bug: cannot set Minimum > defaultValue in XAML
-            // for VadMaxSpeechSlider without a parser crash. We do it here
-            // now that the Slider is constructed and outside the LoadComponent
-            // path. Maximum=60 already comes from XAML.
+            // without a parser crash under trimming. We set Minimum (and
+            // Maximum for LogprobSlider) in code-behind. The x:Bind TwoWay
+            // binding has already set Value from the VM constructor defaults
+            // during InitializeComponent — those defaults are chosen to be
+            // valid with Minimum=0 and default Maximum, so no clamping issue
+            // except for LogprobSlider (VM default -1.0 gets clamped to 0,
+            // then to -0.4 when Maximum is set; Load() corrects it).
             VadMaxSpeechSlider.Minimum = 5;
-            VadMaxSpeechSlider.Value   = 5;
-
-            // WinUI 3 release bug: Minimum != 0 in XAML crashes LoadComponent
-            // under trimming. We set Minimum in code-behind for the 3
-            // confidence sliders whose range excludes 0.
-            EntropySlider.Minimum  = 1.5;
-            EntropySlider.Value    = 2.4;
-            LogprobSlider.Minimum  = -1.5;
-            LogprobSlider.Maximum  = -0.4;
-            LogprobSlider.Value    = -1.0;
+            EntropySlider.Minimum = 1.5;
+            LogprobSlider.Minimum = -1.5;
+            LogprobSlider.Maximum = -0.4;
             NoSpeechSlider.Minimum = 0.05;
-            NoSpeechSlider.Value   = 0.6;
 
-            // _loading stays true — Hydrate() (in Loaded) will set it false.
-            _log.Verbose(LogSource.SetWhisper, "VadMaxSpeechSlider + Confidence sliders Min/Value set in code-behind (under _loading guard)");
+            _log.Verbose(LogSource.SetWhisper, "Bugged slider Minimum/Maximum set in code-behind");
         }
         catch (Exception ex)
         {
@@ -81,43 +68,46 @@ public sealed partial class WhisperPage : Page
             DebugLog.Write("WHISPERPAGE", $"InitializeComponent THREW: {ex}");
             throw;
         }
+
         NavigationCacheMode = NavigationCacheMode.Required;
+
         Loaded += (_, _) =>
         {
             _log.Verbose(LogSource.SetWhisper, "Loaded fired");
             try
             {
-            PopulateModelCombo();
-            Hydrate();
-            // Transcription
-            WireHover(ModelCard, ModelReset);
-            WireHover(UseGpuCard, UseGpuReset);
-            WireHover(LanguageCard, LanguageReset);
-            InitialPromptCard.PointerEntered += (_, _) => InitialPromptReset.Opacity = 1;
-            InitialPromptCard.PointerExited += (_, _) => InitialPromptReset.Opacity = 0;
-            PathsCard.PointerEntered += (_, _) => ModelsDirectoryReset.Opacity = 1;
-            PathsCard.PointerExited += (_, _) => ModelsDirectoryReset.Opacity = 0;
-            // VAD
-            VadEnabledCard.PointerEntered += (_, _) => VadEnabledReset.Opacity = 1;
-            VadEnabledCard.PointerExited += (_, _) => VadEnabledReset.Opacity = 0;
-            WireHover(VadThresholdCard, VadThresholdReset);
-            WireHover(VadMinSpeechCard, VadMinSpeechReset);
-            WireHover(VadMinSilenceCard, VadMinSilenceReset);
-            WireHover(VadMaxSpeechCard, VadMaxSpeechReset);
-            WireHover(VadSpeechPadCard, VadSpeechPadReset);
-            WireHover(VadOverlapCard, VadOverlapReset);
-            // Décodage / Confiance / Filtres / Contexte
-            WireHover(TemperatureCard, TemperatureReset);
-            WireHover(TemperatureIncrementCard, TemperatureIncrementReset);
-            WireHover(EntropyCard, EntropyReset);
-            WireHover(LogprobCard, LogprobReset);
-            WireHover(NoSpeechCard, NoSpeechReset);
-            WireHover(SuppressNstCard, SuppressNstReset);
-            WireHover(SuppressBlankCard, SuppressBlankReset);
-            WireHover(UseContextCard, UseContextReset);
-            WireHover(MaxTokensCard, MaxTokensReset);
-            SuppressRegexCard.PointerEntered += (_, _) => SuppressRegexReset.Opacity = 1;
-            SuppressRegexCard.PointerExited += (_, _) => SuppressRegexReset.Opacity = 0;
+                // Hover reveal for reset buttons — one-time setup.
+                WireHover(ModelCard, ModelReset);
+                WireHover(UseGpuCard, UseGpuReset);
+                WireHover(LanguageCard, LanguageReset);
+                InitialPromptCard.PointerEntered += (_, _) => InitialPromptReset.Opacity = 1;
+                InitialPromptCard.PointerExited += (_, _) => InitialPromptReset.Opacity = 0;
+                PathsCard.PointerEntered += (_, _) => ModelsDirectoryReset.Opacity = 1;
+                PathsCard.PointerExited += (_, _) => ModelsDirectoryReset.Opacity = 0;
+                VadEnabledCard.PointerEntered += (_, _) => VadEnabledReset.Opacity = 1;
+                VadEnabledCard.PointerExited += (_, _) => VadEnabledReset.Opacity = 0;
+                WireHover(VadThresholdCard, VadThresholdReset);
+                WireHover(VadMinSpeechCard, VadMinSpeechReset);
+                WireHover(VadMinSilenceCard, VadMinSilenceReset);
+                WireHover(VadMaxSpeechCard, VadMaxSpeechReset);
+                WireHover(VadSpeechPadCard, VadSpeechPadReset);
+                WireHover(VadOverlapCard, VadOverlapReset);
+                WireHover(TemperatureCard, TemperatureReset);
+                WireHover(TemperatureIncrementCard, TemperatureIncrementReset);
+                WireHover(EntropyCard, EntropyReset);
+                WireHover(LogprobCard, LogprobReset);
+                WireHover(NoSpeechCard, NoSpeechReset);
+                WireHover(SuppressNstCard, SuppressNstReset);
+                WireHover(SuppressBlankCard, SuppressBlankReset);
+                WireHover(UseContextCard, UseContextReset);
+                WireHover(MaxTokensCard, MaxTokensReset);
+                SuppressRegexCard.PointerEntered += (_, _) => SuppressRegexReset.Opacity = 1;
+                SuppressRegexCard.PointerExited += (_, _) => SuppressRegexReset.Opacity = 0;
+
+                // React to VM property changes for side effects (restart
+                // state, model folder re-scan).
+                ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+
                 _log.Step(LogSource.SetWhisper, "Loaded complete — page ready");
             }
             catch (Exception ex)
@@ -131,51 +121,103 @@ public sealed partial class WhisperPage : Page
 
     // NavigationCacheMode.Required reuses the page instance. Loaded + hover
     // wiring only fire once (first navigation). On subsequent navigations we
-    // only need to re-hydrate settings from the POCO — the controls and hover
-    // handlers are already set up.
+    // reload settings from the POCO via the VM.
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        _loading = true;
+        _initializing = true;
+        ViewModel.Load();
         PopulateModelCombo();
-        // Hydrate sets _loading = true (redundant) then false at the end.
-        Hydrate();
+        SyncLanguageCombo();
+        _startupModel = ViewModel.Model;
+        _startupUseGpu = ViewModel.UseGpu;
+        _initializing = false;
     }
 
-    // Helper commun pour instrumenter chaque handler utilisateur :
-    //   - log Verbose de l'action tentée (avec la valeur)
-    //   - exécute l'action
-    //   - log Error si exception (l'UI a déjà changé, mais SettingsService.Save
-    //     peut lever sur I/O — on loggue la trace sans masquer l'exception)
-    // Retourne false si une exception a été capturée, pour que l'appelant puisse
-    // éventuellement rollback sa valeur UI.
-    private bool TryApply(string action, System.Action body)
+    // ── VM PropertyChanged side effects ─────────────────────────────────────
+    //
+    // During _initializing (Load + combo population), these are skipped.
+    // After that, user interaction triggers:
+    //   Model / UseGpu → restart footer
+    //   ModelsDirectory → re-scan model combo
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        _log.Verbose(LogSource.SetWhisper, $"{action}");
-        try
+        if (_initializing) return;
+        switch (e.PropertyName)
         {
-            body();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _log.Error(LogSource.SetWhisper, $"{action} THREW {ex.GetType().Name}: {ex.Message}");
-            _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
-            DebugLog.Write("WHISPERPAGE", $"{action} THREW: {ex}");
-            return false;
+            case nameof(WhisperViewModel.Model):
+            case nameof(WhisperViewModel.UseGpu):
+                UpdateRestartState();
+                break;
+            case nameof(WhisperViewModel.ModelsDirectory):
+                _initializing = true;
+                try { PopulateModelCombo(); } finally { _initializing = false; }
+                break;
         }
     }
 
-    // Reset button visible uniquement quand la SettingsCard parente est survolée.
+    // ── Slider display text ─────────────────────────────────────────────────
+    //
+    // ValueChanged fires both from user interaction and from binding updates
+    // (during Load). The handlers only update the display TextBlock — all
+    // persistence flows through the VM via x:Bind TwoWay.
+
+    private static string Fmt(double v) =>
+        v.ToString("0.0", CultureInfo.InvariantCulture);
+
+    private static string FmtTwo(double v) =>
+        v.ToString("0.00", CultureInfo.InvariantCulture);
+
+    private static string FmtSeconds(double v) =>
+        ((int)v).ToString(CultureInfo.InvariantCulture) + "s";
+
+    private void VadThresholdSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        VadThresholdValue.Text = FmtTwo(e.NewValue);
+
+    private void VadMaxSpeechSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        VadMaxSpeechValue.Text = FmtSeconds(e.NewValue);
+
+    private void VadOverlapSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        VadOverlapValue.Text = FmtTwo(e.NewValue);
+
+    private void TemperatureSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        TemperatureValue.Text = Fmt(e.NewValue);
+
+    private void TemperatureIncrementSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        TemperatureIncrementValue.Text = Fmt(e.NewValue);
+        TemperatureIncrementWarning.IsOpen = e.NewValue == 0.0;
+    }
+
+    private void EntropySlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        EntropyValue.Text = Fmt(e.NewValue);
+
+    private void LogprobSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        LogprobValue.Text = FmtTwo(e.NewValue);
+
+    private void NoSpeechSlider_ValueChanged(object sender,
+        Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) =>
+        NoSpeechValue.Text = FmtTwo(e.NewValue);
+
+    // ── Combo handlers (Model, Language) ────────────────────────────────────
+    //
+    // Combos stay in code-behind: Model is populated dynamically from disk,
+    // Language is an editable ComboBox with ComboBoxItem children.
+
     private static void WireHover(SettingsCard card, Button resetButton)
     {
         card.PointerEntered += (_, _) => resetButton.Opacity = 1;
         card.PointerExited += (_, _) => resetButton.Opacity = 0;
     }
 
-    // Scanne le dossier des modèles et peuple le ComboBox avec les .bin trouvés,
-    // hors modèle Silero (celui-ci n'est pas un modèle Whisper). Si le dossier
-    // n'existe pas, on tombe sur un placeholder.
     private void PopulateModelCombo()
     {
         var items = new List<string>();
@@ -197,528 +239,120 @@ public sealed partial class WhisperPage : Page
             DebugLog.Write("SETTINGS", $"model scan failed: {ex.Message}");
         }
 
-        // Garantir que le modèle courant est présent dans la liste même si le
-        // fichier n'est pas (encore) sur disque — évite que l'UI efface la
-        // valeur persistée au simple affichage de la page.
-        string current = SettingsService.Instance.Current.Transcription.Model;
+        string current = ViewModel.Model;
         if (!string.IsNullOrEmpty(current) && !items.Contains(current))
             items.Insert(0, current);
 
         ModelCombo.ItemsSource = items;
-
-        // Re-applique la sélection après assignation de l'ItemsSource. Sans ça,
-        // un re-scan (ex. changement de dossier) laisserait SelectedItem à null
-        // et ferait croire à l'utilisateur que le modèle a été perdu.
         if (!string.IsNullOrEmpty(current))
             ModelCombo.SelectedItem = current;
     }
 
-    private void Hydrate()
+    private void SyncLanguageCombo()
     {
-        _loading = true;
-        try
-        {
-            var s = SettingsService.Instance.Current;
-
-            // Snapshot des valeurs restart-requiring au démarrage.
-            _startupModel = s.Transcription.Model;
-            _startupUseGpu = s.Transcription.UseGpu;
-
-            // Transcription
-            ModelsDirectoryBox.Text = s.Paths.ModelsDirectory;
-            ModelCombo.SelectedItem = s.Transcription.Model;
-            UseGpuToggle.IsOn = s.Transcription.UseGpu;
-            LanguageCombo.Text = s.Transcription.Language;
-            _savedInitialPrompt = s.Transcription.InitialPrompt;
-            InitialPromptBox.Text = s.Transcription.InitialPrompt;
-
-            // VAD
-            VadEnabledToggle.IsOn = s.SpeechDetection.Enabled;
-            VadThresholdSlider.Value = s.SpeechDetection.Threshold;
-            UpdateVadThresholdText(s.SpeechDetection.Threshold);
-            VadMinSpeechBox.Value = s.SpeechDetection.MinSpeechDurationMs;
-            VadMinSilenceBox.Value = s.SpeechDetection.MinSilenceDurationMs;
-            VadMaxSpeechSlider.Value = s.SpeechDetection.MaxSpeechDurationSec;
-            UpdateVadMaxSpeechText(s.SpeechDetection.MaxSpeechDurationSec);
-            VadSpeechPadBox.Value = s.SpeechDetection.SpeechPadMs;
-            VadOverlapSlider.Value = s.SpeechDetection.SamplesOverlap;
-            UpdateVadOverlapText(s.SpeechDetection.SamplesOverlap);
-
-            // Décodage
-            TemperatureSlider.Value = s.Decoding.Temperature;
-            UpdateTemperatureText(s.Decoding.Temperature);
-            TemperatureIncrementSlider.Value = s.Decoding.TemperatureIncrement;
-            UpdateTemperatureIncrementText(s.Decoding.TemperatureIncrement);
-            UpdateTemperatureIncrementWarning(s.Decoding.TemperatureIncrement);
-
-            // Seuils de confiance
-            EntropySlider.Value = s.Confidence.EntropyThreshold;
-            UpdateEntropyText(s.Confidence.EntropyThreshold);
-            LogprobSlider.Value = s.Confidence.LogprobThreshold;
-            UpdateLogprobText(s.Confidence.LogprobThreshold);
-            NoSpeechSlider.Value = s.Confidence.NoSpeechThreshold;
-            UpdateNoSpeechText(s.Confidence.NoSpeechThreshold);
-
-            // Filtres de sortie
-            SuppressNstToggle.IsOn = s.OutputFilters.SuppressNonSpeechTokens;
-            SuppressBlankToggle.IsOn = s.OutputFilters.SuppressBlank;
-            SuppressRegexBox.Text = s.OutputFilters.SuppressRegex;
-
-            // Contexte et segmentation
-            UseContextToggle.IsOn = s.Context.UseContext;
-            MaxTokensBox.Value = s.Context.MaxTokens;
-        }
-        finally
-        {
-            _loading = false;
-        }
-    }
-
-    // Format d'affichage de valeur slider — 1 décimale, séparateur "." pour
-    // correspondre aux conventions techniques Whisper, pas à la locale OS.
-    private static string Fmt(double v) =>
-        v.ToString("0.0", CultureInfo.InvariantCulture);
-
-    private static string FmtTwo(double v) =>
-        v.ToString("0.00", CultureInfo.InvariantCulture);
-
-    private static string FmtSeconds(double v) =>
-        ((int)v).ToString(CultureInfo.InvariantCulture) + "s";
-
-    // ── Transcription ───────────────────────────────────────────────────────
-
-    private void ModelsDirectoryBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"Paths.ModelsDirectory ← \"{ModelsDirectoryBox.Text}\"", () =>
-        {
-            SettingsService.Instance.Current.Paths.ModelsDirectory = ModelsDirectoryBox.Text;
-            SettingsService.Instance.Save();
-        });
-
-        // Re-scan immédiat : sinon l'utilisateur change le dossier et le combo
-        // reste figé sur l'ancien contenu jusqu'au prochain load de la page.
-        _loading = true;
-        try { PopulateModelCombo(); } finally { _loading = false; }
-    }
-
-    private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Paths.ModelsDirectory → \"{_pathsDefaults.ModelsDirectory}\"");
-        ModelsDirectoryBox.Text = _pathsDefaults.ModelsDirectory;
+        LanguageCombo.Text = ViewModel.Language;
     }
 
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loading || ModelCombo.SelectedItem is not string model) return;
-        TryApply($"Transcription.Model ← \"{model}\"", () =>
-        {
-            SettingsService.Instance.Current.Transcription.Model = model;
-            SettingsService.Instance.Save();
-            UpdateRestartState();
-        });
-    }
-
-    private void ModelReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Transcription.Model → \"{_transcriptionDefaults.Model}\"");
-        ModelCombo.SelectedItem = _transcriptionDefaults.Model;
-    }
-
-    private void UseGpuToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"Transcription.UseGpu ← {UseGpuToggle.IsOn}", () =>
-        {
-            SettingsService.Instance.Current.Transcription.UseGpu = UseGpuToggle.IsOn;
-            SettingsService.Instance.Save();
-            UpdateRestartState();
-        });
-    }
-
-    private void UseGpuReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Transcription.UseGpu → {_transcriptionDefaults.UseGpu}");
-        UseGpuToggle.IsOn = _transcriptionDefaults.UseGpu;
+        if (_initializing || ModelCombo.SelectedItem is not string model) return;
+        ViewModel.Model = model;
     }
 
     private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loading) return;
+        if (_initializing) return;
         string text = LanguageCombo.Text ?? "";
         if (LanguageCombo.SelectedItem is ComboBoxItem item && item.Content is string s)
             text = s;
-        TryApply($"Transcription.Language ← \"{text}\"", () =>
-        {
-            SettingsService.Instance.Current.Transcription.Language = text;
-            SettingsService.Instance.Save();
-        });
+        ViewModel.Language = text;
     }
+
+    // ── Reset handlers ──────────────────────────────────────────────────────
+    //
+    // Set the VM property (or combo for Model/Language) → OnXChanged fires →
+    // PushToSettings. For combos, SelectionChanged fires → handler sets VM.
+
+    private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.ModelsDirectory = _pathsDefaults.ModelsDirectory;
+
+    private void ModelReset_Click(object sender, RoutedEventArgs e) =>
+        ModelCombo.SelectedItem = _transcriptionDefaults.Model;
+
+    private void UseGpuReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.UseGpu = _transcriptionDefaults.UseGpu;
 
     private void LanguageReset_Click(object sender, RoutedEventArgs e)
     {
-        _log.Info(LogSource.SetWhisper, $"Reset Transcription.Language → \"{_transcriptionDefaults.Language}\"");
+        _initializing = true;
         LanguageCombo.Text = _transcriptionDefaults.Language;
+        _initializing = false;
+        ViewModel.Language = _transcriptionDefaults.Language;
     }
 
-    private void InitialPromptBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_loading) return;
-        // Pas d'auto-save : on montre Save/Cancel quand le texte diffère
-        // de la valeur sauvegardée, on les cache quand il revient.
-        bool isDirty = InitialPromptBox.Text != _savedInitialPrompt;
-        InitialPromptActions.Visibility = isDirty ? Visibility.Visible : Visibility.Collapsed;
-    }
+    private void InitialPromptReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.InitialPrompt = _transcriptionDefaults.InitialPrompt;
 
-    private void InitialPromptSave_Click(object sender, RoutedEventArgs e)
-    {
-        TryApply($"Transcription.InitialPrompt ← ({InitialPromptBox.Text.Length} chars)", () =>
-        {
-            _savedInitialPrompt = InitialPromptBox.Text;
-            SettingsService.Instance.Current.Transcription.InitialPrompt = InitialPromptBox.Text;
-            SettingsService.Instance.Save();
-            InitialPromptActions.Visibility = Visibility.Collapsed;
-        });
-    }
+    private void VadEnabledReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadEnabled = _speechDefaults.Enabled;
 
-    private void InitialPromptCancel_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Verbose(LogSource.SetWhisper, "InitialPrompt Cancel — revert");
-        InitialPromptBox.Text = _savedInitialPrompt;
-        // TextChanged se déclenche → isDirty = false → actions masquées.
-    }
+    private void VadThresholdReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadThreshold = _speechDefaults.Threshold;
 
-    private void InitialPromptReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, "Reset Transcription.InitialPrompt");
-        // Pose le défaut dans le TextBox — TextChanged détecte le dirty state
-        // et affiche Save/Cancel si le défaut diffère de la valeur sauvée.
-        InitialPromptBox.Text = _transcriptionDefaults.InitialPrompt;
-    }
+    private void VadMinSpeechReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadMinSpeechDurationMs = _speechDefaults.MinSpeechDurationMs;
 
-    // ── VAD ─────────────────────────────────────────────────────────────────
+    private void VadMinSilenceReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadMinSilenceDurationMs = _speechDefaults.MinSilenceDurationMs;
 
-    private void VadEnabledToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"SpeechDetection.Enabled ← {VadEnabledToggle.IsOn}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.Enabled = VadEnabledToggle.IsOn;
-            SettingsService.Instance.Save();
-        });
-    }
+    private void VadMaxSpeechReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadMaxSpeechDurationSec = _speechDefaults.MaxSpeechDurationSec;
 
-    private void VadEnabledReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.Enabled → {_speechDefaults.Enabled}");
-        VadEnabledToggle.IsOn = _speechDefaults.Enabled;
-    }
+    private void VadSpeechPadReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadSpeechPadMs = _speechDefaults.SpeechPadMs;
 
-    private void VadThresholdSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateVadThresholdText(e.NewValue);
-        if (_loading) return;
-        TryApply($"SpeechDetection.Threshold ← {e.NewValue:0.00}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.Threshold = (float)e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
+    private void VadOverlapReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.VadSamplesOverlap = _speechDefaults.SamplesOverlap;
 
-    private void UpdateVadThresholdText(double v) => VadThresholdValue.Text = FmtTwo(v);
+    private void TemperatureReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.Temperature = _decodingDefaults.Temperature;
 
-    private void VadThresholdReset_Click(object sender, RoutedEventArgs e)
-    {
-        VadThresholdSlider.Value = _speechDefaults.Threshold;
-    }
+    private void TemperatureIncrementReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.TemperatureIncrement = _decodingDefaults.TemperatureIncrement;
 
-    private void VadMinSpeechBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
-    {
-        if (_loading || double.IsNaN(args.NewValue)) return;
-        TryApply($"SpeechDetection.MinSpeechDurationMs ← {(int)args.NewValue}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.MinSpeechDurationMs = (int)args.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
+    private void EntropyReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.EntropyThreshold = _confidenceDefaults.EntropyThreshold;
 
-    private void VadMinSpeechReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.MinSpeechDurationMs → {_speechDefaults.MinSpeechDurationMs}");
-        VadMinSpeechBox.Value = _speechDefaults.MinSpeechDurationMs;
-    }
+    private void LogprobReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.LogprobThreshold = _confidenceDefaults.LogprobThreshold;
 
-    private void VadMinSilenceBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
-    {
-        if (_loading || double.IsNaN(args.NewValue)) return;
-        TryApply($"SpeechDetection.MinSilenceDurationMs ← {(int)args.NewValue}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.MinSilenceDurationMs = (int)args.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
+    private void NoSpeechReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.NoSpeechThreshold = _confidenceDefaults.NoSpeechThreshold;
 
-    private void VadMinSilenceReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.MinSilenceDurationMs → {_speechDefaults.MinSilenceDurationMs}");
-        VadMinSilenceBox.Value = _speechDefaults.MinSilenceDurationMs;
-    }
+    private void SuppressNstReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.SuppressNonSpeechTokens = _outputDefaults.SuppressNonSpeechTokens;
 
-    private void VadMaxSpeechSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateVadMaxSpeechText(e.NewValue);
-        if (_loading) return;
-        TryApply($"SpeechDetection.MaxSpeechDurationSec ← {(int)e.NewValue}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.MaxSpeechDurationSec = (float)e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
+    private void SuppressBlankReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.SuppressBlank = _outputDefaults.SuppressBlank;
 
-    private void UpdateVadMaxSpeechText(double v) => VadMaxSpeechValue.Text = FmtSeconds(v);
+    private void SuppressRegexReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.SuppressRegex = _outputDefaults.SuppressRegex;
 
-    private void VadMaxSpeechReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.MaxSpeechDurationSec → {_speechDefaults.MaxSpeechDurationSec}");
-        VadMaxSpeechSlider.Value = _speechDefaults.MaxSpeechDurationSec;
-    }
+    private void UseContextReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.UseContext = _contextDefaults.UseContext;
 
-    private void VadSpeechPadBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
-    {
-        if (_loading || double.IsNaN(args.NewValue)) return;
-        TryApply($"SpeechDetection.SpeechPadMs ← {(int)args.NewValue}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.SpeechPadMs = (int)args.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void VadSpeechPadReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.SpeechPadMs → {_speechDefaults.SpeechPadMs}");
-        VadSpeechPadBox.Value = _speechDefaults.SpeechPadMs;
-    }
-
-    private void VadOverlapSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateVadOverlapText(e.NewValue);
-        if (_loading) return;
-        TryApply($"SpeechDetection.SamplesOverlap ← {e.NewValue:0.00}", () =>
-        {
-            SettingsService.Instance.Current.SpeechDetection.SamplesOverlap = (float)e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UpdateVadOverlapText(double v) => VadOverlapValue.Text = FmtTwo(v);
-
-    private void VadOverlapReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.SamplesOverlap → {_speechDefaults.SamplesOverlap}");
-        VadOverlapSlider.Value = _speechDefaults.SamplesOverlap;
-    }
-
-    // ── Décodage ─────────────────────────────────────────────────────────────
-
-    private void TemperatureSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateTemperatureText(e.NewValue);
-        if (_loading) return;
-        TryApply($"Decoding.Temperature ← {e.NewValue:0.0}", () =>
-        {
-            SettingsService.Instance.Current.Decoding.Temperature = e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UpdateTemperatureText(double v) => TemperatureValue.Text = Fmt(v);
-
-    private void TemperatureReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Decoding.Temperature → {_decodingDefaults.Temperature}");
-        TemperatureSlider.Value = _decodingDefaults.Temperature;
-    }
-
-    private void TemperatureIncrementSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateTemperatureIncrementText(e.NewValue);
-        UpdateTemperatureIncrementWarning(e.NewValue);
-        if (_loading) return;
-        TryApply($"Decoding.TemperatureIncrement ← {e.NewValue:0.0}", () =>
-        {
-            SettingsService.Instance.Current.Decoding.TemperatureIncrement = e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UpdateTemperatureIncrementText(double v) => TemperatureIncrementValue.Text = Fmt(v);
-
-    private void UpdateTemperatureIncrementWarning(double v) =>
-        TemperatureIncrementWarning.IsOpen = v == 0.0;
-
-    private void TemperatureIncrementReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Decoding.TemperatureIncrement → {_decodingDefaults.TemperatureIncrement}");
-        TemperatureIncrementSlider.Value = _decodingDefaults.TemperatureIncrement;
-    }
-
-    // ── Seuils de confiance ─────────────────────────────────────────────────
-
-    private void EntropySlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateEntropyText(e.NewValue);
-        if (_loading) return;
-        TryApply($"Confidence.EntropyThreshold ← {e.NewValue:0.0}", () =>
-        {
-            SettingsService.Instance.Current.Confidence.EntropyThreshold = e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UpdateEntropyText(double v) => EntropyValue.Text = Fmt(v);
-
-    private void EntropyReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Confidence.EntropyThreshold → {_confidenceDefaults.EntropyThreshold}");
-        EntropySlider.Value = _confidenceDefaults.EntropyThreshold;
-    }
-
-    private void LogprobSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateLogprobText(e.NewValue);
-        if (_loading) return;
-        TryApply($"Confidence.LogprobThreshold ← {e.NewValue:0.0}", () =>
-        {
-            SettingsService.Instance.Current.Confidence.LogprobThreshold = e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UpdateLogprobText(double v) => LogprobValue.Text = FmtTwo(v);
-
-    private void LogprobReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Confidence.LogprobThreshold → {_confidenceDefaults.LogprobThreshold}");
-        LogprobSlider.Value = _confidenceDefaults.LogprobThreshold;
-    }
-
-    private void NoSpeechSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateNoSpeechText(e.NewValue);
-        if (_loading) return;
-        TryApply($"Confidence.NoSpeechThreshold ← {e.NewValue:0.00}", () =>
-        {
-            SettingsService.Instance.Current.Confidence.NoSpeechThreshold = e.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UpdateNoSpeechText(double v) => NoSpeechValue.Text = FmtTwo(v);
-
-    private void NoSpeechReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Confidence.NoSpeechThreshold → {_confidenceDefaults.NoSpeechThreshold}");
-        NoSpeechSlider.Value = _confidenceDefaults.NoSpeechThreshold;
-    }
-
-    // ── Filtres de sortie ───────────────────────────────────────────────────
-
-    private void SuppressNstToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"OutputFilters.SuppressNonSpeechTokens ← {SuppressNstToggle.IsOn}", () =>
-        {
-            SettingsService.Instance.Current.OutputFilters.SuppressNonSpeechTokens = SuppressNstToggle.IsOn;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void SuppressNstReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset OutputFilters.SuppressNonSpeechTokens → {_outputDefaults.SuppressNonSpeechTokens}");
-        SuppressNstToggle.IsOn = _outputDefaults.SuppressNonSpeechTokens;
-    }
-
-    private void SuppressBlankToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"OutputFilters.SuppressBlank ← {SuppressBlankToggle.IsOn}", () =>
-        {
-            SettingsService.Instance.Current.OutputFilters.SuppressBlank = SuppressBlankToggle.IsOn;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void SuppressBlankReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset OutputFilters.SuppressBlank → {_outputDefaults.SuppressBlank}");
-        SuppressBlankToggle.IsOn = _outputDefaults.SuppressBlank;
-    }
-
-    private void SuppressRegexBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"OutputFilters.SuppressRegex ← \"{SuppressRegexBox.Text}\"", () =>
-        {
-            SettingsService.Instance.Current.OutputFilters.SuppressRegex = SuppressRegexBox.Text;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void SuppressRegexReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, "Reset OutputFilters.SuppressRegex");
-        SuppressRegexBox.Text = _outputDefaults.SuppressRegex;
-    }
-
-    // ── Contexte et segmentation ────────────────────────────────────────────
-
-    private void UseContextToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        TryApply($"Context.UseContext ← {UseContextToggle.IsOn}", () =>
-        {
-            SettingsService.Instance.Current.Context.UseContext = UseContextToggle.IsOn;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void UseContextReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Context.UseContext → {_contextDefaults.UseContext}");
-        UseContextToggle.IsOn = _contextDefaults.UseContext;
-    }
-
-    private void MaxTokensBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
-    {
-        if (_loading || double.IsNaN(args.NewValue)) return;
-        TryApply($"Context.MaxTokens ← {(int)args.NewValue}", () =>
-        {
-            SettingsService.Instance.Current.Context.MaxTokens = (int)args.NewValue;
-            SettingsService.Instance.Save();
-        });
-    }
-
-    private void MaxTokensReset_Click(object sender, RoutedEventArgs e)
-    {
-        _log.Info(LogSource.SetWhisper, $"Reset Context.MaxTokens → {_contextDefaults.MaxTokens}");
-        MaxTokensBox.Value = _contextDefaults.MaxTokens;
-    }
+    private void MaxTokensReset_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.MaxTokens = _contextDefaults.MaxTokens;
 
     // ── Restart state — highlight + footer ─────────────────────────────────
     //
-    // Les settings Model et GPU nécessitent un restart. Quand leur valeur
-    // Si la valeur courante diffère du snapshot startup, on affiche le
-    // footer avec Restart now / Discard (pattern Windows Terminal Settings).
+    // Model and GPU require a restart. When their current value differs from
+    // the startup snapshot, the footer appears (pattern Windows Terminal).
 
     private void UpdateRestartState()
     {
-        if (_loading) return;
-
-        var s = SettingsService.Instance.Current;
-        bool dirty = s.Transcription.Model != _startupModel
-                  || s.Transcription.UseGpu != _startupUseGpu;
-
+        bool dirty = ViewModel.Model != _startupModel
+                  || ViewModel.UseGpu != _startupUseGpu;
         RestartFooter.Visibility = dirty
             ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -732,23 +366,26 @@ public sealed partial class WhisperPage : Page
     {
         _log.Info(LogSource.SetWhisper, "Discard restart-requiring changes");
 
-        _loading = true;
+        _initializing = true;
         try
         {
-            // Revert les valeurs aux snapshots startup.
-            SettingsService.Instance.Current.Transcription.Model = _startupModel;
-            SettingsService.Instance.Current.Transcription.UseGpu = _startupUseGpu;
-            SettingsService.Instance.Save();
+            // Revert the VM properties to the startup snapshot.
+            ViewModel.Model = _startupModel;
+            ViewModel.UseGpu = _startupUseGpu;
 
-            // Re-poser les contrôles UI.
+            // Sync combo (not bound).
             ModelCombo.SelectedItem = _startupModel;
-            UseGpuToggle.IsOn = _startupUseGpu;
         }
         finally
         {
-            _loading = false;
+            _initializing = false;
         }
 
+        // The VM's OnChanged handlers are NOT suppressed by _initializing
+        // (they check _isSyncing, not _initializing). But since we set the
+        // VM properties directly, PushToSettings fires and saves. The
+        // _initializing guard only prevents the combo handler from double-
+        // writing. Model and UseGpu are now reverted — update footer.
         UpdateRestartState();
     }
 
@@ -772,17 +409,21 @@ public sealed partial class WhisperPage : Page
         _log.Info(LogSource.SetWhisper, "Reset ALL to defaults");
 
         var s = SettingsService.Instance.Current;
-        s.Transcription   = new TranscriptionSettings();
-        s.SpeechDetection  = new SpeechDetectionSettings();
-        s.Decoding         = new DecodingSettings();
-        s.Confidence       = new ConfidenceSettings();
-        s.OutputFilters    = new OutputFilterSettings();
-        s.Context          = new ContextSettings();
-        s.Paths            = new PathsSettings();
+        s.Transcription = new TranscriptionSettings();
+        s.SpeechDetection = new SpeechDetectionSettings();
+        s.Decoding = new DecodingSettings();
+        s.Confidence = new ConfidenceSettings();
+        s.OutputFilters = new OutputFilterSettings();
+        s.Context = new ContextSettings();
+        s.Paths = new PathsSettings();
         SettingsService.Instance.Save();
 
-        // Re-hydrater l'UI depuis les nouveaux défauts.
-        Hydrate();
+        // Reload everything from the fresh POCO defaults.
+        _initializing = true;
+        ViewModel.Load();
+        PopulateModelCombo();
+        SyncLanguageCombo();
+        _initializing = false;
         UpdateRestartState();
     }
 }

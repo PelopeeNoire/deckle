@@ -153,17 +153,7 @@
                                          AcceptsReturn="True"
                                          TextWrapping="Wrap"
                                          PlaceholderText="Je parle en français, je dis parfois des mots anglais. Claude, pas cloud."
-                                         TextChanged="InitialPromptBox_TextChanged" />
-                                <StackPanel x:Name="InitialPromptActions"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            Visibility="Collapsed">
-                                    <Button Content="Save"
-                                            Style="{StaticResource AccentButtonStyle}"
-                                            Click="InitialPromptSave_Click" />
-                                    <Button Content="Cancel"
-                                            Click="InitialPromptCancel_Click" />
-                                </StackPanel>
+                                         Text="{x:Bind ViewModel.InitialPrompt, Mode=TwoWay}" />
                             </StackPanel>
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
@@ -175,7 +165,7 @@
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE950;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="UseGpuToggle"
-                                      Toggled="UseGpuToggle_Toggled" />
+                                      IsOn="{x:Bind ViewModel.UseGpu, Mode=TwoWay}" />
                         <Button x:Name="UseGpuReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="UseGpuReset_Click">
@@ -200,7 +190,7 @@
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="VadEnabledToggle"
-                                      Toggled="VadEnabledToggle_Toggled" />
+                                      IsOn="{x:Bind ViewModel.VadEnabled, Mode=TwoWay}" />
                         <Button x:Name="VadEnabledReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="VadEnabledReset_Click">
@@ -219,6 +209,7 @@
                                         Maximum="1"
                                         StepFrequency="0.05"
                                         TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.VadThreshold, Mode=TwoWay}"
                                         ValueChanged="VadThresholdSlider_ValueChanged" />
                                 <TextBlock x:Name="VadThresholdValue"
                                            Style="{StaticResource SliderValueTextStyle}" />
@@ -241,7 +232,7 @@
                                            LargeChange="250"
                                            SpinButtonPlacementMode="Hidden"
                                            MinWidth="100"
-                                           ValueChanged="VadMinSpeechBox_ValueChanged" />
+                                           Value="{x:Bind ViewModel.VadMinSpeechDurationMs, Mode=TwoWay}" />
                                 <Button x:Name="VadMinSpeechReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadMinSpeechReset_Click">
@@ -261,7 +252,7 @@
                                            LargeChange="250"
                                            SpinButtonPlacementMode="Hidden"
                                            MinWidth="100"
-                                           ValueChanged="VadMinSilenceBox_ValueChanged" />
+                                           Value="{x:Bind ViewModel.VadMinSilenceDurationMs, Mode=TwoWay}" />
                                 <Button x:Name="VadMinSilenceReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadMinSilenceReset_Click">
@@ -290,6 +281,7 @@
                                         Maximum="60"
                                         StepFrequency="1"
                                         TickFrequency="5"
+                                        Value="{x:Bind ViewModel.VadMaxSpeechDurationSec, Mode=TwoWay}"
                                         ValueChanged="VadMaxSpeechSlider_ValueChanged" />
                                 <TextBlock x:Name="VadMaxSpeechValue"
                                            Style="{StaticResource SliderValueTextStyle}" />
@@ -312,7 +304,7 @@
                                            LargeChange="100"
                                            SpinButtonPlacementMode="Hidden"
                                            MinWidth="100"
-                                           ValueChanged="VadSpeechPadBox_ValueChanged" />
+                                           Value="{x:Bind ViewModel.VadSpeechPadMs, Mode=TwoWay}" />
                                 <Button x:Name="VadSpeechPadReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadSpeechPadReset_Click">
@@ -331,6 +323,7 @@
                                         Maximum="0.5"
                                         StepFrequency="0.05"
                                         TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.VadSamplesOverlap, Mode=TwoWay}"
                                         ValueChanged="VadOverlapSlider_ValueChanged" />
                                 <TextBlock x:Name="VadOverlapValue"
                                            Style="{StaticResource SliderValueTextStyle}" />
@@ -355,7 +348,7 @@
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="SuppressNstToggle"
-                                      Toggled="SuppressNstToggle_Toggled" />
+                                      IsOn="{x:Bind ViewModel.SuppressNonSpeechTokens, Mode=TwoWay}" />
                         <Button x:Name="SuppressNstReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="SuppressNstReset_Click">
@@ -370,7 +363,7 @@
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="SuppressBlankToggle"
-                                      Toggled="SuppressBlankToggle_Toggled" />
+                                      IsOn="{x:Bind ViewModel.SuppressBlank, Mode=TwoWay}" />
                         <Button x:Name="SuppressBlankReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="SuppressBlankReset_Click">
@@ -389,7 +382,7 @@
                                 <TextBox x:Name="SuppressRegexBox"
                                          MinWidth="400"
                                          PlaceholderText="(e.g. ^\s*\[.*\]\s*$)"
-                                         TextChanged="SuppressRegexBox_TextChanged" />
+                                         Text="{x:Bind ViewModel.SuppressRegex, Mode=TwoWay}" />
                                 <Button x:Name="SuppressRegexReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="SuppressRegexReset_Click">
@@ -410,7 +403,7 @@
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE895;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="UseContextToggle"
-                                      Toggled="UseContextToggle_Toggled" />
+                                      IsOn="{x:Bind ViewModel.UseContext, Mode=TwoWay}" />
                         <Button x:Name="UseContextReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="UseContextReset_Click">
@@ -433,7 +426,7 @@
                                    LargeChange="10"
                                    SpinButtonPlacementMode="Hidden"
                                    MinWidth="100"
-                                   ValueChanged="MaxTokensBox_ValueChanged" />
+                                   Value="{x:Bind ViewModel.MaxTokens, Mode=TwoWay}" />
                         <Button x:Name="MaxTokensReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="MaxTokensReset_Click">
@@ -457,6 +450,7 @@
                                 Maximum="1"
                                 StepFrequency="0.1"
                                 TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.Temperature, Mode=TwoWay}"
                                 ValueChanged="TemperatureSlider_ValueChanged" />
                         <TextBlock x:Name="TemperatureValue"
                                    Style="{StaticResource SliderValueTextStyle}" />
@@ -479,6 +473,7 @@
                                 Maximum="1"
                                 StepFrequency="0.1"
                                 TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.TemperatureIncrement, Mode=TwoWay}"
                                 ValueChanged="TemperatureIncrementSlider_ValueChanged" />
                         <TextBlock x:Name="TemperatureIncrementValue"
                                    Style="{StaticResource SliderValueTextStyle}" />
@@ -511,6 +506,7 @@
                                 Maximum="3.5"
                                 StepFrequency="0.1"
                                 TickFrequency="0.5"
+                                Value="{x:Bind ViewModel.EntropyThreshold, Mode=TwoWay}"
                                 ValueChanged="EntropySlider_ValueChanged" />
                         <TextBlock x:Name="EntropyValue"
                                    Style="{StaticResource SliderValueTextStyle}" />
@@ -531,6 +527,7 @@
                                 Style="{StaticResource SettingSliderStyle}"
                                 StepFrequency="0.05"
                                 TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.LogprobThreshold, Mode=TwoWay}"
                                 ValueChanged="LogprobSlider_ValueChanged" />
                         <TextBlock x:Name="LogprobValue"
                                    Style="{StaticResource SliderValueTextStyle}" />
@@ -552,6 +549,7 @@
                                 Maximum="0.80"
                                 StepFrequency="0.05"
                                 TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.NoSpeechThreshold, Mode=TwoWay}"
                                 ValueChanged="NoSpeechSlider_ValueChanged" />
                         <TextBlock x:Name="NoSpeechValue"
                                    Style="{StaticResource SliderValueTextStyle}" />
@@ -579,7 +577,7 @@
                                 <TextBox x:Name="ModelsDirectoryBox"
                                          MinWidth="400"
                                          PlaceholderText="(auto)"
-                                         TextChanged="ModelsDirectoryBox_TextChanged" />
+                                         Text="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}" />
                                 <Button x:Name="ModelsDirectoryReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="ModelsDirectoryReset_Click">
