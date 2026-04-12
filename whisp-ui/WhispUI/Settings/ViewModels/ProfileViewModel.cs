@@ -15,7 +15,7 @@ namespace WhispUI.Settings.ViewModels;
 public partial class ProfileViewModel : ObservableObject
 {
     internal static readonly int[] CtxKSteps = { 1, 2, 4, 8, 16, 32, 64, 128, 256 };
-    private const double DefaultTemperature = 0.8;
+    private const double DefaultTemperature = 0.5;
     private const int DefaultNumCtxK = 2;
 
     private bool _isSyncing;
