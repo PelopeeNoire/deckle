@@ -33,3 +33,4 @@ modelfile-fastapply
 **/build.log
 **/xamlcompiler.log
 **/xaml.out
+.claude/settings.local.json
