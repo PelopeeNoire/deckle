@@ -7,7 +7,7 @@ using WhispUI.Settings.Llm.GgufImport;
 
 namespace WhispUI.Settings.Llm;
 
-// ─── Section Custom models de LlmPage ──────────────────────────────────────
+// ─── Section Models de LlmPage ─────────────────────────────────────────────
 //
 // Liste les modèles locaux d'Ollama (via LlmOllamaContext) + boutons Import
 // GGUF et Refresh. Remove par modèle avec ContentDialog de confirmation.

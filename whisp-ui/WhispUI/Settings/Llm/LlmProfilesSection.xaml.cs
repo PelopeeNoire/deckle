@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -12,11 +13,15 @@ namespace WhispUI.Settings.Llm;
 // DataTemplate + ProfileViewModel). Le code-behind ne gère que :
 //  - Reload() → repopule l'ObservableCollection depuis le POCO
 //  - Click handlers (Save/Cancel/Delete/Add) via Tag={x:Bind}
+//  - Model ComboBox population via Loaded (liste fournie par LlmPage)
 //  - ProfilesChanged event pour notifier Rules et ManualShortcut
 
 public sealed partial class LlmProfilesSection : UserControl
 {
     public ObservableCollection<ProfileViewModel> Profiles { get; } = new();
+
+    // Model names available from Ollama — set by LlmPage after refresh.
+    internal List<string> AvailableModelNames { get; set; } = new();
 
     public event EventHandler? ProfilesChanged;
 
@@ -95,6 +100,39 @@ public sealed partial class LlmProfilesSection : UserControl
             ProfilesChanged?.Invoke(this, EventArgs.Empty);
         }
     }
+
+    // ── Model ComboBox (IsEditable) ────────────────────────────────────────
+
+    private void ModelCombo_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ComboBox combo || combo.Tag is not ProfileViewModel vm)
+            return;
+
+        combo.Items.Clear();
+        foreach (var name in AvailableModelNames)
+            combo.Items.Add(name);
+
+        // Set text to current model (may not be in the list — still shown).
+        combo.Text = vm.Model;
+    }
+
+    private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox combo
+            && combo.Tag is ProfileViewModel vm
+            && combo.SelectedItem is string selected)
+        {
+            vm.Model = selected;
+        }
+    }
+
+    private void ModelCombo_TextSubmitted(ComboBox sender, ComboBoxTextSubmittedEventArgs args)
+    {
+        if (sender.Tag is ProfileViewModel vm)
+            vm.Model = args.Text?.Trim() ?? "";
+    }
+
+    // ── Add ─────────────────────────────────────────────────────────────────
 
     private void AddProfile_Click(object sender, RoutedEventArgs e)
     {

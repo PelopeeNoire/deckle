@@ -50,10 +50,14 @@
                                              PlaceholderText="Profile name"
                                              HorizontalAlignment="Stretch" />
 
-                                    <TextBox Header="Model"
-                                             Text="{x:Bind Model, Mode=TwoWay}"
-                                             PlaceholderText="Ollama model name"
-                                             HorizontalAlignment="Stretch" />
+                                    <ComboBox Header="Model"
+                                              IsEditable="True"
+                                              PlaceholderText="Ollama model name"
+                                              Tag="{x:Bind}"
+                                              Loaded="ModelCombo_Loaded"
+                                              SelectionChanged="ModelCombo_SelectionChanged"
+                                              TextSubmitted="ModelCombo_TextSubmitted"
+                                              HorizontalAlignment="Stretch" />
 
                                     <TextBox Header="System prompt"
                                              Text="{x:Bind SystemPrompt, Mode=TwoWay}"

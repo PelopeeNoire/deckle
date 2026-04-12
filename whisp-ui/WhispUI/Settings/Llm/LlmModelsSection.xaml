@@ -5,7 +5,7 @@
 
     <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
         <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                   Text="Custom models" />
+                   Text="Models" />
 
         <TextBlock Style="{StaticResource BodyTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
