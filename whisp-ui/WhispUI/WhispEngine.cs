@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using WhispUI.Logging;
 
 namespace WhispUI;
 
@@ -16,14 +17,6 @@ internal sealed class WhispEngine : IDisposable
     // Fired from the loading thread or from StartRecording/Transcribe.
     // Subscriber must marshal to UI thread via DispatcherQueue.TryEnqueue.
     public event Action<string>?  StatusChanged;
-
-    // Structured log events (background thread → LogWindow).
-    // Parameters: (source, message). Timestamp is assigned by LogWindow.
-    public event Action<string, string>?  LogVerboseLine;
-    public event Action<string, string>?  LogLine;
-    public event Action<string, string>?  LogStepLine;
-    public event Action<string, string>?  LogWarningLine;
-    public event Action<string, string>?  LogErrorLine;
 
     // Fired at the very end of Transcribe(), regardless of exit path
     // (model not ready, empty text, normal exit). Used by HUD to hide.
@@ -47,6 +40,8 @@ internal sealed class WhispEngine : IDisposable
     const string DEFAULT_MODEL  = @"D:\projects\ai\transcription\shared\" + MODEL_FILE;
 
     // ── Internal state ───────────────────────────────────────────────────────
+
+    private static readonly LogService _log = LogService.Instance;
 
     private readonly string     _modelPath;
     private readonly LlmService _llm;
@@ -106,9 +101,7 @@ internal sealed class WhispEngine : IDisposable
     {
         _modelPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH") ?? DEFAULT_MODEL;
 
-        _llm = new LlmService(
-            onWarn: (source, msg) => LogWarningLine?.Invoke(source, msg),
-            onInfo: (source, msg) => LogLine?.Invoke(source, msg));
+        _llm = new LlmService();
 
         // Hook the global whisper.cpp log callback before LoadModelAsync to
         // catch Vulkan/CUDA initialization logs and model parsing warnings.
@@ -136,9 +129,9 @@ internal sealed class WhispEngine : IDisposable
                 // Verbose filter. Info/Debug/Cont stay in Verbose.
                 switch (level)
                 {
-                    case 4: LogErrorLine?.Invoke("WHISPER", msg); break;
-                    case 3: LogWarningLine?.Invoke("WHISPER", msg); break;
-                    default: LogVerboseLine?.Invoke("WHISPER", msg); break;
+                    case 4: _log.Error(LogSource.Whisper, msg); break;
+                    case 3: _log.Warning(LogSource.Whisper, msg); break;
+                    default: _log.Verbose(LogSource.Whisper, msg); break;
                 }
             }
             catch
@@ -169,17 +162,17 @@ internal sealed class WhispEngine : IDisposable
         {
             DebugLog.Write("ENGINE", "load thread started, path=" + _modelPath);
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            DbgLog("MODEL", $"path: {_modelPath}");
+            _log.Info(LogSource.Model, $"path: {_modelPath}");
             if (File.Exists(_modelPath))
             {
                 double mb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
-                DbgLog("MODEL", $"file: {mb:F1} MB");
+                _log.Info(LogSource.Model, $"file: {mb:F1} MB");
             }
             else
             {
-                DbgWarn("MODEL", $"file not found on disk ({_modelPath})");
+                _log.Warning(LogSource.Model, $"file not found on disk ({_modelPath})");
             }
-            DbgLog("MODEL", "init whisper_init_from_file_with_params (use_gpu=1)");
+            _log.Info(LogSource.Model, "init whisper_init_from_file_with_params (use_gpu=1)");
 
             IntPtr ctxParamsPtr = NativeMethods.whisper_context_default_params_by_ref();
             WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
@@ -192,12 +185,12 @@ internal sealed class WhispEngine : IDisposable
 
             if (_ctx == IntPtr.Zero)
             {
-                DbgError("INIT", $"Failed to load model: {_modelPath}");
+                _log.Error(LogSource.Init, $"Failed to load model: {_modelPath}");
                 StatusChanged?.Invoke("Erreur : modèle non chargé");
             }
             else
             {
-                DbgStep("MODEL", $"Model loaded in {sw.ElapsedMilliseconds} ms");
+                _log.Step(LogSource.Model, $"Model loaded ({sw.ElapsedMilliseconds} ms)");
                 StatusChanged?.Invoke("En attente");
             }
         });
@@ -219,7 +212,7 @@ internal sealed class WhispEngine : IDisposable
         if (!TryProbeMicrophone(out uint probeErr))
         {
             var (title, body) = DescribeMicError(probeErr);
-            DbgError("RECORD", $"probe MMSYSERR={probeErr} — {title}");
+            _log.Error(LogSource.Record, $"probe MMSYSERR={probeErr} — {title}");
             MicrophoneUnavailable?.Invoke(title, body);
             return;
         }
@@ -239,15 +232,15 @@ internal sealed class WhispEngine : IDisposable
         // and helps diagnose cases where the Start target is wrong.
         if (_pasteTarget != IntPtr.Zero)
         {
-            DbgVerbose("HOTKEY", $"target captured at Start: {Win32Util.DescribeHwnd(_pasteTarget)}");
+            _log.Verbose(LogSource.Hotkey, $"target captured at Start: {Win32Util.DescribeHwnd(_pasteTarget)}");
             string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
-            DbgVerbose("HOTKEY", focusClass is null
+            _log.Verbose(LogSource.Hotkey, focusClass is null
                 ? "focused control at Start: <no keyboard focus detected>"
                 : $"focused control at Start: {focusClass}");
         }
         else
         {
-            DbgVerbose("HOTKEY", "no target captured at Start (paste disabled or foreground = WhispUI)");
+            _log.Verbose(LogSource.Hotkey, "no target captured at Start (paste disabled or foreground = WhispUI)");
         }
 
         // Single background thread: Record then Transcribe in sequence.
@@ -283,25 +276,16 @@ internal sealed class WhispEngine : IDisposable
             if (pid != ownPid)
             {
                 if (fg != _pasteTarget)
-                    DbgVerbose("HOTKEY", $"target updated at Stop: {Win32Util.DescribeHwnd(fg)}");
+                    _log.Verbose(LogSource.Hotkey, $"target updated at Stop: {Win32Util.DescribeHwnd(fg)}");
                 _pasteTarget = fg;
             }
             else
             {
-                DbgVerbose("HOTKEY", $"foreground at Stop = WhispUI ({Win32Util.DescribeHwnd(fg)}), keeping Start target");
+                _log.Verbose(LogSource.Hotkey, $"foreground at Stop = WhispUI ({Win32Util.DescribeHwnd(fg)}), keeping Start target");
             }
         }
         _stopRecording = true;
     }
-
-    // ── Structured log helpers ──────────────────────────────────────────────
-    // Timestamp is assigned by LogWindow at entry creation — not here.
-
-    private void DbgLog(string source, string msg)     => LogLine?.Invoke(source, msg);
-    private void DbgVerbose(string source, string msg) => LogVerboseLine?.Invoke(source, msg);
-    private void DbgStep(string source, string msg)    => LogStepLine?.Invoke(source, msg);
-    private void DbgWarn(string source, string msg)    => LogWarningLine?.Invoke(source, msg);
-    private void DbgError(string source, string msg)   => LogErrorLine?.Invoke(source, msg);
 
     // ── Audio device probe (before StartRecording) ─────────────────────────────
     //
@@ -380,7 +364,7 @@ internal sealed class WhispEngine : IDisposable
         uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
         if (err != 0)
         {
-            DbgError("RECORD", $"waveInOpen error {err}");
+            _log.Error(LogSource.Record, $"waveInOpen error {err}");
             NativeMethods.CloseHandle(hEvent);
             return Array.Empty<float>();
         }
@@ -406,7 +390,7 @@ internal sealed class WhispEngine : IDisposable
         // Single buffer, grows throughout the recording.
         // 1 sample = 2 bytes PCM16. At 16 kHz, 1 minute = 1.92M bytes.
         var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
-        DbgLog("RECORD", "Recording started (16kHz mono PCM16)");
+        _log.Info(LogSource.Record, "Recording started (16kHz mono PCM16)");
 
         double nextHeartbeatSec = 5.0;
 
@@ -423,7 +407,7 @@ internal sealed class WhispEngine : IDisposable
                     bufferDoneCount++;
                     if (hdr.dwBytesRecorded == 0)
                     {
-                        DbgWarn("RECORD", $"empty buffer[{i}] received");
+                        _log.Warning(LogSource.Record, $"empty buffer[{i}] received");
                     }
                     else
                     {
@@ -439,13 +423,13 @@ internal sealed class WhispEngine : IDisposable
             }
 
             if (bufferDoneCount > 1)
-                DbgWarn("RECORD", $"lag, {bufferDoneCount} buffers ready simultaneously");
+                _log.Warning(LogSource.Record, $"lag, {bufferDoneCount} buffers ready simultaneously");
 
             // Heartbeat ~5s, Verbose → visible in All filter only
             double curSec = allBytes.Count / 32000.0;
             if (curSec >= nextHeartbeatSec)
             {
-                DbgVerbose("RECORD", $"+{curSec:F1}s captured");
+                _log.Verbose(LogSource.Record, $"+{curSec:F1}s captured");
                 nextHeartbeatSec += 5.0;
             }
         }
@@ -471,7 +455,7 @@ internal sealed class WhispEngine : IDisposable
         NativeMethods.CloseHandle(hEvent);
 
         double totalSec = allBytes.Count / 32000.0;
-        DbgLog("RECORD", $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
+        _log.Info(LogSource.Record, $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
 
         // Tail RMS: measures the energy of the final 600ms to see if we're
         // cutting during a syllable (lost punctuation) or in a clean silence.
@@ -495,7 +479,7 @@ internal sealed class WhispEngine : IDisposable
                 double rms = Math.Sqrt(sumSq / nSamples);
                 double dbfs = rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
                 double tailSec = tailBytes / 32000.0;
-                DbgLog("RECORD", $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "active" : "silent")} at Stop");
+                _log.Info(LogSource.Record, $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "active" : "silent")} at Stop");
             }
         }
 
@@ -583,13 +567,13 @@ internal sealed class WhispEngine : IDisposable
                 // no_speech: probability that the segment is silence/noise (0 = confident speech, 1 = confident silence).
                 // p̄ / min: average and minimum confidence over text tokens in the segment.
                 // t0/t1 are in centiseconds (1 unit = 10 ms) on the whisper.cpp side.
-                DbgVerbose("TRANSCRIBE", $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok] {segText.Trim()}");
+                _log.Verbose(LogSource.Transcribe, $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok] {segText.Trim()}");
             }
         }
         catch (Exception ex)
         {
             // NEVER let an exception cross the managed→native boundary.
-            DbgError("CALLBACK", $"{ex.GetType().Name}: {ex.Message}");
+            _log.Error(LogSource.Callback, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -605,7 +589,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (audio.Length == 0)
         {
-            DbgWarn("TRANSCRIBE", "empty audio buffer, nothing to transcribe");
+            _log.Warning(LogSource.Transcribe, "empty audio buffer, nothing to transcribe");
             StatusChanged?.Invoke("En attente");
             TranscriptionFinished?.Invoke();
             return;
@@ -636,8 +620,8 @@ internal sealed class WhispEngine : IDisposable
         wparams.new_segment_callback_user_data = IntPtr.Zero;
 
         float audioSec = (float)audio.Length / 16_000f;
-        DbgLog("TRANSCRIBE", $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
-        DbgVerbose("TRANSCRIBE", $"params: temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | n_threads={wparams.n_threads}");
+        _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
+        _log.Verbose(LogSource.Transcribe, $"params: temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | n_threads={wparams.n_threads}");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
@@ -648,7 +632,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (result != 0)
         {
-            DbgError("TRANSCRIBE", $"whisper_full returned code {result}");
+            _log.Error(LogSource.Transcribe, $"whisper_full returned code {result}");
             StatusChanged?.Invoke("Erreur transcription");
             TranscriptionFinished?.Invoke();
             return;
@@ -666,10 +650,10 @@ internal sealed class WhispEngine : IDisposable
             fullText = string.Join(" ", _segments.Select(s => s.Text)).Trim();
         }
 
-        DbgLog("TRANSCRIBE", $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
+        _log.Info(LogSource.Transcribe, $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
 
         if (LooksRepeated(fullText))
-            DbgWarn("TRANSCRIBE", "repetition detected in text (heuristic signal, no filtering)");
+            _log.Warning(LogSource.Transcribe, "repetition detected in text (heuristic signal, no filtering)");
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
@@ -734,7 +718,7 @@ internal sealed class WhispEngine : IDisposable
             // point, nothing in WhispUI touches activation until the end of
             // Transcribe — Ctrl+V delivery is protected.
             OnReadyToPaste?.Invoke();
-            DbgVerbose("PASTE", "HUD hidden (HideSync) — ready to paste");
+            _log.Verbose(LogSource.Paste, "HUD hidden (HideSync) — ready to paste");
             var swPaste = System.Diagnostics.Stopwatch.StartNew();
             pasteVerified = PasteFromClipboard();
             swPaste.Stop();
@@ -743,9 +727,9 @@ internal sealed class WhispEngine : IDisposable
 
         string recap = $"total {recDurationSec:F1}s (trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         if (_shouldPaste && pasteVerified)
-            DbgStep("TRANSCRIBE", $"End-to-end OK — {fullText.Length} chars pasted into {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
+            _log.Step(LogSource.Transcribe, $"End-to-end OK — {fullText.Length} chars pasted into {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
         else
-            DbgVerbose("DONE", recap);
+            _log.Verbose(LogSource.Done, recap);
 
         StatusChanged?.Invoke("En attente");
         _recordingSw?.Stop();
@@ -762,8 +746,8 @@ internal sealed class WhispEngine : IDisposable
         int byteCount = (text.Length + 1) * 2;
 
         IntPtr hMem = NativeMethods.GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)byteCount);
-        DbgVerbose("CLIPBOARD", $"GlobalAlloc {byteCount}b → hMem={hMem}");
-        if (hMem == IntPtr.Zero) { DbgWarn("CLIPBOARD", "GlobalAlloc failed"); return; }
+        _log.Verbose(LogSource.Clipboard, $"GlobalAlloc {byteCount}b → hMem={hMem}");
+        if (hMem == IntPtr.Zero) { _log.Warning(LogSource.Clipboard, "GlobalAlloc failed"); return; }
 
         IntPtr ptr = NativeMethods.GlobalLock(hMem);
         Marshal.Copy(text.ToCharArray(), 0, ptr, text.Length);
@@ -771,12 +755,12 @@ internal sealed class WhispEngine : IDisposable
         NativeMethods.GlobalUnlock(hMem);
 
         bool opened = NativeMethods.OpenClipboard(IntPtr.Zero);
-        DbgVerbose("CLIPBOARD", $"OpenClipboard → {opened}");
-        if (!opened) { DbgWarn("CLIPBOARD", "OpenClipboard failed"); return; }
+        _log.Verbose(LogSource.Clipboard, $"OpenClipboard → {opened}");
+        if (!opened) { _log.Warning(LogSource.Clipboard, "OpenClipboard failed"); return; }
 
         NativeMethods.EmptyClipboard();
         IntPtr setHandle = NativeMethods.SetClipboardData(CF_UNICODETEXT, hMem);
-        if (setHandle == IntPtr.Zero) DbgWarn("CLIPBOARD", "SetClipboardData failed (handle 0)");
+        if (setHandle == IntPtr.Zero) _log.Warning(LogSource.Clipboard, "SetClipboardData failed (handle 0)");
         NativeMethods.CloseClipboard();
 
         // Immediate read-back to verify the clipboard was set correctly
@@ -785,7 +769,7 @@ internal sealed class WhispEngine : IDisposable
             IntPtr h = NativeMethods.GetClipboardData(CF_UNICODETEXT);
             if (h == IntPtr.Zero)
             {
-                DbgWarn("CLIPBOARD", "post-copy verify → no Unicode data");
+                _log.Warning(LogSource.Clipboard, "post-copy verify → no Unicode data");
             }
             else
             {
@@ -793,12 +777,12 @@ internal sealed class WhispEngine : IDisposable
                 string? back = p != IntPtr.Zero ? Marshal.PtrToStringUni(p) : null;
                 NativeMethods.GlobalUnlock(h);
                 if (back is null || back.Length != text.Length)
-                    DbgWarn("CLIPBOARD", $"post-copy verify → length {back?.Length ?? -1} != {text.Length}");
+                    _log.Warning(LogSource.Clipboard, $"post-copy verify → length {back?.Length ?? -1} != {text.Length}");
             }
             NativeMethods.CloseClipboard();
         }
 
-        DbgLog("CLIPBOARD", $"Text copied ({text.Length} chars)");
+        _log.Info(LogSource.Clipboard, $"Text copied ({text.Length} chars)");
     }
 
     // Returns true only if all verification conditions are met (valid target,
@@ -812,13 +796,13 @@ internal sealed class WhispEngine : IDisposable
         const ushort VK_CONTROL      = 0x11;
         const ushort VK_V            = 0x56;
 
-        DbgVerbose("PASTE", $"expected target: {Win32Util.DescribeHwnd(_pasteTarget)}");
+        _log.Verbose(LogSource.Paste, $"expected target: {Win32Util.DescribeHwnd(_pasteTarget)}");
         IntPtr fgBefore = NativeMethods.GetForegroundWindow();
-        DbgVerbose("PASTE", $"foreground before: {Win32Util.DescribeHwnd(fgBefore)}");
+        _log.Verbose(LogSource.Paste, $"foreground before: {Win32Util.DescribeHwnd(fgBefore)}");
 
         if (_pasteTarget == IntPtr.Zero)
         {
-            DbgWarn("PASTE", "refused: no registered target. Clipboard contains the text — paste manually with Ctrl+V.");
+            _log.Warning(LogSource.Paste, "refused: no registered target. Clipboard contains the text — paste manually with Ctrl+V.");
             return false;
         }
 
@@ -828,28 +812,28 @@ internal sealed class WhispEngine : IDisposable
         uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
         if (targetPid == ownPid)
         {
-            DbgWarn("PASTE", $"refused: target belongs to WhispUI ({Win32Util.DescribeHwnd(_pasteTarget)}). Clipboard contains the text — paste manually with Ctrl+V in the right window.");
+            _log.Warning(LogSource.Paste, $"refused: target belongs to WhispUI ({Win32Util.DescribeHwnd(_pasteTarget)}). Clipboard contains the text — paste manually with Ctrl+V in the right window.");
             return false;
         }
 
         bool sfgOk = NativeMethods.SetForegroundWindow(_pasteTarget);
-        DbgVerbose("PASTE", $"SetForegroundWindow → {sfgOk}");
+        _log.Verbose(LogSource.Paste, $"SetForegroundWindow → {sfgOk}");
         Thread.Sleep(50);
 
         IntPtr fgAfter = NativeMethods.GetForegroundWindow();
         if (fgAfter != _pasteTarget)
         {
-            DbgWarn("PASTE", $"refused: focus not restored (expected {Win32Util.DescribeHwnd(_pasteTarget)}, actual {Win32Util.DescribeHwnd(fgAfter)}). Clipboard contains the text — paste manually with Ctrl+V.");
+            _log.Warning(LogSource.Paste, $"refused: focus not restored (expected {Win32Util.DescribeHwnd(_pasteTarget)}, actual {Win32Util.DescribeHwnd(fgAfter)}). Clipboard contains the text — paste manually with Ctrl+V.");
             return false;
         }
 
         string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
         if (focusClass is null)
         {
-            DbgWarn("PASTE", "refused: target has no keyboard focus on a text control. Clipboard contains the text — click in a text field then Ctrl+V.");
+            _log.Warning(LogSource.Paste, "refused: target has no keyboard focus on a text control. Clipboard contains the text — click in a text field then Ctrl+V.");
             return false;
         }
-        DbgVerbose("PASTE", $"focused control: {focusClass}");
+        _log.Verbose(LogSource.Paste, $"focused control: {focusClass}");
 
         int cbSize = Marshal.SizeOf<INPUT>();
 
@@ -864,11 +848,11 @@ internal sealed class WhispEngine : IDisposable
         uint sent = NativeMethods.SendInput((uint)inputs.Length, inputs, cbSize);
         if (sent != inputs.Length)
         {
-            DbgWarn("PASTE", $"partial: SendInput injected {sent}/{inputs.Length} events. Clipboard contains the text — paste manually with Ctrl+V.");
+            _log.Warning(LogSource.Paste, $"partial: SendInput injected {sent}/{inputs.Length} events. Clipboard contains the text — paste manually with Ctrl+V.");
             return false;
         }
 
-        DbgLog("PASTE", $"Ctrl+V sent to {Win32Util.DescribeHwnd(_pasteTarget)} (focus={focusClass})");
+        _log.Info(LogSource.Paste, $"Ctrl+V sent to {Win32Util.DescribeHwnd(_pasteTarget)} (focus={focusClass})");
         return true;
     }
 

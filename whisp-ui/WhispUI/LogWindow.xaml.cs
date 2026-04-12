@@ -13,17 +13,9 @@ using Windows.Storage.Pickers;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Data;
 using WinRT.Interop;
+using WhispUI.Logging;
 
 namespace WhispUI;
-
-// ─── Log levels ──────────────────────────────────────────────────────────────
-// Verbose : background noise (heartbeats, per-segment dumps, clipboard plumbing)
-//           — only visible in "All" filter.
-// Info    : normal workflow events (recording, return codes, text, copy, paste).
-// Step    : rare verified milestones (model loaded, end-to-end OK).
-// Warning : non-fatal issues (focus loss, empty buffers, repetition detected).
-// Error   : failures (init errors, transcription failures, mic unavailable).
-public enum LogLevel { Verbose, Info, Step, Warning, Error }
 
 // SelectorBar mode — single active at a time (native exclusive selection).
 internal enum LogFilterMode { All, Steps, Critical }
@@ -45,7 +37,7 @@ public sealed class LogLevelTemplateSelector : DataTemplateSelector
 
     private DataTemplate Pick(object item)
     {
-        if (item is LogWindow.LogEntry e)
+        if (item is LogEntry e)
         {
             return e.Level switch
             {
@@ -74,30 +66,8 @@ public sealed class LogLevelTemplateSelector : DataTemplateSelector
 //   _visible : displayed subset (level filter + search)
 // Copy/Save operate on _visible — the user copies what they see.
 
-public sealed partial class LogWindow : Window
+public sealed partial class LogWindow : Window, ILogSink
 {
-    internal sealed class LogEntry
-    {
-        public DateTimeOffset Timestamp { get; }
-        public string Source { get; }
-        public string Message { get; }
-        public LogLevel Level { get; }
-
-        /// <summary>Formatted display text, computed once at creation.</summary>
-        public string Text { get; }
-
-        public LogEntry(string source, string message, LogLevel level)
-        {
-            Timestamp = DateTimeOffset.Now;
-            Source = source;
-            Message = message;
-            Level = level;
-            Text = source.Length > 0
-                ? $"{Timestamp:HH:mm:ss.fff} [{Source}] {Message}"
-                : $"{Timestamp:HH:mm:ss.fff} {Message}";
-        }
-    }
-
     private readonly List<LogEntry> _entries = new();
     private readonly ObservableCollection<LogEntry> _visible = new();
     private readonly IntPtr _hwnd;
@@ -192,13 +162,13 @@ public sealed partial class LogWindow : Window
         };
     }
 
-    // ── Public API (thread-safe) ─────────────────────────────────────────────
+    // ── ILogSink (receives entries from LogService) ────────────────────────────
 
-    public void LogVerbose(string source, string message) => AppendEntry(source, message, LogLevel.Verbose);
-    public void Log(string source, string message)        => AppendEntry(source, message, LogLevel.Info);
-    public void LogStep(string source, string message)    => AppendEntry(source, message, LogLevel.Step);
-    public void LogWarning(string source, string message) => AppendEntry(source, message, LogLevel.Warning);
-    public void LogError(string source, string message)   => AppendEntry(source, message, LogLevel.Error);
+    public void Write(LogEntry entry)
+    {
+        if (DispatcherQueue.HasThreadAccess) AddEntrySafe(entry);
+        else DispatcherQueue.TryEnqueue(() => AddEntrySafe(entry));
+    }
 
     public void Clear()
     {
@@ -275,13 +245,6 @@ public sealed partial class LogWindow : Window
     }
 
     // ── Implementation ─────────────────────────────────────────────────────────
-
-    private void AppendEntry(string source, string message, LogLevel level)
-    {
-        var entry = new LogEntry(source, message, level);
-        if (DispatcherQueue.HasThreadAccess) AddEntrySafe(entry);
-        else DispatcherQueue.TryEnqueue(() => AddEntrySafe(entry));
-    }
 
     private void AddEntrySafe(LogEntry entry)
     {

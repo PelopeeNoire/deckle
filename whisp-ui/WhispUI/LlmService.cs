@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WhispUI.Logging;
 using WhispUI.Settings;
 
 namespace WhispUI;
@@ -23,6 +24,7 @@ namespace WhispUI;
 
 internal class LlmService
 {
+    private static readonly LogService _log = LogService.Instance;
     static readonly HttpClient _http = new();
 
     static readonly JsonSerializerOptions _jsonOpts = new()
@@ -30,15 +32,6 @@ internal class LlmService
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-
-    readonly Action<string, string>? _onWarn;
-    readonly Action<string, string>? _onInfo;
-
-    public LlmService(Action<string, string>? onWarn = null, Action<string, string>? onInfo = null)
-    {
-        _onWarn = onWarn;
-        _onInfo = onInfo;
-    }
 
     public string? Rewrite(string text, string endpoint, RewriteProfile profile)
     {
@@ -49,7 +42,7 @@ internal class LlmService
             string generateUrl = NormalizeGenerateUrl(endpoint);
             var options = BuildOptions(profile, stops);
 
-            _onInfo?.Invoke("LLM", $"request {text.Length} chars → {profile.Model} (profile: {profile.Name}, family: {family}) | {FormatOptions(options)}");
+            _log.Info(LogSource.Llm, $"request {text.Length} chars → {profile.Model} (profile: {profile.Name}, family: {family}) | {FormatOptions(options)}");
 
             var body = new
             {
@@ -74,14 +67,14 @@ internal class LlmService
 
             sw.Stop();
             string trimmed = PromptTemplates.StripStops(rewritten ?? "", family).Trim();
-            _onInfo?.Invoke("LLM", $"Rewrite OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profile: {profile.Name})");
-            _onInfo?.Invoke("LLM", FormatMetrics(doc.RootElement));
+            _log.Info(LogSource.Llm, $"Rewrite OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profile: {profile.Name})");
+            _log.Info(LogSource.Llm, FormatMetrics(doc.RootElement));
             return trimmed;
         }
         catch (Exception ex)
         {
             sw.Stop();
-            _onWarn?.Invoke("LLM", $"unavailable: {ex.GetType().Name} {ex.Message} — raw text preserved");
+            _log.Warning(LogSource.Llm, $"unavailable: {ex.GetType().Name} {ex.Message} — raw text preserved");
             return null;
         }
     }

@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
+using WhispUI.Logging;
 
 namespace WhispUI;
 
@@ -25,6 +26,7 @@ namespace WhispUI;
 
 public sealed partial class SettingsWindow : Window
 {
+    private static readonly LogService _log = LogService.Instance;
     private readonly IntPtr _hwnd;
 
     private BitmapImage? _iconIdle;
@@ -139,16 +141,16 @@ public sealed partial class SettingsWindow : Window
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        App.Log?.LogVerbose("SETTINGS", $"SelectionChanged fired, item={(args.SelectedItem as NavigationViewItem)?.Content}");
+        _log.Verbose(LogSource.Settings, $"SelectionChanged fired, item={(args.SelectedItem as NavigationViewItem)?.Content}");
 
         if (args.SelectedItem is not NavigationViewItem item)
         {
-            App.Log?.LogVerbose("SETTINGS", "SelectedItem is not a NavigationViewItem — ignored");
+            _log.Verbose(LogSource.Settings, "SelectedItem is not a NavigationViewItem — ignored");
             return;
         }
         if (item.Tag is not string tag)
         {
-            App.Log?.LogWarning("SETTINGS", $"Item '{item.Content}' has no Tag — nav impossible");
+            _log.Warning(LogSource.Settings, $"Item '{item.Content}' has no Tag — nav impossible");
             return;
         }
         if (tag == "logs") return;
@@ -156,33 +158,33 @@ public sealed partial class SettingsWindow : Window
         var pageType = Type.GetType(tag);
         if (pageType is null)
         {
-            App.Log?.LogError("SETTINGS", $"Type not found for tag '{tag}'");
+            _log.Error(LogSource.Settings, $"Type not found for tag '{tag}'");
             return;
         }
 
         if (PageFrame.CurrentSourcePageType == pageType)
         {
-            App.Log?.LogVerbose("SETTINGS", $"{pageType.Name} already current — ignored");
+            _log.Verbose(LogSource.Settings, $"{pageType.Name} already current — ignored");
             return;
         }
 
-        App.Log?.Log("SETTINGS", $"Navigate → {pageType.Name}");
+        _log.Info(LogSource.Settings, $"Navigate → {pageType.Name}");
         try
         {
             bool ok = PageFrame.Navigate(pageType, null, new EntranceNavigationTransitionInfo());
             if (!ok)
             {
-                App.Log?.LogError("SETTINGS", $"Navigate({pageType.Name}) returned false");
+                _log.Error(LogSource.Settings, $"Navigate({pageType.Name}) returned false");
             }
             else
             {
-                App.Log?.LogStep("SETTINGS", $"{pageType.Name} navigation OK");
+                _log.Step(LogSource.Settings, $"{pageType.Name} navigation OK");
             }
         }
         catch (Exception ex)
         {
-            App.Log?.LogError("SETTINGS", $"Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
-            App.Log?.LogError("SETTINGS", ex.StackTrace ?? "(no stack)");
+            _log.Error(LogSource.Settings, $"Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
+            _log.Error(LogSource.Settings, ex.StackTrace ?? "(no stack)");
             DebugLog.Write("SETTINGS", $"Navigate({pageType.Name}) THREW: {ex}");
         }
     }
@@ -193,10 +195,10 @@ public sealed partial class SettingsWindow : Window
     private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
         var item = args.InvokedItemContainer as NavigationViewItem;
-        App.Log?.LogVerbose("SETTINGS", $"ItemInvoked: {item?.Content} (tag={item?.Tag})");
+        _log.Verbose(LogSource.Settings, $"ItemInvoked: {item?.Content} (tag={item?.Tag})");
         if (item?.Tag as string == "logs")
         {
-            App.Log?.Log("SETTINGS", "Opening LogWindow via footer");
+            _log.Info(LogSource.Settings, "Opening LogWindow via footer");
             OnShowLogsRequested?.Invoke();
         }
     }

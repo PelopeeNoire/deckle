@@ -7,11 +7,13 @@ using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using WhispUI.Logging;
 
 namespace WhispUI.Settings;
 
 public sealed partial class WhisperPage : Page
 {
+    private static readonly LogService _log = LogService.Instance;
     // _loading = true during initial hydration to prevent ValueChanged/Toggled
     // handlers from writing back into SettingsService (and triggering an
     // unnecessary Save) while we set values from JSON.
@@ -38,11 +40,11 @@ public sealed partial class WhisperPage : Page
 
     public WhisperPage()
     {
-        App.Log?.Log("WHISPER", "ctor start");
+        _log.Info(LogSource.SetWhisper, "ctor start");
         try
         {
             InitializeComponent();
-            App.Log?.LogVerbose("WHISPER", "InitializeComponent OK");
+            _log.Verbose(LogSource.SetWhisper, "InitializeComponent OK");
             // WinUI 3 release bug: cannot set Minimum > defaultValue in XAML
             // for VadMaxSpeechSlider without a parser crash. We do it here
             // now that the Slider is constructed and outside the LoadComponent
@@ -61,19 +63,19 @@ public sealed partial class WhisperPage : Page
             NoSpeechSlider.Minimum = 0.05;
             NoSpeechSlider.Value   = 0.6;
 
-            App.Log?.LogVerbose("WHISPER", "VadMaxSpeechSlider + Confidence sliders Min/Value set in code-behind");
+            _log.Verbose(LogSource.SetWhisper, "VadMaxSpeechSlider + Confidence sliders Min/Value set in code-behind");
         }
         catch (Exception ex)
         {
-            App.Log?.LogError("WHISPER", $"InitializeComponent THREW {ex.GetType().Name}: {ex.Message}");
-            App.Log?.LogError("WHISPER", ex.StackTrace ?? "(no stack)");
+            _log.Error(LogSource.SetWhisper, $"InitializeComponent THREW {ex.GetType().Name}: {ex.Message}");
+            _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
             DebugLog.Write("WHISPERPAGE", $"InitializeComponent THREW: {ex}");
             throw;
         }
         NavigationCacheMode = NavigationCacheMode.Required;
         Loaded += (_, _) =>
         {
-            App.Log?.LogVerbose("WHISPER", "Loaded fired");
+            _log.Verbose(LogSource.SetWhisper, "Loaded fired");
             try
             {
             PopulateModelCombo();
@@ -107,12 +109,12 @@ public sealed partial class WhisperPage : Page
             WireHover(MaxTokensCard, MaxTokensReset);
             SuppressRegexCard.PointerEntered += (_, _) => SuppressRegexReset.Opacity = 1;
             SuppressRegexCard.PointerExited += (_, _) => SuppressRegexReset.Opacity = 0;
-                App.Log?.LogStep("WHISPER", "Loaded complete — page ready");
+                _log.Step(LogSource.SetWhisper, "Loaded complete — page ready");
             }
             catch (Exception ex)
             {
-                App.Log?.LogError("WHISPER", $"Loaded THREW {ex.GetType().Name}: {ex.Message}");
-                App.Log?.LogError("WHISPER", ex.StackTrace ?? "(no stack)");
+                _log.Error(LogSource.SetWhisper, $"Loaded THREW {ex.GetType().Name}: {ex.Message}");
+                _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
                 DebugLog.Write("WHISPERPAGE", $"Loaded THREW: {ex}");
             }
         };
@@ -127,7 +129,7 @@ public sealed partial class WhisperPage : Page
     // éventuellement rollback sa valeur UI.
     private bool TryApply(string action, System.Action body)
     {
-        App.Log?.LogVerbose("WHISPER", $"{action}");
+        _log.Verbose(LogSource.SetWhisper, $"{action}");
         try
         {
             body();
@@ -135,8 +137,8 @@ public sealed partial class WhisperPage : Page
         }
         catch (Exception ex)
         {
-            App.Log?.LogError("WHISPER", $"{action} THREW {ex.GetType().Name}: {ex.Message}");
-            App.Log?.LogError("WHISPER", ex.StackTrace ?? "(no stack)");
+            _log.Error(LogSource.SetWhisper, $"{action} THREW {ex.GetType().Name}: {ex.Message}");
+            _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
             DebugLog.Write("WHISPERPAGE", $"{action} THREW: {ex}");
             return false;
         }
@@ -280,7 +282,7 @@ public sealed partial class WhisperPage : Page
 
     private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Paths.ModelsDirectory → \"{_pathsDefaults.ModelsDirectory}\"");
+        _log.Info(LogSource.SetWhisper, $"Reset Paths.ModelsDirectory → \"{_pathsDefaults.ModelsDirectory}\"");
         ModelsDirectoryBox.Text = _pathsDefaults.ModelsDirectory;
     }
 
@@ -297,7 +299,7 @@ public sealed partial class WhisperPage : Page
 
     private void ModelReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Transcription.Model → \"{_transcriptionDefaults.Model}\"");
+        _log.Info(LogSource.SetWhisper, $"Reset Transcription.Model → \"{_transcriptionDefaults.Model}\"");
         ModelCombo.SelectedItem = _transcriptionDefaults.Model;
     }
 
@@ -314,7 +316,7 @@ public sealed partial class WhisperPage : Page
 
     private void UseGpuReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Transcription.UseGpu → {_transcriptionDefaults.UseGpu}");
+        _log.Info(LogSource.SetWhisper, $"Reset Transcription.UseGpu → {_transcriptionDefaults.UseGpu}");
         UseGpuToggle.IsOn = _transcriptionDefaults.UseGpu;
     }
 
@@ -333,7 +335,7 @@ public sealed partial class WhisperPage : Page
 
     private void LanguageReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Transcription.Language → \"{_transcriptionDefaults.Language}\"");
+        _log.Info(LogSource.SetWhisper, $"Reset Transcription.Language → \"{_transcriptionDefaults.Language}\"");
         LanguageCombo.Text = _transcriptionDefaults.Language;
     }
 
@@ -359,14 +361,14 @@ public sealed partial class WhisperPage : Page
 
     private void InitialPromptCancel_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.LogVerbose("WHISPER", "InitialPrompt Cancel — revert");
+        _log.Verbose(LogSource.SetWhisper, "InitialPrompt Cancel — revert");
         InitialPromptBox.Text = _savedInitialPrompt;
         // TextChanged se déclenche → isDirty = false → actions masquées.
     }
 
     private void InitialPromptReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", "Reset Transcription.InitialPrompt");
+        _log.Info(LogSource.SetWhisper, "Reset Transcription.InitialPrompt");
         // Pose le défaut dans le TextBox — TextChanged détecte le dirty state
         // et affiche Save/Cancel si le défaut diffère de la valeur sauvée.
         InitialPromptBox.Text = _transcriptionDefaults.InitialPrompt;
@@ -386,7 +388,7 @@ public sealed partial class WhisperPage : Page
 
     private void VadEnabledReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset SpeechDetection.Enabled → {_speechDefaults.Enabled}");
+        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.Enabled → {_speechDefaults.Enabled}");
         VadEnabledToggle.IsOn = _speechDefaults.Enabled;
     }
 
@@ -420,7 +422,7 @@ public sealed partial class WhisperPage : Page
 
     private void VadMinSpeechReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset SpeechDetection.MinSpeechDurationMs → {_speechDefaults.MinSpeechDurationMs}");
+        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.MinSpeechDurationMs → {_speechDefaults.MinSpeechDurationMs}");
         VadMinSpeechBox.Value = _speechDefaults.MinSpeechDurationMs;
     }
 
@@ -436,7 +438,7 @@ public sealed partial class WhisperPage : Page
 
     private void VadMinSilenceReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset SpeechDetection.MinSilenceDurationMs → {_speechDefaults.MinSilenceDurationMs}");
+        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.MinSilenceDurationMs → {_speechDefaults.MinSilenceDurationMs}");
         VadMinSilenceBox.Value = _speechDefaults.MinSilenceDurationMs;
     }
 
@@ -455,7 +457,7 @@ public sealed partial class WhisperPage : Page
 
     private void VadMaxSpeechReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset SpeechDetection.MaxSpeechDurationSec → {_speechDefaults.MaxSpeechDurationSec}");
+        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.MaxSpeechDurationSec → {_speechDefaults.MaxSpeechDurationSec}");
         VadMaxSpeechSlider.Value = _speechDefaults.MaxSpeechDurationSec;
     }
 
@@ -471,7 +473,7 @@ public sealed partial class WhisperPage : Page
 
     private void VadSpeechPadReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset SpeechDetection.SpeechPadMs → {_speechDefaults.SpeechPadMs}");
+        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.SpeechPadMs → {_speechDefaults.SpeechPadMs}");
         VadSpeechPadBox.Value = _speechDefaults.SpeechPadMs;
     }
 
@@ -490,7 +492,7 @@ public sealed partial class WhisperPage : Page
 
     private void VadOverlapReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset SpeechDetection.SamplesOverlap → {_speechDefaults.SamplesOverlap}");
+        _log.Info(LogSource.SetWhisper, $"Reset SpeechDetection.SamplesOverlap → {_speechDefaults.SamplesOverlap}");
         VadOverlapSlider.Value = _speechDefaults.SamplesOverlap;
     }
 
@@ -511,7 +513,7 @@ public sealed partial class WhisperPage : Page
 
     private void TemperatureReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Decoding.Temperature → {_decodingDefaults.Temperature}");
+        _log.Info(LogSource.SetWhisper, $"Reset Decoding.Temperature → {_decodingDefaults.Temperature}");
         TemperatureSlider.Value = _decodingDefaults.Temperature;
     }
 
@@ -534,7 +536,7 @@ public sealed partial class WhisperPage : Page
 
     private void TemperatureIncrementReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Decoding.TemperatureIncrement → {_decodingDefaults.TemperatureIncrement}");
+        _log.Info(LogSource.SetWhisper, $"Reset Decoding.TemperatureIncrement → {_decodingDefaults.TemperatureIncrement}");
         TemperatureIncrementSlider.Value = _decodingDefaults.TemperatureIncrement;
     }
 
@@ -555,7 +557,7 @@ public sealed partial class WhisperPage : Page
 
     private void EntropyReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Confidence.EntropyThreshold → {_confidenceDefaults.EntropyThreshold}");
+        _log.Info(LogSource.SetWhisper, $"Reset Confidence.EntropyThreshold → {_confidenceDefaults.EntropyThreshold}");
         EntropySlider.Value = _confidenceDefaults.EntropyThreshold;
     }
 
@@ -574,7 +576,7 @@ public sealed partial class WhisperPage : Page
 
     private void LogprobReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Confidence.LogprobThreshold → {_confidenceDefaults.LogprobThreshold}");
+        _log.Info(LogSource.SetWhisper, $"Reset Confidence.LogprobThreshold → {_confidenceDefaults.LogprobThreshold}");
         LogprobSlider.Value = _confidenceDefaults.LogprobThreshold;
     }
 
@@ -593,7 +595,7 @@ public sealed partial class WhisperPage : Page
 
     private void NoSpeechReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Confidence.NoSpeechThreshold → {_confidenceDefaults.NoSpeechThreshold}");
+        _log.Info(LogSource.SetWhisper, $"Reset Confidence.NoSpeechThreshold → {_confidenceDefaults.NoSpeechThreshold}");
         NoSpeechSlider.Value = _confidenceDefaults.NoSpeechThreshold;
     }
 
@@ -611,7 +613,7 @@ public sealed partial class WhisperPage : Page
 
     private void SuppressNstReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset OutputFilters.SuppressNonSpeechTokens → {_outputDefaults.SuppressNonSpeechTokens}");
+        _log.Info(LogSource.SetWhisper, $"Reset OutputFilters.SuppressNonSpeechTokens → {_outputDefaults.SuppressNonSpeechTokens}");
         SuppressNstToggle.IsOn = _outputDefaults.SuppressNonSpeechTokens;
     }
 
@@ -627,7 +629,7 @@ public sealed partial class WhisperPage : Page
 
     private void SuppressBlankReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset OutputFilters.SuppressBlank → {_outputDefaults.SuppressBlank}");
+        _log.Info(LogSource.SetWhisper, $"Reset OutputFilters.SuppressBlank → {_outputDefaults.SuppressBlank}");
         SuppressBlankToggle.IsOn = _outputDefaults.SuppressBlank;
     }
 
@@ -643,7 +645,7 @@ public sealed partial class WhisperPage : Page
 
     private void SuppressRegexReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", "Reset OutputFilters.SuppressRegex");
+        _log.Info(LogSource.SetWhisper, "Reset OutputFilters.SuppressRegex");
         SuppressRegexBox.Text = _outputDefaults.SuppressRegex;
     }
 
@@ -661,7 +663,7 @@ public sealed partial class WhisperPage : Page
 
     private void UseContextReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Context.UseContext → {_contextDefaults.UseContext}");
+        _log.Info(LogSource.SetWhisper, $"Reset Context.UseContext → {_contextDefaults.UseContext}");
         UseContextToggle.IsOn = _contextDefaults.UseContext;
     }
 
@@ -677,7 +679,7 @@ public sealed partial class WhisperPage : Page
 
     private void MaxTokensReset_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", $"Reset Context.MaxTokens → {_contextDefaults.MaxTokens}");
+        _log.Info(LogSource.SetWhisper, $"Reset Context.MaxTokens → {_contextDefaults.MaxTokens}");
         MaxTokensBox.Value = _contextDefaults.MaxTokens;
     }
 
@@ -706,7 +708,7 @@ public sealed partial class WhisperPage : Page
 
     private void RestartDiscard_Click(object sender, RoutedEventArgs e)
     {
-        App.Log?.Log("WHISPER", "Discard restart-requiring changes");
+        _log.Info(LogSource.SetWhisper, "Discard restart-requiring changes");
 
         _loading = true;
         try
@@ -745,7 +747,7 @@ public sealed partial class WhisperPage : Page
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
 
-        App.Log?.Log("WHISPER", "Reset ALL to defaults");
+        _log.Info(LogSource.SetWhisper, "Reset ALL to defaults");
 
         var s = SettingsService.Instance.Current;
         s.Transcription   = new TranscriptionSettings();
