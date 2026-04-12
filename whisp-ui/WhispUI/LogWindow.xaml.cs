@@ -13,7 +13,9 @@ using Windows.Storage.Pickers;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Data;
 using WinRT.Interop;
+using WhispUI.Interop;
 using WhispUI.Logging;
+using WhispUI.Shell;
 
 namespace WhispUI;
 

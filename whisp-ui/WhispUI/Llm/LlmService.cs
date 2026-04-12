@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using WhispUI.Logging;
 using WhispUI.Settings;
 
-namespace WhispUI;
+namespace WhispUI.Llm;
 
 // ─── LLM rewrite service via Ollama (RAW mode) ───────────────────────────────
 //

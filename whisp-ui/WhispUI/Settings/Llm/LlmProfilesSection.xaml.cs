@@ -3,6 +3,7 @@ using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
+using WhispUI.Llm;
 
 namespace WhispUI.Settings.Llm;
 

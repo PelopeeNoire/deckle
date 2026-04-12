@@ -1,4 +1,6 @@
+using WhispUI.Interop;
 using WhispUI.Logging;
+using WhispUI.Shell;
 
 namespace WhispUI;
 

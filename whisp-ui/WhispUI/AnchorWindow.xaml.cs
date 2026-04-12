@@ -1,6 +1,9 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using WinRT.Interop;
+using WhispUI.Interop;
+using WhispUI.Logging;
+using WhispUI.Shell;
 
 namespace WhispUI;
 

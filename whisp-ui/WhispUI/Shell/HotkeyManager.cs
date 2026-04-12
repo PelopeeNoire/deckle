@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
+using WhispUI.Interop;
 
-namespace WhispUI;
+namespace WhispUI.Shell;
 
 // Enregistre les hotkeys globaux et intercepte WM_HOTKEY via SetWindowSubclass.
 // SetWindowSubclass chaîne dans la boucle de messages existante de WinUI 3

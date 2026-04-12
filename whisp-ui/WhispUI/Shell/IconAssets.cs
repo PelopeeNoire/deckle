@@ -1,6 +1,6 @@
 using Microsoft.UI.Windowing;
 
-namespace WhispUI;
+namespace WhispUI.Shell;
 
 // ─── Résolution des assets icônes ─────────────────────────────────────────────
 //

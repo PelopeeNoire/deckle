@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using WhispUI.Llm;
 
 namespace WhispUI.Settings.Llm;
 

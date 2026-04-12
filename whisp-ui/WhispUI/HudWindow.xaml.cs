@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
+using WhispUI.Interop;
+using WhispUI.Shell;
 
 namespace WhispUI;
 

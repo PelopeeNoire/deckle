@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
+using WhispUI.Interop;
 
-namespace WhispUI;
+namespace WhispUI.Shell;
 
 // ─── Icône dans la zone de notification système ───────────────────────────────
 //

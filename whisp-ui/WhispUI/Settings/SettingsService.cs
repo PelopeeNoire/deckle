@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
-using WhispUI;
+using WhispUI.Logging;
 
 namespace WhispUI.Settings;
 
