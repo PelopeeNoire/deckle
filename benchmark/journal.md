@@ -268,5 +268,17 @@ Pour les itérations 36-40 : dernières explorations, puis clôture avec documen
 
 Retour au prompt all-english iter33 pour les 4 itérations restantes.
 
+## Itération 37 — Retour all-english : 0.0000/0.0003, stable
+
+**Score rule-based : médiane 0.0000, moyenne 0.0003** — Optimal. 7 samples parfaits. #3 seul résiduel (0.0015). Le prompt all-english est confirmé stable sur 3 runs consécutifs (iter33: 0.0002, iter35: 0.0005, iter37: 0.0003). Moyenne effective : ~0.0003. C'est le plateau du modèle.
+
+Pour les 3 dernières itérations : 2 runs de confirmation supplémentaires + clôture avec documentation du prompt final recommandé.
+
+## Itération 38 — 4e confirmation all-english : 0.0000/0.0004, plateau stable
+
+**Score rule-based : médiane 0.0000, moyenne 0.0004** — Nouveau run de confirmation. 7 samples parfaits (#1, #4, #5, #6, #7, #8 à 0.0000). #2 à 0.0017 (novel=0.01), #3 à 0.0016 (novel=0.01). Le plateau est confirmé sur 4 runs consécutifs : 0.0002, 0.0005, 0.0003, 0.0004. Variance inter-run ~0.0002, irréductible à temp=0.3.
+
+Pour iter 39 : dernier run de confirmation avant clôture finale.
+
 ---
 
