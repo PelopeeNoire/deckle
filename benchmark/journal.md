@@ -82,5 +82,13 @@ Problème restant : novel_words à 0.13-0.24 sur la plupart des samples — le m
 
 Changements pour iter 10 : ajout instruction "utilise les mots du locuteur, pas les tiens — reformule le moins possible, nettoie la forme orale, garde le vocabulaire". Exemple concret inclus dans la règle.
 
+## Itération 10 — Score quasi-parfait, prompt convergé
+
+**Score rule-based : médiane 0.0054** — Meilleur résultat de loin (iter 9 : 0.0338). Novel_words quasi zéro (0.000-0.073). Tous les samples sans préambule, sans liste, ratios 0.73-0.97. Qualité excellente : hésitations supprimées, mots du locuteur conservés, restructuration réelle (pas de copié-collé).
+
+La combinaison "utilise les mots du locuteur + ne coupe pas les idées + ne produis pas de résumé ni de liste" est la formule gagnante.
+
+Changements pour iter 11 : test d'un prompt raccourci. À médiane 0.0054, tester si une version distillée (plus courte, même règles essentielles) est aussi robuste. Un prompt minimal est plus robuste aux edge cases.
+
 ---
 
