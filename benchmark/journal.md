@@ -140,5 +140,13 @@ La direction est bonne. Prochaine micro-variation : tenter de réduire le novel 
 
 Retour au prompt exact iter 16 pour iter 18. Stabilisation du plateau optimal.
 
+## Itération 18 — Meilleur absolu (0.0016), prompt iter16 confirmé
+
+**Score rule-based : médiane 0.0016** — Nouveau meilleur absolu. 5 samples sous 0.002. #6, #7, #8 quasi-parfaits (0.0000-0.0011). #1 à 0.0055 — encore le sample le plus difficile (long, 6986 chars) mais très bon. Novel_words 0.00-0.02 sur tous les samples. Ratios 0.83-0.99.
+
+Le prompt iter 16 est confirmé optimal. Plusieurs runs successifs le confirment (0.0023, 0.0016). La variation résiduelle vient de la température 0.3 et non du prompt.
+
+Pour la suite : garder ce prompt et explorer si d'autres axes peuvent passer sous 0.001, ou documenter que le plancher est atteint.
+
 ---
 
