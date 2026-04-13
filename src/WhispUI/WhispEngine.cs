@@ -57,6 +57,13 @@ internal sealed class WhispEngine : IDisposable
     private volatile bool   _useLlm        = false;
     private volatile IntPtr _pasteTarget   = IntPtr.Zero;
 
+    // Model lifecycle: lazy load on first hotkey, unload after idle timeout.
+    // _pipelineActive guards against unloading while Record+Transcribe runs.
+    private volatile bool   _pipelineActive = false;
+    private readonly object _modelLock = new();
+    private System.Threading.Timer? _idleTimer;
+    private const int MODEL_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
     // Segments produced by Whisper during whisper_full() via native callback.
     // Accumulated progressively from the whisper.cpp inference thread — protected
     // by lock since the callback runs on a different thread. Serves both as
@@ -87,6 +94,14 @@ internal sealed class WhispEngine : IDisposable
 
     private readonly record struct TranscribedSegment(string Text, long T0, long T1, float NoSpeechProb);
 
+    // Stopwatch started at the beginning of whisper_full — read by OnNewSegment
+    // to log elapsed time since inference start (cumulative, not per-segment).
+    private System.Diagnostics.Stopwatch? _transcribeSw;
+
+    // Decoding strategy label cached at the start of Transcribe, used in the
+    // final recap log (e.g. "beam5" or "greedy").
+    private string _strategyLabel = "";
+
     // Stopwatch started at the beginning of each recording (used for logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
 
@@ -106,12 +121,13 @@ internal sealed class WhispEngine : IDisposable
 
         _llm = new LlmService();
 
-        // Hook the global whisper.cpp log callback before LoadModelAsync to
+        // Hook the global whisper.cpp log callback before any model load to
         // catch Vulkan/CUDA initialization logs and model parsing warnings.
         // Install-once, process-wide.
         InstallWhisperLogHook();
 
-        LoadModelAsync();
+        // Model loaded on-demand at first hotkey press (see EnsureModelLoaded).
+        // Unloaded after MODEL_IDLE_TIMEOUT_MS of inactivity to free VRAM.
     }
 
     // Redirects whisper.cpp internal logs (ggml_log) to LogVerbose.
@@ -155,50 +171,100 @@ internal sealed class WhispEngine : IDisposable
         }
     }
 
-    // ── Model loading (background thread) ────────────────────────────────────
+    // ── Model lifecycle (lazy load + idle unload) ──────────────────────────────
+    //
+    // The model is NOT loaded at startup. It is loaded on-demand when the user
+    // presses the hotkey for the first time (or after an idle unload).
+    // After each transcription, an idle timer starts. When it expires without
+    // a new transcription, the model is freed to release VRAM.
 
-    private void LoadModelAsync()
+    /// <summary>
+    /// Loads the whisper model synchronously. Caller must be on a background thread.
+    /// </summary>
+    private bool LoadModel()
     {
         StatusChanged?.Invoke("Chargement du modèle...");
 
-        var t = new Thread(() =>
+        DebugLog.Write("ENGINE", "load started, path=" + _modelPath);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _log.Info(LogSource.Model, $"path: {_modelPath}");
+        if (File.Exists(_modelPath))
         {
-            DebugLog.Write("ENGINE", "load thread started, path=" + _modelPath);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            _log.Info(LogSource.Model, $"path: {_modelPath}");
-            if (File.Exists(_modelPath))
-            {
-                double mb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
-                _log.Info(LogSource.Model, $"file: {mb:F1} MB");
-            }
-            else
-            {
-                _log.Warning(LogSource.Model, $"file not found on disk ({_modelPath})");
-            }
-            _log.Info(LogSource.Model, "init whisper_init_from_file_with_params (use_gpu=1)");
+            double mb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
+            _log.Info(LogSource.Model, $"file: {mb:F1} MB");
+        }
+        else
+        {
+            _log.Warning(LogSource.Model, $"file not found on disk ({_modelPath})");
+        }
+        _log.Info(LogSource.Model, "init whisper_init_from_file_with_params (use_gpu=1)");
 
-            IntPtr ctxParamsPtr = NativeMethods.whisper_context_default_params_by_ref();
-            WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
-            NativeMethods.whisper_free_context_params(ctxParamsPtr);
-            ctxParams.use_gpu = 1;
+        IntPtr ctxParamsPtr = NativeMethods.whisper_context_default_params_by_ref();
+        WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
+        NativeMethods.whisper_free_context_params(ctxParamsPtr);
+        ctxParams.use_gpu = 1;
 
-            _ctx = NativeMethods.whisper_init_from_file_with_params(_modelPath, ctxParams);
-            DebugLog.Write("ENGINE", "whisper_init_from_file returned ctx=" + _ctx);
-            sw.Stop();
+        _ctx = NativeMethods.whisper_init_from_file_with_params(_modelPath, ctxParams);
+        DebugLog.Write("ENGINE", "whisper_init_from_file returned ctx=" + _ctx);
+        sw.Stop();
 
-            if (_ctx == IntPtr.Zero)
+        if (_ctx == IntPtr.Zero)
+        {
+            _log.Error(LogSource.Init, $"Failed to load model: {_modelPath}");
+            StatusChanged?.Invoke("Erreur : modèle non chargé");
+            return false;
+        }
+
+        _log.Step(LogSource.Model, $"Model loaded ({sw.ElapsedMilliseconds} ms)");
+        return true;
+    }
+
+    /// <summary>
+    /// Ensures the model is in VRAM, loading it if necessary. Thread-safe.
+    /// </summary>
+    private bool EnsureModelLoaded()
+    {
+        if (_ctx != IntPtr.Zero) return true;
+        lock (_modelLock)
+        {
+            if (_ctx != IntPtr.Zero) return true; // double-check after acquiring lock
+            _log.Info(LogSource.Model, "on-demand load (first use or after idle unload)");
+            return LoadModel();
+        }
+    }
+
+    /// <summary>
+    /// Frees the whisper context to release VRAM. Called by the idle timer.
+    /// Skipped if a pipeline (Record+Transcribe) is currently active.
+    /// </summary>
+    private void UnloadModel()
+    {
+        lock (_modelLock)
+        {
+            if (_pipelineActive)
             {
-                _log.Error(LogSource.Init, $"Failed to load model: {_modelPath}");
-                StatusChanged?.Invoke("Erreur : modèle non chargé");
+                _log.Verbose(LogSource.Model, "idle unload skipped (pipeline active)");
+                return;
             }
-            else
-            {
-                _log.Step(LogSource.Model, $"Model loaded ({sw.ElapsedMilliseconds} ms)");
-                StatusChanged?.Invoke("En attente");
-            }
-        });
-        t.IsBackground = true;
-        t.Start();
+            if (_ctx == IntPtr.Zero) return;
+
+            NativeMethods.whisper_free(_ctx);
+            _ctx = IntPtr.Zero;
+            _log.Step(LogSource.Model, $"Model unloaded after {MODEL_IDLE_TIMEOUT_MS / 1000}s idle (VRAM freed)");
+            StatusChanged?.Invoke("En attente");
+        }
+    }
+
+    /// <summary>
+    /// Resets (or starts) the idle timer. Called after each transcription completes.
+    /// </summary>
+    private void ResetIdleTimer()
+    {
+        if (_idleTimer is null)
+            _idleTimer = new System.Threading.Timer(_ => UnloadModel(), null, MODEL_IDLE_TIMEOUT_MS, Timeout.Infinite);
+        else
+            _idleTimer.Change(MODEL_IDLE_TIMEOUT_MS, Timeout.Infinite);
+        _log.Verbose(LogSource.Model, $"idle timer set ({MODEL_IDLE_TIMEOUT_MS / 1000}s)");
     }
 
     // ── Start recording ─────────────────────────────────────────────────────
@@ -220,15 +286,16 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        _isRecording   = true;
-        _stopRecording = false;
-        _shouldPaste   = shouldPaste;
-        _useLlm        = useLlm;
-        _pasteTarget   = pasteTarget;
+        _isRecording    = true;
+        _stopRecording  = false;
+        _shouldPaste    = shouldPaste;
+        _useLlm         = useLlm;
+        _pasteTarget    = pasteTarget;
+        _pipelineActive = true;
         lock (_segmentsLock) _segments.Clear();
 
-        _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-        StatusChanged?.Invoke("Enregistrement...");
+        // Cancel any pending idle unload — a new pipeline is starting.
+        _idleTimer?.Change(Timeout.Infinite, Timeout.Infinite);
 
         // Trace the target captured at Start — symmetric with the green Step at the end.
         // Shows from the start which window/control will receive the paste,
@@ -246,15 +313,29 @@ internal sealed class WhispEngine : IDisposable
             _log.Verbose(LogSource.Hotkey, "no target captured at Start (paste disabled or foreground = WhispUI)");
         }
 
-        // Single background thread: Record then Transcribe in sequence.
-        // Whisper needs the full audio for its internal windowing —
-        // no parallelism possible, and simpler to debug.
+        // Single background thread: EnsureModel → Record → Transcribe.
+        // Model load (if needed) happens here, not on the UI/hotkey thread,
+        // so the app stays responsive during the GPU init (~1-3s).
         var worker = new Thread(() =>
         {
+            // Load model on-demand if not in VRAM (first use or after idle unload).
+            if (!EnsureModelLoaded())
+            {
+                _isRecording = false;
+                _pipelineActive = false;
+                TranscriptionFinished?.Invoke();
+                return;
+            }
+
+            _recordingSw = System.Diagnostics.Stopwatch.StartNew();
+            StatusChanged?.Invoke("Enregistrement...");
+
             float[] audio = Record();
             _isRecording = false;
             StatusChanged?.Invoke("Transcription en cours...");
             Transcribe(audio);
+            _pipelineActive = false;
+            ResetIdleTimer();
         });
         worker.IsBackground = true;
         worker.Start();
@@ -553,7 +634,9 @@ internal sealed class WhispEngine : IDisposable
                 // no_speech: probability that the segment is silence/noise (0 = confident speech, 1 = confident silence).
                 // p̄ / min: average and minimum confidence over text tokens in the segment.
                 // t0/t1 are in centiseconds (1 unit = 10 ms) on the whisper.cpp side.
-                _log.Verbose(LogSource.Transcribe, $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok] {segText.Trim()}");
+                // elapsed: wall-clock time since whisper_full started (cumulative).
+                double elapsedSec = _transcribeSw?.Elapsed.TotalSeconds ?? 0;
+                _log.Verbose(LogSource.Transcribe, $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok, elapsed={elapsedSec:F1}s] {segText.Trim()}");
             }
         }
         catch (Exception ex)
@@ -590,7 +673,7 @@ internal sealed class WhispEngine : IDisposable
         // Snapshot user settings at the start of transcription.
         // Hot-reload fields (thresholds, VAD, suppress, context, decoding)
         // are applied here on each call — no context restart needed.
-        // Heavy settings (model, use_gpu) are handled at LoadModelAsync.
+        // Heavy settings (model, use_gpu) are handled at LoadModel.
         var settings = Settings.SettingsService.Instance.Current;
         var nativeAllocs = Settings.WhisperParamsMapper.Apply(ref wparams, settings);
 
@@ -607,10 +690,21 @@ internal sealed class WhispEngine : IDisposable
 
         float audioSec = (float)audio.Length / 16_000f;
         _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
-        string strategyLabel = wparams.strategy == 1 ? $"beam(size={wparams.beam_search_beam_size})" : "greedy";
-        _log.Verbose(LogSource.Transcribe, $"params: {strategyLabel} | temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
+        _strategyLabel = wparams.strategy == 1 ? $"beam{wparams.beam_search_beam_size}" : "greedy";
+        string strategyLabelVerbose = wparams.strategy == 1 ? $"beam(size={wparams.beam_search_beam_size})" : "greedy";
+        _log.Verbose(LogSource.Transcribe, $"params: {strategyLabelVerbose} | temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // Log the initial prompt sent to Whisper — conditions decoding style.
+        string prompt = settings.Transcription.InitialPrompt;
+        bool carry = settings.Transcription.CarryInitialPrompt;
+        if (!string.IsNullOrEmpty(prompt))
+        {
+            string truncated = prompt.Length > 60 ? prompt[..60] + "…" : prompt;
+            _log.Info(LogSource.Transcribe, $"prompt: \"{truncated}\" ({prompt.Length} chars, carry={carry})");
+        }
+
+        _transcribeSw = System.Diagnostics.Stopwatch.StartNew();
+        var sw = _transcribeSw;
         int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
         sw.Stop();
         long transcribeMsTotal = sw.ElapsedMilliseconds;
@@ -712,7 +806,7 @@ internal sealed class WhispEngine : IDisposable
             pasteMs = swPaste.ElapsedMilliseconds;
         }
 
-        string recap = $"total {recDurationSec:F1}s (trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
+        string recap = $"total {recDurationSec:F1}s ({_strategyLabel} trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         if (_shouldPaste && pasteVerified)
             _log.Step(LogSource.Transcribe, $"End-to-end OK — {fullText.Length} chars pasted into {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
         else
@@ -863,6 +957,8 @@ internal sealed class WhispEngine : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        _idleTimer?.Dispose();
 
         if (_ctx != IntPtr.Zero)
         {
