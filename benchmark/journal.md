@@ -190,5 +190,11 @@ Pour iter 24 : placer "avec les mots exacts du locuteur" dès la première ligne
 
 Ce prompt est officiellement le co-meilleur. Il améliore la moyenne et gère mieux #1. Nouveau prompt de référence.
 
+## Itération 25 — Confirmation stabilité (0.0009), dans la variance normale
+
+**Score rule-based : médiane 0.0009** — Variance normale de température (iter 24 = 0.0000). 3 samples parfaits, les autres à 0.001-0.002. Le prompt iter 24 est stable dans la zone 0.0000-0.0009. C'est le plancher du modèle à temp=0.3.
+
+Pour iter 26 : test simplification — retrait du paragraphe "N'ajoute rien qui n'est pas dans l'entrée" (redondant avec "utilise exactement les mots"). Même contenu, moins de tokens.
+
 ---
 
