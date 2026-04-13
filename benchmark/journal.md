@@ -74,5 +74,13 @@ Analyse comparative : la seule fois où #2 était résolu (iter 4, score 0.0528)
 
 Changements pour iter 9 : restaurer exactement "ne produis pas de résumé ni de liste de points" dans la description du rôle, combiné à "Ne coupe pas les idées" pour l'anti-compression.
 
+## Itération 9 — Meilleur score global, #2 résolu
+
+**Score rule-based : médiane 0.0338** — Meilleur résultat jusqu'ici. #7 parfait (0.0000). #2 résolu (0.0354) : pas de préambule, prose fidèle, ton naturel. #2 lists=1 probablement faux positif (contenu parle d'"index" — le benchmark détecte peut-être un faux positif). Qualité globale très bonne.
+
+Problème restant : novel_words à 0.13-0.24 sur la plupart des samples — le modèle paraphrase trop, introduit son propre vocabulaire au lieu d'utiliser les mots du locuteur.
+
+Changements pour iter 10 : ajout instruction "utilise les mots du locuteur, pas les tiens — reformule le moins possible, nettoie la forme orale, garde le vocabulaire". Exemple concret inclus dans la règle.
+
 ---
 
