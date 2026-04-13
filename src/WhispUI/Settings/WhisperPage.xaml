@@ -48,7 +48,8 @@
         </Style>
     </Page.Resources>
 
-    <Grid>
+    <Grid Background="Transparent"
+          Tapped="OnBackgroundTapped">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -58,7 +59,7 @@
                       Padding="32,24,32,24"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
-            <Grid>
+            <Grid Background="Transparent">
                 <StackPanel MaxWidth="1000"
                             HorizontalAlignment="Stretch"
                             Spacing="{StaticResource SettingsCardSpacing}">
@@ -116,7 +117,8 @@
                         <ComboBox x:Name="LanguageCombo"
                                   MinWidth="160"
                                   IsEditable="True"
-                                  SelectionChanged="LanguageCombo_SelectionChanged">
+                                  SelectionChanged="LanguageCombo_SelectionChanged"
+                                  LostFocus="LanguageCombo_LostFocus">
                             <ComboBoxItem Content="auto" />
                             <ComboBoxItem Content="fr" />
                             <ComboBoxItem Content="en" />
