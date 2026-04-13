@@ -12,10 +12,10 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Force le pipeline Publish à générer/copier WhispUI.pri dans PublishDir.
-         Sans ça, en unpackaged + WindowsAppSDK 1.8, le .pri n'arrive pas dans publish\
-         et toutes les ressources XAML compilées (.xbf embarqués dans le .pri depuis 1.8)
-         deviennent injoignables. Cf. microsoft/WindowsAppSDK#3451. -->
+    <!-- Forces the Publish pipeline to generate/copy WhispUI.pri into PublishDir.
+         Without this, in unpackaged + WindowsAppSDK 1.8, the .pri doesn't land in
+         publish\ and all compiled XAML resources (.xbf embedded in .pri since 1.8)
+         become unreachable. Cf. microsoft/WindowsAppSDK#3451. -->
     <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
@@ -23,33 +23,28 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <!-- MVVM Toolkit — source generators [ObservableProperty], ObservableObject, [RelayCommand].
-         Élimine le boilerplate INotifyPropertyChanged dans les ViewModels. -->
+         Eliminates INotifyPropertyChanged boilerplate in ViewModels. -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <!-- SettingsCard / SettingsExpander — pattern canonique Windows 11 pour les pages de
-         paramètres (spacing, section headers, animations documentés Microsoft Learn). -->
+    <!-- SettingsCard / SettingsExpander — canonical Windows 11 pattern for settings pages
+         (spacing, section headers, animations documented on Microsoft Learn). -->
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Icônes tray -->
-    <Content Include="..\..\assets\icons\**\*">
-      <Link>assets\icons\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    <!-- Tray icons -->
+    <Content Include="Assets\Icons\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Polices (Bitcount Single, etc.) — partagées au niveau racine du projet transcription -->
-    <Content Include="..\..\assets\fonts\**\*.ttf">
-      <Link>Assets\Fonts\%(Filename)%(Extension)</Link>
+    <!-- Fonts (Bitcount Single, etc.) -->
+    <Content Include="Assets\Fonts\**\*.ttf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- DLLs Whisper (compilées avec Vulkan) -->
-    <Content Include="..\..\whisper.cpp\build\bin\*.dll">
+    <!-- Native DLLs — whisper.cpp (Vulkan) -->
+    <Content Include="..\..\native\whisper\*.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Dépendances runtime MinGW -->
-    <Content Include="D:\bin\scoop\apps\mingw\current\bin\libgcc_s_seh-1.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="D:\bin\scoop\apps\mingw\current\bin\libstdc++-6.dll">
+    <!-- Native DLLs — MinGW runtime -->
+    <Content Include="..\..\native\mingw\*.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

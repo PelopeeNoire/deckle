@@ -93,13 +93,11 @@ public sealed class SettingsService
         _debounceTimer.Change(300, Timeout.Infinite);
     }
 
-    // Résout le dossier où chercher les .bin (modèles Whisper + VAD Silero).
-    // Si l'utilisateur n'a rien défini, on remonte depuis le dossier de l'exe
-    // pour trouver un dossier `shared/` contenant au moins un .bin. Couvre à
-    // la fois la layout publish (exe dans `whisp-ui/publish/`, shared 2 niveaux
-    // plus haut) et la layout dev (exe dans `bin/x64/Release/net10.0-*/`,
-    // shared 6 niveaux plus haut). Sans ça, le combo "Whisper model" restait
-    // vide en dev et n'affichait que le modèle persisté via le filet de sécurité.
+    // Resolves the directory containing .bin files (Whisper models + VAD Silero).
+    // If the user hasn't configured a custom path, walks up from the exe directory
+    // looking for a `models/` folder with at least one .bin. Covers both the
+    // publish layout (exe in `publish/`, models 2 levels up) and the dev layout
+    // (exe in `bin/x64/Release/net10.0-*/`, models 6 levels up).
     public string ResolveModelsDirectory()
     {
         string user = Current.Paths.ModelsDirectory;
@@ -109,15 +107,15 @@ public sealed class SettingsService
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (int i = 0; i < 8 && dir != null; i++, dir = dir.Parent)
         {
-            string candidate = Path.Combine(dir.FullName, "shared");
+            string candidate = Path.Combine(dir.FullName, "models");
             if (Directory.Exists(candidate) &&
                 Directory.EnumerateFiles(candidate, "*.bin").Any())
                 return candidate;
         }
 
-        // Rien trouvé : retombe sur le chemin legacy (peut ne pas exister — le
-        // scanner affichera une liste vide, et l'utilisateur devra configurer).
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "shared"));
+        // Nothing found: fall back to legacy path (may not exist — the scanner
+        // will show an empty list, and the user will need to configure manually).
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "models"));
     }
 
     // Public pour permettre un flush synchrone avant un arrêt du process

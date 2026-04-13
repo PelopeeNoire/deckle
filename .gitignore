@@ -1,32 +1,35 @@
-# Dépôt whisper.cpp cloné — code source externe, non versionné ici
+# Cloned whisper.cpp repo — external source, not versioned here
 whisper.cpp/
 
-# Modèles Whisper — fichiers binaires lourds (100 Mo à 3 Go)
-shared/*.bin
+# Pre-built native DLLs (whisper.cpp + MinGW runtime)
+native/
 
-# Artefacts de compilation .NET
-whisp-ui/**/bin/
-whisp-ui/**/obj/
+# Whisper models — large binary files (100 MB to 3 GB)
+models/
+
+# .NET build artifacts
+src/**/bin/
+src/**/obj/
 archive/**/bin/
 archive/**/obj/
 
-# Dossier de déploiement — reconstruisible avec dotnet publish
-whisp-ui/publish/
+# Deployment output — rebuildable via dotnet publish
+publish/
 
-# Scripts de build/publish locaux — chemins machine, pas versionnés
-whisp-ui/*.ps1
+# Legacy whisp-ui folder (may contain locked publish/ artifacts)
+whisp-ui/
 
-# Fichier audio temporaire créé pendant l'enregistrement
+# Temporary audio file created during recording
 **/temp.wav
 
-# Fichiers locaux non pertinents
+# Misc local files
 build-log.txt
 modelfile-fastapply
 
-# État local Visual Studio
+# Visual Studio local state
 .vs/
 
-# Scories de diagnostic (scripts/logs ad hoc)
+# Diagnostic artifacts (ad hoc scripts/logs)
 .tmp/
 **/.tmp-*
 **/*.binlog
@@ -35,7 +38,7 @@ modelfile-fastapply
 **/xaml.out
 .claude/settings.local.json
 
-# Benchmark — artefacts de run (régénérés à chaque lancement)
+# Benchmark — run artifacts (regenerated on each launch)
 benchmark/__pycache__/
 benchmark/*.log
 benchmark/last_report.json
