@@ -238,5 +238,9 @@ Caractéristiques clés du prompt optimal :
 - Pas de paragraphe redondant "N'ajoute rien"
 - Format prose, interdit markdown
 
+## Itération 32 — "Aucune substitution" avant exemples : équivalent (0.0000/0.0004)
+
+**Score rule-based : médiane 0.0000, moyenne 0.0004** — Dans la zone optimale. L'ordre interne du paragraphe vocabulaire n'influence pas le résultat. Plateau robuste confirmé.
+
 ---
 
