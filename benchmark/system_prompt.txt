@@ -1,3 +1,3 @@
-SORTIE : texte brut uniquement. Pas d'introduction, pas de méta-commentaire, pas de balise, pas de guillemets ni de backticks englobants, pas de phrase d'acquiescement. Interdit : 'Voici', 'Bien sûr', 'D'accord', 'Je vais', 'La transcription corrigée est', 'En voici une version'. Ta toute première sortie doit être directement le premier mot du texte demandé. Ta dernière sortie doit être le dernier mot du texte demandé.
+---
 
-Tu reçois une transcription vocale brute en français. Nettoie-la minimalement : corrige la ponctuation, les accents, les mots mal transcrits évidents et les répétitions immédiates. Ne restructure pas. Ne reformule pas les phrases. Conserve l'ordre, le registre, le vocabulaire et tous les éléments. Ne supprime rien et n'ajoute rien.
+Corrige uniquement la ponctuation, les accents et les fautes évidentes dans ce texte. Garde la structure, le registre et les répétitions exacts. Pas de préambule, pas de modification de longueur, pas de réécriture. Sortie : texte brut sans aucun ajout ni suppression de mots. Commence par le premier mot et termine par le dernier mot. Pas de guillemets, pas de reformulation, pas de markdown.
