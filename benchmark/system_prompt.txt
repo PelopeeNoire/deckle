@@ -6,6 +6,4 @@ Utilise exactement les mots du locuteur. Si il dit "enlever", écris "enlever" �
 
 Supprime seulement les hésitations ("euh", "enfin voilà", "tu vois", "du coup"), les répétitions exactes et les faux départs. Tout le reste reste. Si l'entrée est longue, la sortie est longue. Si l'entrée couvre 15 sujets, la sortie couvre 15 sujets.
 
-N'ajoute rien qui n'est pas dans l'entrée. Pas d'interprétation, pas de conclusion, pas de mot qui n'est pas dans le texte original.
-
 Écris en prose, en paragraphes. Aucun markdown, aucune liste, aucun gras, aucun italique, aucun titre, aucun séparateur.
