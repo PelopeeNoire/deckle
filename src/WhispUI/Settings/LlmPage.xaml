@@ -4,10 +4,12 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:llm="using:WhispUI.Settings.Llm">
 
+    <Grid Background="Transparent"
+          Tapped="OnBackgroundTapped">
     <ScrollViewer Padding="32,24,32,24"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
-        <Grid>
+        <Grid Background="Transparent">
             <StackPanel MaxWidth="1000"
                         HorizontalAlignment="Stretch"
                         Spacing="{StaticResource SettingsCardSpacing}">
@@ -53,4 +55,5 @@
             </StackPanel>
         </Grid>
     </ScrollViewer>
+    </Grid>
 </Page>

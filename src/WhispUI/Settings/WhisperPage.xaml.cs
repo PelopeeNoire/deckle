@@ -7,6 +7,7 @@ using System.Linq;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Logging;
 using WhispUI.Settings.ViewModels;
@@ -68,6 +69,11 @@ public sealed partial class WhisperPage : Page
             DebugLog.Write("WHISPERPAGE", $"InitializeComponent THREW: {ex}");
             throw;
         }
+
+        // Make the Page focusable so clicking on the background can
+        // steal focus from the active control (triggering LostFocus →
+        // binding update → auto-save).
+        IsTabStop = true;
 
         NavigationCacheMode = NavigationCacheMode.Required;
 
@@ -250,7 +256,19 @@ public sealed partial class WhisperPage : Page
 
     private void SyncLanguageCombo()
     {
-        LanguageCombo.Text = ViewModel.Language;
+        string lang = ViewModel.Language;
+        for (int i = 0; i < LanguageCombo.Items.Count; i++)
+        {
+            if (LanguageCombo.Items[i] is ComboBoxItem item
+                && item.Content is string s && s == lang)
+            {
+                LanguageCombo.SelectedIndex = i;
+                return;
+            }
+        }
+        // Custom language code not in the predefined list.
+        LanguageCombo.SelectedIndex = -1;
+        LanguageCombo.Text = lang;
     }
 
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -266,6 +284,26 @@ public sealed partial class WhisperPage : Page
         if (LanguageCombo.SelectedItem is ComboBoxItem item && item.Content is string s)
             text = s;
         ViewModel.Language = text;
+    }
+
+    private void LanguageCombo_LostFocus(object sender, RoutedEventArgs e)
+    {
+        string text = (LanguageCombo.Text ?? "").Trim();
+        if (text != ViewModel.Language)
+            ViewModel.Language = text;
+    }
+
+    // ── Click-to-unfocus ────────────────────────────────────────────────────
+    //
+    // Tapped on the background Grid steals focus from the active control.
+    // This triggers LostFocus on TextBox / NumberBox / editable ComboBox,
+    // which fires their binding update → auto-save. Interactive controls
+    // (Button, Slider, etc.) handle Tapped internally, so this handler
+    // only fires for non-interactive areas (descriptions, spacing, margins).
+
+    private void OnBackgroundTapped(object sender, TappedRoutedEventArgs e)
+    {
+        this.Focus(FocusState.Programmatic);
     }
 
     // ── Reset handlers ──────────────────────────────────────────────────────

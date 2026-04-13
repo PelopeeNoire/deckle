@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Llm;
 using WhispUI.Settings.Llm;
@@ -33,6 +34,7 @@ public sealed partial class LlmPage : Page
     public LlmPage()
     {
         InitializeComponent();
+        IsTabStop = true;
         NavigationCacheMode = NavigationCacheMode.Required;
 
         ModelsSection.Initialize(_context);
@@ -88,6 +90,11 @@ public sealed partial class LlmPage : Page
         foreach (var m in models) modelNames.Add(m.Name);
         ProfilesSection.AvailableModelNames = modelNames;
         ProfilesSection.Reload();
+    }
+
+    private void OnBackgroundTapped(object sender, TappedRoutedEventArgs e)
+    {
+        this.Focus(FocusState.Programmatic);
     }
 
     private async void ResetAll_Click(object sender, RoutedEventArgs e)
