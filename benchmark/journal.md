@@ -134,5 +134,11 @@ Pour iter 16 : explorer si une instruction sur la longueur relative ou la densit
 
 La direction est bonne. Prochaine micro-variation : tenter de réduire le novel résiduel sur #1 (encore 0.09).
 
+## Itération 17 — Légère régression, retour prompt iter16
+
+**Score rule-based : médiane 0.0040** — Légère régression (iter 16 = 0.0023). Changement de formulation de l'anti-synonymes ("Garde le vocabulaire exact" au lieu de "Utilise exactement les mots") a légèrement dégradé #4 et #6. Dans la plage de variance température, mais iter 16 reste clairement le meilleur.
+
+Retour au prompt exact iter 16 pour iter 18. Stabilisation du plateau optimal.
+
 ---
 
