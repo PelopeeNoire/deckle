@@ -112,9 +112,13 @@ Ce prompt est maintenant la référence solide. Deux runs consécutifs (iter 10 
 
 Axes d'exploration restants : tenter d'autres formulations pour voir si le plancher peut descendre encore, ou tester avec un style différent d'instruction (impératif vs déclaratif, moins de tirets, structure en prose).
 
-## Itération 14 — Test style prose (pas de tirets, structure paragraphes)
+## Itération 14 — Nouveau meilleur, style prose sans tirets
 
-Prompt iter 13 est référence (0.0061). Pour iter 14 : reformulation complète en prose sans tirets, style impératif direct. Même contenu, présentation différente. Test si la structure affecte la performance.
+**Score rule-based : médiane 0.0034** — Nouveau meilleur (iter 13 = 0.0061). Novel_words très bas sur tous les samples (0.00-0.06). Aucun préambule, aucune liste. Ratios excellents (0.73-0.98). Qualité vérifiée : ton naturel, fidélité vocabulaire très bonne. Légères reformulations résiduelles sur #1 (italiques) et #6 (paraphrase minime).
+
+Le style prose sans tirets, avec les instructions en paragraphes séquentiels, fonctionne mieux que la liste à tirets. Le modèle suit mieux les instructions exprimées en prose.
+
+Nouveau prompt de référence. Pour iter 15 : explorer si on peut encore réduire le novel_words résiduel sur #6, ou tenter un angle complètement différent.
 
 ---
 
