@@ -196,5 +196,11 @@ Ce prompt est officiellement le co-meilleur. Il améliore la moyenne et gère mi
 
 Pour iter 26 : test simplification — retrait du paragraphe "N'ajoute rien qui n'est pas dans l'entrée" (redondant avec "utilise exactement les mots"). Même contenu, moins de tokens.
 
+## Itération 26 — Simplification valide, même performance (0.0006)
+
+**Score rule-based : médiane 0.0006, moyenne 0.0007** — Dans la variance normale. La simplification (retrait paragraphe redondant) ne dégrade pas. Prompt plus court (936 chars vs 1070 chars) pour les mêmes résultats. Nouveau prompt de référence. #2, #3, #5 à novel=0.01 — variance irréductible du modèle à temp=0.3.
+
+Pour iter 27 : tenter une variation du hook d'ouverture — voir si une formulation plus impérative de la ligne 1 change quelque chose.
+
 ---
 
