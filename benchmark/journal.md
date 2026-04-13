@@ -280,5 +280,11 @@ Pour les 3 dernières itérations : 2 runs de confirmation supplémentaires + cl
 
 Pour iter 39 : dernier run de confirmation avant clôture finale.
 
+## Itération 39 — 5e confirmation all-english : 0.0000/0.0003, plateau consolidé
+
+**Score rule-based : médiane 0.0000, moyenne 0.0003** — 7 samples parfaits. #2 à 0.0008 (novel=0.00, length=0.96), #3 à 0.0015 (novel=0.01, irréductible). Plateau confirmé sur 5 runs : {0.0002, 0.0005, 0.0003, 0.0004, 0.0003}. Moyenne plateau = ~0.0003. Variance inter-run due à la stochasticité du modèle à temp=0.3, pas à une fragilité du prompt.
+
+Pour iter 40 : clôture et documentation du prompt final.
+
 ---
 
