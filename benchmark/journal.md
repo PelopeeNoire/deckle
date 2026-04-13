@@ -98,5 +98,11 @@ Conclusion : le prompt de l'itération 10 est optimal. Il ne faut pas le raccour
 
 Pour la suite : garder le prompt iter 10 comme référence et explorer des variations mineures autour de cette base.
 
+## Itération 12 — Stable, confirmation prompt iter10
+
+**Score rule-based : médiane 0.0095** — Cohérent avec iter 10 (0.0054). Variation normale due à température 0.3. Sample #8 légèrement plus élevé (novel=0.15) : synonymes proches ("enlever"→"supprimer", "aimerais"→"veux"). Qualité globale excellente.
+
+Changements pour iter 13 : test reordering des règles — "utilise les mots du locuteur" en premier, avant "toutes les idées". La priorité dans la liste influence l'attention du modèle. Ajout d'exemples concrets dans la règle vocabulaire.
+
 ---
 
