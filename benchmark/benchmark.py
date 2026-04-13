@@ -14,8 +14,10 @@ Sortie : une seule ligne "SCORE=X.XXXX" (pour autoresearch) + détails dans run.
 """
 
 import argparse
+import configparser
 import io
 import json
+import os
 import re
 import statistics
 import sys
@@ -29,15 +31,27 @@ if sys.stdout.encoding != "utf-8":
 if sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-# ─── Configuration par défaut ─────────────────────────────────────────────────
+# ─── Configuration ───────────────────────────────────────────────────────────
 
-DEFAULT_MODEL = "ministral:3b-instruct-q8"
-DEFAULT_JUDGE = "ministral-3:14b"
-DEFAULT_TEMP = 0.15
-DEFAULT_CTX_K = 32
-DEFAULT_ENDPOINT = "http://localhost:11434/api/generate"
-DEFAULT_CORPUS = "corpus.json"
-DEFAULT_PROMPT = "system_prompt.txt"
+BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config.ini")
+
+def load_config() -> configparser.ConfigParser:
+    """Charge config.ini, retourne le parser avec les défauts."""
+    cfg = configparser.ConfigParser()
+    cfg["benchmark"] = {
+        "profile": "nettoyage",
+        "model": "ministral:3b-instruct-q8",
+        "judge_model": "ministral-3:14b",
+        "temperature": "0.15",
+        "num_ctx_k": "32",
+        "endpoint": "http://localhost:11434/api/generate",
+        "corpus": "corpus.json",
+        "prompt": "system_prompt.txt",
+    }
+    if os.path.exists(CONFIG_FILE):
+        cfg.read(CONFIG_FILE, encoding="utf-8")
+    return cfg
 
 # ─── Prompt template (Mistral/Ministral) ──────────────────────────────────────
 
@@ -245,14 +259,16 @@ def composite_score(rule_scores: dict, judge_scores: dict) -> float:
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
+    cfg = load_config()["benchmark"]
+
     parser = argparse.ArgumentParser(description="Benchmark prompt nettoyage")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--judge-model", default=DEFAULT_JUDGE)
-    parser.add_argument("--temperature", type=float, default=DEFAULT_TEMP)
-    parser.add_argument("--num-ctx-k", type=int, default=DEFAULT_CTX_K)
-    parser.add_argument("--prompt-file", default=DEFAULT_PROMPT)
-    parser.add_argument("--corpus", default=DEFAULT_CORPUS)
-    parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
+    parser.add_argument("--model", default=cfg["model"])
+    parser.add_argument("--judge-model", default=cfg["judge_model"])
+    parser.add_argument("--temperature", type=float, default=cfg.getfloat("temperature"))
+    parser.add_argument("--num-ctx-k", type=int, default=cfg.getint("num_ctx_k"))
+    parser.add_argument("--prompt-file", default=cfg["prompt"])
+    parser.add_argument("--corpus", default=cfg["corpus"])
+    parser.add_argument("--endpoint", default=cfg["endpoint"])
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 

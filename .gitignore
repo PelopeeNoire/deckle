@@ -34,3 +34,12 @@ modelfile-fastapply
 **/xamlcompiler.log
 **/xaml.out
 .claude/settings.local.json
+
+# Benchmark — artefacts de run (régénérés à chaque lancement)
+benchmark/__pycache__/
+benchmark/*.log
+benchmark/last_report.json
+benchmark/results.tsv
+benchmark/autoresearch_report.txt
+benchmark/run.log
+run.log
