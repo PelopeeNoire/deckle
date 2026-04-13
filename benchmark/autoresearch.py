@@ -444,7 +444,7 @@ def main():
     start_time = time.time()
 
     log_separator()
-    log_info(f"AUTORESEARCH v2 — Profil: {bm_cfg['profile']}")
+    log_info(f"AUTORESEARCH — Profil: {bm_cfg['profile']}")
     log_info(f"Modèle cible: {bm_cfg['model']} | Designer: {ar_cfg['designer_model']}")
     log_info(f"Max expériences: {args.max_experiments}")
     log_info(f"Runs par expérience: {args.runs_per_experiment}")
@@ -614,7 +614,7 @@ def main():
     total_time = time.time() - start_time
 
     log_separator()
-    log_info("AUTORESEARCH v2 TERMINÉ")
+    log_info("AUTORESEARCH TERMINÉ")
     log_separator()
 
     kept = [h for h in history if h["status"] == "keep"]
