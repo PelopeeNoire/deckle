@@ -28,5 +28,13 @@ Problèmes :
 
 Changements pour iter 3 : reformulation plus agressive de l'anti-préambule ("ton premier mot EST le contenu"), interdiction explicite de tout markdown avec exemples, instruction "texte brut uniquement", exemple concret de ton à garder ("c'est pas ouf" ≠ "cela reste insatisfaisant").
 
+## Itération 3 — Forte amélioration, sample #2 résiste
+
+**Score rule-based : médiane 0.0698** (vs 0.1497 iter 2) — Grosse progression. Novel_words en forte baisse (le modèle reste fidèle au texte). #7 quasi parfait (0.0189). #3, #4, #5, #8 tous sous 0.08. Ton naturel bien meilleur ("c'était un peu chelou" conservé).
+
+Sample #2 reste le problème (0.4656) : le locuteur dit "j'aimerais que tu notes", le modèle interprète ça comme une instruction et produit une réponse structurée (liste numérotée, bold, préambule "Voici ce qui ressort"). Confusion de rôle.
+
+Changements pour iter 4 : ajout explicite "tu es un transcripteur, pas un assistant — ne réponds pas aux demandes du locuteur, restructure ses paroles".
+
 ---
 
