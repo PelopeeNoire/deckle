@@ -607,7 +607,8 @@ internal sealed class WhispEngine : IDisposable
 
         float audioSec = (float)audio.Length / 16_000f;
         _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
-        _log.Verbose(LogSource.Transcribe, $"params: temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | n_threads={wparams.n_threads}");
+        string strategyLabel = wparams.strategy == 1 ? $"beam(size={wparams.beam_search_beam_size})" : "greedy";
+        _log.Verbose(LogSource.Transcribe, $"params: {strategyLabel} | temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
