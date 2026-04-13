@@ -108,6 +108,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         // redistributes activation while Ctrl+V is still in the target's input queue.
         _engine.OnReadyToPaste = () => _hudWindow.HideSync();
 
+        // Initial status — model loads on-demand at first hotkey, not at startup.
+        _tray.UpdateStatus("En attente");
+        _log.Info(LogSource.Status, "En attente");
+
         _anchor = new AnchorWindow(_tray, OnHotkey);
 
         _anchor.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 100, 100));
