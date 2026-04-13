@@ -156,5 +156,13 @@ La simplification de la première ligne ("Transcription orale → texte écrit. 
 
 Nouveau prompt de référence absolu. Pour les itérations suivantes : stabiliser et explorer si on peut passer sous 0.0002 ou si c'est le plancher de ce corpus/modèle.
 
+## Itération 20 — Plancher atteint (médiane 0.0000)
+
+**Score rule-based : médiane 0.0000** — Plancher absolu. 5 samples parfaits (#4, #5, #6, #7, #8). #1, #2, #3 à 0.0015-0.0016 (novel=0.01, probablement variance irréductible à temperature=0.3). Ratios 0.93-1.00. Confirmation : le prompt iter 19 est optimal et stable.
+
+Les 3 samples non-parfaits ont tous novel=0.01 — une ou deux substitutions de mots sur des milliers de tokens. C'est la limite de cette température avec ce modèle, pas une limite du prompt.
+
+Pour les itérations 21-40 : explorer des angles radicalement différents (ordre des paragraphes, formulation negative-only, angle minimal) pour confirmer que iter 19 est le meilleur. Objectif : documenter la robustesse et les limites.
+
 ---
 
