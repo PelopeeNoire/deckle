@@ -1,16 +1,16 @@
 """
-Benchmark de qualité pour le prompt de nettoyage de transcription.
+Benchmark de qualité pour le prompt de restructuration de transcription.
 
 Envoie chaque transcription du corpus à Ollama, score le résultat avec
-des métriques rule-based + un LLM juge (le 14B local), et produit un
-score composite unique.
+des métriques rule-based (score brut) + optionnellement un LLM juge
+(score séparé, non mélangé au brut).
 
 Usage :
     python benchmark.py [--model MODEL] [--judge-model JUDGE] [--temperature T]
                         [--num-ctx-k N] [--prompt-file FILE] [--corpus FILE]
-                        [--verbose]
+                        [--verbose] [--skip-judge]
 
-Sortie : une seule ligne "SCORE=X.XXXX" (pour autoresearch) + détails dans run.log
+Sortie : une seule ligne "SCORE=X.XXXX" (rule-based, pour autoresearch) + détails dans run.log
 """
 
 import argparse
@@ -126,11 +126,19 @@ def score_novel_words(input_text: str, output_text: str) -> float:
     return len(novel) / len(out_words)
 
 def score_length_ratio(input_text: str, output_text: str) -> float:
-    """Écart du ratio de longueur à 1.0. 0.0 = même longueur = parfait."""
+    """Pénalité de longueur adaptée à la restructuration.
+    La restructuration raccourcit le texte (ratio 0.4-0.8 = normal).
+    On pénalise : trop court (<0.3 = perte d'info probable) ou trop long (>1.0 = bruit ajouté).
+    0.0 = ratio dans la zone idéale, 1.0 = ratio extrême."""
     if not input_text:
         return 1.0
     ratio = len(output_text) / len(input_text)
-    return abs(ratio - 1.0)
+    if 0.3 <= ratio <= 1.0:
+        return 0.0  # zone acceptable pour la restructuration
+    elif ratio < 0.3:
+        return (0.3 - ratio) / 0.3  # 0.0→1.0 quand ratio descend de 0.3 à 0.0
+    else:
+        return min(1.0, (ratio - 1.0) / 1.0)  # pénalité croissante au-dessus de 1.0
 
 FORBIDDEN_PREAMBLES = [
     "voici", "bien sûr", "d'accord", "je vais", "la transcription",
@@ -146,44 +154,42 @@ def score_preamble(output_text: str) -> float:
             return 1.0
     return 0.0
 
-MARKDOWN_PATTERNS = [
-    r"^#{1,6}\s",     # headers
+LIST_PATTERNS = [
     r"^\s*[-*]\s",     # bullets
-    r"\*\*[^*]+\*\*",  # bold
-    r"```",            # code blocks
     r"^\s*\d+\.\s",    # numbered lists
 ]
 
-def score_markdown(output_text: str) -> float:
-    """1.0 si markdown parasite détecté, 0.0 sinon."""
-    for pattern in MARKDOWN_PATTERNS:
+def score_lists(output_text: str) -> float:
+    """1.0 si listes (bullet/numérotées) détectées, 0.0 sinon.
+    Bold, italiques, titres sont OK pour la lisibilité."""
+    for pattern in LIST_PATTERNS:
         if re.search(pattern, output_text, re.MULTILINE):
             return 1.0
     return 0.0
 
 # ─── LLM Juge ────────────────────────────────────────────────────────────────
 
-JUDGE_SYSTEM = """Tu es un évaluateur de qualité de nettoyage de transcription vocale.
+JUDGE_SYSTEM = """Tu es un évaluateur de qualité de restructuration de transcription vocale.
 
-Tu reçois une transcription brute (ENTRÉE) et sa version nettoyée (SORTIE).
-Le nettoyage attendu est MINIMAL : ponctuation, accents, répétitions immédiates, mots mal transcrits évidents. Rien d'autre.
+Tu reçois une transcription orale brute (ENTRÉE) et sa version restructurée (SORTIE).
+La restructuration attendue transforme un discours oral décousu en texte écrit clair, organisé en paragraphes, en conservant TOUTES les idées.
 
 Évalue la SORTIE sur 4 critères, chacun noté de 1 (très mauvais) à 5 (parfait) :
 
-1. FIDÉLITÉ : la sortie conserve-t-elle tous les mots, concepts et détails de l'entrée sans rien inventer ?
-   5 = identique sauf corrections minimales, 1 = contenu inventé ou perdu
-2. REGISTRE : le niveau de langue oral/familier est-il conservé ?
-   5 = même ton exactement, 1 = transformé en style formel/écrit
-3. STRUCTURE : l'ordre des phrases est-il conservé (pas de restructuration) ?
-   5 = même ordre, 1 = réorganisé en paragraphes/sections
-4. MINIMALITÉ : les corrections sont-elles limitées au strict nécessaire ?
-   5 = seules ponctuation/accents/typos corrigés, 1 = phrases reformulées
+1. COMPLÉTUDE : toutes les idées, concepts et détails de l'entrée sont-ils présents dans la sortie ?
+   5 = aucune idée perdue, 1 = idées importantes manquantes
+2. CLARTÉ : le texte est-il bien écrit, fluide, facile à lire ?
+   5 = prose claire et naturelle, 1 = confus ou mal formulé
+3. STRUCTURE : les idées sont-elles bien organisées en paragraphes logiques ?
+   5 = organisation thématique claire, 1 = vrac sans structure
+4. SOBRIÉTÉ : le modèle s'est-il abstenu d'inventer des idées ou d'ajouter du contenu absent de l'entrée ?
+   5 = rien inventé, 1 = contenu ajouté ou hallucinations
 
 Réponds UNIQUEMENT dans ce format exact, rien d'autre :
-FIDÉLITÉ=N
-REGISTRE=N
+COMPLÉTUDE=N
+CLARTÉ=N
 STRUCTURE=N
-MINIMALITÉ=N"""
+SOBRIÉTÉ=N"""
 
 def llm_judge(input_text: str, output_text: str, judge_model: str,
               endpoint: str) -> dict[str, int]:
@@ -203,58 +209,64 @@ def llm_judge(input_text: str, output_text: str, judge_model: str,
     scores = {}
     for line in response.strip().split("\n"):
         line = line.strip()
-        for key, field in [("FIDÉLITÉ", "fidelite"), ("FIDELITE", "fidelite"),
-                           ("REGISTRE", "registre"), ("STRUCTURE", "structure"),
-                           ("MINIMALITÉ", "minimalite"), ("MINIMALITE", "minimalite")]:
+        for key, field in [("COMPLÉTUDE", "completude"), ("COMPLETUDE", "completude"),
+                           ("CLARTÉ", "clarte"), ("CLARTE", "clarte"),
+                           ("STRUCTURE", "structure"),
+                           ("SOBRIÉTÉ", "sobriete"), ("SOBRIETE", "sobriete")]:
             if line.upper().startswith(key):
                 match = re.search(r"=\s*(\d)", line)
                 if match:
                     scores[field] = min(5, max(1, int(match.group(1))))
 
     # Defaults pour les scores manquants
-    for field in ["fidelite", "registre", "structure", "minimalite"]:
+    for field in ["completude", "clarte", "structure", "sobriete"]:
         if field not in scores:
             scores[field] = 3
     return scores
 
 # ─── Score composite ──────────────────────────────────────────────────────────
 
-def composite_score(rule_scores: dict, judge_scores: dict) -> float:
+def rule_score(rule_scores: dict) -> float:
     """
-    Score composite entre 0.0 (parfait) et 1.0 (terrible).
-    Lower is better (pour autoresearch).
+    Score rule-based entre 0.0 (parfait) et 1.0 (terrible).
+    Lower is better.
 
-    Pondérations :
-    - Rule-based (40%) : novel_words 15%, length_ratio 15%, preamble 5%, markdown 5%
-    - LLM judge (60%) : fidélité 20%, registre 15%, structure 15%, minimalité 10%
-      (scores 1-5 inversés en 0-1 où 0=parfait)
-
-    length_ratio non cappé — un texte 3x trop long/court pénalise plus qu'un texte 1.5x.
+    Pondérations adaptées à la RESTRUCTURATION :
+    - preamble 35% : signal le plus fiable (préambule = jamais utile)
+    - length_ratio 40% : trop court = idées perdues, trop long = bruit ajouté
+    - novel_words 25% : bruyant pour restructuration (reformulation crée des mots "nouveaux")
+                        mais attrape les hallucinations extrêmes
+    - markdown : ignoré (la mise en forme est bienvenue pour la lisibilité)
     """
-    # Rule-based : déjà en 0-1 où 0 = parfait
-    # length_ratio : sigmoid douce pour mapper [0, +inf) → [0, 1) sans cap brutal
-    lr = rule_scores["length_ratio"]
-    lr_score = lr / (1.0 + lr)  # 0→0, 0.5→0.33, 1.0→0.5, 3.0→0.75
-
-    rule = (
-        rule_scores["novel_words"] * 0.15 +
-        lr_score * 0.15 +
-        rule_scores["preamble"] * 0.05 +
-        rule_scores["markdown"] * 0.05
+    return round(
+        rule_scores["preamble"] * 0.35 +
+        rule_scores["length_ratio"] * 0.40 +
+        rule_scores["novel_words"] * 0.25,
+        4
     )
 
-    # LLM judge : convertir 1-5 en 0-1 (5→0.0, 1→1.0)
+
+def judge_score(judge_scores: dict) -> float:
+    """
+    Score juge entre 0.0 (parfait) et 1.0 (terrible).
+    Lower is better. Affiché séparément, NON mélangé au score brut.
+
+    Pondérations (restructuration) :
+    - complétude 35% : toutes les idées présentes
+    - sobriété 25% : rien inventé
+    - clarté 20% : bien écrit
+    - structure 20% : bien organisé
+    """
     def invert(score_1_5):
         return (5 - score_1_5) / 4.0
 
-    judge = (
-        invert(judge_scores["fidelite"]) * 0.20 +
-        invert(judge_scores["registre"]) * 0.15 +
-        invert(judge_scores["structure"]) * 0.15 +
-        invert(judge_scores["minimalite"]) * 0.10
+    return round(
+        invert(judge_scores["completude"]) * 0.35 +
+        invert(judge_scores["sobriete"]) * 0.25 +
+        invert(judge_scores["clarte"]) * 0.20 +
+        invert(judge_scores["structure"]) * 0.20,
+        4
     )
-
-    return round(rule + judge, 4)
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -270,6 +282,8 @@ def main():
     parser.add_argument("--corpus", default=cfg["corpus"])
     parser.add_argument("--endpoint", default=cfg["endpoint"])
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--skip-judge", action="store_true",
+                        help="Skip LLM judge (rule-based score only, faster)")
     args = parser.parse_args()
 
     # Charger le corpus
@@ -281,7 +295,8 @@ def main():
         system_prompt = f.read().strip()
 
     num_ctx = args.num_ctx_k * 1024
-    all_composites = []
+    all_rule_scores = []
+    all_judge_scores = []
     details = []
 
     print(f"=== Benchmark: {args.model} | temp={args.temperature} | ctx={args.num_ctx_k}K ===")
@@ -313,67 +328,77 @@ def main():
         print(f"OK ({elapsed:.1f}s, {metrics.get('eval_count', '?')} tokens)")
 
         # Scores rule-based
-        rule = {
+        rules = {
             "novel_words": score_novel_words(input_text, output_text),
             "length_ratio": score_length_ratio(input_text, output_text),
             "preamble": score_preamble(output_text),
-            "markdown": score_markdown(output_text),
+            "lists": score_lists(output_text),
         }
+        r_score = rule_score(rules)
+        all_rule_scores.append(r_score)
 
-        # Détection catastrophe : skip le juge si déraillement évident
-        is_catastrophe = (rule["novel_words"] > 0.5 or rule["length_ratio"] > 2.0)
+        # Détection catastrophe (seuils adaptés restructuration : reformulation = normal)
+        is_catastrophe = (rules["novel_words"] > 0.85 or rules["length_ratio"] > 0.8)
 
-        if is_catastrophe:
-            print(f"  [CATASTROPHE] novel={rule['novel_words']:.2f} length_ratio={rule['length_ratio']:.2f} — juge skip")
-            judge = {"fidelite": 1, "registre": 1, "structure": 1, "minimalite": 1}
-        else:
-            # Score LLM juge
+        # Score juge (optionnel, séparé)
+        judge = None
+        j_score = None
+        if not args.skip_judge and not is_catastrophe:
             if args.verbose:
                 print(f"  Appel juge ({args.judge_model})...", end=" ", flush=True)
             judge = llm_judge(input_text, output_text, args.judge_model, args.endpoint)
+            j_score = judge_score(judge)
+            all_judge_scores.append(j_score)
             if args.verbose:
                 print("OK")
-
-        # Composite
-        comp = composite_score(rule, judge)
-        all_composites.append(comp)
+        elif is_catastrophe:
+            print(f"  [CATASTROPHE] novel={rules['novel_words']:.2f} length_ratio={rules['length_ratio']:.2f} — juge skip")
+            judge = {"completude": 1, "clarte": 1, "structure": 1, "sobriete": 1}
+            j_score = 1.0
+            all_judge_scores.append(j_score)
 
         detail = {
             "id": sid,
-            "composite": comp,
+            "rule_score": r_score,
+            "judge_score": j_score,
             "catastrophe": is_catastrophe,
-            "rule": rule,
+            "rule": rules,
             "judge": judge,
             "input_len": len(input_text),
             "output_len": len(output_text),
-            "output_preview": output_text[:200],
+            "length_ratio": round(len(output_text) / max(1, len(input_text)), 2),
+            "output_text": output_text,
             "elapsed_sec": round(elapsed, 1),
         }
         details.append(detail)
 
         if args.verbose:
-            print(f"  Rule:  novel={rule['novel_words']:.3f} length={rule['length_ratio']:.3f} "
-                  f"preamble={rule['preamble']:.0f} markdown={rule['markdown']:.0f}")
-            print(f"  Judge: fid={judge['fidelite']} reg={judge['registre']} "
-                  f"str={judge['structure']} min={judge['minimalite']}")
-            print(f"  Composite: {comp:.4f}")
+            print(f"  Rule:  novel={rules['novel_words']:.3f} length={rules['length_ratio']:.3f} "
+                  f"preamble={rules['preamble']:.0f} lists={rules['lists']:.0f} → {r_score:.4f}")
+            if judge:
+                print(f"  Judge: comp={judge['completude']} clar={judge['clarte']} "
+                      f"str={judge['structure']} sob={judge['sobriete']} → {j_score:.4f}")
             print(f"  Output: {output_text[:120]}...")
             print()
 
-    # Score final = médiane des composites (robuste aux outliers)
-    median = statistics.median(all_composites) if all_composites else 1.0
-    mean = sum(all_composites) / len(all_composites) if all_composites else 1.0
+    # Score final = médiane des rule scores (robuste aux outliers)
+    rule_median = statistics.median(all_rule_scores) if all_rule_scores else 1.0
+    rule_mean = sum(all_rule_scores) / len(all_rule_scores) if all_rule_scores else 1.0
+    judge_median = statistics.median(all_judge_scores) if all_judge_scores else None
+    judge_mean = (sum(all_judge_scores) / len(all_judge_scores)) if all_judge_scores else None
 
     # Détails dans un fichier JSON pour analyse
     report = {
         "model": args.model,
-        "judge_model": args.judge_model,
+        "judge_model": args.judge_model if not args.skip_judge else None,
         "temperature": args.temperature,
         "num_ctx_k": args.num_ctx_k,
         "prompt_chars": len(system_prompt),
         "samples": len(corpus),
-        "median_composite": round(median, 4),
-        "mean_composite": round(mean, 4),
+        "rule_median": round(rule_median, 4),
+        "rule_mean": round(rule_mean, 4),
+        "judge_median": round(judge_median, 4) if judge_median is not None else None,
+        "judge_mean": round(judge_mean, 4) if judge_mean is not None else None,
         "details": details,
     }
     with open("last_report.json", "w", encoding="utf-8") as f:
@@ -381,20 +406,23 @@ def main():
 
     catastrophes = sum(1 for d in details if d.get("catastrophe", False))
     print(f"\n{'='*60}")
-    print(f"RÉSULTATS: {len(corpus)} samples | médiane={median:.4f} moyenne={mean:.4f}")
+    print(f"RÉSULTATS: {len(corpus)} samples")
+    print(f"  Rule-based : médiane={rule_median:.4f} moyenne={rule_mean:.4f}")
+    if judge_median is not None:
+        print(f"  Juge (14B)  : médiane={judge_median:.4f} moyenne={judge_mean:.4f}")
     if catastrophes:
         print(f"  ({catastrophes} catastrophe(s) détectée(s) — juge skip)")
     print(f"  (0.0 = parfait, 1.0 = terrible)")
     for d in details:
         tag = " [!]" if d.get("catastrophe") else ""
-        print(f"  #{d['id']}: {d['composite']:.4f} "
+        j_str = f" juge={d['judge_score']:.2f}" if d.get("judge_score") is not None else ""
+        print(f"  #{d['id']}: rule={d['rule_score']:.4f}{j_str} "
               f"(novel={d['rule']['novel_words']:.2f} "
-              f"len={d['rule']['length_ratio']:.2f} "
-              f"fid={d['judge']['fidelite']} reg={d['judge']['registre']}){tag}")
+              f"len_ratio={d['length_ratio']:.2f}){tag}")
     print(f"{'='*60}")
 
-    # Ligne unique pour autoresearch — médiane comme score principal
-    print(f"\nSCORE={median:.4f}")
+    # Ligne unique pour autoresearch — rule-based médiane uniquement
+    print(f"\nSCORE={rule_median:.4f}")
 
 if __name__ == "__main__":
     main()

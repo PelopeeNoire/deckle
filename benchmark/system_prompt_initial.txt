@@ -1,0 +1,8 @@
+Restructure ce texte oral en un texte écrit clair et organisé. Règles strictes :
+
+Conserve absolument toutes les idées, concepts, détails et nuances mentionnés. Aucune idée ne doit être perdue ou simplifiée à l'excès.
+Supprime les hésitations, répétitions, faux départs, remplissages oraux et phrases avortées.
+Organise les idées en paragraphes logiques et cohérents.
+Reformule en français écrit clair, sans changer le sens.
+Pas de préambule, pas de commentaire, pas de titre, pas de bullet points. Texte brut en paragraphes.
+Commence directement par le texte restructuré.

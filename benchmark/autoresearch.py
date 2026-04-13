@@ -245,7 +245,7 @@ def run_benchmark(runs: int = 1) -> tuple[float, str]:
         t0 = time.time()
 
         result = subprocess.run(
-            [sys.executable, "benchmark.py"],
+            [sys.executable, "benchmark.py", "--skip-judge"],
             cwd=BENCHMARK_DIR,
             capture_output=True,
             text=True,
@@ -286,29 +286,28 @@ def run_benchmark(runs: int = 1) -> tuple[float, str]:
 
 # ─── Générer une variante de prompt ─────────────────────────────────────────
 
-DESIGNER_SYSTEM = """Tu es un expert en prompt engineering pour petits modèles de langue (3B paramètres).
+DESIGNER_SYSTEM = """Tu es un expert en prompt engineering pour modèles de langue (14B paramètres).
 
-Tu dois proposer une VARIANTE AMÉLIORÉE d'un system prompt qui sert à nettoyer minimalement des transcriptions vocales françaises.
+Tu dois proposer une VARIANTE AMÉLIORÉE d'un system prompt qui sert à RESTRUCTURER des transcriptions vocales françaises longues en texte écrit clair.
 
-Le modèle cible est un Ministral 3B instruct. Ses défauts connus :
-- Hallucine des mots ou concepts absents de l'entrée (score "novel_words" élevé)
-- Tronque brutalement le texte OU explose la longueur (score "length_ratio" élevé)
-- Restructure le texte en paragraphes alors qu'on veut garder l'ordre brut
-- Change le registre oral en style écrit formel
-- Ajoute parfois un préambule ("Voici", "Bien sûr") ou du markdown
+Le modèle cible est un Ministral 14B instruct. La tâche :
+- Transformer un discours oral décousu en texte écrit organisé en paragraphes
+- Conserver TOUTES les idées, concepts et détails (zéro perte d'information)
+- Supprimer hésitations, répétitions, faux départs, remplissages oraux
+- Reformuler en français écrit clair
 
-LEÇONS DE LA PASSE PRÉCÉDENTE (à respecter impérativement) :
-- Les prompts LONGS (>200 mots) ont TOUS empiré le score. Le 3B se perd dans les instructions longues.
-- Les prompts avec beaucoup de markdown/bold/listes numérotées confondent le 3B qui reproduit le formatage en sortie.
-- Le seul prompt qui a amélioré le score était plus structuré mais restait simple.
-- Le problème principal est la TRONCATURE (le 3B coupe le texte) et les HALLUCINATIONS (mots inventés).
+Problèmes à corriger (mesurés par le benchmark) :
+- Mots inventés / hallucinations (score "novel_words")
+- Texte trop court (idées perdues) ou trop long (bruit ajouté) (score "length_ratio")
+- Préambules parasites ("Voici la version", "Bien sûr") (score "preamble")
+- Markdown en sortie (score "markdown")
 
 CONTRAINTES STRICTES pour le prompt que tu proposes :
 - En français
-- MAXIMUM 150 MOTS. Un prompt de 50-80 mots bien choisis bat un prompt de 300 mots.
-- Texte brut uniquement dans le prompt lui-même : pas de markdown, pas de **, pas de listes numérotées.
+- MAXIMUM 200 MOTS.
+- Texte brut uniquement : pas de markdown, pas de **, pas de listes numérotées.
 - Le prompt doit être COMPLET et autonome (pas un diff, pas un patch)
-- Ne pas utiliser de mots inutiles, chaque mot compte pour un 3B.
+- La COMPLÉTUDE des idées est la contrainte reine : mieux vaut un texte un peu long qu'un texte qui perd des idées.
 
 IMPORTANT : Réponds UNIQUEMENT avec le nouveau prompt, rien d'autre. Pas d'explication, pas de commentaire. Juste le texte du prompt directement."""
 
@@ -333,24 +332,25 @@ def format_sample_feedback(details: list[dict]) -> str:
 
     lines = ["\nDIAGNOSTIC PAR SAMPLE (dernier run) :"]
     for d in details:
-        comp = d["composite"]
-        status = "OK" if comp < 0.15 else "MOYEN" if comp < 0.35 else "MAUVAIS"
+        score = d.get("rule_score", d.get("composite", 0.5))
+        status = "OK" if score < 0.15 else "MOYEN" if score < 0.35 else "MAUVAIS"
         issues = []
         if d["rule"]["novel_words"] > 0.05:
             issues.append(f"mots inventés={d['rule']['novel_words']:.0%}")
-        if d["rule"]["length_ratio"] > 0.3:
-            ratio = d["output_len"] / d["input_len"] if d["input_len"] > 0 else 0
-            direction = "tronqué" if ratio < 1 else "rallongé"
-            issues.append(f"{direction} x{ratio:.1f}")
+        lr = d.get("length_ratio", d["output_len"] / max(1, d["input_len"]))
+        if lr < 0.3:
+            issues.append(f"trop court x{lr:.1f} (idées perdues?)")
+        elif lr > 1.0:
+            issues.append(f"trop long x{lr:.1f} (bruit ajouté?)")
         if d["rule"]["preamble"] > 0:
             issues.append("préambule détecté")
-        if d["rule"]["markdown"] > 0:
-            issues.append("markdown en sortie")
+        if d["rule"].get("lists", d["rule"].get("markdown", 0)) > 0:
+            issues.append("listes en sortie")
         if d.get("catastrophe"):
             issues.append("CATASTROPHE")
 
         issue_str = ", ".join(issues) if issues else "aucun problème"
-        lines.append(f"  Sample #{d['id']} ({d['input_len']} chars): {status} ({comp:.3f}) — {issue_str}")
+        lines.append(f"  Sample #{d['id']} ({d['input_len']} chars): {status} ({score:.3f}) — {issue_str}")
 
     return "\n".join(lines)
 
@@ -372,18 +372,18 @@ def generate_variant(current_prompt: str, experiment_num: int,
     details = load_last_report()
     sample_feedback = format_sample_feedback(details)
 
-    # Stratégies ciblées basées sur les résultats de la passe 1
+    # Stratégies ciblées pour la restructuration
     strategies = [
-        "Réduis le prompt à 3-5 phrases impératives. Pas de rôle, pas d'exemple, juste les règles essentielles.",
-        "Ajoute UN seul exemple court (entrée 15 mots, sortie 15 mots) pour ancrer le comportement attendu.",
-        "Concentre-toi sur le problème de troncature : insiste pour que le modèle recopie TOUT le texte, mot par mot.",
-        "Formule le prompt comme une tâche de copie, pas de correction. 'Recopie ce texte en ajoutant seulement la ponctuation.'",
-        "Essaie sans rôle ni métaphore : instructions brutes et directes uniquement.",
-        "Mets l'interdiction d'ajouter/supprimer des mots en PREMIÈRE phrase, avant toute autre instruction.",
-        "Essaie un prompt ultra-minimaliste : 2-3 lignes max, zéro explication.",
-        "Combine la meilleure approche précédente avec une phrase anti-troncature explicite.",
-        "Reformule entièrement : approche 'copie fidèle + ponctuation' au lieu de 'nettoyage'.",
-        "Essaie de rappeler au modèle que sa sortie doit avoir à peu près la même longueur que l'entrée.",
+        "Insiste sur la complétude : chaque idée de l'entrée doit apparaître dans la sortie. Ajoute une vérification explicite.",
+        "Ajoute UN court exemple few-shot (3 phrases orales → 2 phrases écrites restructurées).",
+        "Formule le prompt comme une tâche de rédacteur : 'Tu es un rédacteur qui transforme des notes orales en texte structuré.'",
+        "Sépare clairement les étapes : d'abord identifier les idées, puis les organiser, puis rédiger.",
+        "Insiste sur l'organisation thématique : regrouper les idées par sujet plutôt que suivre l'ordre chronologique.",
+        "Essaie un prompt ultra-direct : 3-5 phrases impératives, sans rôle, sans explication.",
+        "Mets la contrainte anti-perte en PREMIÈRE phrase : 'Ne perds aucune idée. Chaque concept doit être présent.'",
+        "Combine la meilleure approche avec un rappel anti-hallucination : n'invente rien qui n'est pas dans le texte.",
+        "Teste une approche en deux temps : 'Liste d'abord toutes les idées, puis rédige un texte structuré.'",
+        "Reformule entièrement : approche 'prise de notes orales → compte-rendu écrit'.",
     ]
     strategy = strategies[min(experiment_num - 1, len(strategies) - 1)]
 
@@ -523,10 +523,10 @@ def main():
         char_count = len(new_prompt)
         log_info(f"  {word_count} mots, {char_count} chars")
 
-        if word_count > 200:
-            log_warn(f"  Trop long ({word_count} mots) — tronqué à 200")
-            new_prompt = " ".join(new_prompt.split()[:200])
-            word_count = 200
+        if word_count > 250:
+            log_warn(f"  Trop long ({word_count} mots) — tronqué à 250")
+            new_prompt = " ".join(new_prompt.split()[:250])
+            word_count = 250
 
         if word_count < 10:
             log_warn(f"  Trop court ({word_count} mots) — skip")
