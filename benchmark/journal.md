@@ -120,5 +120,13 @@ Le style prose sans tirets, avec les instructions en paragraphes séquentiels, f
 
 Nouveau prompt de référence. Pour iter 15 : explorer si on peut encore réduire le novel_words résiduel sur #6, ou tenter un angle complètement différent.
 
+## Itération 15 — Nouveau meilleur (0.0031), #1 légèrement compressé
+
+**Score rule-based : médiane 0.0031** — Nouveau meilleur (iter 14 = 0.0034). Novel_words quasi zéro sur 6/8 samples. #8 parfait (0.0000). #6 et #7 quasi nuls. Sample #1 (le plus long, 6986 chars) reste le plus difficile : novel=0.13, ratio=0.49 — sur-compression + légère paraphrase. Qualité globale excellente.
+
+La formulation "utilise exactement les mots du locuteur" avec exemples synonymes ("regarder" ≠ "vérifier") est efficace. Style prose confirmé meilleur que tirets.
+
+Pour iter 16 : explorer si une instruction sur la longueur relative ou la densité d'idées peut améliorer #1 sans dégrader les autres.
+
 ---
 
