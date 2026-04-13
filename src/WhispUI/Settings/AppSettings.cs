@@ -175,7 +175,7 @@ public sealed class LlmSettings
             Name = "Restructuration",
             Model = "",
             Temperature = 0.30,
-            NumCtxK = 2,
+            NumCtxK = 8,
             // Prompt optimisé par boucle benchmark (40 itérations, médiane 0.0000).
             // Autonome — gère anti-préambule et fidélité lexicale sans AntiPreamble.
             SystemPrompt =
@@ -198,7 +198,7 @@ public sealed class LlmSettings
             Name = "Prompt",
             Model = "",
             Temperature = 0.30,
-            NumCtxK = 2,
+            NumCtxK = 4,
             SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français où la personne exprime une " +
                 "demande, une réflexion ou un besoin qu'elle veut formuler comme prompt pour un " +
