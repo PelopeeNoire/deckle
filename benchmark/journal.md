@@ -148,5 +148,13 @@ Le prompt iter 16 est confirmé optimal. Plusieurs runs successifs le confirment
 
 Pour la suite : garder ce prompt et explorer si d'autres axes peuvent passer sous 0.001, ou documenter que le plancher est atteint.
 
+## Itération 19 — Score exceptionnel (0.0004), 4 samples parfaits
+
+**Score rule-based : médiane 0.0004** — Nouveau meilleur absolu de loin (iter 18 = 0.0016). 4 samples à 0.0000 parfaits (#4, #6, #7, #8). #1 à 0.0015 — presque parfait. Novel_words quasi-nul sur tous les samples. Ratios 0.93-1.00.
+
+La simplification de la première ligne ("Transcription orale → texte écrit. Commence directement avec le premier mot du contenu.") est plus efficace que "Ton premier mot EST le début du contenu restructuré. Zéro préambule..." — moins de signal anti-préambule verbeux, plus de signal task-direct.
+
+Nouveau prompt de référence absolu. Pour les itérations suivantes : stabiliser et explorer si on peut passer sous 0.0002 ou si c'est le plancher de ce corpus/modèle.
+
 ---
 
