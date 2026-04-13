@@ -44,5 +44,13 @@ Problème émergent : ratios de longueur très bas (#1: 0.52, #2: 0.34, #5: 0.69
 
 Changements pour iter 5 : distinction explicite restructuration vs résumé ("si l'entrée fait 10 idées, la sortie doit contenir 10 idées"), et clarification que seules les hésitations/répétitions sont à supprimer, pas le contenu.
 
+## Itération 5 — Légère amélioration, sample #2 rechute avec préambule justificatif
+
+**Score rule-based : médiane 0.0408** (vs 0.0454 iter 4) — Légère progression. Ratios de longueur corrigés (#2 passe de 0.34 à 0.98). Mais #2 rechute avec préambule "Voici la transcription restructurée, mot à mot..." — le modèle cherche à se justifier quand on lui demande de tout garder. Les autres samples restent bons.
+
+Sample #2 est structurellement difficile : le locuteur commence par "j'aimerais que tu notes si jamais...". Le modèle oscille entre répondre à la demande (iter 2-3) et expliquer ce qu'il fait (iter 5). Les formulations directes ne semblent pas suffire.
+
+Changements pour iter 6 : approche few-shot avec exemple concret. Structure : exemple in/out, puis règles en "ce que tu fais / ce que tu ne fais pas". Abandon temporaire du style liste de règles.
+
 ---
 
