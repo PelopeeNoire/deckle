@@ -208,5 +208,11 @@ Pour iter 27 : tenter une variation du hook d'ouverture — voir si une formulat
 
 Pour iter 28 : tester "Copie les mots du locuteur" à la place de "Utilise exactement les mots" — formulation encore plus directe et concrète.
 
+## Itération 28 — Meilleur absolu sur la moyenne (0.0000 / 0.0003)
+
+**Score rule-based : médiane 0.0000, moyenne 0.0003** — Meilleur résultat sur la moyenne (iter 24 = 0.0004, iter 26 = 0.0007). 7 samples parfaits (#1, #4, #5, #6, #7, #8 à 0.0000). #2 à 0.0008, #3 à 0.0015 (seuls résiduels). "Copie les mots du locuteur — ne les remplace pas" est plus efficace que "Utilise exactement les mots". Nouveau meilleur prompt.
+
+Le novel résiduel de #3 (0.01) est probablement irréductible à temp=0.3 — ce sample a des phrases orales particulièrement ambiguës.
+
 ---
 
