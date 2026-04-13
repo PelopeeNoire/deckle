@@ -220,5 +220,11 @@ Le novel résiduel de #3 (0.01) est probablement irréductible à temp=0.3 — c
 
 Prompt iter 29 (sans rôle) est valide si le corpus ne contient pas de samples où le locuteur s'adresse directement à l'assistant. Prompt iter 28 (avec rôle) est plus robuste sur un corpus général.
 
+## Itération 30 — Retrait exemples synonymes : légère dégradation (0.0013)
+
+**Score rule-based : médiane 0.0013** — Légèrement moins bon. Retirer les exemples "Si il dit X, écris X" dégrade #1 et #2 légèrement. Les exemples concrets de synonymes aident le modèle à comprendre la règle. À garder dans la version finale.
+
+Confirmation : le prompt iter 28 (avec rôle + exemples synonymes + "Copie les mots") est le meilleur équilibré.
+
 ---
 
