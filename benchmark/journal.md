@@ -172,5 +172,11 @@ Conclusion : les instructions de rôle positives ("tu es un transcripteur") sont
 
 Pour iter 22 : restaurer iter 19 et tester un reordering — interdictions d'abord, puis rôle, puis règles positives.
 
+## Itération 22 — Reordering légèrement moins bon (0.0008)
+
+**Score rule-based : médiane 0.0008** — Légèrement moins bon qu'iter 19 (0.0000). Mettre la suppression avant le vocabulaire n'aide pas. Le prompt iter 19 (vocabulaire avant suppression) reste optimal.
+
+Pour iter 23 : restaurer iter 19 et enrichir la liste d'hésitations ("bah", "ouais ben", "hein", "genre", "quoi") pour réduire le novel résiduel sur #1/#2/#3.
+
 ---
 
