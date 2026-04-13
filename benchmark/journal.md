@@ -262,5 +262,11 @@ Conclusion consolidée : le prompt optimal est indifféremment FR ou EN. Le meil
 
 Pour les itérations 36-40 : dernières explorations, puis clôture avec documentation du prompt final.
 
+## Itération 36 — Régression : #6 préambule sans règle longueur (0.3500)
+
+**Score rule-based : médiane 0.0003, moyenne 0.0442** — Régression. Remplacer "If the input is long, the output is long" par "Remove nothing else — no ideas..." a provoqué un préambule sur #6 (0.3500 : "D'accord, donc si je comprends bien..."). La règle de longueur proportionnelle joue un rôle de signal implicite anti-préambule. À conserver.
+
+Retour au prompt all-english iter33 pour les 4 itérations restantes.
+
 ---
 
