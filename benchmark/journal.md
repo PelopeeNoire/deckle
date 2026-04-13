@@ -128,5 +128,11 @@ La formulation "utilise exactement les mots du locuteur" avec exemples synonymes
 
 Pour iter 16 : explorer si une instruction sur la longueur relative ou la densité d'idées peut améliorer #1 sans dégrader les autres.
 
+## Itération 16 — Nouveau meilleur (0.0023), #1 amélioré
+
+**Score rule-based : médiane 0.0023** — Nouveau meilleur (iter 15 = 0.0031). Sample #1 amélioré : ratio 0.49→0.79, novel 0.13→0.09. L'instruction "si l'entrée est longue, la sortie est longue / 15 sujets → 15 sujets" a aidé. #6 et #7 quasi-parfaits. #8 légèrement plus élevé (0.0100) avec italique résiduel sur *publish*.
+
+La direction est bonne. Prochaine micro-variation : tenter de réduire le novel résiduel sur #1 (encore 0.09).
+
 ---
 
