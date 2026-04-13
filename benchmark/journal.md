@@ -90,5 +90,13 @@ La combinaison "utilise les mots du locuteur + ne coupe pas les idées + ne prod
 
 Changements pour iter 11 : test d'un prompt raccourci. À médiane 0.0054, tester si une version distillée (plus courte, même règles essentielles) est aussi robuste. Un prompt minimal est plus robuste aux edge cases.
 
+## Itération 11 — Régression avec prompt minimal
+
+**Score rule-based : médiane 0.0284** — Régression (iter 10 : 0.0054). Le prompt minimal laisse trop de liberté sur les longs samples : #7 remonte à 0.0906 (novel=0.36). Sans "utilise les mots du locuteur", le modèle paraphrase. Les instructions précises sont nécessaires.
+
+Conclusion : le prompt de l'itération 10 est optimal. Il ne faut pas le raccourcir. Retour au prompt iter 10.
+
+Pour la suite : garder le prompt iter 10 comme référence et explorer des variations mineures autour de cette base.
+
 ---
 
