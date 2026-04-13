@@ -226,5 +226,17 @@ Prompt iter 29 (sans rôle) est valide si le corpus ne contient pas de samples o
 
 Confirmation : le prompt iter 28 (avec rôle + exemples synonymes + "Copie les mots") est le meilleur équilibré.
 
+## Itération 31 — Confirmation prompt iter28 (0.0000/0.0003)
+
+**Score rule-based : médiane 0.0000, moyenne 0.0003** — Confirmé optimal. 7 samples parfaits. #3 à 0.0015 seul résiduel (novel=0.01, irréductible). Le prompt iter28 est stable sur plusieurs runs consécutifs.
+
+Caractéristiques clés du prompt optimal :
+- Ligne 1 : "Transcription orale → texte écrit, avec les mots exacts du locuteur"
+- Rôle explicite (protection sample #2)
+- "Copie les mots" + exemples concrets de synonymes
+- Règle longueur proportionnelle ("si long → long")
+- Pas de paragraphe redondant "N'ajoute rien"
+- Format prose, interdit markdown
+
 ---
 
