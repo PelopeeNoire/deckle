@@ -248,5 +248,11 @@ Caractéristiques clés du prompt optimal :
 
 Pour iter 34 : tester une version bilingue (ligne 1 en français + règles en anglais) pour combiner les deux avantages.
 
+## Itération 34 — Bilingue : 0.0000/0.0003, entre FR et EN purs
+
+**Score rule-based : médiane 0.0000, moyenne 0.0003** — Dans la zone optimale mais ne bat pas le full-anglais (0.0002). La première ligne française n'apporte pas d'avantage particulier. Le full-anglais (iter 33) reste le légèrement meilleur.
+
+Pour iter 35 : confirmer iter 33 (full-anglais) avec un deuxième run pour valider la stabilité.
+
 ---
 
