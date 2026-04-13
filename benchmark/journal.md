@@ -58,5 +58,13 @@ Changements pour iter 6 : approche few-shot avec exemple concret. Structure : ex
 
 Retour au meilleur prompt connu (itération 5, médiane 0.0408). Le few-shot est banni pour la suite.
 
+## Itération 7 — Instabilité sur longs samples, même prompt qu'iter 5
+
+**Score rule-based : médiane 0.0461** — Stable par rapport à iter 5 (0.0408). Mais #1 et #2 ont maintenant un préambule justificatif "Voici la restructuration brute et intégrale de ton discours, sans ajout ni suppression...". Le modèle justifie son approche sur les longs inputs quand on parle de "tout le contenu". #7 parfait (0.0000).
+
+Pattern identifié : "La différence entre restructurer et résumer" déclenche le comportement justificatif. Tension irréductible entre insister sur la complétude (risque de préambule justificatif) et ne pas insister (risque de sur-compression).
+
+Changements pour iter 8 : retour au prompt iter 4 (meilleure base sans le paragraphe résumé/restructuration), ajout d'une seule ligne anti-compression courte et non-narrative : "Ne coupe pas les idées." intégrée dans la règle existante.
+
 ---
 
