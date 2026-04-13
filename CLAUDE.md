@@ -122,7 +122,7 @@ Quand je doute d'un rendu ou d'un pattern, je compare avec :
 
 **Cause** : dans `Microsoft.UI.Xaml.Markup.Compiler.interop.targets` (sous-package `Microsoft.WindowsAppSDK.WinUI`), une condition force `UseXamlCompilerExecutable=true` dès que `MSBuildRuntimeType=Core` (donc `dotnet build` CLI), sans vérifier si l'utilisateur l'a déjà défini. Cela appelle l'EXE `net472` cassé au lieu de la Task `net6.0` in-process qui fonctionne. Régression non revue. Cf. [microsoft-ui-xaml#8871](https://github.com/microsoft/microsoft-ui-xaml/issues/8871).
 
-**Contournement retenu** : builder uniquement via le `MSBuild.exe` de Visual Studio 2026 (MSBuild Framework, `MSBuildRuntimeType=Full`), qui désactive la condition fautive. Aucun patch csproj nécessaire. Commande exacte dans `whisp-ui/WhispUI/CLAUDE.md`.
+**Contournement retenu** : builder uniquement via le `MSBuild.exe` de Visual Studio 2026 (MSBuild Framework, `MSBuildRuntimeType=Full`), qui désactive la condition fautive. Aucun patch csproj nécessaire. Commande exacte dans `src/WhispUI/CLAUDE.md`.
 
 **Diagnostic d'un futur problème de build** : `MSBuild ... -bl:fresh.binlog` puis `binlogtool search fresh.binlog <pattern>` (`dotnet tool install -g binlogtool`).
 
@@ -132,16 +132,19 @@ Quand je doute d'un rendu ou d'un pattern, je compare avec :
 
 ```
 D:\projects\ai\transcription\
-├── whisper.cpp\              — dépôt whisper.cpp cloné (DLLs dans build\bin\)
-├── shared\                   — modèles Whisper (ggml-base.bin, ggml-large-v3.bin)
-├── whisp-ui\
+├── src\
 │   └── WhispUI\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
 │       └── docs\             — journal d'implémentation détaillé, lu à la demande
+├── scripts\                  — build-run.ps1, publish.ps1 (versionnés)
+├── native\                   — DLLs pré-compilées whisper + MinGW (git-ignored)
+├── models\                   — modèles Whisper (ggml-base.bin, ggml-large-v3.bin)
+├── benchmark\                — suite de benchmark Python (autoresearch)
+├── whisper.cpp\              — dépôt whisper.cpp cloné (git-ignored)
 ├── archive\                  — code gelé pour référence (ex. WhispInteropTest)
 └── CLAUDE.md                 — ce fichier
 ```
 
-**DLLs whisper** dans `whisper.cpp\build\bin\` : `libwhisper.dll`, `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`. Compilées avec Vulkan (GPU AMD RX 7900 XT, ROCm non supporté sur Windows).
+**DLLs whisper** dans `native\whisper\` : `libwhisper.dll`, `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`. Compilées avec Vulkan (GPU AMD RX 7900 XT, ROCm non supporté sur Windows). Source : `whisper.cpp\build\bin\`.
 
 ---
 

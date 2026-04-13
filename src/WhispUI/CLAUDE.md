@@ -10,7 +10,7 @@ Projet WinUI 3 unpackaged, remplaçant de WhispInteropTest. Lire d'abord [../../
 
 `dotnet build` est cassé sur ce projet (bug Microsoft `XamlCompiler.exe` MSB3073, détail dans [../../CLAUDE.md](../../CLAUDE.md)). **Builder uniquement via le `MSBuild.exe` de VS 2026** (MSBuild Framework, `MSBuildRuntimeType=Full`).
 
-Depuis `whisp-ui/WhispUI/` (PowerShell, sans admin) :
+Depuis `src/WhispUI/` (PowerShell, sans admin) :
 
 ```
 & "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe" `
@@ -24,7 +24,7 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe` (self-contain
 - `global.json` épingle SDK `10.0.104` : conserver.
 - `<EnableMsixTooling>true</EnableMsixTooling>` — force le pipeline Publish à générer `WhispUI.pri` dans `PublishDir`. Sans ça, en WindowsAppSDK 1.8 unpackaged, les `.xbf` embarqués dans le `.pri` sont injoignables et l'app démarre sans aucune fenêtre. Cf. `microsoft/WindowsAppSDK#3451`.
 
-**Scripts** `whisp-ui/build-run.ps1` et `whisp-ui/publish.ps1` (un cran au-dessus du projet, non versionnés — chemins machine). `build-run` : tue WhispUI s'il tourne, build via MSBuild VS, lance l'exe. Switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`, `-MsBuild`. `publish` : même logique, target `Restore;Publish` vers `whisp-ui/publish/`. MSBuild résolu via `-MsBuild` > `$env:WHISPUI_MSBUILD` > `vswhere`. Chez Louis : `setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
+**Scripts** `scripts/build-run.ps1` et `scripts/publish.ps1` (versionnés). `build-run` : tue WhispUI s'il tourne, build via MSBuild VS, lance l'exe. Switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`, `-MsBuild`. `publish` : même logique, target `Restore;Publish` vers `publish/` (racine repo). MSBuild résolu via `-MsBuild` > `$env:WHISPUI_MSBUILD` > `vswhere`. Chez Louis : `setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
 
 **Rappel feedback** : je ne lance jamais le build — Louis s'en charge.
 

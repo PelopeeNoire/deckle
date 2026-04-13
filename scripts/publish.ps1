@@ -1,0 +1,83 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('Release','Debug')]
+    [string]$Configuration = 'Release',
+    [switch]$Open,
+    # Explicit path to MSBuild.exe (takes priority over env + vswhere).
+    [string]$MsBuild
+)
+
+$ErrorActionPreference = 'Stop'
+$ScriptDir  = $PSScriptRoot                                  # scripts/
+$RepoRoot   = Split-Path $ScriptDir                          # repo root
+$ProjectDir = Join-Path $RepoRoot 'src\WhispUI'
+$Csproj     = Join-Path $ProjectDir 'WhispUI.csproj'
+$PublishDir = Join-Path $RepoRoot 'publish'
+
+# =============================================================================
+# MSBuild configuration
+# -----------------------------------------------------------------------------
+# `dotnet build` is broken on WhispUI due to the XamlCompiler MSB3073 bug,
+# so we must use the Visual Studio MSBuild Framework (MSBuildRuntimeType=Full).
+#
+# Resolution: -MsBuild > $env:WHISPUI_MSBUILD > vswhere > error.
+# Set once with: setx WHISPUI_MSBUILD "<path\to\MSBuild.exe>"
+# =============================================================================
+function Resolve-MsBuild {
+    param([string]$Explicit)
+
+    if ($Explicit) {
+        if (-not (Test-Path $Explicit)) { throw "MSBuild not found: $Explicit" }
+        return $Explicit
+    }
+
+    if ($env:WHISPUI_MSBUILD) {
+        if (-not (Test-Path $env:WHISPUI_MSBUILD)) {
+            throw "WHISPUI_MSBUILD points to a missing file: $($env:WHISPUI_MSBUILD)"
+        }
+        return $env:WHISPUI_MSBUILD
+    }
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $found = & $vswhere -latest -prerelease -products * `
+            -requires Microsoft.Component.MSBuild `
+            -find 'MSBuild\**\Bin\amd64\MSBuild.exe' | Select-Object -First 1
+        if ($found -and (Test-Path $found)) { return $found }
+    }
+
+    throw @"
+MSBuild.exe not found. Configure one of the following:
+  - parameter -MsBuild "<path\MSBuild.exe>"
+  - env var WHISPUI_MSBUILD (persistent: setx WHISPUI_MSBUILD "<path>")
+  - standard Visual Studio install detectable by vswhere
+"@
+}
+
+$MsBuildExe = Resolve-MsBuild -Explicit $MsBuild
+Write-Host "MSBuild: $MsBuildExe" -ForegroundColor DarkGray
+
+# 1. Kill running instance (otherwise binaries are locked)
+Get-Process -Name WhispUI -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "Killing WhispUI PID $($_.Id)" -ForegroundColor Yellow
+    $_ | Stop-Process -Force
+}
+
+# 2. Clean previous output
+if (Test-Path $PublishDir) {
+    Write-Host "Cleaning $PublishDir" -ForegroundColor DarkGray
+    Remove-Item $PublishDir -Recurse -Force
+}
+
+# 3. Publish via VS MSBuild (Restore + Publish, Framework target)
+Write-Host "Publish ($Configuration x64) -> $PublishDir" -ForegroundColor Cyan
+& $MsBuildExe $Csproj `
+    '-t:Restore;Publish' `
+    "-p:Configuration=$Configuration" `
+    '-p:Platform=x64' `
+    "-p:PublishDir=$PublishDir\" `
+    '-v:m' '-nologo'
+if ($LASTEXITCODE -ne 0) { throw "MSBuild Publish failed (code $LASTEXITCODE)" }
+
+Write-Host "OK: $PublishDir" -ForegroundColor Green
+if ($Open) { Start-Process explorer.exe $PublishDir }

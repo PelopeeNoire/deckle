@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using WhispUI.Interop;
 using WhispUI.Llm;
 using WhispUI.Logging;
+using WhispUI.Settings;
 
 namespace WhispUI;
 
@@ -38,8 +39,7 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Configuration ─────────────────────────────────────────────────────────
 
-    const string MODEL_FILE     = "ggml-large-v3.bin";
-    const string DEFAULT_MODEL  = @"D:\projects\ai\transcription\shared\" + MODEL_FILE;
+    const string MODEL_FILE = "ggml-large-v3.bin";
 
     // ── Internal state ───────────────────────────────────────────────────────
 
@@ -101,7 +101,8 @@ internal sealed class WhispEngine : IDisposable
 
     public WhispEngine()
     {
-        _modelPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH") ?? DEFAULT_MODEL;
+        _modelPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH")
+            ?? Path.Combine(SettingsService.Instance.ResolveModelsDirectory(), MODEL_FILE);
 
         _llm = new LlmService();
 
