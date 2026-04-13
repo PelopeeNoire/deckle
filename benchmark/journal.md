@@ -242,5 +242,11 @@ Caractéristiques clés du prompt optimal :
 
 **Score rule-based : médiane 0.0000, moyenne 0.0004** — Dans la zone optimale. L'ordre interne du paragraphe vocabulaire n'influence pas le résultat. Plateau robuste confirmé.
 
+## Itération 33 — Prompt anglais : meilleur absolu sur la moyenne (0.0000/0.0002)
+
+**Score rule-based : médiane 0.0000, moyenne 0.0002** — Meilleur absolu sur la moyenne. 7 samples parfaits. #2 seul résiduel (0.0017, novel=0.01). Le prompt en anglais est légèrement plus efficace — probablement parce que le modèle a été davantage entraîné sur des instructions en anglais. Signal intéressant mais différence marginale (0.0002 vs 0.0003).
+
+Pour iter 34 : tester une version bilingue (ligne 1 en français + règles en anglais) pour combiner les deux avantages.
+
 ---
 
