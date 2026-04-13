@@ -1,0 +1,32 @@
+# Journal d'optimisation — Restructuration
+
+Chaque itération : benchmark rule-based → lecture des sorties → évaluation Claude → nouveau prompt → commit.
+
+---
+
+## Itération 0 — Baseline (prompt initial)
+
+**Score rule-based : médiane 0.3997** — Prompt trop faible, 7/8 samples avec préambule "Voici le texte restructuré", markdown sur 2 samples. Seuils novel_words recalibrés (0.5 → 0.85 pour restructuration).
+
+## Itération 1 — Anti-préambule + recalibration
+
+**Score rule-based : médiane 0.1244** — Préambule éliminé sur 8/8. Markdown résiduel sur #2 (italiques *glow*, *tuning*). Qualité de restructuration correcte mais ton trop formel. Sample #3 rallongé (ratio 1.24). Erreur factuelle #4 : "fenêtre de login" au lieu de "fenêtre de log".
+
+Axes d'amélioration identifiés :
+- Renforcer anti-markdown (les italiques passent encore)
+- Demander de conserver les termes techniques tels quels
+- Alléger le ton (trop écrit/distant)
+
+## Itération 2 — Anti-markdown + ton naturel renforcé
+
+**Score rule-based : médiane 0.1497** — Légère régression par rapport à iter 1 (0.1244). Sample #2 toujours problématique (0.4929) : préambule complet + séparateur markdown malgré instruction anti-préambule. Samples #5 et #7 corrects, prose fluide, idées conservées. Bold/italiques markdown encore présents sur #5, #6, #7, #8.
+
+Problèmes :
+- Préambule résistant sur #2 (le plus long sample après #1 et #7)
+- Ton encore un peu trop "écrit soigné" sur certains samples
+- Markdown (bold, italiques) utilisé malgré instruction contraire
+
+Changements pour iter 3 : reformulation plus agressive de l'anti-préambule ("ton premier mot EST le contenu"), interdiction explicite de tout markdown avec exemples, instruction "texte brut uniquement", exemple concret de ton à garder ("c'est pas ouf" ≠ "cela reste insatisfaisant").
+
+---
+
