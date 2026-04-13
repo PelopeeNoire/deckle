@@ -52,5 +52,11 @@ Sample #2 est structurellement difficile : le locuteur commence par "j'aimerais 
 
 Changements pour iter 6 : approche few-shot avec exemple concret. Structure : exemple in/out, puis règles en "ce que tu fais / ce que tu ne fais pas". Abandon temporaire du style liste de règles.
 
+## Itération 6 — Régression sévère, few-shot abandonné
+
+**Score rule-based : médiane 0.4207** — Forte régression. Le few-shot avec "ENTRÉE/SORTIE" a déclenché des préambules sur 5/8 samples : le modèle a calqué le format de l'exemple ("Voici le texte restructuré, épuré..."). Novel_words remontés aussi. L'approche few-shot est clairement contre-productive sur ce modèle.
+
+Retour au meilleur prompt connu (itération 5, médiane 0.0408). Le few-shot est banni pour la suite.
+
 ---
 
