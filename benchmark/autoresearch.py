@@ -11,6 +11,7 @@ Usage :
 """
 
 import argparse
+import configparser
 import io
 import json
 import os
@@ -28,13 +29,39 @@ if sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
-PROMPT_FILE = os.path.join(BENCHMARK_DIR, "system_prompt.txt")
-CORPUS_FILE = os.path.join(BENCHMARK_DIR, "corpus.json")
+CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config.ini")
+
+def load_config() -> configparser.ConfigParser:
+    """Charge config.ini avec les défauts."""
+    cfg = configparser.ConfigParser()
+    cfg["benchmark"] = {
+        "profile": "nettoyage",
+        "model": "ministral:3b-instruct-q8",
+        "judge_model": "ministral-3:14b",
+        "temperature": "0.15",
+        "num_ctx_k": "32",
+        "endpoint": "http://localhost:11434/api/generate",
+        "corpus": "corpus.json",
+        "prompt": "system_prompt.txt",
+    }
+    cfg["autoresearch"] = {
+        "designer_model": "ministral-3:14b",
+        "max_experiments": "10",
+        "runs_per_experiment": "3",
+    }
+    if os.path.exists(CONFIG_FILE):
+        cfg.read(CONFIG_FILE, encoding="utf-8")
+    return cfg
+
+_CFG = load_config()
+
+PROMPT_FILE = os.path.join(BENCHMARK_DIR, _CFG["benchmark"]["prompt"])
+CORPUS_FILE = os.path.join(BENCHMARK_DIR, _CFG["benchmark"]["corpus"])
 RESULTS_FILE = os.path.join(BENCHMARK_DIR, "results.tsv")
 REPORT_FILE = os.path.join(BENCHMARK_DIR, "autoresearch_report.txt")
 
-OLLAMA_ENDPOINT = "http://localhost:11434/api/generate"
-DESIGNER_MODEL = "ministral-3:14b"  # le 14B génère les variantes de prompt
+OLLAMA_ENDPOINT = _CFG["benchmark"]["endpoint"]
+DESIGNER_MODEL = _CFG["autoresearch"]["designer_model"]
 
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
@@ -403,16 +430,22 @@ def restore_prompt(best_prompt: str):
 # ─── Boucle principale ──────────────────────────────────────────────────────
 
 def main():
+    ar_cfg = _CFG["autoresearch"]
+    bm_cfg = _CFG["benchmark"]
+
     parser = argparse.ArgumentParser(description="Autoresearch — prompt optimization loop")
-    parser.add_argument("--max-experiments", type=int, default=10)
-    parser.add_argument("--runs-per-experiment", type=int, default=3,
+    parser.add_argument("--max-experiments", type=int,
+                        default=ar_cfg.getint("max_experiments"))
+    parser.add_argument("--runs-per-experiment", type=int,
+                        default=ar_cfg.getint("runs_per_experiment"),
                         help="Nombre de runs par expérience (réduit la variance)")
     args = parser.parse_args()
 
     start_time = time.time()
 
     log_separator()
-    log_info("AUTORESEARCH v2 — Optimisation du prompt Nettoyage")
+    log_info(f"AUTORESEARCH v2 — Profil: {bm_cfg['profile']}")
+    log_info(f"Modèle cible: {bm_cfg['model']} | Designer: {ar_cfg['designer_model']}")
     log_info(f"Max expériences: {args.max_experiments}")
     log_info(f"Runs par expérience: {args.runs_per_experiment}")
     log_separator()
