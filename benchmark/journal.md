@@ -254,5 +254,13 @@ Pour iter 34 : tester une version bilingue (ligne 1 en français + règles en an
 
 Pour iter 35 : confirmer iter 33 (full-anglais) avec un deuxième run pour valider la stabilité.
 
+## Itération 35 — 2e run all-english : 0.0000/0.0005 (variance normale)
+
+**Score rule-based : médiane 0.0000, moyenne 0.0005** — Légèrement au-dessus du run iter33 (0.0002). Variance de température : all-english oscille entre 0.0002 et 0.0005, FR entre 0.0003 et 0.0009. Les deux sont dans la même zone. La différence langue FR/EN est marginale et probablement dans le bruit statistique à temp=0.3.
+
+Conclusion consolidée : le prompt optimal est indifféremment FR ou EN. Le meilleur prompt par la moyenne reste iter33 (EN, 0.0002), mais la différence est non significative.
+
+Pour les itérations 36-40 : dernières explorations, puis clôture avec documentation du prompt final.
+
 ---
 
