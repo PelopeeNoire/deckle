@@ -178,5 +178,11 @@ Pour iter 22 : restaurer iter 19 et tester un reordering — interdictions d'abo
 
 Pour iter 23 : restaurer iter 19 et enrichir la liste d'hésitations ("bah", "ouais ben", "hein", "genre", "quoi") pour réduire le novel résiduel sur #1/#2/#3.
 
+## Itération 23 — Hésitations enrichies : stable à 0.0008
+
+**Score rule-based : médiane 0.0008** — Identique au reordering. La liste étendue d'hésitations ne réduit pas le novel=0.01 résiduel sur #1/#2/#3. Ces substitutions (novel=0.01) semblent être une limite du modèle à temperature=0.3, pas du prompt.
+
+Pour iter 24 : placer "avec les mots exacts du locuteur" dès la première ligne. Test si doubler le signal de fidélité lexicale (ligne 1 + paragraphe 3) réduit le résiduel.
+
 ---
 
