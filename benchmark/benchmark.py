@@ -51,6 +51,15 @@ def strip_stops(text: str, stops: list[str]) -> str:
         text = text.replace(s, "")
     return text.strip()
 
+def sanitize(text: str) -> str:
+    """Supprime les caractères de contrôle et séquences ANSI du texte LLM.
+    Empêche le terminal d'interpréter des escape sequences comme des inputs."""
+    text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+    text = re.sub(r'\x1b\][^\x07]*\x07', '', text)
+    text = re.sub(r'\x1b[^[\]0-9;a-zA-Z]', '', text)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    return text
+
 # ─── Appel Ollama ─────────────────────────────────────────────────────────────
 
 def call_ollama(prompt: str, stops: list[str], model: str, temperature: float,
@@ -78,7 +87,7 @@ def call_ollama(prompt: str, stops: list[str], model: str, temperature: float,
     with urllib.request.urlopen(req, timeout=300) as resp:
         data = json.loads(resp.read().decode("utf-8"))
 
-    text = strip_stops(data.get("response", ""), stops)
+    text = sanitize(strip_stops(data.get("response", ""), stops))
     metrics = {
         "total_duration_ms": data.get("total_duration", 0) / 1e6,
         "eval_count": data.get("eval_count", 0),
