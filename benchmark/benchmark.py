@@ -17,6 +17,7 @@ import argparse
 import io
 import json
 import re
+import statistics
 import sys
 import time
 import urllib.request
@@ -201,15 +202,21 @@ def composite_score(rule_scores: dict, judge_scores: dict) -> float:
     Lower is better (pour autoresearch).
 
     Pondérations :
-    - Rule-based (40%) : novel_words 15%, length_ratio 10%, preamble 10%, markdown 5%
+    - Rule-based (40%) : novel_words 15%, length_ratio 15%, preamble 5%, markdown 5%
     - LLM judge (60%) : fidélité 20%, registre 15%, structure 15%, minimalité 10%
       (scores 1-5 inversés en 0-1 où 0=parfait)
+
+    length_ratio non cappé — un texte 3x trop long/court pénalise plus qu'un texte 1.5x.
     """
     # Rule-based : déjà en 0-1 où 0 = parfait
+    # length_ratio : sigmoid douce pour mapper [0, +inf) → [0, 1) sans cap brutal
+    lr = rule_scores["length_ratio"]
+    lr_score = lr / (1.0 + lr)  # 0→0, 0.5→0.33, 1.0→0.5, 3.0→0.75
+
     rule = (
         rule_scores["novel_words"] * 0.15 +
-        min(rule_scores["length_ratio"], 1.0) * 0.10 +
-        rule_scores["preamble"] * 0.10 +
+        lr_score * 0.15 +
+        rule_scores["preamble"] * 0.05 +
         rule_scores["markdown"] * 0.05
     )
 
@@ -288,12 +295,19 @@ def main():
             "markdown": score_markdown(output_text),
         }
 
-        # Score LLM juge
-        if args.verbose:
-            print(f"  Appel juge ({args.judge_model})...", end=" ", flush=True)
-        judge = llm_judge(input_text, output_text, args.judge_model, args.endpoint)
-        if args.verbose:
-            print("OK")
+        # Détection catastrophe : skip le juge si déraillement évident
+        is_catastrophe = (rule["novel_words"] > 0.5 or rule["length_ratio"] > 2.0)
+
+        if is_catastrophe:
+            print(f"  [CATASTROPHE] novel={rule['novel_words']:.2f} length_ratio={rule['length_ratio']:.2f} — juge skip")
+            judge = {"fidelite": 1, "registre": 1, "structure": 1, "minimalite": 1}
+        else:
+            # Score LLM juge
+            if args.verbose:
+                print(f"  Appel juge ({args.judge_model})...", end=" ", flush=True)
+            judge = llm_judge(input_text, output_text, args.judge_model, args.endpoint)
+            if args.verbose:
+                print("OK")
 
         # Composite
         comp = composite_score(rule, judge)
@@ -302,6 +316,7 @@ def main():
         detail = {
             "id": sid,
             "composite": comp,
+            "catastrophe": is_catastrophe,
             "rule": rule,
             "judge": judge,
             "input_len": len(input_text),
@@ -320,8 +335,9 @@ def main():
             print(f"  Output: {output_text[:120]}...")
             print()
 
-    # Score final = moyenne des composites
-    avg = sum(all_composites) / len(all_composites) if all_composites else 1.0
+    # Score final = médiane des composites (robuste aux outliers)
+    median = statistics.median(all_composites) if all_composites else 1.0
+    mean = sum(all_composites) / len(all_composites) if all_composites else 1.0
 
     # Détails dans un fichier JSON pour analyse
     report = {
@@ -331,23 +347,29 @@ def main():
         "num_ctx_k": args.num_ctx_k,
         "prompt_chars": len(system_prompt),
         "samples": len(corpus),
-        "avg_composite": round(avg, 4),
+        "median_composite": round(median, 4),
+        "mean_composite": round(mean, 4),
         "details": details,
     }
     with open("last_report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
+    catastrophes = sum(1 for d in details if d.get("catastrophe", False))
     print(f"\n{'='*60}")
-    print(f"RÉSULTATS: {len(corpus)} samples, score moyen = {avg:.4f}")
+    print(f"RÉSULTATS: {len(corpus)} samples | médiane={median:.4f} moyenne={mean:.4f}")
+    if catastrophes:
+        print(f"  ({catastrophes} catastrophe(s) détectée(s) — juge skip)")
     print(f"  (0.0 = parfait, 1.0 = terrible)")
     for d in details:
+        tag = " [!]" if d.get("catastrophe") else ""
         print(f"  #{d['id']}: {d['composite']:.4f} "
               f"(novel={d['rule']['novel_words']:.2f} "
-              f"fid={d['judge']['fidelite']} reg={d['judge']['registre']})")
+              f"len={d['rule']['length_ratio']:.2f} "
+              f"fid={d['judge']['fidelite']} reg={d['judge']['registre']}){tag}")
     print(f"{'='*60}")
 
-    # Ligne unique pour autoresearch
-    print(f"\nSCORE={avg:.4f}")
+    # Ligne unique pour autoresearch — médiane comme score principal
+    print(f"\nSCORE={median:.4f}")
 
 if __name__ == "__main__":
     main()
