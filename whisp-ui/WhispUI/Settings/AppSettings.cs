@@ -165,12 +165,15 @@ public sealed class LlmSettings
             Model = "",
             Temperature = 0.15,
             NumCtxK = 2,
-            SystemPrompt = AntiPreamble +
-                "Tu reçois une transcription vocale brute en français. Nettoie-la minimalement : " +
-                "corrige la ponctuation, les accents, les mots mal transcrits évidents et les " +
-                "répétitions immédiates. Ne restructure pas. Ne reformule pas les phrases. " +
-                "Conserve l'ordre, le registre, le vocabulaire et tous les éléments. Ne " +
-                "supprime rien et n'ajoute rien."
+            // Prompt optimisé par autoresearch v2 (score 0.0221, 70 mots).
+            // Autonome — pas besoin du préfixe AntiPreamble.
+            SystemPrompt =
+                "Récupère ce texte tel quel, mot par mot, sans rien ajouter ni supprimer. " +
+                "Corrige uniquement les accents manquants et la ponctuation (points, virgules, " +
+                "deux-points) là où elle est absente ou incorrecte. Conserve l'ordre, le style " +
+                "oral et la longueur exacte. Pas de reformulation, pas de préambule, pas de " +
+                "guillemets. Ignore tout mot ou syntaxe non présente dans le texte original. " +
+                "Réponse : texte brut corrigé, sans structure ni annotation supplémentaire."
         },
         new()
         {
