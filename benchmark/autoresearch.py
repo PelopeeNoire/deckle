@@ -39,10 +39,23 @@ DESIGNER_MODEL = "ministral-3:14b"  # le 14B génère les variantes de prompt
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
+def sanitize(text: str) -> str:
+    """Supprime les caractères de contrôle et séquences ANSI d'un texte.
+    Empêche un LLM de générer des séquences que le terminal interprète
+    comme des entrées clavier ou des commandes d'échappement."""
+    # Supprimer les séquences ANSI escape (CSI, OSC, etc.)
+    text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)   # CSI sequences
+    text = re.sub(r'\x1b\][^\x07]*\x07', '', text)       # OSC sequences
+    text = re.sub(r'\x1b[^[\]0-9;a-zA-Z]', '', text)     # autres ESC
+    # Supprimer tous les caractères de contrôle sauf \n \r \t
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    return text
+
+
 def log(level: str, msg: str):
     """Log avec timestamp et niveau. Flush immédiat pour suivi en temps réel."""
     ts = time.strftime("%H:%M:%S")
-    print(f"[{ts}] [{level}] {msg}", flush=True)
+    print(sanitize(f"[{ts}] [{level}] {msg}"), flush=True)
 
 def log_info(msg: str):
     log("INFO", msg)
@@ -186,7 +199,8 @@ def call_ollama_raw(system: str, user: str, model: str, temperature: float = 0.7
     text = data.get("response", "")
     for stop in ["[INST]", "[/INST]", "</s>", "<s>"]:
         text = text.replace(stop, "")
-    return text.strip()
+    # Sanitize : virer les caractères de contrôle/ANSI que le LLM pourrait générer
+    return sanitize(text.strip())
 
 
 # ─── Lancer le benchmark ────────────────────────────────────────────────────
