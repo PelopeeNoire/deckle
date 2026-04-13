@@ -112,5 +112,9 @@ Ce prompt est maintenant la référence solide. Deux runs consécutifs (iter 10 
 
 Axes d'exploration restants : tenter d'autres formulations pour voir si le plancher peut descendre encore, ou tester avec un style différent d'instruction (impératif vs déclaratif, moins de tirets, structure en prose).
 
+## Itération 14 — Test style prose (pas de tirets, structure paragraphes)
+
+Prompt iter 13 est référence (0.0061). Pour iter 14 : reformulation complète en prose sans tirets, style impératif direct. Même contenu, présentation différente. Test si la structure affecte la performance.
+
 ---
 
