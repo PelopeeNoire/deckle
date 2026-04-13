@@ -104,5 +104,13 @@ Pour la suite : garder le prompt iter 10 comme référence et explorer des varia
 
 Changements pour iter 13 : test reordering des règles — "utilise les mots du locuteur" en premier, avant "toutes les idées". La priorité dans la liste influence l'attention du modèle. Ajout d'exemples concrets dans la règle vocabulaire.
 
+## Itération 13 — Excellente stabilité, sample #8 corrigé
+
+**Score rule-based : médiane 0.0061** — Dans la zone optimale (iter 10 = 0.0054). Sample #8 corrigé (novel=0.01 au lieu de 0.15). Le reordering "vocabulaire locuteur en premier" a amélioré la fidélité lexicale sur tous les samples. #7 parfait. Aucun préambule, aucune liste, ratios 0.86-0.97.
+
+Ce prompt est maintenant la référence solide. Deux runs consécutifs (iter 10 et 13) confirment la stabilité dans la zone 0.005-0.01.
+
+Axes d'exploration restants : tenter d'autres formulations pour voir si le plancher peut descendre encore, ou tester avec un style différent d'instruction (impératif vs déclaratif, moins de tirets, structure en prose).
+
 ---
 
