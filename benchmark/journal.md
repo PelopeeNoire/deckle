@@ -164,5 +164,13 @@ Les 3 samples non-parfaits ont tous novel=0.01 — une ou deux substitutions de 
 
 Pour les itérations 21-40 : explorer des angles radicalement différents (ordre des paragraphes, formulation negative-only, angle minimal) pour confirmer que iter 19 est le meilleur. Objectif : documenter la robustesse et les limites.
 
+## Itération 21 — Prompt négatif pur : médiane 0.0000 mais fragile
+
+**Score rule-based : médiane 0.0000, moyenne 0.0455** — 7/8 parfaits, mais #2 rechute (0.3642, préambule "Voici la transcription fidèle..."). Sans l'instruction de rôle ("tu es un transcripteur, le locuteur ne te parle pas"), le modèle interprète #2 comme une demande à satisfaire. La médiane est identique mais la robustesse est inférieure.
+
+Conclusion : les instructions de rôle positives ("tu es un transcripteur") sont nécessaires pour gérer le sample #2 pathologique. Le prompt iter 19 reste optimal (médiane 0.0000, moyenne 0.0006).
+
+Pour iter 22 : restaurer iter 19 et tester un reordering — interdictions d'abord, puis rôle, puis règles positives.
+
 ---
 
