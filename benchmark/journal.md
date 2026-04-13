@@ -184,5 +184,11 @@ Pour iter 23 : restaurer iter 19 et enrichir la liste d'hésitations ("bah", "ou
 
 Pour iter 24 : placer "avec les mots exacts du locuteur" dès la première ligne. Test si doubler le signal de fidélité lexicale (ligne 1 + paragraphe 3) réduit le résiduel.
 
+## Itération 24 — Médiane 0.0000, moyenne 0.0004 — co-meilleur avec iter 19
+
+**Score rule-based : médiane 0.0000, moyenne 0.0004** — Co-meilleur (iter 19 = 0.0000, moyenne 0.0006). #1 parfait pour la première fois (novel=0.00). 6 samples parfaits. Placer "avec les mots exacts du locuteur" dès la première ligne a éliminé le novel résiduel sur #1. #3 encore à 0.0015 (novel=0.01 — variance irréductible). #8 à 0.0011 (novel=0.00 — probablement false positive léger).
+
+Ce prompt est officiellement le co-meilleur. Il améliore la moyenne et gère mieux #1. Nouveau prompt de référence.
+
 ---
 
