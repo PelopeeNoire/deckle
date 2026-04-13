@@ -13,7 +13,11 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Skill(git-commit)",
-      "Bash(dotnet package:*)"
+      "Bash(git status)",
+      "Bash(git log)",
+      "Bash(git diff)",
+      "Bash(git add)",
+      "Bash(git commit)"
     ]
   }
 }
