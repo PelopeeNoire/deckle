@@ -214,5 +214,11 @@ Pour iter 28 : tester "Copie les mots du locuteur" à la place de "Utilise exact
 
 Le novel résiduel de #3 (0.01) est probablement irréductible à temp=0.3 — ce sample a des phrases orales particulièrement ambiguës.
 
+## Itération 29 — Sans paragraphe de rôle : même performance (0.0000/0.0004)
+
+**Score rule-based : médiane 0.0000, moyenne 0.0004** — Identique à iter 28. Le paragraphe de rôle n'est pas nécessaire sur ce corpus. Mais iter 21 a montré que sans lui, sample #2 est fragile (rechute en mode "réponse à la demande"). Par robustesse, le prompt iter 28 (avec rôle) reste la référence.
+
+Prompt iter 29 (sans rôle) est valide si le corpus ne contient pas de samples où le locuteur s'adresse directement à l'assistant. Prompt iter 28 (avec rôle) est plus robuste sur un corpus général.
+
 ---
 
