@@ -56,6 +56,7 @@ internal static class WhisperParamsMapper
         IntPtr promptPtr = Marshal.StringToHGlobalAnsi(s.Transcription.InitialPrompt);
         wparams.language = langPtr;
         wparams.initial_prompt = promptPtr;
+        wparams.carry_initial_prompt = (byte)(s.Transcription.CarryInitialPrompt ? 1 : 0);
 
         // ── Seuils de confiance ───────────────────────────────────────────
         wparams.entropy_thold = (float)s.Confidence.EntropyThreshold;
@@ -65,6 +66,15 @@ internal static class WhisperParamsMapper
         // ── Décodage ──────────────────────────────────────────────────────
         wparams.temperature = (float)s.Decoding.Temperature;
         wparams.temperature_inc = (float)s.Decoding.TemperatureIncrement;
+
+        // Beam search: strategy 1 = WHISPER_SAMPLING_BEAM_SEARCH.
+        // Explores multiple decoding paths and keeps the best overall
+        // sequence. Better quality than greedy (strategy 0), slower.
+        if (s.Decoding.UseBeamSearch)
+        {
+            wparams.strategy = 1;
+            wparams.beam_search_beam_size = s.Decoding.BeamSize;
+        }
 
         // ── Filtres de sortie ─────────────────────────────────────────────
         wparams.suppress_blank = (byte)(s.OutputFilters.SuppressBlank ? 1 : 0);

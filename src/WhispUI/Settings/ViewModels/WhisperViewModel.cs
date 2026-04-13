@@ -267,7 +267,7 @@ public partial class WhisperViewModel : ObservableObject
         Model = "ggml-large-v3.bin";
         UseGpu = true;
         Language = "fr";
-        InitialPrompt = "Transcription en français.";
+        InitialPrompt = "Bonjour. Voici une transcription en français, avec une ponctuation soignée et des phrases complètes.";
         VadEnabled = true;
         VadThreshold = 0.5;
         VadMinSpeechDurationMs = 250;

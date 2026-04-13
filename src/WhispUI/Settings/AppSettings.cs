@@ -66,7 +66,12 @@ public sealed class TranscriptionSettings
     public string Model { get; set; } = "ggml-large-v3.bin";
     public bool UseGpu { get; set; } = true;
     public string Language { get; set; } = "fr";
-    public string InitialPrompt { get; set; } = "Transcription en français.";
+    public string InitialPrompt { get; set; } =
+        "Bonjour. Voici une transcription en français, avec une ponctuation soignée et des phrases complètes.";
+
+    // Prepend initial_prompt to every 30s decode window (not just the first).
+    // Stabilizes punctuation and register across long recordings.
+    public bool CarryInitialPrompt { get; set; } = true;
 }
 
 // VAD Silero — pré-filtre qui détecte les segments de parole avant Whisper.
@@ -103,6 +108,12 @@ public sealed class DecodingSettings
 {
     public double Temperature { get; set; } = 0.0;
     public double TemperatureIncrement { get; set; } = 0.2;
+
+    // Beam search explores multiple hypotheses in parallel, picking the
+    // best sequence overall. Higher quality than greedy at the cost of
+    // latency. BeamSize only used when UseBeamSearch is true.
+    public bool UseBeamSearch { get; set; } = true;
+    public int BeamSize { get; set; } = 5;
 }
 
 // ── Réécriture LLM via Ollama ────────────────────────────────────────────────
