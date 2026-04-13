@@ -66,5 +66,13 @@ Pattern identifié : "La différence entre restructurer et résumer" déclenche 
 
 Changements pour iter 8 : retour au prompt iter 4 (meilleure base sans le paragraphe résumé/restructuration), ajout d'une seule ligne anti-compression courte et non-narrative : "Ne coupe pas les idées." intégrée dans la règle existante.
 
+## Itération 8 — Plateau, #2 reste problématique
+
+**Score rule-based : médiane 0.0416** — Stable (iter 5 = 0.0408, iter 7 = 0.0461). #7 parfait. #2 rechute (0.3827, préambule + liste). Sur les autres samples, qualité bonne.
+
+Analyse comparative : la seule fois où #2 était résolu (iter 4, score 0.0528), le rôle disait "ne produis pas de résumé ni de liste de points" — formulation absente des prompts depuis iter 5. Cette phrase est spécifiquement pertinente pour #2 qui pousse le modèle vers des listes.
+
+Changements pour iter 9 : restaurer exactement "ne produis pas de résumé ni de liste de points" dans la description du rôle, combiné à "Ne coupe pas les idées" pour l'anti-compression.
+
 ---
 
