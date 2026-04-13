@@ -202,5 +202,11 @@ Pour iter 26 : test simplification — retrait du paragraphe "N'ajoute rien qui 
 
 Pour iter 27 : tenter une variation du hook d'ouverture — voir si une formulation plus impérative de la ligne 1 change quelque chose.
 
+## Itération 27 — Hook compact légèrement moins bon (0.0011)
+
+**Score rule-based : médiane 0.0011** — Légèrement moins bon. Sample #8 sauté à 0.0129 (novel=0.05). Le hook ultra-compact ("Transcris : oral → écrit...") est légèrement moins efficace que la version explicite. Retour prompt iter 26.
+
+Pour iter 28 : tester "Copie les mots du locuteur" à la place de "Utilise exactement les mots" — formulation encore plus directe et concrète.
+
 ---
 
