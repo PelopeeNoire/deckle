@@ -89,3 +89,18 @@ Rule-based false positive sur #5 (preamble=1) alors que juge=0 — la sortie com
 **Axes pour l'itération 5** :
 - Réécrire le prompt en enlevant le risque de contagion de forme (fait).
 - Essayer une approche plus directive sur la complétude avec un exemple explicite de ce qu'est "perdre une nuance".
+
+---
+
+## Itération 5 — directive complétude détaillée (exemples, qualifications, chiffres)
+
+**Score juge médian : 0.0000** (nouveau record !). Moyenne 0.0813.
+
+Distribution : 0, 0.50, 0.05, 0, 0, 0.10, 0, 0. Cinq samples à 0.00. Mais #2 régresse à 0.50 (3/3/3/3) avec len_ratio 0.58 — condensation excessive.
+
+**Analyse #2** : prose propre mais trop synthétique. 5949c→3446c. Des expressions comme "autrefois", "sans dépendre d'un environnement spécifique" sentent l'interprétation ajoutée. La consigne "sur les textes longs, ne condense pas" n'est pas assez opérationnelle.
+
+**Axes pour l'itération 6** :
+- Donner une cible de longueur plus concrète (proche de l'entrée, pas moitié).
+- Interdire explicitement les termes interprétatifs ajoutés ("autrefois", "désormais", "en résumé").
+- Garder le cadre itération 5 (il a donné la médiane 0.0000).
