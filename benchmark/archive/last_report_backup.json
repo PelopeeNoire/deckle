@@ -1,0 +1,37 @@
+{
+  "model": "ministral-3:14b",
+  "judge_model": null,
+  "temperature": 0.3,
+  "num_ctx_k": 32,
+  "prompt_chars": 572,
+  "samples": 1,
+  "rule_median": 0.4863,
+  "rule_mean": 0.4863,
+  "judge_median": 1.0,
+  "judge_mean": 1.0,
+  "details": [
+    {
+      "id": 3,
+      "rule_score": 0.4863,
+      "judge_score": 1.0,
+      "catastrophe": true,
+      "rule": {
+        "novel_words": 0.6824034334763949,
+        "length_ratio": 0.21101364522417154,
+        "preamble": 1.0,
+        "markdown": 0.0
+      },
+      "judge": {
+        "completude": 1,
+        "clarte": 1,
+        "structure": 1,
+        "sobriete": 1
+      },
+      "input_len": 2052,
+      "output_len": 2485,
+      "length_ratio": 1.21,
+      "output_preview": "Voici le texte restructuré selon vos exigences, avec une organisation claire et une reformulation précise tout en conservant intégralement le contenu original :\n\n---\n\nNous venons d’effectuer un réamén",
+      "elapsed_sec": 15.9
+    }
+  ]
+}

@@ -40,9 +40,8 @@ modelfile-fastapply
 
 # Benchmark — run artifacts (regenerated on each launch)
 benchmark/__pycache__/
-benchmark/*.log
-benchmark/last_report.json
-benchmark/results.tsv
-benchmark/autoresearch_report.txt
-benchmark/run.log
+benchmark/logs/*.log
+benchmark/reports/last_report.json
+benchmark/reports/results.tsv
+benchmark/reports/autoresearch_report.txt
 run.log
