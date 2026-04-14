@@ -8,6 +8,7 @@ using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Logging;
 using WhispUI.Settings.ViewModels;
@@ -20,9 +21,14 @@ public sealed partial class WhisperPage : Page
 
     public WhisperViewModel ViewModel { get; } = new();
 
-    // Guards combo SelectionChanged during initial sync — these handlers
+    // Guards the Language combo's SelectionChanged and the model
+    // AutoSuggestBox's SuggestionChosen during initial sync — these handlers
     // set VM properties which would trigger PushToSettings() needlessly.
     private bool _initializing;
+
+    // Full list of installed Whisper models on disk, scanned once per
+    // page entry. Feeds the model AutoSuggestBox as a filterable source.
+    private List<string> _modelNames = new();
 
     // Values at page load that require a restart. The footer only appears
     // when the current value differs from the snapshot.
@@ -133,7 +139,7 @@ public sealed partial class WhisperPage : Page
         base.OnNavigatedTo(e);
         _initializing = true;
         ViewModel.Load();
-        PopulateModelCombo();
+        RefreshModelNames();
         SyncLanguageCombo();
         _startupModel = ViewModel.Model;
         _startupUseGpu = ViewModel.UseGpu;
@@ -158,7 +164,7 @@ public sealed partial class WhisperPage : Page
                 break;
             case nameof(WhisperViewModel.ModelsDirectory):
                 _initializing = true;
-                try { PopulateModelCombo(); } finally { _initializing = false; }
+                try { RefreshModelNames(); } finally { _initializing = false; }
                 break;
         }
     }
@@ -215,8 +221,9 @@ public sealed partial class WhisperPage : Page
 
     // ── Combo handlers (Model, Language) ────────────────────────────────────
     //
-    // Combos stay in code-behind: Model is populated dynamically from disk,
-    // Language is an editable ComboBox with ComboBoxItem children.
+    // Model is an AutoSuggestBox (no dropdown chevron) populated dynamically
+    // from disk: filtering by substring while typing, full list on focus
+    // when empty. Language is an editable ComboBox with ComboBoxItem children.
 
     private static void WireHover(SettingsCard card, Button resetButton)
     {
@@ -224,7 +231,7 @@ public sealed partial class WhisperPage : Page
         card.PointerExited += (_, _) => resetButton.Opacity = 0;
     }
 
-    private void PopulateModelCombo()
+    private void RefreshModelNames()
     {
         var items = new List<string>();
         try
@@ -249,9 +256,9 @@ public sealed partial class WhisperPage : Page
         if (!string.IsNullOrEmpty(current) && !items.Contains(current))
             items.Insert(0, current);
 
-        ModelCombo.ItemsSource = items;
-        if (!string.IsNullOrEmpty(current))
-            ModelCombo.SelectedItem = current;
+        _modelNames = items;
+        ModelSuggest.Text = current ?? "";
+        ModelSuggest.ItemsSource = _modelNames;
     }
 
     private void SyncLanguageCombo()
@@ -271,10 +278,45 @@ public sealed partial class WhisperPage : Page
         LanguageCombo.Text = lang;
     }
 
-    private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ModelSuggest_GotFocus(object sender, RoutedEventArgs e)
     {
-        if (_initializing || ModelCombo.SelectedItem is not string model) return;
+        // When the field gains focus, show the full list so the user can
+        // browse all available models without typing. Matches the ComboBox
+        // affordance the control replaces.
+        ModelSuggest.ItemsSource = _modelNames;
+        ModelSuggest.IsSuggestionListOpen = true;
+    }
+
+    private void ModelSuggest_TextChanged(AutoSuggestBox sender,
+        AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+
+        string query = sender.Text ?? "";
+        if (string.IsNullOrEmpty(query))
+        {
+            sender.ItemsSource = _modelNames;
+            return;
+        }
+
+        sender.ItemsSource = _modelNames
+            .Where(n => n.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private void ModelSuggest_SuggestionChosen(AutoSuggestBox sender,
+        AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        if (_initializing || args.SelectedItem is not string model) return;
         ViewModel.Model = model;
+    }
+
+    private void ModelSuggest_LostFocus(object sender, RoutedEventArgs e)
+    {
+        // Free-form text is not a valid model — revert to the current VM
+        // value so the field always shows an installed model name.
+        if (!_modelNames.Contains(ModelSuggest.Text ?? ""))
+            ModelSuggest.Text = ViewModel.Model ?? "";
     }
 
     private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -303,7 +345,21 @@ public sealed partial class WhisperPage : Page
 
     private void OnBackgroundTapped(object sender, TappedRoutedEventArgs e)
     {
+        // Don't steal focus from a ComboBox — its Tapped bubbles up here
+        // and re-focusing the page would close the dropdown before it opens.
+        if (e.OriginalSource is DependencyObject obj && IsInsideComboBox(obj))
+            return;
         this.Focus(FocusState.Programmatic);
+    }
+
+    private static bool IsInsideComboBox(DependencyObject node)
+    {
+        while (node is not null)
+        {
+            if (node is ComboBox) return true;
+            node = VisualTreeHelper.GetParent(node);
+        }
+        return false;
     }
 
     // ── Reset handlers ──────────────────────────────────────────────────────
@@ -314,8 +370,11 @@ public sealed partial class WhisperPage : Page
     private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e) =>
         ViewModel.ModelsDirectory = _pathsDefaults.ModelsDirectory;
 
-    private void ModelReset_Click(object sender, RoutedEventArgs e) =>
-        ModelCombo.SelectedItem = _transcriptionDefaults.Model;
+    private void ModelReset_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.Model = _transcriptionDefaults.Model;
+        ModelSuggest.Text = _transcriptionDefaults.Model;
+    }
 
     private void UseGpuReset_Click(object sender, RoutedEventArgs e) =>
         ViewModel.UseGpu = _transcriptionDefaults.UseGpu;
@@ -411,8 +470,8 @@ public sealed partial class WhisperPage : Page
             ViewModel.Model = _startupModel;
             ViewModel.UseGpu = _startupUseGpu;
 
-            // Sync combo (not bound).
-            ModelCombo.SelectedItem = _startupModel;
+            // Sync the AutoSuggestBox (not bound).
+            ModelSuggest.Text = _startupModel;
         }
         finally
         {
@@ -459,7 +518,7 @@ public sealed partial class WhisperPage : Page
         // Reload everything from the fresh POCO defaults.
         _initializing = true;
         ViewModel.Load();
-        PopulateModelCombo();
+        RefreshModelNames();
         SyncLanguageCombo();
         _initializing = false;
         UpdateRestartState();

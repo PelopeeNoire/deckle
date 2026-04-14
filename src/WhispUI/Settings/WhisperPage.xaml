@@ -98,9 +98,13 @@
                                        Description="The AI model that converts your voice to text. Larger models produce better results but take more time and memory."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <ComboBox x:Name="ModelCombo"
-                                  MinWidth="240"
-                                  SelectionChanged="ModelCombo_SelectionChanged" />
+                        <AutoSuggestBox x:Name="ModelSuggest"
+                                        MinWidth="240"
+                                        PlaceholderText="Pick a model"
+                                        GotFocus="ModelSuggest_GotFocus"
+                                        TextChanged="ModelSuggest_TextChanged"
+                                        SuggestionChosen="ModelSuggest_SuggestionChosen"
+                                        LostFocus="ModelSuggest_LostFocus" />
                         <Button x:Name="ModelReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="ModelReset_Click">

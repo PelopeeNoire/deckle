@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Llm;
 using WhispUI.Settings.Llm;
@@ -95,7 +96,24 @@ public sealed partial class LlmPage : Page
 
     private void OnBackgroundTapped(object sender, TappedRoutedEventArgs e)
     {
+        // Don't steal focus from a ComboBox — its Tapped bubbles up here
+        // and re-focusing the page would close the dropdown before it opens,
+        // forcing the user to click 2-3 times. Other interactive controls
+        // (TextBox, NumberBox, editable ComboBox) mark Tapped as handled
+        // internally so they don't reach this handler.
+        if (e.OriginalSource is DependencyObject obj && IsInsideComboBox(obj))
+            return;
         this.Focus(FocusState.Programmatic);
+    }
+
+    private static bool IsInsideComboBox(DependencyObject node)
+    {
+        while (node is not null)
+        {
+            if (node is ComboBox) return true;
+            node = VisualTreeHelper.GetParent(node);
+        }
+        return false;
     }
 
     private async void ResetAll_Click(object sender, RoutedEventArgs e)
