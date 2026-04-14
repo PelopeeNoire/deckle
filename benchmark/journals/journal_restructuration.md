@@ -490,3 +490,17 @@ L'ajout "Tu déploies, tu ne synthétises pas" n'a pas suffi à empêcher la com
 ---
 
 ## Itération 29 — repère quantitatif paragraphes
+
+**Score juge médian : 0.0250 / moyenne 0.0859**. Distribution : 0, 0.09, 0.05, 0, 0, 0.50, 0, 0.05. **Meilleur run depuis it.2** (égalité). 4 samples à 0.00 dont les deux plus longs (#1 6986c, #7 6959c). #5 atteint len_ratio 0.95 (ratio 1:1). Seul #6 reste à 0.50.
+
+Le repère quantitatif "monologue long → 4-7 paragraphes substantiels" semble structurer le déploiement sans pour autant gonfler artificiellement les ratios (#1 reste 0.47 mais le contenu est jugé complet 5/5).
+
+Pain point #6 résiste à toutes les variations testées (anti-fusion, méthode 3 étapes, vérification finale, persona, fidélité longueur, regroupement thématique, anti-synthèse, repère quantitatif). Le sample est intrinsèquement difficile — flux très décousu avec dialogue interne, hypothèses avortées, retours en arrière.
+
+**Axes pour l'itération 30** :
+- Cibler #6 en amplifiant l'instruction sur les retours en arrière / contradictions / corrections.
+- Garder l'ossature it.29 qui semble bonne.
+
+---
+
+## Itération 30 — emphasis sur retours en arrière et contradictions
