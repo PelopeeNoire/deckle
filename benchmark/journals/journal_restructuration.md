@@ -254,3 +254,20 @@ Distribution juge : 0, 0, 0.05, 0, 0.09, 0.50, 0, 0.05.
 ---
 
 ## Itération 14 — compression du prompt
+
+**Score juge médian : 0.0000 / moyenne 0.0234**. **DOUBLE RECORD** : médiane parfaite + moyenne meilleure que le précédent best (it.11 à 0.0375). Aucune catastrophe, tous samples ≤ 0.09.
+
+Distribution juge : 0, 0.05, 0.05, 0, 0, 0.09, 0, 0. Six samples à 0.00. #6 à 0.09 (comp=4 clar=5 str=5 sob=5) — plus la catastrophe 0.50 d'avant.
+
+Prompt passé de 3568 chars à 2422 chars (-32%). Hypothèse confirmée : la verbosité diluait l'attention du 14B. Prompt plus compact = meilleure instruction-following.
+
+Len_ratios très variables (0.37 à 0.79) mais le juge ne pénalise pas les condensations fortes tant que rien d'important ne manque — peut-être parce que les samples longs sont effectivement redondants à l'oral. La condensation sur #6 (0.48) est contrebalancée par la préservation des points clés.
+
+**Axes pour l'itération 15** :
+- Garder la compression comme acquis de base.
+- Tenter un second exemple très court ciblant un flux décousu avec dialogue interne (pain point #6).
+- Rester sous 2800 chars total.
+
+---
+
+## Itération 15 — ajout d'un second exemple court (flux décousu)
