@@ -10,7 +10,10 @@ Usage :
                         [--num-ctx-k N] [--prompt-file FILE] [--corpus FILE]
                         [--verbose] [--skip-judge]
 
-Sortie : une seule ligne "SCORE=X.XXXX" (rule-based, pour autoresearch) + détails dans run.log
+Sortie : une seule ligne "SCORE=X.XXXX" + détails dans last_report.json.
+Pour la RESTRUCTURATION, SCORE = médiane juge LLM (reformulation autorisée → novel_words
+n'est plus un signal fiable, seul le juge peut évaluer complétude + sobriété).
+Si --skip-judge, SCORE retombe sur la médiane rule-based.
 """
 
 import argparse
@@ -421,8 +424,12 @@ def main():
               f"len_ratio={d['length_ratio']:.2f}){tag}")
     print(f"{'='*60}")
 
-    # Ligne unique pour autoresearch — rule-based médiane uniquement
-    print(f"\nSCORE={rule_median:.4f}")
+    # Ligne unique pour autoresearch.
+    # Restructuration : la reformulation est autorisée → novel_words est bruyant.
+    # Le juge LLM est le seul signal capable de mesurer complétude + sobriété.
+    # Fallback sur rule_median uniquement si --skip-judge (pas de juge dispo).
+    primary = judge_median if judge_median is not None else rule_median
+    print(f"\nSCORE={primary:.4f}")
 
 if __name__ == "__main__":
     main()
