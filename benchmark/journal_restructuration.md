@@ -118,3 +118,15 @@ La variance sample-par-sample d'un run à l'autre suggère du bruit du juge ± d
 **Axes pour l'itération 7** :
 - Essayer un prompt en anglais pour Ministral (parfois meilleure instruction-following).
 - Conserver toutes les contraintes mais varier la forme.
+
+---
+
+## Itération 7 — prompt en anglais
+
+**Score juge médian : 0.0000** (moyenne 0.0750). Sept samples ≤ 0.05, seul #6 reste à 0.50 (systématique).
+
+Le prompt EN donne des résultats équivalents au FR (médiane 0.00 dans les deux cas). Le pain point reste sample #6 : flux oral très décousu ("D'accord, donc si je comprends bien..."), beaucoup de dialogue interne, le modèle condense fortement. len_ratio 0.57-0.59 systématique sur #6.
+
+**Axes pour l'itération 8** :
+- Tenter un few-shot court pour montrer la "bonne" longueur et fidélité.
+- Revenir au FR (Louis préfère le français).
