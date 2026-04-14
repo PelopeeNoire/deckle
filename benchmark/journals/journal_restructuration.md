@@ -462,3 +462,17 @@ Lecture #6 (output partiel) : 4 paragraphes cohérents (Whisper natif, nettoyage
 ---
 
 ## Itération 27 — compression vérification finale (redondance)
+
+**Score juge médian : 0.0938 / moyenne 0.1266**. Distribution : 0.14, 0, 0.14, 0.05, 0, 0.19, 0.50, 0. Légèrement pire que it.26 mais dans la variance. Cette fois c'est #7 qui catastrophe (3/3/3/3, len_ratio 0.47 = compression forte sur un sample 6959c) au lieu de #6.
+
+#1 inhabituel à 0.14 avec len_ratio 0.36 — compression massive sur un sample 6986c. Sans la vérification finale, le modèle se permet plus de raccourcis sur les samples très longs.
+
+**Hypothèse** : la vérification finale aidait sur les longs (rappel anti-perte tardif). À remettre sous une forme plus économe.
+
+**Axes pour l'itération 28** :
+- Réintroduire un rappel anti-synthèse mais court, fusionné avec un autre paragraphe.
+- Cibler explicitement le risque "ne pas résumer" plutôt que "vérifier mentalement".
+
+---
+
+## Itération 28 — anti-synthèse explicite (court)
