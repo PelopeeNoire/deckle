@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WhispUI.Settings.ViewModels;
@@ -13,16 +14,17 @@ namespace WhispUI.Settings.Llm;
 // DataTemplate + ProfileViewModel). Le code-behind ne gère que :
 //  - Reload() → repopule l'ObservableCollection depuis le POCO
 //  - Click handlers (Save/Cancel/Delete/Add) via Tag={x:Bind}
-//  - Model ComboBox SelectionChanged → push vers le VM
+//  - Model AutoSuggestBox handlers → push vers le VM + filtre la liste
 //  - ProfilesChanged event pour notifier Rules et ManualShortcut
 
 public sealed partial class LlmProfilesSection : UserControl
 {
     public ObservableCollection<ProfileViewModel> Profiles { get; } = new();
 
-    // Model names available from Ollama — bound as ItemsSource by the
-    // ComboBox in each profile template. ObservableCollection so updates
-    // from LlmPage.RefreshOllamaStateAsync propagate without reload.
+    // Model names available from Ollama — source for the AutoSuggestBox
+    // in each profile template. ObservableCollection so updates from
+    // LlmPage.RefreshOllamaStateAsync are reflected on the next keystroke
+    // or re-focus (ItemsSource is rebuilt from this list in FilterModels).
     public ObservableCollection<string> AvailableModelNames { get; } = new();
 
     internal void SetAvailableModelNames(IEnumerable<string> names)
@@ -127,32 +129,67 @@ public sealed partial class LlmProfilesSection : UserControl
             vm.SystemPrompt = tb.Text;
     }
 
-    // ── Model ComboBox (editable) ──────────────────────────────────────────
+    // ── Model picker (AutoSuggestBox) ──────────────────────────────────────
     //
-    // ItemsSource is bound to AvailableModelNames (Ollama-refreshed list).
-    // IsEditable="True" gives a TextBox-style input with a dropdown of the
-    // known models: the user can pick from the list OR type a model that is
-    // not in the list (Ollama offline, model renamed, etc.).
+    // AutoSuggestBox is the canonical Win11 control for "free text + filtered
+    // suggestions" (Start Menu, Settings search, Explorer search). Replaces
+    // a ComboBox IsEditable="True" whose dropdown-arrow mouse interaction
+    // was unreliable in WinUI 3.
     //
-    // Text is OneWay (VM → UI) so the stored model name is shown regardless
-    // of whether it is in the dropdown. UI → VM flows through:
-    //   - SelectionChanged when the user picks an item from the dropdown
-    //   - TextSubmitted when the user types a value and presses Enter / blurs
+    // Text is OneWay (VM → UI) so the stored model name shows regardless of
+    // whether it is in the suggestion list. UI → VM flows through:
+    //   - TextChanged (Reason == UserInput) as the user types — also filters
+    //     the suggestion list live.
+    //   - SuggestionChosen when the user picks an item from the dropdown.
+    //   - QuerySubmitted when the user presses Enter on free text not in
+    //     the list (Ollama offline, model renamed, etc.).
+    //   - GotFocus opens the suggestion list so a mouse click on the chevron
+    //     or the field exposes the available models without typing first.
 
-    private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ModelSuggest_GotFocus(object sender, RoutedEventArgs e)
     {
-        if (sender is ComboBox combo
-            && combo.Tag is ProfileViewModel vm
-            && combo.SelectedItem is string selected)
-        {
-            vm.Model = selected;
-        }
+        if (sender is not AutoSuggestBox box) return;
+
+        box.ItemsSource = FilterModels(box.Text);
+        box.IsSuggestionListOpen = true;
     }
 
-    private void ModelCombo_TextSubmitted(ComboBox sender, ComboBoxTextSubmittedEventArgs args)
+    private void ModelSuggest_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
+        // Only react to user typing — ignore programmatic updates (x:Bind
+        // OneWay push, SuggestionChosen echo) to avoid filtering the list
+        // on values the user did not intend to search for.
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            return;
+
         if (sender.Tag is ProfileViewModel vm)
-            vm.Model = args.Text ?? string.Empty;
+            vm.Model = sender.Text ?? string.Empty;
+
+        sender.ItemsSource = FilterModels(sender.Text);
+    }
+
+    private void ModelSuggest_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        if (sender.Tag is ProfileViewModel vm && args.SelectedItem is string selected)
+            vm.Model = selected;
+    }
+
+    private void ModelSuggest_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        if (sender.Tag is not ProfileViewModel vm) return;
+
+        var text = args.ChosenSuggestion is string s ? s : args.QueryText;
+        vm.Model = text ?? string.Empty;
+    }
+
+    private List<string> FilterModels(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return AvailableModelNames.ToList();
+
+        return AvailableModelNames
+            .Where(n => n.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     // ── Add ─────────────────────────────────────────────────────────────────

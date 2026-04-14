@@ -53,15 +53,16 @@
                                              PlaceholderText="Profile name"
                                              HorizontalAlignment="Stretch" />
 
-                                    <ComboBox Header="Model"
-                                              IsEditable="True"
-                                              PlaceholderText="Ollama model name"
-                                              Tag="{x:Bind}"
-                                              ItemsSource="{Binding AvailableModelNames, ElementName=Root}"
-                                              Text="{x:Bind Model, Mode=OneWay}"
-                                              SelectionChanged="ModelCombo_SelectionChanged"
-                                              TextSubmitted="ModelCombo_TextSubmitted"
-                                              HorizontalAlignment="Stretch" />
+                                    <AutoSuggestBox Header="Model"
+                                                    PlaceholderText="Ollama model name"
+                                                    Tag="{x:Bind}"
+                                                    Text="{x:Bind Model, Mode=OneWay}"
+                                                    QueryIcon="ChevronDown"
+                                                    GotFocus="ModelSuggest_GotFocus"
+                                                    TextChanged="ModelSuggest_TextChanged"
+                                                    SuggestionChosen="ModelSuggest_SuggestionChosen"
+                                                    QuerySubmitted="ModelSuggest_QuerySubmitted"
+                                                    HorizontalAlignment="Stretch" />
 
                                     <TextBox Header="System prompt"
                                              Text="{x:Bind SystemPrompt, Mode=TwoWay}"
