@@ -337,3 +337,19 @@ Le plancher semble être autour de 0.04-0.07 en moyenne pour cet angle. Le best 
 ---
 
 ## Itération 19 — consigne de vérification de complétude
+
+**Score juge médian : 0.0000 / moyenne 0.0297**. Distribution : 0, 0, 0.05, 0, 0, 0.19, 0, 0.
+
+**Très bon résultat** : 6 samples à 0.00, 1 à 0.05, 1 à 0.19 (#6). Aucune catastrophe 0.50. Second meilleur derrière it.14 (0.0234) mais probablement plus stable (it.14 était partiellement chanceux).
+
+#6 stabilisé à 0.19 (comp=4 clar=4 str=4) au lieu d'osciller à 0.50. La consigne "vérifie mentalement que chaque thème, chaque exemple concret, chaque hypothèse et chaque qualification apparaît" + "si tu hésites entre garder ou couper, garde" a clairement aidé.
+
+#2 propre (0.00, pas de préambule).
+
+**Axes pour l'itération 20** :
+- Micro-renforcement de la "Vérification finale" pour cibler explicitement les allers-retours de raisonnement (vise #6).
+- Ne pas casser l'équilibre.
+
+---
+
+## Itération 20 — vérification renforcée sur allers-retours
