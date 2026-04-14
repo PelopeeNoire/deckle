@@ -19,8 +19,8 @@ namespace WhispUI;
 // Créée une fois dans App.OnLaunched, jamais détruite (Closing→Cancel).
 //
 // Cycle de vie :
-//   StatusChanged "Enregistrement..."       → ShowRecording()
-//   StatusChanged "Transcription en cours..." → SwitchToTranscribing()
+//   StatusChanged "Recording"      → ShowRecording()
+//   StatusChanged "Transcribing"   → SwitchToTranscribing()
 //   TranscriptionFinished                   → Hide()
 //
 // Tous les appels publics sont thread-safe (marshal via DispatcherQueue).
@@ -224,11 +224,11 @@ public sealed partial class HudWindow : Window
     // Pre-recording placeholder : the HUD appears as soon as the hotkey is
     // pressed, without waiting for the mic probe and model load. Digits and
     // beacon are painted with the neutral system brush so the HUD reads as
-    // "armed, not yet running". When the engine fires "Enregistrement...",
+    // "armed, not yet running". When the engine fires "Recording",
     // ShowRecording() takes over and clears these explicit brushes.
     //
-    // Covers both the "Préparation" state (between hotkey and probe) and the
-    // "Chargement du modèle" state (first pipeline after idle unload) — the
+    // Covers both the "Preparing" state (between hotkey and probe) and the
+    // "Loading model" state (first pipeline after idle unload) — the
     // visual is identical, only the status string behind it differs.
     public void ShowPreparing()
     {

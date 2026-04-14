@@ -102,6 +102,15 @@ Quand je doute d'un rendu ou d'un pattern, je compare avec :
 - **Si incertain : dire « je ne sais pas ».** Zéro supposition silencieuse.
 - **Ne jamais lancer de build WhispUI** (ni `build-run.ps1`, ni `MSBuild.exe`, ni aucune variante). Louis s'en charge avec son script. S'arrêter au résumé des changements, laisser Louis builder et valider runtime.
 
+### Langue — tout le code et toute l'UI sont en anglais
+
+Cette règle **supplante** le défaut global (« UI dans la langue cible = FR »). Sur ce projet :
+
+- **Strings user-facing en anglais d'emblée** : labels UI, messages d'erreur visibles utilisateur, tooltips, statuts tray, chrono HUD, placeholders, copy Settings, status keys du moteur. Même quand la conversation avec Louis se déroule en français.
+- **Code en anglais** (commentaires, noms, logs techniques) — identique au défaut global.
+- **Traduction FR éventuelle plus tard** : c'est une passe localization dédiée, pas un va-et-vient permanent dans la source. On ne pense jamais « je mets en FR je traduirai plus tard » — on pense en anglais.
+- **Dette héritée** : quand on croise encore du FR dans le code existant, on bascule au passage. Petits sweeps opportunistes, pas un chantier dédié.
+
 ---
 
 ## Environnement technique
