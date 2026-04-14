@@ -70,6 +70,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         // ShowNoActivate, which positions bottom-center and calls SW_SHOWNOACTIVATE.
         _hudWindow = new HudWindow();
 
+        // HUD feedback sink: picks up log entries that carry a UserFeedback
+        // payload and surfaces them on the HUD. Log entries without feedback
+        // flow only through DebugLogSink / LogWindow. Added after HudWindow
+        // is constructed so the closure captures a non-null reference.
+        _log.AddSink(new HudFeedbackSink(fb => _hudWindow.ShowUserFeedback(fb)));
+
         _tray = new TrayIconManager
         {
             OnShowLogs        = () => _logWindow.ShowAndActivate(),
@@ -100,8 +106,26 @@ public partial class App : Microsoft.UI.Xaml.Application
             else if (status == "Transcription en cours...")
                 _hudWindow.SwitchToTranscribing();
         };
-        _engine.TranscriptionFinished += () => _hudWindow.Hide();
-        _engine.MicrophoneUnavailable += (title, body) => _hudWindow.ShowError(title, body);
+        _engine.TranscriptionFinished += outcome =>
+        {
+            switch (outcome)
+            {
+                case TranscriptionOutcome.Pasted:
+                    // Brief success flash, then the auto-hide timer inside
+                    // HudWindow takes over.
+                    _hudWindow.ShowCopied();
+                    break;
+                case TranscriptionOutcome.ClipboardOnly:
+                    // Paste refused (target lost, foreground = WhispUI,
+                    // SendInput partial) — tell the user the text is on the
+                    // clipboard and keep the HUD up long enough to read.
+                    _hudWindow.ShowCopiedManualPaste();
+                    break;
+                default:
+                    _hudWindow.Hide();
+                    break;
+            }
+        };
         // Synchronous rendezvous just before paste: hide the HUD and wait for
         // SW_HIDE to be effective on the UI thread before the engine sends
         // SendInput. Avoids the race where Hide() (triggered async after paste)
@@ -150,13 +174,29 @@ public partial class App : Microsoft.UI.Xaml.Application
             _       => Microsoft.UI.Xaml.ElementTheme.Default,
         };
 
+        // Caption buttons are drawn by DWM via AppWindow.TitleBar, not by the
+        // XAML tree — RequestedTheme on Content does not reach them, which is
+        // what causes the dark/light switch latency on min/max/close. The fix
+        // is AppWindow.TitleBar.PreferredTheme (WindowsAppSDK 1.7+), which
+        // tells DWM which caption-button palette to use. "Default" lets the
+        // system follow the app theme; explicit Light/Dark overrides it.
+        var titleBarTheme = theme switch
+        {
+            Microsoft.UI.Xaml.ElementTheme.Light => Microsoft.UI.Windowing.TitleBarTheme.Light,
+            Microsoft.UI.Xaml.ElementTheme.Dark  => Microsoft.UI.Windowing.TitleBarTheme.Dark,
+            _                                     => Microsoft.UI.Windowing.TitleBarTheme.UseDefaultAppMode,
+        };
+
         if (Current is not App app) return;
 
         foreach (var window in new Microsoft.UI.Xaml.Window?[]
                      { app._settingsWindow, app._logWindow, app._hudWindow, app._anchor })
         {
-            if (window?.Content is Microsoft.UI.Xaml.FrameworkElement fe)
+            if (window is null) continue;
+            if (window.Content is Microsoft.UI.Xaml.FrameworkElement fe)
                 fe.RequestedTheme = theme;
+            if (window.AppWindow?.TitleBar is { } tb)
+                tb.PreferredTheme = titleBarTheme;
         }
     }
 
@@ -238,6 +278,14 @@ public partial class App : Microsoft.UI.Xaml.Application
             _log.Step(LogSource.Hotkey, $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
             if (Win32Util.GetFocusedClass(target) is null)
                 _log.Warning(LogSource.Hotkey, "target has no keyboard focus — paste may fail");
+
+            // Show the HUD immediately in its "Preparing" state so the user
+            // gets visual feedback from the very first millisecond after the
+            // hotkey press, before the mic probe and any model load that
+            // might be needed. ShowRecording() later replaces the neutral
+            // digits with the recording accent when StatusChanged fires.
+            _hudWindow?.ShowPreparing();
+
             _engine.StartRecording(useLlm: useLlm, shouldPaste: true, pasteTarget: target);
         }
         else
