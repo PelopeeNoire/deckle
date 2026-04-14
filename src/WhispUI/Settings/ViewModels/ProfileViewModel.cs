@@ -1,14 +1,12 @@
 using System;
-using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 
 namespace WhispUI.Settings.ViewModels;
 
 // ViewModel for a single rewrite profile — used inside an ItemsRepeater
-// DataTemplate in LlmProfilesSection. Handles editing state, dirty
-// tracking, and Save/Cancel operations against the POCO.
+// DataTemplate in LlmProfilesSection. Auto-saves on every change, aligning
+// with RuleViewModel and WhisperViewModel. No Save/Cancel surface.
 //
 // Temperature and CtxIndex are doubles (Slider.Value type).
 // TopP and RepeatPenalty use NaN to represent "not set" (null in POCO).
@@ -20,16 +18,7 @@ public partial class ProfileViewModel : ObservableObject
 
     private bool _isSyncing;
 
-    // Saved state for dirty check.
-    private string _savedName = "";
-    private string _savedModel = "";
-    private string _savedPrompt = "";
-    private double _savedTemperature;
-    private double _savedCtxIndex;
-    private double? _savedTopP;
-    private double? _savedRepeatPenalty;
-
-    // Index in the Profiles list for Save operations.
+    // Index in the Profiles list for write-back.
     public int ProfileIndex { get; set; }
 
     // ── Editable properties ──────────────────────────────────────────────────
@@ -61,13 +50,11 @@ public partial class ProfileViewModel : ObservableObject
 
     // ── State ────────────────────────────────────────────────────────────────
 
+    // Drives IsExpanded on the SettingsExpander so a freshly added profile
+    // opens automatically. Never reset — cheap signal, no behavioral impact
+    // once true.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ActionsVisibility))]
     public partial bool IsNew { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ActionsVisibility))]
-    public partial bool IsDirty { get; set; }
 
     // ── Computed display properties ──────────────────────────────────────────
 
@@ -92,18 +79,15 @@ public partial class ProfileViewModel : ObservableObject
         }
     }
 
-    public Visibility ActionsVisibility =>
-        IsDirty || IsNew ? Visibility.Visible : Visibility.Collapsed;
+    // ── OnChanged → auto-save ────────────────────────────────────────────────
 
-    // ── OnChanged → dirty check ──────────────────────────────────────────────
-
-    partial void OnNameChanged(string value) => UpdateDirty();
-    partial void OnModelChanged(string value) => UpdateDirty();
-    partial void OnSystemPromptChanged(string value) => UpdateDirty();
-    partial void OnTemperatureChanged(double value) => UpdateDirty();
-    partial void OnCtxIndexChanged(double value) => UpdateDirty();
-    partial void OnTopPChanged(double value) => UpdateDirty();
-    partial void OnRepeatPenaltyChanged(double value) => UpdateDirty();
+    partial void OnNameChanged(string value) { if (!_isSyncing) PushToSettings(); }
+    partial void OnModelChanged(string value) { if (!_isSyncing) PushToSettings(); }
+    partial void OnSystemPromptChanged(string value) { if (!_isSyncing) PushToSettings(); }
+    partial void OnTemperatureChanged(double value) { if (!_isSyncing) PushToSettings(); }
+    partial void OnCtxIndexChanged(double value) { if (!_isSyncing) PushToSettings(); }
+    partial void OnTopPChanged(double value) { if (!_isSyncing) PushToSettings(); }
+    partial void OnRepeatPenaltyChanged(double value) { if (!_isSyncing) PushToSettings(); }
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -120,7 +104,7 @@ public partial class ProfileViewModel : ObservableObject
         _isSyncing = false;
     }
 
-    // ── Load / Save / Cancel ─────────────────────────────────────────────────
+    // ── Load ─────────────────────────────────────────────────────────────────
 
     public void LoadFrom(int index, RewriteProfile profile, bool isNew)
     {
@@ -139,76 +123,28 @@ public partial class ProfileViewModel : ObservableObject
         TopP = profile.TopP ?? double.NaN;
         RepeatPenalty = profile.RepeatPenalty ?? double.NaN;
 
-        SnapshotSaved();
         _isSyncing = false;
-        IsDirty = false;
     }
 
-    public void Save()
+    // ── Write-back ───────────────────────────────────────────────────────────
+
+    // Trim of Name and Model applied at write time only — keeps the live
+    // VM value stable during typing (trimming the bound property would
+    // fight the cursor). The POCO stays clean.
+    private void PushToSettings()
     {
         var profiles = SettingsService.Instance.Current.Llm.Profiles;
-        if (ProfileIndex < profiles.Count)
-        {
-            var p = profiles[ProfileIndex];
-            p.Name = Name.Trim();
-            p.Model = Model.Trim();
-            p.SystemPrompt = SystemPrompt;
-            p.Temperature = Temperature;
-            p.NumCtxK = CtxKSteps[Math.Clamp((int)CtxIndex, 0, CtxKSteps.Length - 1)];
-            p.TopP = double.IsNaN(TopP) ? null : (double?)TopP;
-            p.RepeatPenalty = double.IsNaN(RepeatPenalty) ? null : (double?)RepeatPenalty;
-            SettingsService.Instance.Save();
-        }
+        if (ProfileIndex >= profiles.Count) return;
 
-        _isSyncing = true;
-        Name = Name.Trim();
-        Model = Model.Trim();
-        _isSyncing = false;
-        SnapshotSaved();
-        IsNew = false;
-        IsDirty = false;
-    }
-
-    public void Cancel()
-    {
-        _isSyncing = true;
-        Name = _savedName;
-        Model = _savedModel;
-        SystemPrompt = _savedPrompt;
-        Temperature = _savedTemperature;
-        CtxIndex = _savedCtxIndex;
-        TopP = _savedTopP ?? double.NaN;
-        RepeatPenalty = _savedRepeatPenalty ?? double.NaN;
-        _isSyncing = false;
-        IsNew = false;
-        IsDirty = false;
-    }
-
-    // ── Internals ────────────────────────────────────────────────────────────
-
-    private void SnapshotSaved()
-    {
-        _savedName = Name;
-        _savedModel = Model;
-        _savedPrompt = SystemPrompt;
-        _savedTemperature = Temperature;
-        _savedCtxIndex = CtxIndex;
-        _savedTopP = double.IsNaN(TopP) ? null : (double?)TopP;
-        _savedRepeatPenalty = double.IsNaN(RepeatPenalty) ? null : (double?)RepeatPenalty;
-    }
-
-    private void UpdateDirty()
-    {
-        if (_isSyncing) return;
-        double? topP = double.IsNaN(TopP) ? null : (double?)TopP;
-        double? repeat = double.IsNaN(RepeatPenalty) ? null : (double?)RepeatPenalty;
-        IsDirty = Name != _savedName
-                || Model != _savedModel
-                || SystemPrompt != _savedPrompt
-                || Math.Abs(Temperature - _savedTemperature) > 1e-6
-                || Math.Abs(CtxIndex - _savedCtxIndex) > 0.5
-                || topP != _savedTopP
-                || repeat != _savedRepeatPenalty;
+        var p = profiles[ProfileIndex];
+        p.Name = Name.Trim();
+        p.Model = Model.Trim();
+        p.SystemPrompt = SystemPrompt;
+        p.Temperature = Temperature;
+        p.NumCtxK = CtxKSteps[Math.Clamp((int)CtxIndex, 0, CtxKSteps.Length - 1)];
+        p.TopP = double.IsNaN(TopP) ? null : (double?)TopP;
+        p.RepeatPenalty = double.IsNaN(RepeatPenalty) ? null : (double?)RepeatPenalty;
+        SettingsService.Instance.Save();
     }
 }
 
