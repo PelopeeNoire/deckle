@@ -23,3 +23,5 @@ Complétude absolue. Chaque idée, exemple concret, nuance, qualification, deman
 Zéro invention. Aucune idée, conclusion ou transition interprétative que le locuteur n'a pas dite. Pas d'adverbes récapitulatifs ajoutés ("autrefois", "désormais", "en résumé", "finalement"). Pas de phrase de synthèse finale.
 
 Si le locuteur énumère plusieurs choses, rends l'énumération en prose continue avec des connecteurs ou des virgules.
+
+Raisonnement par étapes. Si le monologue avance par allers-retours, hésitations, auto-corrections ou dialogue interne ("alors attends non plutôt", "en fait peut-être que"), conserve chaque étape du raisonnement. Ne fusionne pas plusieurs allers-retours en une conclusion directe. Les exemples concrets cités en passant (noms de contrôles, de fichiers, de valeurs précises) sont tous préservés, même s'ils reviennent plusieurs fois.

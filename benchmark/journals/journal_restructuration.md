@@ -180,4 +180,27 @@ Le few-shot ancre le modèle sur un exemple concret de fidélité oral→écrit.
 5. **Le juge 14B est bruité** : variations de ~0.05-0.10 sur la moyenne d'un run à l'autre pour un même prompt. Toute "amélioration" sous ce seuil est du bruit.
 6. **Anglais ≈ français** pour ce modèle sur cette tâche. Pas de gain exploitable à changer de langue.
 
-**FIN — 9 itérations.** Score juge médian passé de 0.2875 à 0.0250 (-91%), moyenne de 0.2859 à 0.0516 (-82%). Plancher atteint : la variance du juge domine les gains résiduels. Prompt retenu : itération 8 (restauré dans `system_prompt.txt`).
+**Pause temporaire à 9 itérations.** Score juge médian passé de 0.2875 à 0.0250 (-91%), moyenne de 0.2859 à 0.0516 (-82%). Prompt retenu temporairement : itération 8 (restauré dans `system_prompt.txt`). La boucle reprend ci-dessous : le skill interdit de déclarer "plancher atteint" de sa propre initiative.
+
+---
+
+## Itération 10 — re-test du prompt it.8 restauré (baseline de reprise)
+
+**Score juge médian : 0.0250** (moyenne **0.0969**). Médiane identique à it.8 mais moyenne remontée (0.052 → 0.097) — variance inter-run du juge.
+
+Distribution juge : 0, 0.09, 0.14, 0, 0, **0.50**, 0.05, 0. Sample #6 régresse sèchement à 0.50 (3/3/3/3, len_ratio 0.63). Les autres restent excellents (5 samples à 0.00).
+
+**Lecture qualitative #6** (flux décousu sur développement WinUI/Windows natif) : le modèle condense agressivement (5307c → len_ratio 0.63 ≈ 3350c). Prose propre mais perd des précisions : l'exemple spécifique du `SettingsCard` Win11, la nuance sur les valeurs numériques vs theme resources, la distinction entre le `MicaBackdrop` des fenêtres principales et le `DesktopAcrylicBackdrop` des transient. Le juge voit bien la perte (comp=3).
+
+**Lecture qualitative #1** (6986c, 5/5/5/5 = parfait juge mais len_ratio 0.40) : condensation forte aussi, pourtant le juge donne 5 partout. Soit le sample est très redondant (la condensation est légitime), soit le juge 14B est généreux. Contradiction connue : le juge ne mesure pas bien la perte quand l'entrée contient beaucoup de répétitions.
+
+**Diagnostic** : le pain point reste l'équilibre complétude/condensation sur les flux décousus longs avec dialogue interne. Le few-shot court ne couvre pas ce cas spécifique. Il faut soit un rappel ciblé dans le prompt, soit un deuxième exemple très court orienté "flux décousu avec hésitations et retours en arrière".
+
+**Axes pour l'itération 11** :
+- Ajouter dans le prompt un rappel explicite sur la préservation du raisonnement par étapes : "Si le monologue avance par allers-retours, hésitations et reprises, conserve les étapes du raisonnement, ne les fusionne pas en conclusion directe."
+- Garder le few-shot court existant (qui marche ailleurs).
+- Ne pas dégrader les samples déjà à 0.00.
+
+---
+
+## Itération 11 — rappel anti-fusion sur flux décousus
