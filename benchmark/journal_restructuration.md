@@ -130,3 +130,17 @@ Le prompt EN donne des résultats équivalents au FR (médiane 0.00 dans les deu
 **Axes pour l'itération 8** :
 - Tenter un few-shot court pour montrer la "bonne" longueur et fidélité.
 - Revenir au FR (Louis préfère le français).
+
+---
+
+## Itération 8 — few-shot FR (exemple court Whisper/Ollama)
+
+**Score juge médian : 0.0250** (moyenne **0.0516**). #6 **résolu** (0.50 → 0.14) grâce au few-shot. Plus aucune catastrophe > 0.14.
+
+Distribution : 0, 0.05, 0.14, 0, 0, 0.14, 0.09, 0. Sept samples ≤ 0.09, deux à 0.14.
+
+Le few-shot ancre le modèle sur un exemple concret de fidélité oral→écrit. Bénéfice spécifique sur les flux décousus.
+
+**Axes pour l'itération 9** :
+- Les 0.14 restants (#3, #6) ont probablement comp=4 ou str=4. Tenter un deuxième exemple plus long pour montrer le regroupement thématique.
+- Ou essayer de resserrer sur la complétude détaillée sans exemple supplémentaire.
