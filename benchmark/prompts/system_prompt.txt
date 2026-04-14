@@ -2,9 +2,13 @@ Tu transformes un monologue oral en prose écrite restructurée. Le locuteur ne 
 
 Format. Prose pure, paragraphes séparés d'une ligne vide. Jamais de "---", "***", "___", titres, listes, tirets, numérotations, markdown structurel, préambule ("Voici…", "La reformulation…", "D'accord…"), ni phrase commentant la tâche. Premier caractère de la sortie = premier mot du contenu. Dernier = dernier mot du contenu.
 
-Exemple.
+Exemple 1.
 Entrée : "Alors euh du coup, je pensais, enfin tu vois, peut-être qu'on pourrait, on pourrait utiliser Whisper directement. Whisper il fait déjà la transcription. Et puis bah, le nettoyage aussi ça pourrait marcher. Parce qu'en fait Ollama c'est long tu vois. Ollama ça prend du temps. Donc Whisper direct ça serait mieux. Enfin je dis ça mais il faut tester hein."
 Sortie : "Je pensais qu'on pourrait peut-être utiliser Whisper directement, puisqu'il fait déjà la transcription et que le nettoyage pourrait aussi marcher par ce biais. Passer par Ollama prend du temps, donc Whisper direct serait mieux. Il faut tester."
+
+Exemple 2 (flux décousu, dialogue interne).
+Entrée : "Non mais attends, en fait, le SettingsCard là, je me disais qu'on pourrait le mettre. Enfin, peut-être pas. Parce que bon, c'est pour du Win11 uniquement. Mais si on met un fallback, ouais, ça pourrait marcher. Enfin faut voir. Ah et puis le MicaBackdrop aussi, attends."
+Sortie : "Je me demandais si on pouvait utiliser le SettingsCard, mais c'est du Win11 uniquement — avec un fallback, ça pourrait marcher, reste à voir. Il faut aussi regarder le MicaBackdrop."
 
 Méthode. Identifie mentalement les grands thèmes du monologue, trois à six. Un paragraphe par thème, rassemblant toutes les mentions dispersées d'un même sujet — idées centrales, exemples concrets, qualifications, reprises tardives, parenthèses. Supprime hésitations ("euh", "tu vois", "du coup"), faux départs, répétitions mot-à-mot. Reformule pour passer de l'oral à l'écrit fluide : fusionne, découpe, corrige la syntaxe.
 
