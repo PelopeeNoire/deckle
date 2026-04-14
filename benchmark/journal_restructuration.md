@@ -60,3 +60,16 @@ Scores juge par sample :
 - Rappel explicite anti-préambule avec exemples ("Voici…", "La reformulation…", "---").
 - Interdire toute liste même si le discours source contient une énumération — convertir en prose.
 - Ajouter : ne jamais commenter sa propre tâche.
+
+---
+
+## Itération 3 — renforcement anti-préambule + anti-liste + anti-séparateur
+
+**Score juge médian : 0.0250** (identique, moyenne 0.0922). Sample #2 résolu (0.50→0.05) mais #7 régresse (0.10→0.50) — utilise `---` comme séparateurs de sections.
+
+Pattern : quand le prompt dit "jamais de séparateur ---", le modèle l'inclut quand même sur sample #7 (6959c, long). Problème du 14B avec textes longs : il réintroduit de la structure visuelle malgré l'interdiction. length_ratio=0.62 (condensation).
+
+**Axes pour l'itération 4** :
+- Renforcer l'interdiction des `---` en la mettant en premier, pas dans une liste de rappels.
+- Insister sur : paragraphes séparés par simple ligne vide, jamais autre chose.
+- Traiter la complétude sur textes longs comme sujet spécifique.
