@@ -144,3 +144,40 @@ Le few-shot ancre le modèle sur un exemple concret de fidélité oral→écrit.
 **Axes pour l'itération 9** :
 - Les 0.14 restants (#3, #6) ont probablement comp=4 ou str=4. Tenter un deuxième exemple plus long pour montrer le regroupement thématique.
 - Ou essayer de resserrer sur la complétude détaillée sans exemple supplémentaire.
+
+---
+
+## Itération 9 — few-shot remplacé par un exemple multi-paragraphes
+
+**Score juge médian : 0.0688** (moyenne 0.1078). **Régression franche** vs it.8. Sample #6 repart à 0.50, #7 à 0.14. L'exemple plus long n'aide pas — peut-être même qu'il confond le modèle sur quand séparer les paragraphes.
+
+**Décision** : retour au prompt itération 8 (best overall : médiane 0.025, moyenne 0.052, aucun 0.50).
+
+---
+
+## Bilan et fin de boucle
+
+**Meilleur résultat : itération 8** (few-shot FR court, Whisper/Ollama).
+- Baseline (it.1) : médiane **0.2875**, moyenne 0.2859.
+- Best (it.8) : médiane **0.0250**, moyenne **0.0516**, tous samples ≤ 0.14.
+- Best médiane atteinte : **0.0000** (it.5 et it.7) avec variance inter-run.
+
+**Trajectoire des scores juge (médian / moyen)** :
+- it.2 FR réécrit : 0.025 / 0.094
+- it.3 anti-préambule : 0.025 / 0.092
+- it.4 prose anti-contagion : 0.025 / 0.047
+- it.5 complétude détaillée : 0.000 / 0.081
+- it.6 cible longueur : 0.025 / 0.097
+- it.7 prompt EN : 0.000 / 0.075
+- **it.8 few-shot FR : 0.025 / 0.052** ← meilleur compromis
+- it.9 few-shot multi-para : 0.069 / 0.108 (régression)
+
+**Apprentissages clés** :
+1. Le levier principal était d'**autoriser explicitement la reformulation** (it.1→it.2 : 0.29→0.03). Le prompt de départ, hérité du Nettoyage, interdisait la reformulation — contradictoire avec l'objectif de restructuration.
+2. Le **few-shot court** fixe les flux très décousus (sample #6 : 0.50→0.14). Le modèle s'ancre sur un exemple concret de fidélité.
+3. Un **few-shot long ou multi-paragraphes** peut au contraire désorienter le modèle et augmenter la variance. Préférer un exemple court et ciblé.
+4. **Sample #6 est le pain point systématique** : flux oral très décousu avec dialogue interne. Le modèle est tenté de condenser ~60% au lieu de 80-100%. La consigne de longueur cible ne bride pas suffisamment.
+5. **Le juge 14B est bruité** : variations de ~0.05-0.10 sur la moyenne d'un run à l'autre pour un même prompt. Toute "amélioration" sous ce seuil est du bruit.
+6. **Anglais ≈ français** pour ce modèle sur cette tâche. Pas de gain exploitable à changer de langue.
+
+**FIN — 9 itérations.** Score juge médian passé de 0.2875 à 0.0250 (-91%), moyenne de 0.2859 à 0.0516 (-82%). Plancher atteint : la variance du juge domine les gains résiduels. Prompt retenu : itération 8 (restauré dans `system_prompt.txt`).
