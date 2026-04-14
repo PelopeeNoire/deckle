@@ -86,10 +86,11 @@ public sealed partial class LlmPage : Page
         _context.RaiseStateChanged();
 
         // Update model ComboBoxes in profiles after Ollama responds.
+        // ObservableCollection on the section propagates to bound ItemsSources
+        // without needing to recreate the ProfileViewModels.
         var modelNames = new List<string>();
         foreach (var m in models) modelNames.Add(m.Name);
-        ProfilesSection.AvailableModelNames = modelNames;
-        ProfilesSection.Reload();
+        ProfilesSection.SetAvailableModelNames(modelNames);
     }
 
     private void OnBackgroundTapped(object sender, TappedRoutedEventArgs e)

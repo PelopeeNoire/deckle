@@ -13,15 +13,23 @@ namespace WhispUI.Settings.Llm;
 // DataTemplate + ProfileViewModel). Le code-behind ne gère que :
 //  - Reload() → repopule l'ObservableCollection depuis le POCO
 //  - Click handlers (Save/Cancel/Delete/Add) via Tag={x:Bind}
-//  - Model ComboBox population via Loaded (liste fournie par LlmPage)
+//  - Model ComboBox SelectionChanged → push vers le VM
 //  - ProfilesChanged event pour notifier Rules et ManualShortcut
 
 public sealed partial class LlmProfilesSection : UserControl
 {
     public ObservableCollection<ProfileViewModel> Profiles { get; } = new();
 
-    // Model names available from Ollama — set by LlmPage after refresh.
-    internal List<string> AvailableModelNames { get; set; } = new();
+    // Model names available from Ollama — bound as ItemsSource by the
+    // ComboBox in each profile template. ObservableCollection so updates
+    // from LlmPage.RefreshOllamaStateAsync propagate without reload.
+    public ObservableCollection<string> AvailableModelNames { get; } = new();
+
+    internal void SetAvailableModelNames(IEnumerable<string> names)
+    {
+        AvailableModelNames.Clear();
+        foreach (var n in names) AvailableModelNames.Add(n);
+    }
 
     public event EventHandler? ProfilesChanged;
 
@@ -119,20 +127,17 @@ public sealed partial class LlmProfilesSection : UserControl
             vm.SystemPrompt = tb.Text;
     }
 
-    // ── Model ComboBox (IsEditable) ────────────────────────────────────────
-
-    private void ModelCombo_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not ComboBox combo || combo.Tag is not ProfileViewModel vm)
-            return;
-
-        combo.Items.Clear();
-        foreach (var name in AvailableModelNames)
-            combo.Items.Add(name);
-
-        // Set text to current model (may not be in the list — still shown).
-        combo.Text = vm.Model;
-    }
+    // ── Model ComboBox (editable) ──────────────────────────────────────────
+    //
+    // ItemsSource is bound to AvailableModelNames (Ollama-refreshed list).
+    // IsEditable="True" gives a TextBox-style input with a dropdown of the
+    // known models: the user can pick from the list OR type a model that is
+    // not in the list (Ollama offline, model renamed, etc.).
+    //
+    // Text is OneWay (VM → UI) so the stored model name is shown regardless
+    // of whether it is in the dropdown. UI → VM flows through:
+    //   - SelectionChanged when the user picks an item from the dropdown
+    //   - TextSubmitted when the user types a value and presses Enter / blurs
 
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -147,7 +152,7 @@ public sealed partial class LlmProfilesSection : UserControl
     private void ModelCombo_TextSubmitted(ComboBox sender, ComboBoxTextSubmittedEventArgs args)
     {
         if (sender.Tag is ProfileViewModel vm)
-            vm.Model = args.Text?.Trim() ?? "";
+            vm.Model = args.Text ?? string.Empty;
     }
 
     // ── Add ─────────────────────────────────────────────────────────────────
