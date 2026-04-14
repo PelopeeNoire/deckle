@@ -8,7 +8,6 @@ public static class LogSource
 {
     // ── App lifecycle ────────────────────────────────────────────────────────
     public const string App    = "APP";
-    public const string Anchor = "ANCHOR";
     public const string Status = "STATUS";
     public const string Crash  = "CRASH";
 

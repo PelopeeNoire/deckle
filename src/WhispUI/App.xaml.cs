@@ -8,7 +8,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 {
     private static readonly LogService _log = LogService.Instance;
 
-    private AnchorWindow? _anchor;
+    private MessageOnlyHost? _messageHost;
+    private HotkeyManager? _hotkeyManager;
     private LogWindow? _logWindow;
 
     internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
@@ -136,10 +137,14 @@ public partial class App : Microsoft.UI.Xaml.Application
         _tray.UpdateStatus("Ready");
         _log.Info(LogSource.Status, "Ready");
 
-        _anchor = new AnchorWindow(_tray, OnHotkey);
-
-        _anchor.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 100, 100));
-        _anchor.AppWindow.Show(false);
+        // Message-only Win32 host — invisible by construction (HWND_MESSAGE
+        // parent). Hosts the tray callback and global hotkeys without any
+        // XAML window or off-screen trick.
+        _messageHost = new MessageOnlyHost();
+        _tray.Register(_messageHost.Hwnd);
+        _hotkeyManager = new HotkeyManager(_messageHost.Hwnd, OnHotkey);
+        _hotkeyManager.Register();
+        DebugLog.Write("APP", "tray + hotkeys registered on message-only host");
 
         // Apply saved theme (System/Light/Dark).
         ApplyTheme(Settings.SettingsService.Instance.Current.Appearance.Theme);
@@ -190,7 +195,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (Current is not App app) return;
 
         foreach (var window in new Microsoft.UI.Xaml.Window?[]
-                     { app._settingsWindow, app._logWindow, app._hudWindow, app._anchor })
+                     { app._settingsWindow, app._logWindow, app._hudWindow })
         {
             if (window is null) continue;
             if (window.Content is Microsoft.UI.Xaml.FrameworkElement fe)
@@ -214,8 +219,10 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         DebugLog.Write("APP", "Shutdown requested");
         try { Settings.SettingsService.Instance.Flush(); } catch (Exception ex) { DebugLog.Write("APP", "settings flush: " + ex.Message); }
-        try { _tray?.Dispose();   } catch (Exception ex) { DebugLog.Write("APP", "tray dispose: " + ex.Message); }
-        try { _engine?.Dispose(); } catch (Exception ex) { DebugLog.Write("APP", "engine dispose: " + ex.Message); }
+        try { _hotkeyManager?.Dispose(); } catch (Exception ex) { DebugLog.Write("APP", "hotkeys dispose: " + ex.Message); }
+        try { _tray?.Dispose();          } catch (Exception ex) { DebugLog.Write("APP", "tray dispose: " + ex.Message); }
+        try { _messageHost?.Dispose();   } catch (Exception ex) { DebugLog.Write("APP", "message host dispose: " + ex.Message); }
+        try { _engine?.Dispose();        } catch (Exception ex) { DebugLog.Write("APP", "engine dispose: " + ex.Message); }
         Environment.Exit(0);
     }
 
