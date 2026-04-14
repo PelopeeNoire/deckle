@@ -289,3 +289,19 @@ Distribution : 0, 0.05, 0.14, 0, 0, 0.50, 0, 0.
 ---
 
 ## Itération 16 — revert vers it.14 (re-test stabilité)
+
+**Score juge médian : 0.0000 / moyenne 0.0813**. Même prompt qu'it.14 (identique au byte près) mais moyenne monte de 0.0234 à 0.0813.
+
+Distribution : 0, 0.05, 0.10, 0, 0, 0.50, 0, 0.
+
+**Découverte importante** : #2 a reproduit le préambule "Voici la reformulation structurée selon tes directives :\n\n---" **sans avoir le label "Exemple 2" dans le prompt**. Ce bug n'est donc pas dû au second exemple d'it.15 : il est latent dans le prompt compressé lui-même. Sur certains runs, le modèle "décide" de préambuler malgré la consigne.
+
+La moyenne 0.0234 d'it.14 était partiellement chanceuse. Le vrai plancher moyenne du prompt it.14 est plus proche de 0.05-0.08 compte tenu de la variance #2 et #6.
+
+**Axes pour l'itération 17** :
+- Renforcer la consigne anti-préambule : la mettre **en tout premier** dans le prompt (primacy effect) + la formuler négativement.
+- Garder toute la compression d'it.14 par ailleurs.
+
+---
+
+## Itération 17 — anti-préambule en ouverture (primacy)
