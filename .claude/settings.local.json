@@ -19,7 +19,13 @@
       "Bash(git add)",
       "Bash(git commit)",
       "Bash(gh search:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree:*)",
+      "Bash(python -c ':*)",
+      "Bash(python -c )",
+      "Bash(python benchmark.py --skip-judge --verbose)",
+      "Bash", "Read", "Write", "Edit", "Glob", "Grep"
     ]
   }
 }
