@@ -305,3 +305,17 @@ La moyenne 0.0234 d'it.14 était partiellement chanceuse. Le vrai plancher moyen
 ---
 
 ## Itération 17 — anti-préambule en ouverture (primacy)
+
+**Score juge médian : 0.0250 / moyenne 0.0469**. Distribution : 0, 0.09, 0.05, 0, 0.05, 0.19, 0, 0.
+
+#2 stabilisé (0.09, pas de préambule "Voici…"). #6 à 0.19 (pas de catastrophe 0.50, mais moins bon que le meilleur run it.14). Aucune catastrophe cette fois.
+
+Le renforcement anti-préambule en tête a limité le risque de régression sur #2. Mais il a sans doute coûté un peu en médiane (passée de 0.000 à 0.025) — probablement par effet d'accent qui distrait légèrement de la consigne de complétude.
+
+**Axes pour l'itération 18** :
+- Tenter une variation dans la formulation de la "Méthode" en trois étapes en prose ("D'abord… Ensuite… Enfin…") pour mieux guider le processus.
+- Garder l'anti-préambule en ouverture.
+
+---
+
+## Itération 18 — méthode en trois étapes explicites
