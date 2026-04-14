@@ -448,3 +448,17 @@ Pattern observé sur les runs : la majorité des samples (#1, #3, #4, #8) sont s
 ---
 
 ## Itération 26 — réduction taille + emphase regroupement thématique
+
+**Score juge médian : 0.0500 / moyenne 0.0922**. Distribution : 0, 0.09, 0.05, 0.05, 0, 0.50, 0.05, 0. Un seul outlier (#6) à 0.50, tous les autres ≤ 0.09. **Excellente moyenne** (0.0922 = parmi les meilleurs runs sur la série). 3 samples à 0.00, 5 samples ≤ 0.09.
+
+La méthode narrative ("parcours mentalement…", "fais la liste mentale de toutes les mentions") semble bien guider sur les samples longs (#2, #5, #7 stables) sans dégrader les courts. Pain point résiduel toujours #6 (3/3/3/3 = juge perçoit perte d'idées + organisation insuffisante).
+
+Lecture #6 (output partiel) : 4 paragraphes cohérents (Whisper natif, nettoyage sans Ollama, sliding windows, approche X-Way…) — le contenu paraît correct mais le juge note 3/3/3/3, suggérant perte de nuances. Le len_ratio 0.70 confirme une compression non négligeable.
+
+**Axes pour l'itération 27** :
+- Compresser la section "Vérification finale" (redondante avec "Complétude absolue").
+- Garder l'ossature narrative qui semble efficace.
+
+---
+
+## Itération 27 — compression vérification finale (redondance)
