@@ -61,11 +61,7 @@
                                                     TextChanged="ModelSuggest_TextChanged"
                                                     SuggestionChosen="ModelSuggest_SuggestionChosen"
                                                     QuerySubmitted="ModelSuggest_QuerySubmitted"
-                                                    HorizontalAlignment="Stretch">
-                                        <AutoSuggestBox.QueryIcon>
-                                            <FontIcon Glyph="&#xE70D;" />
-                                        </AutoSuggestBox.QueryIcon>
-                                    </AutoSuggestBox>
+                                                    HorizontalAlignment="Stretch" />
 
                                     <TextBox Header="System prompt"
                                              Text="{x:Bind SystemPrompt, Mode=TwoWay}"
