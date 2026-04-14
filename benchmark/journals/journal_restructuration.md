@@ -353,3 +353,19 @@ Le plancher semble être autour de 0.04-0.07 en moyenne pour cet angle. Le best 
 ---
 
 ## Itération 20 — vérification renforcée sur allers-retours
+
+**Score juge médian : 0.0938 / moyenne 0.2109**. **Régression franche** vs it.19 (0.000 / 0.030).
+
+Distribution : 0.50, 0.50, 0.14, 0, 0, 0.50, 0.05, 0. Trois catastrophes 0.50 (#1, #2, #6).
+
+Le simple ajout "chaque aller-retour de raisonnement" a clairement déstabilisé. Hypothèse : l'expression a été interprétée par le 14B comme une consigne de structure visible (peut-être qu'il a tenté de marquer les retours en arrière), faisant perdre la fluidité et la complétude. Aussi possible : variance violente qui amplifie un effet déjà fragile.
+
+**Décision** : revert intégral vers it.19 (consigne de vérification sans "aller-retour").
+
+**Axes pour l'itération 21** :
+- Revert vers it.19.
+- Tenter un autre angle : la structure, la formulation des paragraphes.
+
+---
+
+## Itération 21 — revert vers it.19 (consigne vérification originale)
