@@ -69,7 +69,8 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <FontIcon Grid.Column="0"
+            <FontIcon x:Name="ErrorIcon"
+                      Grid.Column="0"
                       Glyph="&#xF140;"
                       FontSize="24"
                       Margin="4,0,12,0"

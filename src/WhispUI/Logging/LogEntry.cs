@@ -16,15 +16,20 @@ public sealed class LogEntry
     public string Message { get; }
     public LogLevel Level { get; }
 
+    // Optional user-facing payload. When non-null, sinks routing to the user
+    // (HudFeedbackSink) will surface it. File/LogWindow sinks ignore it.
+    public UserFeedback? Feedback { get; }
+
     /// <summary>Formatted display text, computed once at creation.</summary>
     public string Text { get; }
 
-    public LogEntry(string source, string message, LogLevel level)
+    public LogEntry(string source, string message, LogLevel level, UserFeedback? feedback = null)
     {
         Timestamp = DateTimeOffset.Now;
         Source = source;
         Message = message;
         Level = level;
+        Feedback = feedback;
         Text = source.Length > 0
             ? $"{Timestamp:HH:mm:ss.fff} [{Source}] {Message}"
             : $"{Timestamp:HH:mm:ss.fff} {Message}";
