@@ -553,3 +553,20 @@ L'instruction "ne lisse pas les doutes du locuteur en certitudes" n'a pas améli
 ---
 
 ## Itération 34 — réintroduction vérification finale
+
+Non exécutée — boucle arrêtée par Louis avant benchmark. Le prompt final adopté dans WhispUI est celui de l'itération 30 (meilleur run : médiane juge 0.0000, moyenne 0.0750). `benchmark/prompts/system_prompt.txt` restauré à l'état it.30 (commit eee6080).
+
+---
+
+## FIN — 33 itérations effectives, 1 itération préparée non mesurée
+
+**Meilleur run** : itération 30 (emphasis retours en arrière) — médiane 0.0000, moyenne 0.0750, 6 samples sur 8 à 0.00.
+
+**Apprentissages clés** :
+- L'anti-préambule doit être en toute première phrase du prompt (primacy effect).
+- Un exemple court Whisper/Ollama ancre le bon comportement ; le remplacer par un exemple plus complexe brouille le signal.
+- Repère quantitatif paragraphes (2-3min → 2-4 paragraphes ; 5min+ → 4-7 paragraphes) structure le déploiement sans gonfler artificiellement les ratios.
+- Instruction explicite sur retours en arrière / contradictions / corrections stabilise les samples longs.
+- "Tu déploies, tu ne synthétises pas" renforce la complétude sur les très longs (6000+ chars).
+- Pain point #6 (flux décousu avec dialogue interne) reste un outlier structurel non résolu — stable à 0.50 sur la plupart des angles testés.
+- Variance du juge 14B massive (0.15 sur moyenne d'un run à l'autre avec prompt identique). Ne pas sur-interpréter.
