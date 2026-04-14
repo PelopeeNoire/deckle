@@ -403,3 +403,17 @@ L'angle persona éditoriale est donc nuisible : il invite à enrichir au lieu de
 ---
 
 ## Itération 23 — revert persona + compression supplémentaire
+
+**Score juge médian : 0.0000 / moyenne 0.1313**. Distribution : 0.50, 0, 0, 0, 0, 0.50, 0, 0.05.
+
+Pire moyenne récente. La compression à 2001 chars (vs 2973 en it.19) a coûté en stabilité : #1 retombe à 0.50, #6 reste à 0.50.
+
+**Apprentissage** : la taille optimale du prompt semble être autour de 2700-3000 chars. Trop court (2000) = perte de stabilité, trop long (3500+) = dilution de l'attention. Le prompt it.19 (2973 chars) est dans la zone optimale.
+
+**Axes pour l'itération 24** :
+- Revert vers le prompt it.19 exact (consigne vérification finale, anti-préambule en tête, exemple court, méthode standard).
+- Tenter ensuite une variation différente : ajouter une ligne ciblée pour la condensation excessive sur les flux décousus.
+
+---
+
+## Itération 24 — revert vers it.19 (best stable connu)
