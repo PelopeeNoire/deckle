@@ -97,13 +97,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             _tray.UpdateStatus(status);
             _log.Info(LogSource.Status, status);
             // Beacon app icon in LogWindow: red = recording, grey = idle.
-            _logWindow.SetRecordingState(status == "Enregistrement...");
+            _logWindow.SetRecordingState(status == "Recording");
 
             // HUD: driven by status transition. Background thread → HudWindow
             // marshals internally via DispatcherQueue.
-            if (status == "Enregistrement...")
+            if (status == "Recording")
                 _hudWindow.ShowRecording();
-            else if (status == "Transcription en cours...")
+            else if (status == "Transcribing")
                 _hudWindow.SwitchToTranscribing();
         };
         _engine.TranscriptionFinished += outcome =>
@@ -133,8 +133,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         _engine.OnReadyToPaste = () => _hudWindow.HideSync();
 
         // Initial status — model loads on-demand at first hotkey, not at startup.
-        _tray.UpdateStatus("En attente");
-        _log.Info(LogSource.Status, "En attente");
+        _tray.UpdateStatus("Ready");
+        _log.Info(LogSource.Status, "Ready");
 
         _anchor = new AnchorWindow(_tray, OnHotkey);
 

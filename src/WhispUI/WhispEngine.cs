@@ -188,7 +188,7 @@ internal sealed class WhispEngine : IDisposable
     /// </summary>
     private bool LoadModel()
     {
-        StatusChanged?.Invoke("Chargement du modèle...");
+        StatusChanged?.Invoke("Loading model");
 
         DebugLog.Write("ENGINE", "load started, path=" + _modelPath);
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -200,7 +200,15 @@ internal sealed class WhispEngine : IDisposable
         }
         else
         {
-            _log.Warning(LogSource.Model, $"file not found on disk ({_modelPath})");
+            _log.Warning(
+                LogSource.Model,
+                $"file not found on disk ({_modelPath})",
+                new UserFeedback(
+                    "Whisper model not found",
+                    $"File missing: {_modelPath}. Check settings.",
+                    UserFeedbackSeverity.Error));
+            StatusChanged?.Invoke("Ready");
+            return false;
         }
         _log.Info(LogSource.Model, "init whisper_init_from_file_with_params (use_gpu=1)");
 
@@ -215,8 +223,14 @@ internal sealed class WhispEngine : IDisposable
 
         if (_ctx == IntPtr.Zero)
         {
-            _log.Error(LogSource.Init, $"Failed to load model: {_modelPath}");
-            StatusChanged?.Invoke("Erreur : modèle non chargé");
+            _log.Error(
+                LogSource.Init,
+                $"Failed to load model: {_modelPath}",
+                new UserFeedback(
+                    "Failed to load model",
+                    "Low GPU memory or corrupt file.",
+                    UserFeedbackSeverity.Error));
+            StatusChanged?.Invoke("Ready");
             return false;
         }
 
@@ -256,7 +270,7 @@ internal sealed class WhispEngine : IDisposable
             NativeMethods.whisper_free(_ctx);
             _ctx = IntPtr.Zero;
             _log.Step(LogSource.Model, $"Model unloaded after {MODEL_IDLE_TIMEOUT_MS / 1000}s idle (VRAM freed)");
-            StatusChanged?.Invoke("En attente");
+            StatusChanged?.Invoke("Ready");
         }
     }
 
@@ -278,7 +292,7 @@ internal sealed class WhispEngine : IDisposable
     {
         if (_isRecording) return;
 
-        // Probe the audio device BEFORE firing StatusChanged("Enregistrement...").
+        // Probe the audio device BEFORE firing StatusChanged("Recording").
         // If the mic is absent/busy, short-circuit the entire pipeline:
         // no HUD chrono, no worker thread, no Transcribe(empty).
         // The UserFeedback payload carries the HUD-visible message through the
@@ -327,7 +341,7 @@ internal sealed class WhispEngine : IDisposable
         // The try/catch/finally is the safety net that keeps the UI consistent
         // when an exception escapes Record() or Transcribe(). Without it, a
         // crash leaves _isRecording=true and StatusChanged never fires again,
-        // freezing the tray tooltip on "Enregistrement..." indefinitely.
+        // freezing the tray tooltip on "Recording" indefinitely.
         var worker = new Thread(() =>
         {
             try
@@ -339,11 +353,11 @@ internal sealed class WhispEngine : IDisposable
                 }
 
                 _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-                StatusChanged?.Invoke("Enregistrement...");
+                StatusChanged?.Invoke("Recording");
 
                 float[] audio = Record();
                 _isRecording = false;
-                StatusChanged?.Invoke("Transcription en cours...");
+                StatusChanged?.Invoke("Transcribing");
                 Transcribe(audio);
                 ResetIdleTimer();
             }
@@ -351,8 +365,14 @@ internal sealed class WhispEngine : IDisposable
             {
                 // Recover the UI status that the normal terminal paths would
                 // have emitted, so the tray tooltip leaves the recording state.
-                _log.Error(LogSource.Transcribe, $"pipeline crashed: {ex.GetType().Name}: {ex.Message}");
-                StatusChanged?.Invoke("En attente");
+                _log.Error(
+                    LogSource.Transcribe,
+                    $"pipeline crashed: {ex.GetType().Name}: {ex.Message}",
+                    new UserFeedback(
+                        "Unexpected error",
+                        "Try again. If it persists, check the logs.",
+                        UserFeedbackSeverity.Error));
+                StatusChanged?.Invoke("Ready");
                 TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             }
             finally
@@ -677,7 +697,7 @@ internal sealed class WhispEngine : IDisposable
         IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
         {
-            StatusChanged?.Invoke("Modèle non prêt");
+            StatusChanged?.Invoke("Model not ready");
             TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
@@ -685,7 +705,7 @@ internal sealed class WhispEngine : IDisposable
         if (audio.Length == 0)
         {
             _log.Warning(LogSource.Transcribe, "empty audio buffer, nothing to transcribe");
-            StatusChanged?.Invoke("En attente");
+            StatusChanged?.Invoke("Ready");
             TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
@@ -764,7 +784,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
-            StatusChanged?.Invoke("En attente");
+            StatusChanged?.Invoke("Ready");
             TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
@@ -838,7 +858,7 @@ internal sealed class WhispEngine : IDisposable
         else
             _log.Verbose(LogSource.Done, recap);
 
-        StatusChanged?.Invoke("En attente");
+        StatusChanged?.Invoke("Ready");
         _recordingSw?.Stop();
 
         // Outcome : Pasted on a verified paste delivery, ClipboardOnly when
