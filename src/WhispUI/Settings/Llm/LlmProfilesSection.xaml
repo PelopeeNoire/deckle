@@ -3,7 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
-    xmlns:vm="using:WhispUI.Settings.ViewModels">
+    xmlns:vm="using:WhispUI.Settings.ViewModels"
+    x:Name="Root">
 
     <UserControl.Resources>
         <vm:CtxTooltipConverter x:Key="CtxTooltipConverter" />
@@ -52,14 +53,19 @@
                                              PlaceholderText="Profile name"
                                              HorizontalAlignment="Stretch" />
 
-                                    <ComboBox Header="Model"
-                                              IsEditable="True"
-                                              PlaceholderText="Ollama model name"
-                                              Tag="{x:Bind}"
-                                              Loaded="ModelCombo_Loaded"
-                                              SelectionChanged="ModelCombo_SelectionChanged"
-                                              TextSubmitted="ModelCombo_TextSubmitted"
-                                              HorizontalAlignment="Stretch" />
+                                    <AutoSuggestBox Header="Model"
+                                                    PlaceholderText="Ollama model name"
+                                                    Tag="{x:Bind}"
+                                                    Text="{x:Bind Model, Mode=OneWay}"
+                                                    GotFocus="ModelSuggest_GotFocus"
+                                                    TextChanged="ModelSuggest_TextChanged"
+                                                    SuggestionChosen="ModelSuggest_SuggestionChosen"
+                                                    QuerySubmitted="ModelSuggest_QuerySubmitted"
+                                                    HorizontalAlignment="Stretch">
+                                        <AutoSuggestBox.QueryIcon>
+                                            <FontIcon Glyph="&#xE70D;" />
+                                        </AutoSuggestBox.QueryIcon>
+                                    </AutoSuggestBox>
 
                                     <TextBox Header="System prompt"
                                              Text="{x:Bind SystemPrompt, Mode=TwoWay}"

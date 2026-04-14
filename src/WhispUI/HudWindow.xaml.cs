@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using WinRT.Interop;
 using WhispUI.Interop;
+using WhispUI.Logging;
 using WhispUI.Shell;
 
 namespace WhispUI;
@@ -195,6 +196,13 @@ public sealed partial class HudWindow : Window
         (Application.Current.Resources["SystemFillColorCriticalBrush"] as Brush)
         ?? new SolidColorBrush(Microsoft.UI.Colors.IndianRed);
 
+    // Neutral brush for the Preparing / LoadingModel state : digits and beacon
+    // read as inactive but remain legible. TextFillColorTertiaryBrush is the
+    // canonical Win11 pattern for disabled / pending text in Fluent surfaces.
+    private Brush ResolveNeutralBrush() =>
+        (Application.Current.Resources["TextFillColorTertiaryBrush"] as Brush)
+        ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
+
     private void RegisterMouseRawInput()
     {
         var rid = new RAWINPUTDEVICE[]
@@ -212,6 +220,60 @@ public sealed partial class HudWindow : Window
     }
 
     // ── API publique (thread-safe) ────────────────────────────────────────────
+
+    // Pre-recording placeholder : the HUD appears as soon as the hotkey is
+    // pressed, without waiting for the mic probe and model load. Digits and
+    // beacon are painted with the neutral system brush so the HUD reads as
+    // "armed, not yet running". When the engine fires "Enregistrement...",
+    // ShowRecording() takes over and clears these explicit brushes.
+    //
+    // Covers both the "Préparation" state (between hotkey and probe) and the
+    // "Chargement du modèle" state (first pipeline after idle unload) — the
+    // visual is identical, only the status string behind it differs.
+    public void ShowPreparing()
+    {
+        if (!Settings.SettingsService.Instance.Current.Overlay.Enabled)
+            return;
+
+        EnqueueUI(() =>
+        {
+            if (_inErrorMode)
+            {
+                _errorHideTimer?.Stop();
+                _inErrorMode = false;
+                ErrorLayout.Visibility  = Visibility.Collapsed;
+                NormalLayout.Visibility = Visibility.Visible;
+            }
+
+            // Clock frozen at 00.00.00 until recording actually starts.
+            _stopwatch.Reset();
+            if (_clockRenderingHooked)
+            {
+                CompositionTarget.Rendering -= OnClockRendering;
+                _clockRenderingHooked = false;
+            }
+            _lastMin = _lastSec = _lastCs = -1;
+            _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
+            Min1.Text = Min2.Text = "0";
+            Sec1.Text = Sec2.Text = "0";
+            Cs1.Text  = Cs2.Text  = "0";
+
+            var neutral = ResolveNeutralBrush();
+            Min1.Foreground = neutral; Min2.Foreground = neutral;
+            Sec1.Foreground = neutral; Sec2.Foreground = neutral;
+            Cs1.Foreground  = neutral; Cs2.Foreground  = neutral;
+
+            StatusDot.Fill = neutral;
+            TranscribeRing.IsActive   = false;
+            TranscribeRing.Visibility = Visibility.Collapsed;
+
+            IconAssets.ApplyToWindow(AppWindow, recording: false);
+            ShowNoActivate();
+            SetAlphaImmediate(MAX_ALPHA);
+            _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
+            if (_proximityActive) UpdateProximity();
+        });
+    }
 
     public void ShowRecording()
     {
@@ -296,15 +358,51 @@ public sealed partial class HudWindow : Window
         });
     }
 
-    // Affiche le HUD en mode erreur (micro absent/occupé). Swap de layout :
-    // le chrono et l'indicateur sont cachés, remplacés par une icône critique
-    // + titre + message. Le HUD s'élargit automatiquement (HUD_WIDTH_ERROR)
-    // pour laisser respirer le texte. Auto-hide après 5s — l'utilisateur a le
-    // temps de lire mais n'a pas à cliquer pour fermer.
+    // Notice layout : icône + titre + message, largeur HUD_WIDTH_ERROR,
+    // auto-hide après `duration`. Support trois variantes : ShowError (micro
+    // KO, rouge), ShowCopied (succès paste, vert, flash court), ShowCopiedManualPaste
+    // (paste refusé mais clipboard rempli, neutre, plus long pour que l'utilisateur
+    // ait le temps de lire l'instruction Ctrl+V).
     //
-    // Appelé depuis WhispEngine.StartRecording quand le probe waveInOpen
-    // échoue — thread hotkey, donc marshal obligatoire via EnqueueUI.
-    public void ShowError(string title, string body)
+    // `glyph` : Segoe Fluent Icons code point (clef xF140 warning, xE73E check,
+    // xE77F clipboard…). `iconBrushKey` : theme resource key appliquée au
+    // Foreground du FontIcon, résolue via Application.Resources pour suivre
+    // le thème light/dark en place.
+    public void ShowError(string title, string body) =>
+        ShowNotice("\uF140", "SystemFillColorCriticalBrush", title, body, TimeSpan.FromSeconds(5));
+
+    public void ShowCopied() =>
+        ShowNotice("\uE73E", "SystemFillColorSuccessBrush", "Copied", "", TimeSpan.FromMilliseconds(500));
+
+    public void ShowCopiedManualPaste() =>
+        ShowNotice("\uE77F", "SystemFillColorAttentionBrush",
+            "Copied to clipboard", "Press Ctrl+V to paste.", TimeSpan.FromSeconds(3));
+
+    // Central entry point for LogService-driven user feedback. Severity drives
+    // the glyph + theme brush; duration mirrors the visual pattern used by the
+    // other ShowNotice variants (quick flash for info, longer dwell for
+    // warnings/errors so users have time to read the actionable hint).
+    public void ShowUserFeedback(UserFeedback fb)
+    {
+        switch (fb.Severity)
+        {
+            case UserFeedbackSeverity.Info:
+                ShowNotice("\uE946", "SystemFillColorAttentionBrush",
+                    fb.Title, fb.Body, TimeSpan.FromSeconds(4));
+                break;
+            case UserFeedbackSeverity.Warning:
+                ShowNotice("\uE7BA", "SystemFillColorCautionBrush",
+                    fb.Title, fb.Body, TimeSpan.FromSeconds(5));
+                break;
+            case UserFeedbackSeverity.Error:
+            default:
+                ShowNotice("\uF140", "SystemFillColorCriticalBrush",
+                    fb.Title, fb.Body, TimeSpan.FromSeconds(5));
+                break;
+        }
+    }
+
+    private void ShowNotice(string glyph, string iconBrushKey, string title, string body, TimeSpan duration)
     {
         if (!Settings.SettingsService.Instance.Current.Overlay.Enabled)
             return;
@@ -322,6 +420,10 @@ public sealed partial class HudWindow : Window
             TranscribeRing.IsActive   = false;
             TranscribeRing.Visibility = Visibility.Collapsed;
 
+            ErrorIcon.Glyph = glyph;
+            ErrorIcon.Foreground =
+                (Application.Current.Resources[iconBrushKey] as Brush)
+                ?? ResolveCriticalBrush();
             ErrorTitle.Text = title ?? "";
             ErrorBody.Text  = body  ?? "";
 
@@ -337,7 +439,7 @@ public sealed partial class HudWindow : Window
             // que le tick se fasse directement sur le thread UI.
             _errorHideTimer ??= DispatcherQueue.CreateTimer();
             _errorHideTimer.Stop();
-            _errorHideTimer.Interval = TimeSpan.FromSeconds(5);
+            _errorHideTimer.Interval = duration;
             _errorHideTimer.IsRepeating = false;
             _errorHideTimer.Tick -= OnErrorHideTick;
             _errorHideTimer.Tick += OnErrorHideTick;
