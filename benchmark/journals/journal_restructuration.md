@@ -433,3 +433,18 @@ Pire moyenne récente. La compression à 2001 chars (vs 2973 en it.19) a coûté
 ---
 
 ## Itération 25 — consigne fidélité de longueur
+
+**Score juge médian : 0.0000 / moyenne 0.1250**. Distribution : 0, 0, 0, 0, 0, 0.50, 0.50, 0.
+
+6 samples à 0.00 (record d'égalité). Mais #6 et #7 à 0.50 — première fois que #7 catastrophe sur cette série. La consigne fidélité longueur n'a pas relevé les len_ratio (toujours 0.44-0.48 sur les longs), suggérant que le modèle ne sait pas auto-évaluer sa propre longueur.
+
+Pattern observé sur les runs : la majorité des samples (#1, #3, #4, #8) sont stables à 0.00. C'est le sous-ensemble {#2, #5, #6, #7} qui oscille fortement et tire la moyenne. Le pain point n'est pas que #6 — ce sont les samples longs/dispersés en général.
+
+**Axes pour l'itération 26** :
+- Le prompt est devenu trop long (3208 chars), revenir vers ~2700.
+- Garder l'ossature it.19, ne pas réintroduire la fidélité longueur explicite.
+- Tenter une variation focalisée sur le regroupement thématique (peut-être ce qui aide les samples longs).
+
+---
+
+## Itération 26 — réduction taille + emphase regroupement thématique
