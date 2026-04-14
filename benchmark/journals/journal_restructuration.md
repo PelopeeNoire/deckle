@@ -237,3 +237,20 @@ La reformulation en "identifie mentalement les grands thèmes, regroupe dans la 
 ---
 
 ## Itération 13 — revert organisation thématique vers it.11
+
+**Score juge médian : 0.0250** (moyenne **0.0859**). #6 reste à 0.50 (3/3/3/3) malgré le prompt reverté identique à l'it.11.
+
+Distribution juge : 0, 0, 0.05, 0, 0.09, 0.50, 0, 0.05.
+
+**Apprentissage clé** : même prompt (it.11 = it.13, 3568 chars identiques) → #6 oscille 0.10 ↔ 0.50 d'un run à l'autre. C'est la **variance inter-run** qui domine #6, pas le prompt. L'it.11 avait un bon run chanceux. Le prompt seul n'a pas de stratégie robuste pour stabiliser ce sample.
+
+**Rule-based false positive sur #5 encore** (preamble=1, "La transcription progressive est une priorité…", juge=0.09). Ignorer.
+
+**Axes pour l'itération 14** :
+- Tenter une compression du prompt. 3568 chars c'est long pour un 14B, peut-être que la consigne centrale se dilue.
+- Préserver les acquis : format strict, raisonnement par étapes, complétude, anti-invention, few-shot court.
+- Supprimer les redondances et consolider.
+
+---
+
+## Itération 14 — compression du prompt
