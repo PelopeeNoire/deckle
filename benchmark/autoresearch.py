@@ -29,7 +29,7 @@ if sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config.ini")
+CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config", "config.ini")
 
 def load_config() -> configparser.ConfigParser:
     """Charge config.ini avec les défauts."""
@@ -41,8 +41,8 @@ def load_config() -> configparser.ConfigParser:
         "temperature": "0.15",
         "num_ctx_k": "32",
         "endpoint": "http://localhost:11434/api/generate",
-        "corpus": "corpus.json",
-        "prompt": "system_prompt.txt",
+        "corpus": "data/corpus.json",
+        "prompt": "prompts/system_prompt.txt",
     }
     cfg["autoresearch"] = {
         "designer_model": "ministral-3:14b",
@@ -57,8 +57,8 @@ _CFG = load_config()
 
 PROMPT_FILE = os.path.join(BENCHMARK_DIR, _CFG["benchmark"]["prompt"])
 CORPUS_FILE = os.path.join(BENCHMARK_DIR, _CFG["benchmark"]["corpus"])
-RESULTS_FILE = os.path.join(BENCHMARK_DIR, "results.tsv")
-REPORT_FILE = os.path.join(BENCHMARK_DIR, "autoresearch_report.txt")
+RESULTS_FILE = os.path.join(BENCHMARK_DIR, "reports", "results.tsv")
+REPORT_FILE = os.path.join(BENCHMARK_DIR, "reports", "autoresearch_report.txt")
 
 OLLAMA_ENDPOINT = _CFG["benchmark"]["endpoint"]
 DESIGNER_MODEL = _CFG["autoresearch"]["designer_model"]
@@ -143,7 +143,7 @@ def check_files() -> bool:
 def check_git_clean() -> bool:
     """Vérifie que system_prompt.txt n'a pas de modifications non committées."""
     result = subprocess.run(
-        ["git", "diff", "--name-only", "benchmark/system_prompt.txt"],
+        ["git", "diff", "--name-only", "benchmark/prompts/system_prompt.txt"],
         cwd=BENCHMARK_DIR, capture_output=True, text=True
     )
     if result.stdout.strip():
@@ -245,7 +245,7 @@ def run_benchmark(runs: int = 1) -> tuple[float, str]:
         t0 = time.time()
 
         result = subprocess.run(
-            [sys.executable, "benchmark.py", "--skip-judge"],
+            [sys.executable, os.path.join(BENCHMARK_DIR, "benchmark.py"), "--skip-judge"],
             cwd=BENCHMARK_DIR,
             capture_output=True,
             text=True,
@@ -314,7 +314,7 @@ IMPORTANT : Réponds UNIQUEMENT avec le nouveau prompt, rien d'autre. Pas d'expl
 
 def load_last_report() -> list[dict]:
     """Charge les détails par sample du dernier benchmark run."""
-    report_path = os.path.join(BENCHMARK_DIR, "last_report.json")
+    report_path = os.path.join(BENCHMARK_DIR, "reports", "last_report.json")
     if not os.path.exists(report_path):
         return []
     try:

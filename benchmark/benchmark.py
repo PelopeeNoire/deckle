@@ -37,7 +37,7 @@ if sys.stderr.encoding != "utf-8":
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config.ini")
+CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config", "config.ini")
 
 def load_config() -> configparser.ConfigParser:
     """Charge config.ini, retourne le parser avec les défauts."""
@@ -49,8 +49,8 @@ def load_config() -> configparser.ConfigParser:
         "temperature": "0.15",
         "num_ctx_k": "32",
         "endpoint": "http://localhost:11434/api/generate",
-        "corpus": "corpus.json",
-        "prompt": "system_prompt.txt",
+        "corpus": "data/corpus.json",
+        "prompt": "prompts/system_prompt.txt",
     }
     if os.path.exists(CONFIG_FILE):
         cfg.read(CONFIG_FILE, encoding="utf-8")
@@ -289,12 +289,16 @@ def main():
                         help="Skip LLM judge (rule-based score only, faster)")
     args = parser.parse_args()
 
+    # Résoudre chemins relatifs par rapport à BENCHMARK_DIR
+    corpus_path = args.corpus if os.path.isabs(args.corpus) else os.path.join(BENCHMARK_DIR, args.corpus)
+    prompt_path = args.prompt_file if os.path.isabs(args.prompt_file) else os.path.join(BENCHMARK_DIR, args.prompt_file)
+
     # Charger le corpus
-    with open(args.corpus, "r", encoding="utf-8") as f:
+    with open(corpus_path, "r", encoding="utf-8") as f:
         corpus = json.load(f)
 
     # Charger le system prompt
-    with open(args.prompt_file, "r", encoding="utf-8") as f:
+    with open(prompt_path, "r", encoding="utf-8") as f:
         system_prompt = f.read().strip()
 
     num_ctx = args.num_ctx_k * 1024
@@ -404,7 +408,8 @@ def main():
         "judge_mean": round(judge_mean, 4) if judge_mean is not None else None,
         "details": details,
     }
-    with open("last_report.json", "w", encoding="utf-8") as f:
+    report_path = os.path.join(BENCHMARK_DIR, "reports", "last_report.json")
+    with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     catastrophes = sum(1 for d in details if d.get("catastrophe", False))

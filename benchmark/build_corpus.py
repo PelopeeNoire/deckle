@@ -6,11 +6,11 @@ import os
 BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
 
 RAW_FILES = [
-    os.path.join(BENCHMARK_DIR, "raw_prompts.txt"),
-    os.path.join(BENCHMARK_DIR, "raw_restructuration.txt"),
+    os.path.join(BENCHMARK_DIR, "data", "raw_prompts.txt"),
+    os.path.join(BENCHMARK_DIR, "data", "raw_restructuration.txt"),
 ]
 
-OUTPUT = os.path.join(BENCHMARK_DIR, "corpus.json")
+OUTPUT = os.path.join(BENCHMARK_DIR, "data", "corpus.json")
 
 
 def split_segments(text: str) -> list[dict]:

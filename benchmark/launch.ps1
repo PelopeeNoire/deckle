@@ -22,7 +22,7 @@ function Show-Header {
 
 function Show-Status {
     # Prompt actuel
-    $promptFile = Join-Path $BenchmarkDir "system_prompt.txt"
+    $promptFile = Join-Path $BenchmarkDir "prompts/system_prompt.txt"
     if (Test-Path $promptFile) {
         $prompt = Get-Content $promptFile -Raw -Encoding UTF8
         $words = ($prompt -split '\s+').Count
@@ -31,7 +31,7 @@ function Show-Status {
     }
 
     # Derniers résultats
-    $resultsFile = Join-Path $BenchmarkDir "results.tsv"
+    $resultsFile = Join-Path $BenchmarkDir "reports/results.tsv"
     if (Test-Path $resultsFile) {
         $lines = Get-Content $resultsFile -Encoding UTF8 | Where-Object { $_ -and $_ -notmatch "^experiment" }
         if ($lines.Count -gt 0) {
@@ -140,13 +140,13 @@ try {
                 Run-Command -Description "Benchmark run 3/3" -Args @("benchmark.py")
             }
             "5" {
-                Show-FileContent -FileName "results.tsv" -Label "Résultats (results.tsv)"
+                Show-FileContent -FileName "reports/results.tsv" -Label "Résultats (reports/results.tsv)"
             }
             "6" {
-                Show-FileContent -FileName "autoresearch_report.txt" -Label "Rapport Autoresearch"
+                Show-FileContent -FileName "reports/autoresearch_report.txt" -Label "Rapport Autoresearch"
             }
             "7" {
-                Show-FileContent -FileName "system_prompt.txt" -Label "Prompt actuel (system_prompt.txt)"
+                Show-FileContent -FileName "prompts/system_prompt.txt" -Label "Prompt actuel (prompts/system_prompt.txt)"
             }
             "Q" {
                 Write-Host ""
