@@ -1,0 +1,198 @@
+{
+  "model": "ministral-3:14b",
+  "judge_model": "ministral-3:14b",
+  "temperature": 0.3,
+  "num_ctx_k": 32,
+  "prompt_chars": 896,
+  "samples": 8,
+  "rule_median": 0.0,
+  "rule_mean": 0.0004,
+  "judge_median": 0.2875,
+  "judge_mean": 0.2859,
+  "details": [
+    {
+      "id": 1,
+      "rule_score": 0.0,
+      "judge_score": 0.2875,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.0,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 4,
+        "clarte": 3,
+        "structure": 3,
+        "sobriete": 5
+      },
+      "input_len": 6986,
+      "output_len": 6808,
+      "length_ratio": 0.97,
+      "output_text": "Ouais, alors dans ce projet, sur ce projet j’apprends, mais de toute façon, je vais faire la même chose à chaque fois, ce sera un truc que j’aurai à copier, que je te redirai, potentiellement un skill un peu personnalisé. Là en fait, ce projet, j’avance, j’avance, et je crée tout l’entourage pour pouvoir vraiment le faire, et ensuite une fois que je serai lancé, il essaie de faire un CMS maison.\n\nTout ce dont je te parle là, j’aimerais potentiellement m’attendre à ce que tu t’en souviennes canoniquement, un peu des trucs qui sont un peu loin, parce que l’idée c’est d’avoir un professeur à côté qui me guide aussi, donc qui me connaît un petit peu.\n\nJe crois que j’ai enfin, potentiellement, ce serait bien d’aller chercher des skills. Je vais me dire ça. Skills de recherche. Et pour apprendre automatiquement, je crois que je l’ai, en fait. Pour apprendre automatiquement à connaître le, à me connaître, moi. Je dois avoir mis ça quelque part. Continuous learning, voilà. Je te le mets dans le projet, tu peux aller le voir, et me dire si ça colle en fait à ce que ben ça peut être un tu sais quoi, je vais même le mettre à la racine celui-là du coup comme skill plutôt comme auto-research. Continuous Learning V2, c’est celui-là. Ce qui est génial, c’est que du coup tu peux apprendre petit à petit, en plus je crois que celui-là, l’auto-learning, c’est sur des cantonnements qu’on utilise, tout ça ça peut te permettre de garder ça en mémoire et de faire les choses bien même si ça prend du contexte. Je suis prêt à faire le trade, il faut que ce soit assez concis, voilà. Sinon autrement, il faut que je refasse une refonte de comment quand je m’adresse à toi que tu te souviennes de pas mal de trucs. Maintenant je pense que je suis lancé, je vais utiliser Cloud Code tout le temps. Alors là j’ai lancé juste Cloud Code dans l’IDE, moi c’est le seul endroit où j’utilise, sinon c’est dans le Cloud Desktop, mais peut-être qu’il faut que je l’installe un peu de façon normale et que j’y accède depuis je ne sais pas, pourtant j’ai juste enlevé, ça fonctionne très bien chez moi, donc je fais un peu comme ça.\n\nEt sinon ouais, dans l’idée, mais ça tu le fais déjà dans la mémoire du projet, te souvenir des fonctionnalités que j’évoque comme ça, ce que j’aime ou j’aime pas. Ouais, c’est ça, ce que j’aime, ce que j’aime pas, tout ça, ça serait bien aussi à chaque fois que je dis ou quand je commence à m’énerver que tu le remarques et que tu notes qu’est-ce qu’il se passe avant, même pour mon développement personnel, ce serait intéressant, qu’est-ce qui fait que je m’embourbe, quand on est embourbé comme ça, qu’est-ce qui se passait juste avant, qu’est-ce qui fait qu’on arrive là, et pour essayer d’éviter de tomber dans les mêmes problèmes tout le temps. Ouais, pour t’ajuster en fait, c’est ça, pour t’ajuster par rapport à moi et par rapport au projet, par rapport à l’environnement aussi, c’est à ça que je pensais. Je pense à l’environnement, des trucs, par exemple que je suis sur Windows pour l’instant, que je fais des trucs un peu typés Windows, que j’utilise des trucs open source, j’essaie de faire le moins de choses possible, un peu minimaliste, d’essayer de faire le plus optimisé possible aussi. J’optimise beaucoup, un peu des trucs comme ça, des trucs persos aussi.\n\nLe ton, je crois que c’est mis dans Claude, c’est pour ça que je dis qu’il faut que je refasse une refonte. Là je suis en train de faire le point sur toutes les choses que j’ai envie qu’ils soient dans un contexte, que t’es en contexte en fait. Je me fais une fenêtre de contexte, qu’est-ce que je veux dans chaque discussion, qu’il y ait, il y a le ton. Moi je préfère par exemple plutôt par paragraphe plutôt que par bullet points et tout ça. Je préfère un truc un peu où je lis plutôt que juste de la liste. Au bout d’un moment, pour moi, c’est imbutable. Même si, des fois, du coup, quand il faut lister, il faut lister, il n’y a pas de souci. Mais il ne faut pas forcer le paragraphe. Mais je préfère quand on développe une petite phrase, trois, quatre phrases qui se suivent, un petit paragraphe qui explique bien, quitte à ce qu’il soit aussi technique. Mais voilà, ça, c’est mon truc. Et ça, tu l’as dans Claude, mais je voulais l’avoir là-dedans.\n\nEnsuite, un ton plutôt pro aussi. Mais ce que j’aurais aimé, ce qui serait intéressant, c’est ça, je pensais à ça, c’est que d’art en pro, la plupart du temps, j’ai envie que tu me parles de façon plutôt professionnelle parce que je suis plutôt en train de produire des choses quand je t’utilise. Mais ce qui serait intéressant, c’est de voir qu’au fil du temps, au fur et à mesure de tout ce que tu me dis, en fait au fur et à mesure de tout ce que tu me dis, tu commences à, comme si tu commençais à me connaître et que tu commençais à, voilà, si tu commences à avoir, tu penses que c’est un peu comme dans la vraie vie chez les humains, si tu commences à connaître beaucoup de choses sur moi, tu peux te permettre d’être plus friendly avec moi, plus amical. Puis ça va être marrant à regarder faire. Et donc l’idée c’est que ce soit canonique, c’est pour ça que je suis en train de refaire cette refonte, l’idée d’avoir des choses canoniques, un peu de feeling et de humain en plus, pédagogiquement en plus, parce que professeur, élève, et voilà, c’est un peu l’idée du truc.\n\nEt voilà donc l’idée avec en plus sur le skill de auto-research là, c’est quoi, c’est le nouveau continuous learning, on peut faire du coup des corrections et de voir les choix logiques qu’on fait pour apprendre, ça je te le disais. Et voilà je te parlais d’un skill de recherche, je sais plus trop pourquoi je te parlais de ce skill de recherche.\n\nEt donc sinon pour finir ce qui reste en fait que je veux comme contexte, c’est la nomenclature. En fait avant j’étais en train de construire tout ça moi-même avec des LLM en local. En fait les LLM en local, ils sont pas du tout aussi puissants pour ce que je veux faire, pour l’instant en tout cas. Et donc du coup je utilise Cloud Code qui fait ça très bien. Je les utiliserai quand même potentiellement bien pour lancer des agents en local, tu sais, avec une tâche un peu déjà précise et comme ça moi j’utilise aussi un peu les ressources de mon côté. Et comme ça, Cloud Code peut lancer plusieurs agences, il y a un chantier qui est en cours.\n\nSinon, maintenant, comme tout ça shift, j’ai un peu moins besoin de connaissances. La plupart des connaissances architecturales sont liées à des projets précis, et ça, ça ira dans les Cloud.md, des projets, des gros repos. Et des sous-projets, on peut en avoir dans chaque dossier. C’est intéressant de gérer comme ça. Et sinon tout le reste, c’est plutôt des choses qui sont sur moi même, sur notre relation, comment on fonctionne en fait, ce que je te demande et tout ça.",
+      "elapsed_sec": 59.0
+    },
+    {
+      "id": 2,
+      "rule_score": 0.0017,
+      "judge_score": 0.2875,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.006600660066006601,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 4,
+        "clarte": 3,
+        "structure": 3,
+        "sobriete": 5
+      },
+      "input_len": 5949,
+      "output_len": 5764,
+      "length_ratio": 0.97,
+      "output_text": "Là, rapidement, j'aimerais que tu regardes et que tu notes si jamais j'ai mis des choses utiles dans cette discussion que tu penses qu'il est bien de garder pour la discussion suivante. On va faire ça. D'ailleurs, comme tu sais qu'à chaque fois, ce que je fais à la fin des sessions, ce serait bien que tu notes ça aussi, peut-être potentiellement. Je vais te dire des trucs comme ça un peu précis à te souvenir, peut-être. Il faudrait que tu fasses un index un peu. Par exemple, pour la fin de session, j'aimerais que tu regardes ce qu'il m'arrive de faire en fin de session. Moi, je sais. Il y a un moment, il y a même un skill session qu'il faut que je mette à jour parce qu'il n'est plus bon du tout avec Anytype et tout ça. Il y a quand même la référence Anytype avec la gestion de projet sur comment c'est agencé dedans qui est bien à regarder. Par contre, tout le système, il n'est pas au point pour l'instant. C'est un chantier à faire. Maintenant, j'utilise plutôt les fichiers dans le projet directement en local. Et puis, si j'utilise Github, je pourrais synchroniser ça via Github. Ensuite, il faudrait juste que... C'est pour les gros fichiers, je ne sais pas trop comment faire. On verra ça, c'est un chantier.\n\nJe ne sais plus ce que je disais. Ah oui, et du coup voilà, sur Anytype, la fin de session normalement c'était un skill qui allait écrire dans Anytype, créer un document rapport de session, et sur tout ce qu'on avait fait pendant la session, c'était hyper intéressant, et il faut vite vite que je m'y mette, mais bon voilà, il y a d'autres choses qui passent avant, et donc là pour l'instant. Juste pour une fin de session c'était chiant, et donc j'avais annulé ça. Pourtant j'avais quand même réussi à pas trop faire fonctionner ça mal. Il faudrait que j'essaie de remettre parce que c'était intéressant de garder un peu les logs de tout ce que je fais, de mon apprentissage en gros. Et donc là c'est un peu l'idée d'avoir mis toute cette mémoire aussi. Et quelque chose que j'avais commencé à évoquer aussi, ça va être la nomenclature. Donc c'est le système doc, les rapports de session justement tout ça, c'est des choses que j'ai mis longtemps à définir que j'ai envie de bien garder. C'était dur à mentaliser tout ça, c'est-à-dire de me faire une map mentale de tout ça. Pour Git aussi, c'est un skill qui est tout le temps là, et pour le code de dire que c'est en anglais avec un UX clair pour que ce soit compréhensible. Voila, c'était ça, un peu les derniers trucs qu'il fallait se souvenir. De toute façon, et ça c'est dans des skills plus tôt, c'était pour finir la boucle sur ce que je disais, j'avais fait un petit tableau à moi à la main sur papier où je lisais un peu tous mes trucs et où je lisais il y avait le ton qu'il fallait employer, tous les petits trucs à avoir mémoire et notamment après un autre truc, c'est la nomenclature et ça c'est plutôt canonique, mais c'est le cas, je crois déjà.\n\nCe que je te disais, c'était de noter la fin de la session, ce que je fais maintenant. Ce que je fais maintenant, vu que je ne fais plus encore dans Anytype, on va essayer d'oublier ça. J'avais mis une commande, ou slash session close, par exemple, qui disait plein de trucs. Pour l'instant, on va oublier ça, mais j'aimerais bien avoir un truc un peu... Souvent, je me répète, en fait. Donc, ce serait bien que tu regardes, peut-être, je me dis que ça sert à quelque chose, que tu regardes en fin de session, souvent, ce que je demande, et à la fin, créer une petite commande, quand tu vois que ça fait un petit moment que tu as des statistiques sur ce que je fais, enfin, des statistiques que tu notes, tiens, là, il a demandé ça, là, il a demandé ça, là, il a demandé ça. Et souvent, en gros, tout ça revient à résumer les informations qui sont importantes de garder dans la session. Il y a aussi toujours un prompt quelque part. Des fois, il y avait de l'écriture. Alors, j'écrivais tout dans les clouds.md, mais je n'ai pas envie de faire ça parce que ça prenait du contexte. Donc là, c'est un peu perdu. Je ne le fais plus trop. Ça m'aidait quand même d'avoir vraiment à chaque fois qu'est-ce qu'on a fait dernièrement et tout ça, mais en résumé quoi. Donc je le fais plus parce que c'est le commit qui le fait naturellement, donc souvent maintenant à la fin, c'est commit prompt pour continuer dans une nouvelle conversation, parce que souvent aussi je suis bloqué en fait, ce qui arrive, ce qui arrive souvent en fait, c'est que je suis bloqué, j'arrive vers la fin, il n'y a plus beaucoup de fenêtres de contexte, donc c'est pas grave parce que la gestion automatique elle est bien foutue, donc c'est bien. Par contre, voilà, j'essaie quand même d'éviter d'arriver au bout, et donc ce qui se passe, c'est que je fais commit prompt, ça peut être en plein milieu d'une tâche, parmi une liste de tâches, et quand je dis du coup, on continue dans une nouvelle conversation, parfois le prompt que je reçois ne cible que la petite tâche qui était en cours, pas le gros dans la liste, du coup quand je continue, j'oublie, ah oui il m'a oublié de faire ça et tout ça. Et donc là quand je dis, ce que j'aimerais bien c'est de faire slash, il faudrait peut-être remplacer le session close, session close c'est peut-être un skill, donc faut peut-être que ce soit une petite commande, un petit truc juste qui dit, il faut commit, résumer et le plan un peu global et la tâche où on était pour avec les infos qu'il faut, s'il y a des trucs à noter dans les annexes, dire tiens ça c'est important à noter pour la suite, à garder comme contexte si ça n'a pas été noté quelque part, et ça c'est simplement voilà. Et ça du coup quand on aura peut-être un peu les retours de ce que tu m'as dit, on pourra en faire une petite commande.",
+      "elapsed_sec": 32.4
+    },
+    {
+      "id": 3,
+      "rule_score": 0.0015,
+      "judge_score": 0.475,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.006097560975609756,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 3,
+        "clarte": 2,
+        "structure": 2,
+        "sobriete": 5
+      },
+      "input_len": 2052,
+      "output_len": 1992,
+      "length_ratio": 0.97,
+      "output_text": "Bon alors là on a fait un shift il y a juste à l'instant, il n'y a pas longtemps, pour refondre un peu l'organisation des dossiers dans le projet. On a fini un benchmark, ce qu'il faudra c'est que je garde, j'ai largement augmenté la... Parce qu'à chaque fois j'étais un peu frigé de dépasser les 1 minute quand je faisais des transcriptions, puisque après ça s'était réécrit et c'était pas forcément bien réécrit. Parfois ça crachait, ça passait la fenêtre de timeout et donc j'avais le texte, il fallait attendre mon temps.\n\nL'idée, bon je sais plus trop où j'en suis. J'ai peut-être encore des fichiers, il y a un runlog là, je sais pas ce que c'est que ça, pourquoi c'est au début là ? C'est un peu bizarre que ce soit là. C'est pour le benchmark, bon le benchmark il a eu des trucs un peu chelous. Il y a eu des fois où j'étais en train d'écrire, il appuyait sur la barre espace, c'étaient des trucs qui s'échappaient. Apparemment c'est réglé, bon j'ai pas retesté depuis, il faudra en fait que je fasse des grandes transcriptions comme ça je pourrais avoir un corpus de grandes transcriptions et c'est ce que je suis en train de faire d'ailleurs petit à petit là notamment je pense que celle qu'on va prendre ça va être ça restructuration.\n\nEt donc ça va être des ce genre de grande tirade un peu décousue mais qui ont quand même un sens derrière et qu'il faut réussir à là on autorise un peu de tailler dans le lard, de tailler aussi ce qui est potentiellement ce qu'il ne faut pas. Il faut que tout y reste mais s'il y a des idées je pense que c'est pas au nombre de mots qu'il faut que ça soit pareil, c'est que des fois je tourne mes phrases, je bug, il faut les enlever. Il y a des phrases qui sont comme j'hésite et tout, qui sont pas bonnes donc l'idée c'est de un peu je pense de tailler quand même un peu dans l'art. Je fais ça un peu pour la transcription et sinon je sais pas trop par où commencer. Il nous restait des choses, il nous restait des choses, je regarde ça après.",
+      "elapsed_sec": 15.9
+    },
+    {
+      "id": 4,
+      "rule_score": 0.0,
+      "judge_score": 0.15,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.0,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 5,
+        "clarte": 4,
+        "structure": 3,
+        "sobriete": 5
+      },
+      "input_len": 2364,
+      "output_len": 2349,
+      "length_ratio": 0.99,
+      "output_text": "voilà ce qui nous restait en fait la fenêtre de log on l'a quand même bien revu je pense que c'est bon le contour animé il faut qu'on enlève la petite roue à droite pour qu'on fasse plutôt un contour animé il faut qu'on arrive à faire aussi quand je parle le contour qui selon si je parle ou pas en fait avec un effet peut-être de glow play il faut qu'on essaye des trucs.\n\nSinon la réécriture c'est bon en tout cas jusqu'à ce que je fasse des grandes transcriptions on a fait le branchement un peu de tuning mais ça va continuer bon pour l'instant pour le nettoyage ça a l'air plutôt pas trop mal et l'ajout dans les settings on l'a fait on a paramétré un peu tout ça donc on est plutôt pas trop mal là-dessus.\n\nPour la réécriture ça va juste le tuning il suffit que après quelques grandes transcriptions j'aurai encore plus pour la restructuration et potentiellement une fois que ces deux-là seront faites je vais continuer à actualiser les transcriptions encore plus grandes des trucs vraiment grands pour faire des prompts très qualitatifs ça prend un peu plus de temps mais en fait pour l'instant c'est bon là le nettoyage je pense que ça va je vais le tester de plus en plus pas là où je vais faire les grandes transcriptions pour le corpus mais un petit peu après je testerai tout le temps même en réécriture un peu vite on verra bien ce que ça va donner.\n\nJ'avais l'idée de transcrire petit à petit pour éviter d'avoir une grande attente à la fin et puis de ne pas pouvoir faire d'autres trucs et tout dans le cadre d'un projet alors qu'en fait on doit attendre la réécriture de Whisper puis la réécriture pour le modèle LLM alors qu'en fait si on réécrit petit à petit on aurait déjà le texte à la fin quasiment prêt à être copié et je crois que c'était une méthodologie à faire puisque Whisper fonctionne un peu comme ça moi j'avais fait une méthodologie de chunking personnalisé c'était pas top parce qu'en fait ça se marchait sur le chunking natif de Whisper qui faisait j'ai appris ça à ce moment-là et donc ce qu'on veut là c'est regarder la transcription petit à petit est-ce qu'on peut récupérer petit à petit des morceaux de texte comment ça fonctionne derrière qu'est-ce qu'on peut récupérer nous pour monter la transcription et un texte prêt à la copie sans réécriture ou quoi que ce soit. Si c'est possible facilement c'est bien.",
+      "elapsed_sec": 16.2
+    },
+    {
+      "id": 5,
+      "rule_score": 0.0,
+      "judge_score": 0.5,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.0,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 3,
+        "clarte": 3,
+        "structure": 3,
+        "sobriete": 3
+      },
+      "input_len": 2610,
+      "output_len": 2525,
+      "length_ratio": 0.97,
+      "output_text": "j'ai envie déjà d'explorer assez rapidement la transcription progressive puisque là le système fonctionne et donc pour le contour animé on fera ça ensuite parce que ça va demander de revoir un peu les choses potentiellement on aura enfin une ombre un peu plus impactante ça va être bien je sais pas on va voir on va explorer mais ça va être vraiment juste du voilà c'est de l'UX lié à l'interface et donc c'est du cosmétique quand même un peu même si c'est lié à l'ergonomie derrière La transcription progressive ça va être vraiment un truc un peu plus lié à l'engine donc enfin voilà au moteur un peu intrinsèque et donc j'aimerais bien le finir et faire ça proprement comme ça Comme ça c'est fait et on a vraiment une transcription qui est propre et ça facilitera peut-être le passage par exemple à un LLM ensuite et puis même quand je fais le stop s'il y a très peu de texte encore qui vient d'être copié et ajouté potentiellement si le truc natif de Whisper c'est de tout transcrire à la fin et que c'est plus simple de faire comme ça on fait comme ça en fait C'est ça l'idée c'est d'explorer c'est de voir si c'est possible si on peut récupérer des choses monter nous quelque chose et ensuite lui dire ah tiens tout ça on a déjà par exemple ce qu'il y aura avant quoi tout ça on a besoin la fin on n'a pas besoin Donc tu compares les deux et tu donnes juste ce qu'il y a besoin Mais ça c'est peut-être beaucoup aussi de il faut faire un truc à maintenir il faut le construire il faut le penser il faut faire tout ça Alors que c'est peut-être pas très très valable en fait Si c'est natif plutôt de faire mais voilà si c'est pas inscrit si c'est pas pensé dans le cœur de Whisper on va peut-être pas le faire un jour je le ferai mais là j'ai pas envie de le faire parce que ça va nous rajouter des choses si jamais on utilise peut-être autre chose que whisper potentiellement ben ça serait marrant de monter un truc comme ça s'il faut un peu tout faire à la main la wii super c'est un peu tout fait je crois il ya des choses de l'ordre et de whisper en python quoi whisper cpp voilà c'est l'exploration peut-être de voir qu'est ce qui est possible de faire le comptoir animé on le garde pour plus tard et le corpus ben là tu vois je suis en train d'en faire une donc il va venir petit à petit et j'essaie de lire des idées un peu à droite à gauche mais comme ça on fait vraiment des grands échanges un peu un peu bien bien foutu et là en effet ce qu'on va faire c'est qu'on va partir donc sur la transcription progressive.",
+      "elapsed_sec": 34.9
+    },
+    {
+      "id": 6,
+      "rule_score": 0.0,
+      "judge_score": 0.3375,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.0,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 4,
+        "clarte": 3,
+        "structure": 2,
+        "sobriete": 5
+      },
+      "input_len": 5307,
+      "output_len": 5048,
+      "length_ratio": 0.95,
+      "output_text": "Donc si je comprends bien, on a encore la possibilité de faire ça nativement, et puis il y a un exemple qui le montre très bien. Ce que je vois aussi, c’est qu’en fait on peut quand même aller assez loin dans la configuration de Whisper, et peut-être un peu plus loin que ce qu’on fait maintenant, notamment pour potentiellement avoir des corrections un peu natives via le modèle de Whisper, un peu nativement avec des trucs qui sont proposés, peut-être pas via d’autres exemples, je ne sais pas. Là en fait ça a l’air d’être intéressant et de soulever qu’il y en a peut-être plusieurs des choses comme ça. Ça vaudrait le coup d’investiguer vraiment pour voir ça. Et pour voir si il n’y a pas d’autres trucs pour la réécriture. Pour le nettoyage, au lieu de passer par Ollama qui prend quand même du temps, autant passer directement par Whisper. Peut-être qu’on pourrait faire de la réécriture avec Whisper directement, plutôt que d’utiliser Vellama. Peut-être que pour les premières étapes, on peut forcer des trucs de réécriture, un peu plus de sérieux, peut-être plus d’augmenter la fenêtre de contexte aussi. Potentiellement, au bout d’un moment, dire bon, là, ça dure 3 minutes, on augmente, enfin voilà, d’avoir un truc limite logarithmique pour pouvoir gérer l’augmentation de la taille de fenêtre de contexte selon la durée qu’on passe et parce que d’avoir un truc en fait qui est un peu collé par rapport au nombre de mots que je peux dire parfois, des fois je fais des vides en fait donc il n’y a pas tant de textes que ça mais voilà si on peut déjà en fait réussir à réécrire directement depuis whisper ça peut être bien et donc ça c’est en plus c’est un truc c’est ce que je me dis qu’il faut investiguer si tu vois aller investiguer dans whisper cpp là donc si tu peux faire ça à la limite ouais donc on continue comme ça on regarde tout ça et pour le sliding windows c’est ce qu’on avait fait un peu avant mais pas nativement et ah c’est du chunking d’accord c’est ça qui ok 30 secondes quand les fenêtres sont longues d’accord c’est du travail redondant ah oui on retranscrit plus le début ah oui d’accord ah ouais non c’est intenable je vais texte dans le HUD ah ouais et bah c’est pas mal ça si on optimise tu dis qu’on peut optimiser en plus parce que là on voit pas trop pouvoir faire ça apparemment mais si on peut optimiser en changeant rien au moteur mais optimisé du coup après le stop, c’était l’idée en vrai. J’ai du mal à comprendre par contre en quoi est-ce que ça sera optimisé, en quoi ça sera utilisé de faire la pré-stop avec afficher le texte dans la HID ou la log window, segment par segment, copier le résultat final dans le clipboard. Ouais, je ne sais pas.\n\nBon en tout cas si c’est pas conçu pour streaming d’accord c’est pas grave on fait pas de hack on y va tranquille mais du coup je t’ai parlé de pas mal de trucs intéressants là-haut sur le fait de potentiellement gérer ça un peu mieux et ouais c’est ça de voir le truc ah bah ouais ça serait bien ça de voir tac tac tac le truc qui ah ça serait ouf ça c’est comme ils font en fait dans les moteurs sur le cloud là en fait tous les IA sur le cloud de ChatGPT et tout en fait ils font ça, l’inférence en fait en gros ça calcule et puis ça a les segments petit à petit et ça met les mots les uns après les autres en calculant un peu ça peut être intéressant d’avoir ça d’avoir une petite fenêtre comme ça qui on voit en fait le truc qui se copie et voilà petit à petit quoi. Mais du coup je comprends pas vraiment d’accord de rendre visible la progression en effet ça se retrouve d’avoir un truc avec le texte qui s’affiche petit à petit comme ça qui fait comme si ça chargeait et puis ça donne un peu une impression on a un truc à regarder en attendant et tout ça. Et non non je veux pas du tout explorer le chunking je veux plutôt explorer tout ce que j’ai dit là. Et en terme du X bah ouais ce serait bien d’avoir un peu le texte mais alors il faut que je réfléchisse. Dans le log Windows, j’imagine que ça va être intéressant mais je crois qu’on l’a déjà en fait dans le log Windows que ah mais pas petit à petit en effet ça n’arrive pas petit à petit ouais après le fonctionnement actuel il est bien je suis en train de me dire si on voit quand je transcris quand j’appuie sur transcrire on ne voit pas petit à petit en effet ce que je dis mais ce n’est pas trop un problème si c’est le fonctionnement de Whisper et que ça fonctionne on est comme ça moi je suis très bien avec ça après si on peut essayer de mieux réécrire c’est mieux en termes du X-Way c’est intéressant peut-être à la fin d’aller je ne sais pas trop de quoi tu parles quand tu dis l’approche C récupérer les trucs au début pendant l’inférence mais du coup on ne les a pas c’est un peu bizarre pendant l’inférence il va faire le premier segment puis après il passe au second et à la fin il lit le tout comment est-ce qu’il lit le tout parce que des fois si j’arrête par exemple au milieu d’une phrase c’est pas propre et donc ce que je me disais c’était potentiellement faire tout ça.",
+      "elapsed_sec": 51.1
+    },
+    {
+      "id": 7,
+      "rule_score": 0.0,
+      "judge_score": 0.15,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.0,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 5,
+        "clarte": 4,
+        "structure": 3,
+        "sobriete": 5
+      },
+      "input_len": 6959,
+      "output_len": 6808,
+      "length_ratio": 0.98,
+      "output_text": "Là me vient aussi une idée en fait, mais potentiellement ce sera à faire quand on refera la refonte des interactions, c’est-à-dire avec le contour qui est différent, qui interagit avec la voix et avec six signes d’écriture en multicouleur et sinon c’est juste un trait qui fait le tour. Et ce que je me disais c’était que pour le loading, j’ai une première expérience avec le loading, c’était pour importer les GGUF et c’était pas ouf ouf, on n’arrivait pas trop à juger en fait combien de temps ça allait prendre. Et ça c’est tout un truc, j’imagine ça va être un chantier de faire des barres de rechargement qui soient un peu plausibles. Je sais pas si il faut faire plein de tests et faire une médiane avec le temps que ça prend et ralentir, faire des choses comme ça. J’imagine que c’est des petits tricks un peu mentaux, des billets qu’on va utiliser chez les humains pour faire genre que ça charge, alors qu’on ne sait pas trop. Mais l’intérêt, ce serait, là je me dis même, d’avoir potentiellement, quand ça charge, quand j’arrête, il y a un petit boîtier en dessous de la fenêtre HUD qui s’ouvre, juste en dessous, au même niveau, mais juste en dessous, un peu séparé, comme un truc qui apparaît en dessous, avec un champ texte dedans. On peut voir juste une ligne avec du code, quoi. Un truc de code. Et on voit tous les lettres qui s’affichent, tous les mots qui sont transcrits petit à petit. C’est-à-dire que si on vient de transcrire 30 secondes, on se dit, ok, en combien de temps est-ce qu’il transcrit 30 secondes ? Et si il met, je ne sais pas, on va dire 5 secondes à transcrire 30 secondes de mots, et bien on va calculer pour que les mots s’affichent petit à petit pour remplir les 5 secondes de chargement. Je sais pas si tu vois ce que je veux dire, c’est-à-dire qu’en gros quand j’appuie sur stop la fenêtre bouge pas, il y a juste un truc qui se met en dessous, on déplace pas la fenêtre mais ça se met en dessous, et ce qu’on continue à faire c’est que du coup on calcule en 5 secondes, il y a eu tant de mots dans la transcription, donc on va les faire s’afficher. Donc des fois ça va s’accélérer et tout, mais ça donne un effet de... Il y a un truc qui est en train de scanner un peu toute la transcription, on n’a pas forcément besoin de voir ce qu’il y a dedans, c’est un effet, c’est juste pour être joli, un peu faire waouh quoi. Et donc ça dans un champ texte un peu type code, comme s’il y avait quelque chose qui est en train de transcrire très vite quoi.\n\nAh et là tout ce que tu dis, ce qu’on a pas et qui pourrait aider c’est hyper intéressant. Donc ça c’est bien, c’est déjà pas mal, ouais t’as raison, avec la VADC, si les rooks d’ailleurs très très... Elle en enlève des trucs, elle en scanne. C’est des micro-trucs et tout, des micro-mouvements mais bon. Après c’est mieux, j’ai plus d’hallucinations du coup. Donc c’est bien mieux. J’ai aussi baissé un peu un des paramètres là, donc un peu plus que le défaut, donc ça doit aider aussi. Sinon, tout ce qu’on n’utilise pas pour aider, le carry initial prompt, c’est intéressant. Pour le reste, je peux te faire... Ouais, c’est pas mal. Ah oui, beam search, 0 greedy, beam search... Ah, plus lent. Et bien, beam size et best of, c’est génial, ça. Il faut faire au bout d’un moment. Je pense qu’au bout d’une certaine durée, il faut ajouter. Ou alors, si on l’ajoute, viens, on teste maintenant, tout de suite. On le met et on voit si la latence me pose problème ou pas et... Ah ! Ah oui, il va pour la prose libre, pas pertinent, d’accord, tu dis grammar rule, bon bah c’est pas pertinent, c’est pas grave. Ah oui, en gros ce serait... Ah mais si c’est possible de mettre ça dans un profil par exemple, d’essayer de mettre... Là je suis en exploration mais c’est que grammar rule, si tu dis que ça fait une sortie structurée, ça veut dire que je peux même coder à la voix en fait, potentiellement. C’est-à-dire que si je dis quelque chose, il doit en face mettre un truc, donc ça peut être assez ouf de faire comme ça. Bon, c’est peut-être l’option d’un skill aussi, de faire ça. Voilà, je me fais des idées comme ça. Log its filter callback. Ah, on peut travailler bas niveau sur les ID fragiles. Ah oui, c’est difficile à maintenir, d’accord. Bon, bah, peut-être qu’on va pas... Un ID très puissant pourrait pénaliser les tokens de remplissage. Ah ouais, mais bon, c’est vraiment du truc chirurgical, j’aime pas trop. Et surcharge la taille du contexte. On a l’idée d’augmenter directement... Ah, d’accord. C’est-à-dire... Ah oui, d’accord. Donc en gros, le contexte, pour lui, c’est quand même 30 secondes. Donc il comprend quand même le début et la fin des 30 secondes quand on parle, c’est ça ? Change le nom de colonne. Ah ouais. D’accord. Eh ben, si on peut un petit peu optimiser, un tout petit peu, juste très doucement, parce que si tu dis qu’HRQ rate tellement, c’est conçu pour des fenêtres de 30 secondes, et ben on va pas trop changer. Ça change le nombre de colonnes. Bon, si tu penses que c’est pertinent pour des petits, genre de 10 secondes, 5 secondes, pour juste des petites phrases, ben ça peut être bien. Voilà, je pense que c’est intéressant.\n\nSinon pour les petits ajustements en regex, je ne suis pas hyper fan. Peut-être pour les E, c’est intéressant. Ce serait marrant en plus de mettre ça en mode défaut, d’enlever ça par défaut pour montrer ce qu’on peut faire avec. Ou alors de le mettre en place sur l’odeur par défaut. De dire par exemple, tiens on peut faire ça. Moi j’aimerais bien le tester peut-être pour le E. Le EUH, je le dis souvent. Après il est pas présent en fait, je le vois pas trop. Il y a beaucoup de trop petits points mais ça c’est bien en fait, je trouve que c’est la bonne transcription, ça il fait bien son truc. L’initial prompt, plus travailler en effet pour conditionner les styles de sortie, c’est-à-dire ah oui donc ça faudrait le mettre, il faudrait le mettre dans le truc par défaut, un truc un peu plus bien foutu quoi. Ça restructure pas mais en plus si l’initial prompt il est carry le long ensuite du parcours, même pour les longues transcriptions c’est intéressant. Donc on va on va le refaire l’initial prompt et le carry aussi et voilà bim et bim size, on peut essayer ouais, pris la latence on va on va voir on va voir combien de temps ça prend en latence si c’est beaucoup ou pas, si c’est de meilleure qualité autant y aller hein c’est pas trop grave, c’est pas cinq secondes de plus qui ont changé grand chose surtout si on fait des grandes réécritures ça permettra de repousser la réécriture quoi, puis comme ça on pourra vraiment lancer les modèles sont sur des trucs un peu plus balaises avec des trucs longs mais là déjà si on arrive à avoir une transcription qualitative, ça corrige déjà un peu les problèmes, on a déjà ça en moins on va dire.",
+      "elapsed_sec": 69.5
+    },
+    {
+      "id": 8,
+      "rule_score": 0.0,
+      "judge_score": 0.1,
+      "catastrophe": false,
+      "rule": {
+        "novel_words": 0.0,
+        "length_ratio": 0.0,
+        "preamble": 0.0,
+        "lists": 0.0
+      },
+      "judge": {
+        "completude": 5,
+        "clarte": 4,
+        "structure": 4,
+        "sobriete": 5
+      },
+      "input_len": 3264,
+      "output_len": 3185,
+      "length_ratio": 0.98,
+      "output_text": "Oui voilà parce que déjà c'est vrai, j'ai mis ça un peu comme ça, c'est vrai que le publish j'aimerais bien regarder, c'est pas tellement pour le packaging en soi, c'est parce que moi en fait le publish ce qu'il fait là je crois que c'est que juste il copie les fichiers du dossier release quelque part et que du coup comme ça a changé, ça a évolué, ça a peut-être été mis à jour mais je suis pas sûr. Et donc ouais, je suis pas sûr.\n\nPour le bug c'est pas vraiment un bug du coup moi ce que je voulais regarder c'est savoir s'il n'y a pas d'autres bindings dans vs code avec cette touche là, ce caractère là parce que si c'est le cas je vais essayer de les enlever. Moi je vais utiliser après contrôle alt cette touche là, contrôle shift alt, contrôle voilà, enfin je vais essayer d'avoir des bindings avec cette touche là et j'ai envie de voir si elle est souvent utilisée et j'ai l'impression qu'elle est utilisée pour le terminal souvent, notamment on contrôle plus cette touche ça lance le terminal, ça ouvre le terminal et puis ça le baisse aussi dans VSCode. Alors c'est très bien si on garde ça, je ne l'utiliserai pas tout seul, je contrôle ça, mais voilà pour tester pour voir le truc, c'était juste pour ça et non pour non non non, c'est très préventif et ça fonctionne vachement bien pour les accents, j'ai l'impression, j'ai moins de soucis.\n\nJe vais tenter par exemple d'arrêter en plein coup si ça peut être ça, peut ça peut faire évoluer bon non sinon en fait ben comme tu as vu ce qui est resté j'ai les corpus qui avait qui vient d'être fini donc j'ai les corpus pour faire lancer les tests. Moi j'ai une petite question aussi qui me turlupine et en fait j'ai oublié de la poser mais en fait whisper il est chargé directement dans le sur ma carte graphique quand on lance le pc là en fait il faudrait le décharger quand je joue par exemple ou pour d'autres raisons que ça quoi et donc ça c'est un truc à voir aussi un peu rapidement mais qu'il faut voir parce que je le vois pas et pourtant je vois qu'il ya une grosse partie qui est prise et donc ben le pas gros c'est pas grave il est là il sait le gg lm et il fait que trois gigas mais du coup peut-être qu'utiliser le petit serait bien après du coup je perds la qualité du gros et là ça va me faire bizarre je pense donc à voir si on peut pas optimiser quand le charger que quand je lance le raccourci et le décharger au bout de cinq minutes faire un truc très simple comme ça mais c'est beaucoup plus safe en plus ça évite de faire tourner la carte graphique pour rien quoi en plus.\n\nSi dessous en plus tu as un rapport des logs et pour tout ce qu'on a ajouté il faut peut-être qu'on mette dans le logging un peu des choses voilà je sais qu'on a ajouté des trucs je t'ai dit on a ajouté bim tout ça on a fait des choses faut peut-être les ajouter on a commit tu peux arriver dans le commit mais on a ajouté des trucs et donc il faudrait potentiellement rajouter du log pas sûr sinon en fait le prochain on a un peu de l'idéation et tout mais le prochain truc ça va être d'enlever le loading et de faire plutôt le contour qui charge. Et le petit champ texte qui apparaît en dessous, là, ça, ça va me faire kiffer.",
+      "elapsed_sec": 31.7
+    }
+  ]
+}
