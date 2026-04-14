@@ -369,3 +369,23 @@ Le simple ajout "chaque aller-retour de raisonnement" a clairement déstabilisé
 ---
 
 ## Itération 21 — revert vers it.19 (consigne vérification originale)
+
+**Score juge médian : 0.0000 / moyenne 0.0859**. Distribution : 0, 0, 0.14, 0, 0, 0.50, 0.05, 0.
+
+Même prompt qu'it.19, run normal (vs run chanceux d'it.19 à 0.030). #6 retombe à 0.50. La consigne de vérification finale ne suffit pas à stabiliser durablement #6.
+
+**Bilan agrégé it.14→it.21** sur l'angle "prompt compressé" :
+- Best moyenne : 0.0234 (it.14) — chanceux
+- Best médiane : 0.0000 atteinte 4 fois (it.14, 16, 18, 19, 21) — fréquent
+- #6 oscille sauvagement : 0.09, 0.50, 0.50, 0.19, 0.50, 0.19, 0.50, 0.50
+- Plancher moyenne réaliste : 0.06-0.09
+
+Le prompt actuel est solide pour 7 samples sur 8. Le pain point #6 (flux décousu avec dialogue interne sur sujet WinUI/Windows natif) ne se laisse pas dompter par les variations de consigne.
+
+**Axes pour l'itération 22** :
+- Angle persona éditoriale ("tu es éditeur de transcriptions pour publication") — angle pas encore testé.
+- Garder anti-préambule, vérification finale, exemple court.
+
+---
+
+## Itération 22 — persona éditoriale
