@@ -50,7 +50,11 @@ public sealed class TrayIconManager : IDisposable
         (_hIconRecording, _)           = LoadIconFromFile(active: true);
 
         // Ajouter l'icône dans la zone de notification
-        var data = BuildNotifyIconData("Whisp — Chargement du modèle...", _hIconIdle);
+        // Neutral placeholder: UpdateStatus("En attente") from App.OnLaunched
+        // replaces this moments later. Keeping the string in the same style
+        // as UpdateStatus avoids flashing a stale "loading" message since the
+        // model is lazy-loaded on first hotkey, not at boot.
+        var data = BuildNotifyIconData("Whisp — Ready", _hIconIdle);
         bool ok = NativeMethods.Shell_NotifyIcon(NativeMethods.NIM_ADD, ref data);
         if (!ok)
             throw new InvalidOperationException(
@@ -69,13 +73,30 @@ public sealed class TrayIconManager : IDisposable
         bool isRecording = status.StartsWith("Enregistrement");
         IntPtr icon = isRecording ? _hIconRecording : _hIconIdle;
 
-        string tip = $"Whisp — {status}";
+        // The engine emits status strings in French as internal keys (also
+        // used for comparisons in App.xaml.cs). The tooltip is user-facing,
+        // so it gets an English UX copy. Mapping stays local to the tray —
+        // engine keys remain the source of truth. Unknown status falls back
+        // to the raw string so nothing silently disappears on future changes.
+        string uxStatus = MapStatusForTooltip(status);
+        string tip = $"Whisp — {uxStatus}";
         if (tip.Length > 127) tip = tip[..127];
 
         var data = BuildNotifyIconData(tip, icon);
         data.uFlags = NativeMethods.NIF_ICON | NativeMethods.NIF_TIP;
         NativeMethods.Shell_NotifyIcon(NativeMethods.NIM_MODIFY, ref data);
     }
+
+    // Tooltip UX copy — kept isolated from the engine's status keys so Louis
+    // can refine the wording without risking a cross-module regression.
+    private static string MapStatusForTooltip(string engineStatus) => engineStatus switch
+    {
+        "En attente"                => "Ready",
+        "Enregistrement..."         => "Recording",
+        "Transcription en cours..." => "Transcribing",
+        "Chargement du modèle..."   => "Loading model",
+        _                           => engineStatus,
+    };
 
     // ── Interception des messages tray ────────────────────────────────────────
 

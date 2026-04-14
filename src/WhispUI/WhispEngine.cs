@@ -6,6 +6,13 @@ using WhispUI.Settings;
 
 namespace WhispUI;
 
+// Result of a pipeline pass, consumed by the HUD post-paste handler.
+//   None            — nothing to show (empty audio, empty text, error).
+//   Pasted          — text was delivered into the target; HUD flashes "Copié".
+//   ClipboardOnly   — text is on the clipboard but paste was refused or
+//                     disabled; HUD shows the Ctrl+V reminder for a few seconds.
+internal enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
+
 // ─── Transcription engine ─────────────────────────────────────────────────────
 //
 // Ported from WhispInteropTest (WhispForm) into a standalone class.
@@ -22,15 +29,13 @@ internal sealed class WhispEngine : IDisposable
     public event Action<string>?  StatusChanged;
 
     // Fired at the very end of Transcribe(), regardless of exit path
-    // (model not ready, empty text, normal exit). Used by HUD to hide.
+    // (model not ready, empty text, normal exit). The outcome tells the HUD
+    // whether text was actually delivered, so it can show a short "Copié"
+    // confirmation on success, a "Ctrl+V" reminder when the clipboard holds
+    // the result but paste was refused, or hide silently when there's
+    // nothing meaningful to report (errors, empty audio, empty text).
     // Background thread → subscriber responsible for marshaling.
-    public event Action?          TranscriptionFinished;
-
-    // Fired when StartRecording detects (via waveInOpen probe) that the
-    // audio device is unavailable. Subscriber (HudWindow) shows an explicit
-    // error message instead of the chrono. Hotkey thread → subscriber
-    // responsible for marshaling.
-    public event Action<string, string>? MicrophoneUnavailable;
+    public event Action<TranscriptionOutcome>? TranscriptionFinished;
 
     // Synchronous rendezvous just before PasteFromClipboard. The caller
     // (App.xaml.cs) hooks HudWindow.HideSync() to ensure no activation
@@ -276,13 +281,15 @@ internal sealed class WhispEngine : IDisposable
         // Probe the audio device BEFORE firing StatusChanged("Enregistrement...").
         // If the mic is absent/busy, short-circuit the entire pipeline:
         // no HUD chrono, no worker thread, no Transcribe(empty).
-        // Instead, MicrophoneUnavailable is raised → HudWindow shows a
-        // dedicated error message that stays visible for a few seconds.
+        // The UserFeedback payload carries the HUD-visible message through the
+        // LogService pipeline — one channel, no parallel event.
         if (!TryProbeMicrophone(out uint probeErr))
         {
             var (title, body) = DescribeMicError(probeErr);
-            _log.Error(LogSource.Record, $"probe MMSYSERR={probeErr} — {title}");
-            MicrophoneUnavailable?.Invoke(title, body);
+            _log.Error(
+                LogSource.Record,
+                $"probe MMSYSERR={probeErr} — {title}",
+                new UserFeedback(title, body, UserFeedbackSeverity.Error));
             return;
         }
 
@@ -316,26 +323,45 @@ internal sealed class WhispEngine : IDisposable
         // Single background thread: EnsureModel → Record → Transcribe.
         // Model load (if needed) happens here, not on the UI/hotkey thread,
         // so the app stays responsive during the GPU init (~1-3s).
+        //
+        // The try/catch/finally is the safety net that keeps the UI consistent
+        // when an exception escapes Record() or Transcribe(). Without it, a
+        // crash leaves _isRecording=true and StatusChanged never fires again,
+        // freezing the tray tooltip on "Enregistrement..." indefinitely.
         var worker = new Thread(() =>
         {
-            // Load model on-demand if not in VRAM (first use or after idle unload).
-            if (!EnsureModelLoaded())
+            try
             {
+                if (!EnsureModelLoaded())
+                {
+                    TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+                    return;
+                }
+
+                _recordingSw = System.Diagnostics.Stopwatch.StartNew();
+                StatusChanged?.Invoke("Enregistrement...");
+
+                float[] audio = Record();
+                _isRecording = false;
+                StatusChanged?.Invoke("Transcription en cours...");
+                Transcribe(audio);
+                ResetIdleTimer();
+            }
+            catch (Exception ex)
+            {
+                // Recover the UI status that the normal terminal paths would
+                // have emitted, so the tray tooltip leaves the recording state.
+                _log.Error(LogSource.Transcribe, $"pipeline crashed: {ex.GetType().Name}: {ex.Message}");
+                StatusChanged?.Invoke("En attente");
+                TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+            }
+            finally
+            {
+                // Flags reset unconditionally — subsequent hotkeys must be able
+                // to start a new pipeline even after a crash.
                 _isRecording = false;
                 _pipelineActive = false;
-                TranscriptionFinished?.Invoke();
-                return;
             }
-
-            _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-            StatusChanged?.Invoke("Enregistrement...");
-
-            float[] audio = Record();
-            _isRecording = false;
-            StatusChanged?.Invoke("Transcription en cours...");
-            Transcribe(audio);
-            _pipelineActive = false;
-            ResetIdleTimer();
         });
         worker.IsBackground = true;
         worker.Start();
@@ -389,10 +415,10 @@ internal sealed class WhispEngine : IDisposable
     // — no Win32 jargon. Raw code is logged elsewhere for debug.
     private static (string Title, string Body) DescribeMicError(uint err) => err switch
     {
-        2 => ("Aucun microphone détecté", "Branche un micro ou vérifie l'entrée audio sélectionnée dans les paramètres de transcription."),
-        6 => ("Aucun microphone détecté", "Branche un micro ou vérifie l'entrée audio sélectionnée dans les paramètres de transcription."),
-        4 => ("Microphone occupé", "Un autre logiciel utilise déjà le microphone. Ferme-le puis relance l'enregistrement."),
-        _ => ("Microphone indisponible", $"L'ouverture du périphérique audio a échoué (code MMSYSERR {err}).")
+        2 => ("No microphone detected", "Plug in a microphone or check the audio input selected in the transcription settings."),
+        6 => ("No microphone detected", "Plug in a microphone or check the audio input selected in the transcription settings."),
+        4 => ("Microphone in use", "Another application is already using the microphone. Close it and try again."),
+        _ => ("Microphone unavailable", $"Opening the audio device failed (MMSYSERR code {err}).")
     };
 
     // ── Audio recording ─────────────────────────────────────────────────────
@@ -652,7 +678,7 @@ internal sealed class WhispEngine : IDisposable
         if (ctx == IntPtr.Zero)
         {
             StatusChanged?.Invoke("Modèle non prêt");
-            TranscriptionFinished?.Invoke();
+            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
 
@@ -660,7 +686,7 @@ internal sealed class WhispEngine : IDisposable
         {
             _log.Warning(LogSource.Transcribe, "empty audio buffer, nothing to transcribe");
             StatusChanged?.Invoke("En attente");
-            TranscriptionFinished?.Invoke();
+            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
 
@@ -715,7 +741,7 @@ internal sealed class WhispEngine : IDisposable
         {
             _log.Error(LogSource.Transcribe, $"whisper_full returned code {result}");
             StatusChanged?.Invoke("Erreur transcription");
-            TranscriptionFinished?.Invoke();
+            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
 
@@ -739,7 +765,7 @@ internal sealed class WhispEngine : IDisposable
         if (string.IsNullOrWhiteSpace(fullText))
         {
             StatusChanged?.Invoke("En attente");
-            TranscriptionFinished?.Invoke();
+            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
             return;
         }
 
@@ -814,7 +840,14 @@ internal sealed class WhispEngine : IDisposable
 
         StatusChanged?.Invoke("En attente");
         _recordingSw?.Stop();
-        TranscriptionFinished?.Invoke();
+
+        // Outcome : Pasted on a verified paste delivery, ClipboardOnly when
+        // the text made it to the clipboard but paste was disabled or refused
+        // (target lost, WhispUI itself, SendInput partial) — the HUD uses
+        // this to flash "Copié" or the Ctrl+V reminder before hiding.
+        var outcome = (_shouldPaste && pasteVerified) ? TranscriptionOutcome.Pasted
+                                                      : TranscriptionOutcome.ClipboardOnly;
+        TranscriptionFinished?.Invoke(outcome);
     }
 
     // ── Presse-papier ─────────────────────────────────────────────────────────
