@@ -25,7 +25,14 @@
       "Bash(python -c ':*)",
       "Bash(python -c )",
       "Bash(python benchmark.py --skip-judge --verbose)",
-      "Bash", "Read", "Write", "Edit", "Glob", "Grep"
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Skill(benchmark-loop)",
+      "Skill(benchmark-loop:*)"
     ]
   }
 }
