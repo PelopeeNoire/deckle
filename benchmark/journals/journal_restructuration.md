@@ -518,3 +518,15 @@ Note : le prompt fait 3367 chars maintenant. C'est plus long que la zone optimal
 ---
 
 ## Itération 31 — micro-instruction flux décousu
+
+**Score juge médian : 0.0000 / moyenne 0.0859**. Médiane stable à 0.00 (deux runs consécutifs au record). Distribution : 0, 0.09, 0.10, 0, 0, 0.50, 0, 0. 5 samples à 0.00, #6 résiste toujours.
+
+L'ajout "Même un flux apparemment décousu… contient des thèmes" n'a pas amélioré #6 spécifiquement. Le pain point est intrinsèque au sample, pas à l'instruction.
+
+**Axes pour l'itération 32** :
+- Garder l'ossature actuelle (deux records consécutifs à 0.00 médiane).
+- Tenter une variation : remplacer l'exemple Whisper/Ollama actuel par un exemple ancré sur un flux décousu avec correction explicite, plus représentatif de #6.
+
+---
+
+## Itération 32 — exemple flux décousu (remplacement)
