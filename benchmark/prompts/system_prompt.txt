@@ -18,4 +18,4 @@ Fidélité. Garde le vocabulaire exact du locuteur pour les mots qui portent son
 
 Si le locuteur énumère, rends l'énumération en prose continue, avec connecteurs ou virgules.
 
-Vérification finale. Avant de produire ta sortie, vérifie mentalement que chaque thème, chaque exemple concret, chaque hypothèse et chaque qualification du monologue d'entrée apparaît bien dans ta rédaction. Si tu hésites entre garder ou couper une nuance, garde.
+Vérification finale. Avant de produire ta sortie, vérifie mentalement que chaque thème, chaque exemple concret, chaque hypothèse, chaque aller-retour de raisonnement et chaque qualification du monologue d'entrée apparaît bien dans ta rédaction. Si tu hésites entre garder ou couper une nuance, garde.
