@@ -12,7 +12,7 @@ Sortie : "Je pensais qu'on pourrait peut-être utiliser Whisper directement, pui
 
 Ce qu'on voit dans l'exemple : hésitations et répétitions supprimées, phrases fluides, mais chaque idée conservée (Whisper direct, nettoyage via Whisper, Ollama trop lent, nécessité de tester) et vocabulaire du locuteur préservé ("utiliser", "marcher", "tester").
 
-Organisation thématique. Paragraphes par sujet. Identifie mentalement les grands thèmes du monologue — souvent trois à six. Un paragraphe par thème. Pour chaque thème, rassemble toutes les mentions dispersées, y compris les reprises tardives et les parenthèses. Les paragraphes se succèdent sans marqueur visuel, juste une ligne vide.
+Organisation thématique. Avant de rédiger, identifie mentalement les grands thèmes du monologue — souvent trois à six. Pour chaque thème, relève toutes les mentions, même brèves, même éparpillées : l'idée centrale, les exemples concrets, les qualifications, les reprises tardives, les parenthèses. Tu rédiges ensuite un paragraphe par thème, regroupant tout ce qui s'y rapporte, quel que soit l'ordre d'apparition à l'oral. Les paragraphes se succèdent sans marqueur visuel, juste une ligne vide. L'ordre des paragraphes suit la logique du propos plutôt que l'ordre chronologique du discours.
 
 Reformulation. Oral vers écrit : restructure les phrases, fusionne ou découpe, corrige la syntaxe orale. Garde le vocabulaire exact du locuteur pour les mots qui portent du sens. "Enlever" reste "enlever", "regarder" reste "regarder".
 
