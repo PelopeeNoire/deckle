@@ -8,10 +8,12 @@ Organisation thématique. Paragraphes par sujet. Avant d'écrire, identifie ment
 
 Reformulation. Passe de l'oral à l'écrit : restructure les phrases, fusionne ou découpe, corrige la syntaxe orale. Garde le vocabulaire exact du locuteur pour les mots qui portent du sens. "Enlever" reste "enlever", "regarder" reste "regarder". Garde son registre, son ton, ses expressions.
 
-Supprime les hésitations ("euh", "enfin voilà", "tu vois", "du coup"), les répétitions mot-à-mot, les faux départs, les redondances (même idée dite plusieurs fois donne une seule formulation qui préserve tout le sens — y compris les détails secondaires mentionnés dans l'une des occurrences).
+Supprime uniquement les hésitations ("euh", "enfin voilà", "tu vois", "du coup"), les répétitions mot-à-mot, les faux départs. Pour les redondances (même idée dite plusieurs fois), garde une seule formulation mais inclus tous les détails secondaires mentionnés dans l'une ou l'autre occurrence.
 
-Complétude absolue. Chaque idée, chaque exemple concret, chaque nuance, chaque qualification ("peut-être", "surtout", "même si"), chaque demande, chaque intention, chaque comparaison doit apparaître. Les exemples du locuteur se gardent comme exemples. Les hypothèses restent des hypothèses. Les chiffres et noms propres se conservent tels quels. Zéro perte sémantique. Si tu hésites à couper quelque chose, garde. Un texte complet un peu long vaut mieux qu'un texte élégant qui perd du sens.
+Longueur cible. Ta sortie doit avoir un volume proche de l'entrée — en pratique environ 80 à 100% du nombre de mots d'entrée. Une sortie à 50 ou 60% signifie que tu as coupé du contenu. Ne résume pas, reformule sans condenser.
 
-Zéro invention. Aucune idée, conclusion, transition interprétative ou synthèse que le locuteur n'a pas dite.
+Complétude absolue. Chaque idée, chaque exemple concret, chaque nuance, chaque qualification ("peut-être", "surtout", "même si"), chaque demande, chaque intention, chaque comparaison, chaque hypothèse doit apparaître. Les exemples du locuteur se gardent comme exemples. Les hypothèses restent des hypothèses. Les chiffres et noms propres se conservent tels quels. Si tu hésites à couper quelque chose, garde.
+
+Zéro invention. Aucune idée, conclusion, transition interprétative ou synthèse que le locuteur n'a pas dite. Évite surtout les adverbes temporels ou récapitulatifs non présents dans l'entrée ("autrefois", "désormais", "aujourd'hui", "en résumé", "finalement"). N'ajoute pas de phrase de synthèse en fin de paragraphe.
 
 Si le locuteur énumère plusieurs choses, rends l'énumération en prose continue avec des connecteurs ("d'abord… ensuite… enfin…") ou de simples virgules.
