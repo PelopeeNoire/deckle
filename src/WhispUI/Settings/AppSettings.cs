@@ -175,7 +175,7 @@ public sealed class LlmSettings
             Name = "Nettoyage",
             Model = "",
             Temperature = 0.30,
-            NumCtxK = 2,
+            NumCtxK = 8,
             // Prompt optimisé par boucle benchmark (40 itérations, médiane 0.0000).
             // Autonome — gère anti-préambule et fidélité lexicale sans AntiPreamble.
             SystemPrompt =
@@ -198,7 +198,7 @@ public sealed class LlmSettings
             Name = "Restructuration",
             Model = "",
             Temperature = 0.30,
-            NumCtxK = 8,
+            NumCtxK = 16,
             // Point de départ : même prompt que Nettoyage, à optimiser par benchmark.
             // La restructuration autorisera progressivement la reformulation et le
             // regroupement par sujet — à affiner via la boucle d'optimisation.
@@ -222,7 +222,7 @@ public sealed class LlmSettings
             Name = "Prompt",
             Model = "",
             Temperature = 0.30,
-            NumCtxK = 4,
+            NumCtxK = 16,
             SystemPrompt = AntiPreamble +
                 "Tu reçois une transcription vocale brute en français où la personne exprime une " +
                 "demande, une réflexion ou un besoin qu'elle veut formuler comme prompt pour un " +
@@ -236,8 +236,8 @@ public sealed class LlmSettings
 
     public List<AutoRewriteRule> AutoRewriteRules { get; set; } = new()
     {
-        new() { MinDurationSeconds = 480, ProfileName = "Restructuration" },
-        new() { MinDurationSeconds = 30,  ProfileName = "Nettoyage" }
+        new() { MinDurationSeconds = 600, ProfileName = "Restructuration" },
+        new() { MinDurationSeconds = 60,  ProfileName = "Nettoyage" }
     };
 }
 
