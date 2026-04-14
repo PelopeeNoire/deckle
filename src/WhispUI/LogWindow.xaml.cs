@@ -242,7 +242,7 @@ public sealed partial class LogWindow : Window, ILogSink
 
         // WinUI 3: Activate() doesn't always bring the window to front when
         // called from a tray callback. SetForegroundWindow from the same
-        // process is allowed (AnchorWindow already holds foreground).
+        // process is allowed (the message-only tray host is same-process).
         NativeMethods.SetForegroundWindow(_hwnd);
     }
 
