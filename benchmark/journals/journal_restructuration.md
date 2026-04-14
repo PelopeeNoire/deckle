@@ -221,3 +221,19 @@ Rule-based false positive sur #5 (preamble=1, sortie commence par "La transcript
 ---
 
 ## Itération 12 — reformulation "Organisation thématique" plus directive
+
+**Score juge médian : 0.0000** (moyenne 0.0797). Nouveau record médiane (6 samples à 0.00) mais **régression franche sur la moyenne** vs it.11 (0.0375 → 0.0797) — #6 repart à 0.50 (3/3/3/3).
+
+Distribution juge : 0, 0.09, 0.05, 0, 0, 0.50, 0, 0.
+
+La reformulation en "identifie mentalement les grands thèmes, regroupe dans la logique du propos plutôt que l'ordre chronologique" a sans doute incité le modèle à recomposer trop agressivement sur #6 (flux décousu avec hypothèses multiples), effaçant des étapes de raisonnement. Len_ratio #6 = 0.72 (pas une condensation extrême), c'est la réorganisation qui a fait perdre comp/clar/str d'un coup.
+
+**Décision** : revenir à la section "Organisation thématique" de l'it.11 (plus sobre). La moyenne 0.0375 était un acquis solide, à ne pas lâcher pour un gain médiane sujet au bruit.
+
+**Axes pour l'itération 13** :
+- Revert de "Organisation thématique" vers la formulation it.11.
+- Tester autre chose pour gagner sur les 0.05-0.10 résiduels sans toucher au pain point.
+
+---
+
+## Itération 13 — revert organisation thématique vers it.11
