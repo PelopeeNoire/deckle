@@ -204,3 +204,20 @@ Distribution juge : 0, 0.09, 0.14, 0, 0, **0.50**, 0.05, 0. Sample #6 régresse 
 ---
 
 ## Itération 11 — rappel anti-fusion sur flux décousus
+
+**Score juge médian : 0.0250** (moyenne **0.0375**). **Nouveau record de moyenne** (best précédent : 0.0516 en it.8). Tous les samples ≤ 0.10, aucune catastrophe.
+
+Distribution juge : 0, 0.05, 0.10, 0, 0.05, 0.10, 0, 0. Quatre samples à 0.00.
+
+**#6 résolu durablement** : 0.50 → 0.10 (comp=5 clar=4 str=4 sob=5). Le rappel "ne fusionne pas plusieurs allers-retours en une conclusion directe" a bien accroché. Len_ratio remonté de 0.63 à 0.71.
+
+Rule-based false positive sur #5 (preamble=1, sortie commence par "La transcription progressive est une priorité…"). Juge=0.05, à ignorer.
+
+**Axes pour l'itération 12** :
+- Ne pas casser l'acquis. Tester une micro-variation.
+- Il reste de la marge sur #3 (0.10, str=4 clar=4) et #6 (0.10, str=4 clar=4) — la STRUCTURE pourrait mieux regrouper.
+- Tenter une reformulation de la section "Organisation thématique" pour mieux ancrer le regroupement.
+
+---
+
+## Itération 12 — reformulation "Organisation thématique" plus directive
