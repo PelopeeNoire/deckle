@@ -417,3 +417,19 @@ Pire moyenne récente. La compression à 2001 chars (vs 2973 en it.19) a coûté
 ---
 
 ## Itération 24 — revert vers it.19 (best stable connu)
+
+**Score juge médian : 0.0437 / moyenne 0.1984**. Distribution : 0, 0.50, 0, 0.09, 0.50, 0.50, 0, 0. Trois catastrophes (#2, #5, #6).
+
+**Variance massive confirmée** : prompt identique au byte près (it.19 = it.21 = it.24) donne 0.030 / 0.086 / 0.198 sur trois runs successifs. C'est la variance de génération + variance du juge cumulées. Le piège connu "juge bruité ± 0.05-0.10" sous-estime la réalité — on voit ± 0.15-0.17 sur la moyenne.
+
+#5 cette fois a une vraie catastrophe juge (3/3/3/3) alors qu'avant c'était un faux positif rule-based seul. Le juge lui-même évalue différemment d'un run à l'autre.
+
+**Conséquence méthodologique** : on ne peut conclure ni "plancher atteint" ni "amélioration" sur un seul run. Continuer à varier les angles, capitaliser sur les patterns récurrents.
+
+**Axes pour l'itération 25** :
+- Ajouter une consigne explicite de fidélité de longueur ("ne pas raccourcir significativement").
+- Garder l'ossature it.19.
+
+---
+
+## Itération 25 — consigne fidélité de longueur
