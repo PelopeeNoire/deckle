@@ -25,7 +25,7 @@ public static class IconAssets
     }
 
     // Helper pour les fenêtres qui n'ont pas besoin de swap dynamique
-    // (HUD, Anchor) — pose juste l'icône idle une fois en constructeur.
+    // (HUD) — pose juste l'icône idle une fois en constructeur.
     public static void ApplyToWindow(AppWindow appWindow, bool recording = false)
     {
         var path = ResolvePath(recording);

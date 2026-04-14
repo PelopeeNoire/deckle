@@ -51,6 +51,29 @@ internal struct NOTIFYICONDATA
     public IntPtr hBalloonIcon;
 }
 
+// ── WNDCLASSEX ────────────────────────────────────────────────────────────────
+//
+// Window class descriptor passed to RegisterClassEx. cbSize must be set to
+// Marshal.SizeOf<WNDCLASSEX>() before the call. lpfnWndProc is an IntPtr to a
+// function pointer obtained via Marshal.GetFunctionPointerForDelegate — the
+// delegate itself must be rooted in a managed field to keep it alive.
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct WNDCLASSEX
+{
+    public uint   cbSize;
+    public uint   style;
+    public IntPtr lpfnWndProc;
+    public int    cbClsExtra;
+    public int    cbWndExtra;
+    public IntPtr hInstance;
+    public IntPtr hIcon;
+    public IntPtr hCursor;
+    public IntPtr hbrBackground;
+    public string? lpszMenuName;
+    public string  lpszClassName;
+    public IntPtr hIconSm;
+}
+
 // INPUT aplati : représente un événement clavier pour SendInput.
 //
 // La struct Windows INPUT contient une union C (clavier, souris, matériel).
