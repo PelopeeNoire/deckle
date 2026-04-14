@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -13,9 +14,10 @@ namespace WhispUI.Settings.Llm;
 // Liste des profils de réécriture. Tout le contenu est déclaratif (XAML
 // DataTemplate + ProfileViewModel). Le code-behind ne gère que :
 //  - Reload() → repopule l'ObservableCollection depuis le POCO
-//  - Click handlers (Save/Cancel/Delete/Add) via Tag={x:Bind}
+//  - Click handlers (Delete/Add) via Tag={x:Bind}
 //  - Model AutoSuggestBox handlers → push vers le VM + filtre la liste
-//  - ProfilesChanged event pour notifier Rules et ManualShortcut
+//  - ProfilesChanged event (fired on Name changes via PropertyChanged) pour
+//    notifier Rules et ManualShortcut de rafraîchir leurs listes
 
 public sealed partial class LlmProfilesSection : UserControl
 {
@@ -48,39 +50,25 @@ public sealed partial class LlmProfilesSection : UserControl
         {
             var vm = new ProfileViewModel();
             vm.LoadFrom(i, s.Profiles[i], isNew: false);
+            TrackProfile(vm);
             Profiles.Add(vm);
         }
     }
 
-    private void SaveProfile_Click(object sender, RoutedEventArgs e)
+    // Fire ProfilesChanged when a profile's Name changes so Rules and
+    // ManualShortcut refresh their dropdowns live. Auto-save on every
+    // property change would be overkill — only Name is surfaced elsewhere.
+    // No unsubscribe: VMs live as long as this section, and Reload() starts
+    // from an empty collection.
+    private void TrackProfile(ProfileViewModel vm)
     {
-        if (sender is FrameworkElement fe && fe.Tag is ProfileViewModel vm)
-        {
-            vm.Save();
-            ProfilesChanged?.Invoke(this, EventArgs.Empty);
-        }
+        vm.PropertyChanged += OnProfilePropertyChanged;
     }
 
-    private void CancelProfile_Click(object sender, RoutedEventArgs e)
+    private void OnProfilePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.Tag is ProfileViewModel vm)
-        {
-            if (vm.IsNew)
-            {
-                var profiles = SettingsService.Instance.Current.Llm.Profiles;
-                if (vm.ProfileIndex < profiles.Count)
-                {
-                    profiles.RemoveAt(vm.ProfileIndex);
-                    SettingsService.Instance.Save();
-                }
-                Profiles.Remove(vm);
-                ProfilesChanged?.Invoke(this, EventArgs.Empty);
-            }
-            else
-            {
-                vm.Cancel();
-            }
-        }
+        if (e.PropertyName == nameof(ProfileViewModel.Name))
+            ProfilesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
@@ -111,11 +99,11 @@ public sealed partial class LlmProfilesSection : UserControl
         }
     }
 
-    // ── TextChanged → push value immediately for dirty detection ──────────
+    // ── TextChanged → push value immediately for live auto-save ────────────
     //
     // x:Bind TwoWay on TextBox updates the source on LostFocus only.
-    // These handlers push the value on every keystroke so IsDirty updates
-    // immediately and the Save/Cancel bar appears without waiting for blur.
+    // These handlers push the value on every keystroke so auto-save fires
+    // during typing, matching the cadence of slider/NumberBox interactions.
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -207,6 +195,7 @@ public sealed partial class LlmProfilesSection : UserControl
         int index = s.Profiles.Count - 1;
         var vm = new ProfileViewModel();
         vm.LoadFrom(index, s.Profiles[index], isNew: true);
+        TrackProfile(vm);
         Profiles.Add(vm);
 
         ProfilesChanged?.Invoke(this, EventArgs.Empty);

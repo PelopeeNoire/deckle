@@ -148,19 +148,6 @@
                                                        MinWidth="160" />
                                         </StackPanel>
                                     </Expander>
-
-                                    <!-- Save / Cancel -->
-                                    <StackPanel Orientation="Horizontal"
-                                                Spacing="8"
-                                                Visibility="{x:Bind ActionsVisibility, Mode=OneWay}">
-                                        <Button Content="Save"
-                                                Style="{StaticResource AccentButtonStyle}"
-                                                Tag="{x:Bind}"
-                                                Click="SaveProfile_Click" />
-                                        <Button Content="Cancel"
-                                                Tag="{x:Bind}"
-                                                Click="CancelProfile_Click" />
-                                    </StackPanel>
                                 </StackPanel>
                             </controls:SettingsCard>
                         </controls:SettingsExpander.Items>
