@@ -57,12 +57,15 @@
                                                     PlaceholderText="Ollama model name"
                                                     Tag="{x:Bind}"
                                                     Text="{x:Bind Model, Mode=OneWay}"
-                                                    QueryIcon="ChevronDown"
                                                     GotFocus="ModelSuggest_GotFocus"
                                                     TextChanged="ModelSuggest_TextChanged"
                                                     SuggestionChosen="ModelSuggest_SuggestionChosen"
                                                     QuerySubmitted="ModelSuggest_QuerySubmitted"
-                                                    HorizontalAlignment="Stretch" />
+                                                    HorizontalAlignment="Stretch">
+                                        <AutoSuggestBox.QueryIcon>
+                                            <FontIcon Glyph="&#xE70D;" />
+                                        </AutoSuggestBox.QueryIcon>
+                                    </AutoSuggestBox>
 
                                     <TextBox Header="System prompt"
                                              Text="{x:Bind SystemPrompt, Mode=TwoWay}"
