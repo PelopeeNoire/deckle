@@ -104,3 +104,17 @@ Distribution : 0, 0.50, 0.05, 0, 0, 0.10, 0, 0. Cinq samples à 0.00. Mais #2 r�
 - Donner une cible de longueur plus concrète (proche de l'entrée, pas moitié).
 - Interdire explicitement les termes interprétatifs ajoutés ("autrefois", "désormais", "en résumé").
 - Garder le cadre itération 5 (il a donné la médiane 0.0000).
+
+---
+
+## Itération 6 — cible longueur 80-100% + interdiction adverbes interprétatifs
+
+**Score juge médian : 0.0250** (moyenne 0.0969). Régression vs it.5 (0.00 / 0.081). Cette fois c'est #6 qui tombe à 0.50 (3/3/3/3) avec len_ratio 0.59. La consigne "80-100%" n'a pas empêché la condensation : len_ratios 0.50, 0.52, 0.54, 0.59, 0.85, 0.86, 0.87, 0.89.
+
+La variance sample-par-sample d'un run à l'autre suggère du bruit du juge ± de la génération. Ordre de grandeur du bruit observé : ~0.025 sur médiane, ~0.03 sur moyenne.
+
+**Observation** : on touche au plancher atteignable avec ce cadre FR + Ministral 14B. Le seul angle encore non exploré est l'anglais (recommandé par loop_prompt si blocage).
+
+**Axes pour l'itération 7** :
+- Essayer un prompt en anglais pour Ministral (parfois meilleure instruction-following).
+- Conserver toutes les contraintes mais varier la forme.
