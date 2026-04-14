@@ -271,3 +271,21 @@ Len_ratios très variables (0.37 à 0.79) mais le juge ne pénalise pas les cond
 ---
 
 ## Itération 15 — ajout d'un second exemple court (flux décousu)
+
+**Score juge médian : 0.0000 / moyenne 0.0859**. **Régression franche** sur la moyenne (0.0234 → 0.0859).
+
+Distribution : 0, 0.05, 0.14, 0, 0, 0.50, 0, 0.
+
+**Problème majeur #2** : le modèle a généré le préambule "Voici la reformulation structurée selon tes instructions :\n\n---" + liste. Le label "Exemple 2" dans le prompt a vraisemblablement déclenché l'imitation du cadre de présentation avec séparateur "---". Effet secondaire exact de ce que le skill met en garde : "few-shot long désoriente".
+
+#6 repart à 0.50. Le second exemple (SettingsCard/MicaBackdrop) qui pourtant ressemble au sample #6 ne l'a pas stabilisé — probablement parce que le modèle est maintenant distrait par la structure du prompt plutôt que par le contenu.
+
+**Décision** : revert complet à la compression it.14 qui est le meilleur résultat à ce jour.
+
+**Axes pour l'itération 16** :
+- Revert vers le prompt it.14 (confirmer la stabilité en re-benchmarkant).
+- Ne plus toucher aux exemples. Tenter des ajustements ailleurs (phrasé des consignes, ordre).
+
+---
+
+## Itération 16 — revert vers it.14 (re-test stabilité)
