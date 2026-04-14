@@ -389,3 +389,17 @@ Le prompt actuel est solide pour 7 samples sur 8. Le pain point #6 (flux décous
 ---
 
 ## Itération 22 — persona éditoriale
+
+**Score juge médian : 0.0500 / moyenne 0.0969**. Distribution : 0.09, 0.09, 0.05, 0, 0, 0.50, 0, 0.05.
+
+Régression sur #1 (0→0.09) et #2 (0→0.09). #4 a un len_ratio de **1.21** — le modèle a sur-écrit, dépassant la longueur de l'entrée. La consigne "publication écrite, finition prime sur concision" pousse trop vers l'élaboration. #6 reste à 0.50.
+
+L'angle persona éditoriale est donc nuisible : il invite à enrichir au lieu de simplement mettre en forme.
+
+**Axes pour l'itération 23** :
+- Revert de la persona vers la formulation neutre it.21.
+- Tenter une approche encore plus minimale (compression supplémentaire) pour voir si la sobriété aide.
+
+---
+
+## Itération 23 — revert persona + compression supplémentaire
