@@ -62,13 +62,13 @@ Règle : ne pas sauter à la réécriture LLM tant que la transcription n'est pa
 
 - **`AllowUnsafeBlocks` obligatoire** dans le csproj : sans, `SYSLIB1062` / `CS0227` sur `LibraryImport`.
 - **WhispInteropTest doit être tué** avant tout test (collision hotkey `RegisterHotKey` err 1409).
-- **Lifetime WinUI 3** : ne JAMAIS laisser fermer `AnchorWindow` (Closing→Cancel). Toutes les Windows (HUD, LogWindow, SettingsWindow) suivent la même règle. Sortie unique = menu Quitter du tray → `Application.Current.Exit()`.
+- **Lifetime WinUI 3** : toutes les Windows (HUD, LogWindow, SettingsWindow) bloquent leur fermeture via `Closing→Cancel`. Sortie unique = menu Quitter du tray → `QuitApp()` qui libère tray, message host, engine puis `Environment.Exit(0)`.
+- **Tray + hotkeys host** : pas une `Microsoft.UI.Xaml.Window`. C'est une **message-only window Win32** (`MessageOnlyHost`, parent `HWND_MESSAGE`) créée dans `App.OnLaunched`. Invisible par construction — pas de flash possible, pas de trick off-screen. `TrayIconManager.Register(hwnd)` et `HotkeyManager` s'attachent dessus via `SetWindowSubclass` exactement comme avant.
 - **Délégué `SubclassProc`** : champ d'instance (jamais lambda locale) sinon GC.
 - **Pas de `UseWindowsForms`** dans le csproj (conflit XAML WinUI 3).
 - **`Window` n'a pas de `Resources` en WinUI 3** (contrairement à WPF) : déclarer les ressources XAML sur le `Grid` racine (`<Grid.Resources>`), pas sur `<Window.Resources>` (erreur WMC0011).
 - **Objets UI WinUI 3 créés uniquement sur le thread UI** — y compris `SolidColorBrush`. Tout objet UI instancié depuis un thread de fond lève `COMException` (`RPC_E_WRONG_THREAD`). Pattern : créer brushes/objets dans le constructeur de la Window et les réutiliser dans les handlers d'events venant des threads Record/Transcribe.
 - **LogWindow jamais affichée** : ne pas toucher à `LogScrollViewer.UpdateLayout()` tant que la fenêtre n'a pas été montrée au moins une fois (flag `_isVisible`).
-- **Accessibilité constructeur public** : si `AnchorWindow` (public) prend un `TrayIconManager` en paramètre, `TrayIconManager` doit être `public` (CS0051).
 - **Caption buttons Tall sur title bar custom** : `ExtendsContentIntoTitleBar=true` seul ne force pas la hauteur Tall des caption buttons système — ajouter explicitement `AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall`. Vrai aussi avec le contrôle `Microsoft.UI.Xaml.Controls.TitleBar` natif — il ne gère pas cette hauteur tout seul.
 
 ---
@@ -91,13 +91,14 @@ Détails (coloration progressive, fade proximité, ombre layered, régressions n
 Ordre `OnLaunched` :
 
 1. `_engine = new WhispEngine()`
-2. `_logWindow = new LogWindow()` hors écran + `Show(false)`
-3. `_hudWindow = new HudWindow(...)` hors écran + `Show(false)`
-4. `_tray = new TrayIconManager()`
-5. `_anchor = new AnchorWindow(...)` hors écran + `Show(false)`
-6. Dans `AnchorWindow.OnRootLoaded` : `_tray.Register`, `_hotkeyManager.Register`, `SW_HIDE`
-7. Branchement events engine → tray + LogWindow + HudWindow
-8. Tray callbacks : Logs → `_logWindow.ShowAndActivate()` ; Quitter → `Application.Current.Exit()`
+2. `_logWindow = new LogWindow()` — créée, pas de `Show`
+3. `_settingsWindow = new SettingsWindow()` — créée, pas de `Show`
+4. `_hudWindow = new HudWindow(...)` — créée, pas de `Show` (constructeur HUD capture HWND + subclass sans visibilité)
+5. `_tray = new TrayIconManager()` (callbacks seulement, pas encore `Register`)
+6. Branchement events engine → tray + LogWindow + HudWindow
+7. `_messageHost = new MessageOnlyHost()` → HWND natif invisible (parent `HWND_MESSAGE`)
+8. `_tray.Register(_messageHost.Hwnd)` + `_hotkeyManager = new HotkeyManager(_messageHost.Hwnd, OnHotkey); _hotkeyManager.Register()`
+9. Tray callbacks : Logs → `_logWindow.ShowAndActivate()` ; Quitter → `QuitApp()`
 
 **Filets de diagnostic globaux** dans `App` : `Application.UnhandledException`, `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` → `DebugLog` (préfixes `CRASH` / `CRASH-AD` / `CRASH-TS`).
 
