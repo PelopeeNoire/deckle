@@ -504,3 +504,17 @@ Pain point #6 résiste à toutes les variations testées (anti-fusion, méthode 
 ---
 
 ## Itération 30 — emphasis sur retours en arrière et contradictions
+
+**Score juge médian : 0.0000 / moyenne 0.0750**. **RECORD ABSOLU**. Distribution : 0, 0, 0, 0, 0, 0.50, 0.05, 0.05. **6 samples sur 8 à 0.00** dont les deux plus longs (#1, #2) et #5. Seul #6 résiste (toujours 0.50).
+
+Reformulation "Si le locuteur hésite, change d'avis, revient sur ce qu'il vient de dire ou se corrige, conserve toutes les étapes du raisonnement, même si elles se contredisent ou s'annulent" semble efficace — len_ratio #1 0.43 et #2 0.40 mais juge 0.00, donc le contenu est jugé complet malgré la compression substantielle.
+
+Note : le prompt fait 3367 chars maintenant. C'est plus long que la zone optimale 2700-3000 trouvée précédemment, mais ça marche. La variance reste forte donc on ne sait pas si c'est dû au contenu ou au noise.
+
+**Axes pour l'itération 31** :
+- Confirmer la robustesse en testant une variation légère.
+- Tenter une retouche sur le pain point #6 : ajouter un mini repère "même un flux décousu sans plan apparent doit être restructuré thématiquement".
+
+---
+
+## Itération 31 — micro-instruction flux décousu
