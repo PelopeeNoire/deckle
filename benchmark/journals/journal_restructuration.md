@@ -476,3 +476,17 @@ Lecture #6 (output partiel) : 4 paragraphes cohérents (Whisper natif, nettoyage
 ---
 
 ## Itération 28 — anti-synthèse explicite (court)
+
+**Score juge médian : 0.0500 / moyenne 0.1609**. Distribution : 0.50, 0.50, 0.05, 0, 0, 0.14, 0.05, 0.05. Médiane bonne mais moyenne tirée par #1 et #2 à 0.50 (len_ratio 0.46 et 0.54). #6 redescend à 0.14 (mieux qu'avant).
+
+L'ajout "Tu déploies, tu ne synthétises pas" n'a pas suffi à empêcher la compression sur les très longs (#1 6986c → 3215c, #2 5949c → ~3000c). Sortie #1 lue : contenu cohérent mais nettement raccourci, plusieurs nuances probablement perdues.
+
+**Hypothèse** : le modèle compresse parce qu'il ne sait pas qu'il devrait produire "beaucoup" de texte. Lui donner un repère structurel (nombre de paragraphes attendus en fonction de la longueur) pourrait l'aider.
+
+**Axes pour l'itération 29** :
+- Ajouter un repère quantitatif : "monologue long → 4 à 7 paragraphes substantiels".
+- Garder l'anti-synthèse, voir si le repère structure le déploiement.
+
+---
+
+## Itération 29 — repère quantitatif paragraphes
