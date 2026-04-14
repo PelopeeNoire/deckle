@@ -542,3 +542,14 @@ Hypothèse : l'exemple Whisper/Ollama original servait peut-être de canon "cour
 ---
 
 ## Itération 33 — revert exemple + ajout instruction "ne lisse pas le doute"
+
+**Score juge médian : 0.0250 / moyenne 0.1375**. Distribution : 0, 0.50, 0.05, 0, 0, 0.50, 0, 0.05. Médiane revient à 0.0250 mais moyenne reste tirée par #2 et #6 à 0.50.
+
+L'instruction "ne lisse pas les doutes du locuteur en certitudes" n'a pas amélioré #6 mais n'a pas dégradé. Le revert d'exemple a stabilisé.
+
+**Axes pour l'itération 34** :
+- Réintroduire la "vérification finale" supprimée en it.27. Peut-être qu'avec l'ossature actuelle elle aide.
+
+---
+
+## Itération 34 — réintroduction vérification finale
