@@ -319,3 +319,21 @@ Le renforcement anti-préambule en tête a limité le risque de régression sur 
 ---
 
 ## Itération 18 — méthode en trois étapes explicites
+
+**Score juge médian : 0.0000 / moyenne 0.0750**. Distribution : 0, 0.05, 0.05, 0, 0, 0.50, 0, 0.
+
+La méthode "D'abord / Ensuite / Enfin" fait gagner 2-3 samples sur la médiane (6 samples à 0.00 vs 5 en it.17) mais #6 repart à 0.50 — variance systémique. Aucun angle strictement sur la méthode ne stabilise #6.
+
+**Synthèse it.14→it.18** sur le même angle (prompt compressé) :
+- #6 oscille 0.09 / 0.50 / 0.50 / 0.19 / 0.50
+- Moyenne oscille 0.023 / 0.086 / 0.081 / 0.047 / 0.075
+
+Le plancher semble être autour de 0.04-0.07 en moyenne pour cet angle. Le best 0.0234 (it.14) est un outlier chanceux.
+
+**Axes pour l'itération 19** :
+- Angle neuf : consigne de vérification post-rédaction, pour forcer une passe de complétude.
+- Garder la compression et l'anti-préambule en ouverture.
+
+---
+
+## Itération 19 — consigne de vérification de complétude

@@ -17,3 +17,5 @@ Zéro invention. Pas d'idée, transition ou conclusion que le locuteur n'a pas d
 Fidélité. Garde le vocabulaire exact du locuteur pour les mots qui portent son sens. "Enlever" reste "enlever". Le registre et le ton sont ceux du locuteur.
 
 Si le locuteur énumère, rends l'énumération en prose continue, avec connecteurs ou virgules.
+
+Vérification finale. Avant de produire ta sortie, vérifie mentalement que chaque thème, chaque exemple concret, chaque hypothèse et chaque qualification du monologue d'entrée apparaît bien dans ta rédaction. Si tu hésites entre garder ou couper une nuance, garde.
