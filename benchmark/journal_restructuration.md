@@ -73,3 +73,19 @@ Pattern : quand le prompt dit "jamais de séparateur ---", le modèle l'inclut q
 - Renforcer l'interdiction des `---` en la mettant en premier, pas dans une liste de rappels.
 - Insister sur : paragraphes séparés par simple ligne vide, jamais autre chose.
 - Traiter la complétude sur textes longs comme sujet spécifique.
+
+---
+
+## Itération 4 — format strict en ouverture, prose continue
+
+**Score juge médian : 0.0250** (stable). Moyenne **0.0469** (vs 0.0922 en it.3). Plus aucune catastrophe.
+
+Distribution juge : 0, 0, 0.14, 0, 0, 0.05, 0.14, 0.05.
+
+Samples à 0.14 (#3, #7) : comp=4 str=4 clar=5 sob=5 — quasi parfaits, perte d'un point sur complétude et structure.
+
+Rule-based false positive sur #5 (preamble=1) alors que juge=0 — la sortie commence par "La transcription progressive est une priorité…" (pas un préambule, mais le détecteur rule-based se trompe). À ignorer.
+
+**Axes pour l'itération 5** :
+- Réécrire le prompt en enlevant le risque de contagion de forme (fait).
+- Essayer une approche plus directive sur la complétude avec un exemple explicite de ce qu'est "perdre une nuance".
