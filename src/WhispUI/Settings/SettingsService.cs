@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using WhispUI.Logging;
 
@@ -76,6 +77,13 @@ public sealed class SettingsService
             }
 
             string json = File.ReadAllText(_configPath);
+
+            // One-shot migration: legacy "manualProfileName" → "slotAProfileName"
+            // (hotkey slots V1, 2026-04-15). Applied before strict deserialization
+            // so the legacy key is consumed even if AppSettings no longer carries
+            // it. Next Save() rewrites the file without the old key.
+            json = MigrateLegacyKeys(json);
+
             var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
             return parsed ?? new AppSettings();
         }
@@ -84,6 +92,33 @@ public sealed class SettingsService
             DebugLog.Write("SETTINGS", $"load failed ({ex.GetType().Name}: {ex.Message}) — fallback defaults");
             return new AppSettings();
         }
+    }
+
+    // One-shot rename of legacy JSON keys before strict deserialization.
+    // Non-destructive: if the legacy key is missing or the new key is already
+    // present, returns the input unchanged.
+    private static string MigrateLegacyKeys(string json)
+    {
+        try
+        {
+            var root = JsonNode.Parse(json) as JsonObject;
+            if (root is null) return json;
+
+            if (root["llm"] is JsonObject llm &&
+                llm["manualProfileName"] is JsonNode legacy &&
+                llm["slotAProfileName"] is null)
+            {
+                llm["slotAProfileName"] = legacy.DeepClone();
+                llm.Remove("manualProfileName");
+                DebugLog.Write("SETTINGS", "migrated llm.manualProfileName → llm.slotAProfileName");
+                return root.ToJsonString();
+            }
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Write("SETTINGS", $"migration skipped: {ex.GetType().Name}: {ex.Message}");
+        }
+        return json;
     }
 
     // Appelé par l'UI après chaque mutation. Ne bloque pas — debounce 300 ms

@@ -151,8 +151,12 @@ public sealed class LlmSettings
     public bool Enabled { get; set; } = true;
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
 
-    // Profil utilisé par le raccourci manuel (Alt+Ctrl+`).
-    public string ManualProfileName { get; set; } = "Prompt";
+    // Profile used by the Ctrl+Win+` shortcut (slot A).
+    public string SlotAProfileName { get; set; } = "Prompt";
+
+    // Profile used by the Ctrl+Shift+Win+` shortcut (slot B).
+    // null = slot B disabled (hotkey fires but rewriting is skipped).
+    public string? SlotBProfileName { get; set; }
 
     // Bloc anti-préambule partagé par tous les profils par défaut. Répété en
     // tête de chaque system prompt parce que les modèles instruct sont

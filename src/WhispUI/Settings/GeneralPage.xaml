@@ -44,18 +44,26 @@
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
                            Text="Shortcuts" />
 
-                <controls:SettingsCard Header="Recording shortcut"
-                                       Description="Global key combination to start and stop transcription."
+                <controls:SettingsCard Header="Transcribe"
+                                       Description="Start and stop transcription. The result is pasted into the focused field."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
-                    <TextBlock Text="Alt + `"
+                    <TextBlock Text="Win + `"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
 
-                <controls:SettingsCard Header="Rewrite shortcut"
-                                       Description="Same as recording, but the transcription is rewritten by a language model before pasting."
+                <controls:SettingsCard Header="Rewrite (slot A)"
+                                       Description="Same as Transcribe, but the text is rewritten by the profile assigned to slot A (see Rewriting page)."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
-                    <TextBlock Text="Alt + Ctrl + `"
+                    <TextBlock Text="Ctrl + Win + `"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard Header="Rewrite (slot B)"
+                                       Description="Same as Transcribe, but the text is rewritten by the profile assigned to slot B (see Rewriting page)."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                    <TextBlock Text="Ctrl + Shift + Win + `"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
