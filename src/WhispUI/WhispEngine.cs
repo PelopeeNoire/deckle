@@ -112,6 +112,15 @@ internal sealed class WhispEngine : IDisposable
     // Stopwatch started at the beginning of each recording (used for logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
 
+    // VAD timing — whisper.cpp's Silero VAD runs inside whisper_full() natively,
+    // so we can't bracket it with a C# stopwatch. Instead we watch the native
+    // log hook for "whisper_vad_*" lines: the first one starts the stopwatch,
+    // the first non-VAD line that follows stops it. _vadCapturing gates the
+    // detection to the whisper_full call window — load-time logs can't trip it.
+    private System.Diagnostics.Stopwatch? _vadSw;
+    private bool _vadEnded;
+    private volatile bool _vadCapturing;
+
     private bool _disposed;
 
     // ── Observable properties ──────────────────────────────────────────────────
@@ -149,6 +158,24 @@ internal sealed class WhispEngine : IDisposable
             {
                 string msg = Marshal.PtrToStringUTF8(textPtr)?.TrimEnd('\r', '\n', ' ') ?? "";
                 if (string.IsNullOrEmpty(msg)) return;
+
+                // VAD sentinel: only while whisper_full is running (_vadCapturing).
+                // Start the stopwatch on the first "whisper_vad_*" line, stop it on
+                // the first non-VAD line that follows. Standard Silero integration
+                // runs VAD upfront, so a single start/stop pair is enough.
+                if (_vadCapturing)
+                {
+                    bool isVadLine = msg.StartsWith("whisper_vad_", StringComparison.Ordinal);
+                    if (isVadLine)
+                    {
+                        if (_vadSw is null) _vadSw = System.Diagnostics.Stopwatch.StartNew();
+                    }
+                    else if (_vadSw is { IsRunning: true } && !_vadEnded)
+                    {
+                        _vadSw.Stop();
+                        _vadEnded = true;
+                    }
+                }
 
                 // ggml levels: 0=None, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Cont.
                 // Warn/Error surface as normal logs to be visible without enabling
@@ -732,11 +759,20 @@ internal sealed class WhispEngine : IDisposable
             _log.Info(LogSource.Transcribe, $"prompt: \"{truncated}\" ({prompt.Length} chars, carry={carry})");
         }
 
+        _vadSw = null;
+        _vadEnded = false;
+        _vadCapturing = true;
+
         _transcribeSw = System.Diagnostics.Stopwatch.StartNew();
         var sw = _transcribeSw;
         int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
         sw.Stop();
         long transcribeMsTotal = sw.ElapsedMilliseconds;
+
+        _vadCapturing = false;
+        if (_vadSw is { IsRunning: true }) _vadSw.Stop();
+        long vadMs = _vadSw?.ElapsedMilliseconds ?? 0;
+        long whisperMs = Math.Max(0, transcribeMsTotal - vadMs);
 
         nativeAllocs.Free();
 
@@ -850,6 +886,21 @@ internal sealed class WhispEngine : IDisposable
         // this to flash "Copié" or the Ctrl+V reminder before hiding.
         var outcome = (_shouldPaste && pasteVerified) ? TranscriptionOutcome.Pasted
                                                       : TranscriptionOutcome.ClipboardOnly;
+
+        TelemetryLog.Append(new TelemetrySample(
+            AudioSec:    audioSec,
+            VadMs:       vadMs,
+            WhisperMs:   whisperMs,
+            LlmMs:       llmMs,
+            ClipboardMs: swClip.ElapsedMilliseconds,
+            PasteMs:     pasteMs,
+            Strategy:    _strategyLabel,
+            NSegments:   nSeg,
+            TextChars:   fullText.Length,
+            Profile:     profile?.Name ?? "",
+            Pasted:      pasteVerified,
+            Outcome:     outcome.ToString()));
+
         TranscriptionFinished?.Invoke(outcome);
     }
 
