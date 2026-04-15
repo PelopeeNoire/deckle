@@ -83,13 +83,12 @@
                             <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
                         </controls:SettingsCard>
                         <controls:SettingsCard Header="Screen position"
-                                               Description="Where the overlay appears on your primary display.">
+                                               Description="Where the overlay appears on your primary display. Applied on the next recording.">
                             <ComboBox x:Name="OverlayPositionCombo"
                                       MinWidth="160"
                                       SelectionChanged="OverlayPositionCombo_SelectionChanged">
-                                <ComboBoxItem Tag="BottomCenter">Bottom center</ComboBoxItem>
-                                <ComboBoxItem Tag="BottomRight">Bottom right</ComboBoxItem>
-                                <ComboBoxItem Tag="TopCenter">Top center</ComboBoxItem>
+                                <ComboBoxItem Tag="TopCenter">Top</ComboBoxItem>
+                                <ComboBoxItem Tag="BottomCenter">Bottom</ComboBoxItem>
                             </ComboBox>
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>

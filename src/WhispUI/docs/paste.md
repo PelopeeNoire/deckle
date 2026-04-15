@@ -1,37 +1,46 @@
-# Paste — cible figée au Start, race fix, filet PID
+# Paste — doctrine UI Automation au Stop
 
-## Cible paste — figée au Start, jamais re-capturée
+## Politique
 
-`_pasteTarget` est captée **une seule fois au Start** (1ère hotkey) via `GetForegroundWindow()` dans `App.OnHotkey`, puis passée à `StartRecording`. Elle ne change plus jamais ensuite.
+**Le clipboard est le défaut sûr. Le paste n'a lieu que si UIA confirme un champ texte.** Plus rien n'est capté au Start : pas de cible, pas de HWND focus, pas de filet anti-drift. On fait confiance à l'état du système au moment du Stop — l'utilisateur a eu tout le temps de l'enregistrement + de la transcription + de la réécriture LLM pour placer son curseur où il veut.
 
-L'utilisateur peut changer de fenêtre/champ pendant l'enregistrement et pendant que la transcription + LLM mouline — le paste ramènera toujours la fenêtre d'origine au premier plan via `SetForegroundWindow`. Si ça échoue (fenêtre fermée, focus non restaurable), le texte reste dans le clipboard et un Warning indique de coller manuellement.
+Renversement explicite par rapport à l'implémentation précédente (capture au Start, `SetForegroundWindow`, comparaison HWND exacte au Stop) — cf. section historique en bas.
 
-## Fix race paste / Hide HUD — rendez-vous synchrone
+## Ce qui se passe dans `PasteFromClipboard`
 
-**Avant** : `HudWindow.Hide()` était déclenché en async via `TranscriptionFinished` après `PasteFromClipboard`. `SendInput` étant asynchrone (il enfile les frappes dans la queue d'input du thread cible), le `SW_HIDE` async pouvait redistribuer l'activation pendant que le Ctrl+V était encore en vol — la LogWindow ouverte à côté pouvait récupérer le focus, le collage atterrissait là, et le log vert « Bout en bout OK » mentait.
+Ordre des checks, tous refusent en clipboard-seul si faux :
 
-**Fix** : nouveau callback `WhispEngine.OnReadyToPaste` invoqué **synchronement** entre `CopyToClipboard` et `PasteFromClipboard` ; câblé dans `App.xaml.cs` à `HudWindow.HideSync()` qui marshalle le `Hide` sur le thread UI via `DispatcherQueue` et **bloque l'appelant** sur un `ManualResetEventSlim` jusqu'à ce que `SW_HIDE` soit effectif.
+1. `GetForegroundWindow()` ≠ 0.
+2. Foreground n'appartient pas au process WhispUI (filet contre le faux positif « collé dans nos propres logs »).
+3. **`UIAutomation.IsFocusedElementTextEditable(out diag)` renvoie `true`**. La probe lit `CUIAutomation.GetFocusedElement()` puis `IUIAutomationElement.GetCurrentPropertyValue(UIA_ControlTypePropertyId)` et ne valide que `Edit` (50004) ou `Document` (50030). Toute autre issue — UIA refuse, exception COM, ControlType différent, process protégé — est traitée comme « pas sûr ».
+4. `SendInput` complet (4 events : `VK_CONTROL↓ VK_V↓ VK_V↑ VK_CONTROL↑`).
 
-Plus rien dans WhispUI ne touche à l'activation entre `SetForegroundWindow(target)` et la livraison des frappes. Pas de sleep, pas de polling — rendez-vous explicite par signal OS.
+Si (1-4) passent → HUD `ShowPasted()` (flash vert « Pasted », 500 ms). Sinon → HUD `ShowCopied()` (« Copied to clipboard — Ctrl+V where you want it », 3 s).
 
-Voir [HudWindow.xaml.cs:255](../HudWindow.xaml.cs#L255), [WhispEngine.cs:36](../WhispEngine.cs#L36), [WhispEngine.cs:494](../WhispEngine.cs#L494), [App.xaml.cs:81](../App.xaml.cs#L81).
+## Pourquoi UIA plutôt qu'un match sur `class name`
 
-## `PasteFromClipboard` retourne `bool` — refus explicites
+UIA est l'API canonique d'accessibilité Windows et répond à la bonne question : *cet élément accepte-t-il de la saisie ?*. Fonctionne à travers Win32 classique, WinForms, WPF, WinUI, Chromium (input HTML, contenteditable), Qt, Electron, UWP. Un match sur `class name` (comme `"Edit"`, `"RichEdit50W"`, `"Chrome_RenderWidgetHostHWND"`) rate systématiquement les frameworks modernes et produit des faux positifs sur des contrôles non éditables qui réutilisent une classe Edit.
 
-`PasteFromClipboard` retourne `bool` et refuse de coller (Warning avec mode opératoire « le presse-papier contient le texte — colle manuellement avec Ctrl+V ») dans tous ces cas :
+## Rendez-vous synchrone `HideSync` (conservé)
 
-- `_pasteTarget == 0`
-- Cible appartient au process WhispUI lui-même (`GetWindowThreadProcessId == GetCurrentProcess().Id`) — filet contre le faux positif « collé dans WhispUI logs »
-- `SetForegroundWindow` n'a pas réellement ramené la cible au foreground (vérifié via `GetForegroundWindow()` après sleep, pas via le retour bool)
-- `GetFocusedClass == null`
-- `SendInput` partiel
+Juste avant `PasteFromClipboard`, `OnReadyToPaste` est invoqué synchronement, câblé à `HudWindow.HideSync()`. Le HUD est caché de façon **bloquante** (marshal `DispatcherQueue` + `ManualResetEventSlim`) avant que `SendInput` parte. Sans ce verrou, le `Hide` async pouvait redistribuer l'activation pendant que Ctrl+V était encore en vol dans la queue du thread cible. Rien dans WhispUI ne touche à l'activation entre le Hide effectif et la délivrance des frappes.
 
-Si tout passe, le récap final devient le Step vert de bout en bout ; sinon `[DONE]` Verbose timings + le Warning orange explicatif.
+Voir [HudWindow.xaml.cs](../HudWindow.xaml.cs), [WhispEngine.cs](../WhispEngine.cs), [App.xaml.cs](../App.xaml.cs), [Interop/UIAutomation.cs](../Interop/UIAutomation.cs).
 
-## Tâche ouverte — paste « fantôme » intermittent
+## Thread COM pour UIA
 
-**Symptôme** : le pipeline log vert « Bout en bout OK » + PASTE « Ctrl+V envoyé à <cible> », mais rien n'apparaît dans le champ cible. Récurrent, pas systématique.
+`PasteFromClipboard` tourne sur le worker thread de l'engine (thread de fond, MTA par défaut sous .NET Core). UIA client supporte MTA depuis Windows 7 — pas d'init COM explicite nécessaire. L'instance `IUIAutomation` est lazy-instanciée une fois puis réutilisée (thread-safe, cache global dans `UIAutomation`).
 
-**Hypothèse** : la transcription n'a peut-être pas eu lieu (chunks capturés mais pas de texte recollé final), donc le clipboard contiendrait l'ancienne valeur ou rien — et le `SendInput` Ctrl+V ne ferait « rien » côté cible.
+## Historique — ce qui a été retiré
 
-**À investiguer au prochain occurrence** : capturer les logs complets de la session fautive. Vérifier présence de la ligne TRANSCRIBE « texte recollé » et de la ligne CLIPBOARD « Texte copié (N chars) » avec `N > 0`. Si `N = 0` ou ligne absente → bug en amont (Whisper / pipeline). Si `N > 0` mais paste vide → bug `SendInput` ou délivrance, malgré le réordonnancement.
+Jusqu'à 2026-04-15 inclus, la logique était radicalement différente et vit maintenant comme dette retirée.
+
+**Capture au Start** : `GetForegroundWindow()` captait le HWND top-level à la 1ʳᵉ hotkey, puis `GUITHREADINFO.hwndFocus` captait le HWND focus précis. Les deux étaient stockés volatiles (`_pasteTarget`, `_pasteFocusHwnd`).
+
+**Restauration forcée au Stop** : `SetForegroundWindow(_pasteTarget)` + `Thread.Sleep(50)` + vérif `GetForegroundWindow() == _pasteTarget`. Si KO → refus.
+
+**Comparaison sub-window** : `GetFocusedHwnd` comparé avec `_pasteFocusHwnd`. Si divergence → refus (scénario « l'utilisateur a cliqué dans un autre champ de la même fenêtre entre Start et Stop »).
+
+**Ce qui ne marchait pas** : même avec ces filets, le paste pouvait atterrir dans une fenêtre voisine (`AltMenuSuppressor` avait été tenté puis retiré — cf. roadmap R8.1 fermé abandonné). Pire, la restauration `SetForegroundWindow` était intrusive : elle ramenait une fenêtre que l'utilisateur avait peut-être volontairement laissée en arrière-plan, juste pour y coller du texte automatiquement. Le flash vert « succès » pouvait mentir quand la cible avait changé de nature entre Start et Stop (champ détruit, fenêtre modale superposée…).
+
+**Retiré** : `_pasteTarget`, `_pasteFocusHwnd`, paramètres `pasteTarget` / `pasteFocusHwnd` de `StartRecording`, `SetForegroundWindow` + sleep + vérif foreground, check sub-window focus, helpers `Win32Util.GetFocusedClass` et `Win32Util.GetFocusedHwnd` (plus aucun appelant), hook `AltMenuSuppressor` (déjà retiré avant cette refonte).

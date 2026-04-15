@@ -112,15 +112,15 @@ public partial class App : Microsoft.UI.Xaml.Application
             switch (outcome)
             {
                 case TranscriptionOutcome.Pasted:
-                    // Brief success flash, then the auto-hide timer inside
-                    // HudWindow takes over.
-                    _hudWindow.ShowCopied();
+                    // UIA confirmed the focused element accepts text and the
+                    // Ctrl+V was sent. Brief success flash, then auto-hide.
+                    _hudWindow.ShowPasted();
                     break;
                 case TranscriptionOutcome.ClipboardOnly:
-                    // Paste refused (target lost, foreground = WhispUI,
-                    // SendInput partial) — tell the user the text is on the
+                    // Paste skipped (UIA unsure, foreground = WhispUI, no focus,
+                    // SendInput partial…) — tell the user the text is on the
                     // clipboard and keep the HUD up long enough to read.
-                    _hudWindow.ShowCopiedManualPaste();
+                    _hudWindow.ShowCopied();
                     break;
                 default:
                     _hudWindow.Hide();
@@ -279,12 +279,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         if (!_engine.IsRecording)
         {
-            IntPtr target = NativeMethods.GetForegroundWindow();
-            string desc = Win32Util.DescribeHwnd(target);
-            DebugLog.Write("HOTKEY", $"start id={hotkeyId} target={target}");
-            _log.Step(LogSource.Hotkey, $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")}) → {desc}");
-            if (Win32Util.GetFocusedClass(target) is null)
-                _log.Warning(LogSource.Hotkey, "target has no keyboard focus — paste may fail");
+            DebugLog.Write("HOTKEY", $"start id={hotkeyId}");
+            _log.Step(LogSource.Hotkey, $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")})");
 
             // Show the HUD immediately in its "Preparing" state so the user
             // gets visual feedback from the very first millisecond after the
@@ -293,7 +289,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             // digits with the recording accent when StatusChanged fires.
             _hudWindow?.ShowPreparing();
 
-            _engine.StartRecording(useLlm: useLlm, shouldPaste: true, pasteTarget: target);
+            _engine.StartRecording(useLlm: useLlm, shouldPaste: true);
         }
         else
         {
