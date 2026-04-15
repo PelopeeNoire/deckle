@@ -8,9 +8,12 @@ namespace WhispUI;
 
 // Result of a pipeline pass, consumed by the HUD post-paste handler.
 //   None            — nothing to show (empty audio, empty text, error).
-//   Pasted          — text was delivered into the target; HUD flashes "Copié".
-//   ClipboardOnly   — text is on the clipboard but paste was refused or
-//                     disabled; HUD shows the Ctrl+V reminder for a few seconds.
+//   Pasted          — UIA confirmed a text field and Ctrl+V was delivered;
+//                     HUD flashes "Pasted" in green.
+//   ClipboardOnly   — text is on the clipboard but paste was skipped (UIA
+//                     couldn't confirm, foreground was WhispUI, SendInput
+//                     partial…); HUD shows the Ctrl+V reminder for a few
+//                     seconds. This is the safe default when in doubt.
 internal enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
 
 // ─── Transcription engine ─────────────────────────────────────────────────────
@@ -60,7 +63,6 @@ internal sealed class WhispEngine : IDisposable
     private volatile bool   _stopRecording = false;
     private volatile bool   _shouldPaste   = false;
     private volatile bool   _useLlm        = false;
-    private volatile IntPtr _pasteTarget   = IntPtr.Zero;
 
     // Model lifecycle: lazy load on first hotkey, unload after idle timeout.
     // _pipelineActive guards against unloading while Record+Transcribe runs.
@@ -288,7 +290,7 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Start recording ─────────────────────────────────────────────────────
 
-    public void StartRecording(bool useLlm, bool shouldPaste, IntPtr pasteTarget)
+    public void StartRecording(bool useLlm, bool shouldPaste)
     {
         if (_isRecording) return;
 
@@ -311,28 +313,11 @@ internal sealed class WhispEngine : IDisposable
         _stopRecording  = false;
         _shouldPaste    = shouldPaste;
         _useLlm         = useLlm;
-        _pasteTarget    = pasteTarget;
         _pipelineActive = true;
         lock (_segmentsLock) _segments.Clear();
 
         // Cancel any pending idle unload — a new pipeline is starting.
         _idleTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-
-        // Trace the target captured at Start — symmetric with the green Step at the end.
-        // Shows from the start which window/control will receive the paste,
-        // and helps diagnose cases where the Start target is wrong.
-        if (_pasteTarget != IntPtr.Zero)
-        {
-            _log.Verbose(LogSource.Hotkey, $"target captured at Start: {Win32Util.DescribeHwnd(_pasteTarget)}");
-            string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
-            _log.Verbose(LogSource.Hotkey, focusClass is null
-                ? "focused control at Start: <no keyboard focus detected>"
-                : $"focused control at Start: {focusClass}");
-        }
-        else
-        {
-            _log.Verbose(LogSource.Hotkey, "no target captured at Start (paste disabled or foreground = WhispUI)");
-        }
 
         // Single background thread: EnsureModel → Record → Transcribe.
         // Model load (if needed) happens here, not on the UI/hotkey thread,
@@ -391,12 +376,10 @@ internal sealed class WhispEngine : IDisposable
 
     public void StopRecording()
     {
-        // _pasteTarget is frozen at Start and never updated afterwards.
-        // The user may switch windows/fields during recording or while the
-        // transcription + LLM pipeline runs — the paste always goes back to
-        // the window that was focused when the hotkey was first pressed.
-        // If SetForegroundWindow fails at paste time, the text is still in the
-        // clipboard and the user can paste manually.
+        // Paste target is whatever the user has focused at Stop time — read
+        // live in PasteFromClipboard. We deliberately don't freeze anything at
+        // Start: the recording + transcription + LLM pipeline takes seconds,
+        // and forcing the user back to the original window would be intrusive.
         _stopRecording = true;
     }
 
@@ -854,7 +837,7 @@ internal sealed class WhispEngine : IDisposable
 
         string recap = $"total {recDurationSec:F1}s ({_strategyLabel} trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         if (_shouldPaste && pasteVerified)
-            _log.Step(LogSource.Transcribe, $"End-to-end OK — {fullText.Length} chars pasted into {Win32Util.DescribeHwnd(_pasteTarget)} ({recap})");
+            _log.Step(LogSource.Transcribe, $"End-to-end OK — {fullText.Length} chars pasted ({recap})");
         else
             _log.Verbose(LogSource.Done, recap);
 
@@ -919,10 +902,16 @@ internal sealed class WhispEngine : IDisposable
         _log.Info(LogSource.Clipboard, $"Text copied ({text.Length} chars)");
     }
 
-    // Returns true only if all verification conditions are met (valid target,
-    // not WhispUI, foreground restored, keyboard focus on a plausibly text
-    // control, complete SendInput). Otherwise false: the caller then emits a
-    // Warn with instructions for manual paste.
+    // Sends Ctrl+V to whatever window currently has the foreground at Stop
+    // time — but only when UI Automation confirms the focused element is a
+    // text-accepting control (Edit or Document). No Start-time capture, no
+    // bring-to-front, no focus comparison: the user had all the time of the
+    // recording + transcription to place their cursor where they want.
+    //
+    // Doctrine: clipboard is the safe default. Paste only when we are confident
+    // the target expects text. When in doubt — UIA refuses to answer, unknown
+    // control type, foreground is WhispUI itself — the text stays on the
+    // clipboard and the HUD shows the Ctrl+V reminder.
     private bool PasteFromClipboard()
     {
         const uint   INPUT_KEYBOARD  = 1;
@@ -930,44 +919,36 @@ internal sealed class WhispEngine : IDisposable
         const ushort VK_CONTROL      = 0x11;
         const ushort VK_V            = 0x56;
 
-        _log.Verbose(LogSource.Paste, $"expected target: {Win32Util.DescribeHwnd(_pasteTarget)}");
-        IntPtr fgBefore = NativeMethods.GetForegroundWindow();
-        _log.Verbose(LogSource.Paste, $"foreground before: {Win32Util.DescribeHwnd(fgBefore)}");
+        IntPtr fg = NativeMethods.GetForegroundWindow();
+        _log.Verbose(LogSource.Paste, $"foreground at paste: {Win32Util.DescribeHwnd(fg)}");
 
-        if (_pasteTarget == IntPtr.Zero)
+        if (fg == IntPtr.Zero)
         {
-            _log.Warning(LogSource.Paste, "refused: no registered target. Clipboard contains the text — paste manually with Ctrl+V.");
+            _log.Warning(LogSource.Paste, "skipped: no foreground window. Clipboard holds the text — Ctrl+V where you want it.");
             return false;
         }
 
-        // Refuse if the target is a WhispUI window itself (LogWindow, HUD...).
-        // Avoids the false positive where we "pasted" into our own logs.
-        NativeMethods.GetWindowThreadProcessId(_pasteTarget, out uint targetPid);
+        // Refuse if the foreground is a WhispUI window itself (LogWindow, HUD,
+        // Settings). Avoids the false positive where we would paste into our
+        // own logs while the user reads them.
+        NativeMethods.GetWindowThreadProcessId(fg, out uint fgPid);
         uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
-        if (targetPid == ownPid)
+        if (fgPid == ownPid)
         {
-            _log.Warning(LogSource.Paste, $"refused: target belongs to WhispUI ({Win32Util.DescribeHwnd(_pasteTarget)}). Clipboard contains the text — paste manually with Ctrl+V in the right window.");
+            _log.Warning(LogSource.Paste, "skipped: foreground is WhispUI itself. Clipboard holds the text — Ctrl+V in the right window.");
             return false;
         }
 
-        bool sfgOk = NativeMethods.SetForegroundWindow(_pasteTarget);
-        _log.Verbose(LogSource.Paste, $"SetForegroundWindow → {sfgOk}");
-        Thread.Sleep(50);
-
-        IntPtr fgAfter = NativeMethods.GetForegroundWindow();
-        if (fgAfter != _pasteTarget)
+        // UI Automation probe on the currently focused element. If the probe
+        // is anything other than "yes, it's an Edit or Document", we bail out
+        // to the clipboard-only path. No speculative paste.
+        bool editable = UIAutomation.IsFocusedElementTextEditable(out string uiaDiag);
+        _log.Verbose(LogSource.Paste, $"UIA: {uiaDiag}");
+        if (!editable)
         {
-            _log.Warning(LogSource.Paste, $"refused: focus not restored (expected {Win32Util.DescribeHwnd(_pasteTarget)}, actual {Win32Util.DescribeHwnd(fgAfter)}). Clipboard contains the text — paste manually with Ctrl+V.");
+            _log.Warning(LogSource.Paste, "skipped: focused element is not a text field. Clipboard holds the text — Ctrl+V where you want it.");
             return false;
         }
-
-        string? focusClass = Win32Util.GetFocusedClass(_pasteTarget);
-        if (focusClass is null)
-        {
-            _log.Warning(LogSource.Paste, "refused: target has no keyboard focus on a text control. Clipboard contains the text — click in a text field then Ctrl+V.");
-            return false;
-        }
-        _log.Verbose(LogSource.Paste, $"focused control: {focusClass}");
 
         int cbSize = Marshal.SizeOf<INPUT>();
 
@@ -982,11 +963,11 @@ internal sealed class WhispEngine : IDisposable
         uint sent = NativeMethods.SendInput((uint)inputs.Length, inputs, cbSize);
         if (sent != inputs.Length)
         {
-            _log.Warning(LogSource.Paste, $"partial: SendInput injected {sent}/{inputs.Length} events. Clipboard contains the text — paste manually with Ctrl+V.");
+            _log.Warning(LogSource.Paste, $"partial: SendInput injected {sent}/{inputs.Length} events. Clipboard holds the text — Ctrl+V manually.");
             return false;
         }
 
-        _log.Info(LogSource.Paste, $"Ctrl+V sent to {Win32Util.DescribeHwnd(_pasteTarget)} (focus={focusClass})");
+        _log.Info(LogSource.Paste, $"Ctrl+V sent to {Win32Util.DescribeHwnd(fg)}");
         return true;
     }
 

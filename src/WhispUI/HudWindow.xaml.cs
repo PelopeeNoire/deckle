@@ -359,10 +359,11 @@ public sealed partial class HudWindow : Window
     }
 
     // Notice layout : icône + titre + message, largeur HUD_WIDTH_ERROR,
-    // auto-hide après `duration`. Support trois variantes : ShowError (micro
-    // KO, rouge), ShowCopied (succès paste, vert, flash court), ShowCopiedManualPaste
-    // (paste refusé mais clipboard rempli, neutre, plus long pour que l'utilisateur
-    // ait le temps de lire l'instruction Ctrl+V).
+    // auto-hide après `duration`. Trois variantes : ShowError (micro KO, rouge),
+    // ShowPasted (paste confirmé par UIA, vert, flash court), ShowCopied
+    // (clipboard seul : UIA n'a pas confirmé un champ texte, ou foreground
+    // WhispUI, etc. Neutre, plus long pour que l'utilisateur ait le temps de
+    // lire l'instruction Ctrl+V).
     //
     // `glyph` : Segoe Fluent Icons code point (clef xF140 warning, xE73E check,
     // xE77F clipboard…). `iconBrushKey` : theme resource key appliquée au
@@ -371,12 +372,12 @@ public sealed partial class HudWindow : Window
     public void ShowError(string title, string body) =>
         ShowNotice("\uF140", "SystemFillColorCriticalBrush", title, body, TimeSpan.FromSeconds(5));
 
-    public void ShowCopied() =>
-        ShowNotice("\uE73E", "SystemFillColorSuccessBrush", "Copied", "", TimeSpan.FromMilliseconds(500));
+    public void ShowPasted() =>
+        ShowNotice("\uE73E", "SystemFillColorSuccessBrush", "Pasted", "", TimeSpan.FromMilliseconds(500));
 
-    public void ShowCopiedManualPaste() =>
+    public void ShowCopied() =>
         ShowNotice("\uE77F", "SystemFillColorAttentionBrush",
-            "Copied to clipboard", "Press Ctrl+V to paste.", TimeSpan.FromSeconds(3));
+            "Copied to clipboard", "Ctrl+V where you want it.", TimeSpan.FromSeconds(3));
 
     // Central entry point for LogService-driven user feedback. Severity drives
     // the glyph + theme brush; duration mirrors the visual pattern used by the
@@ -520,23 +521,15 @@ public sealed partial class HudWindow : Window
         int h = (int)Math.Round(HUD_HEIGHT * scale);
         int margin = (int)Math.Round(HUD_BOTTOM_MARGIN * scale);
 
-        string position = Settings.SettingsService.Instance.Current.Overlay.Position;
-        int x, y;
-        switch (position)
-        {
-            case "BottomRight":
-                x = wa.X + wa.Width - w - margin;
-                y = wa.Y + wa.Height - h - margin;
-                break;
-            case "TopCenter":
-                x = wa.X + (wa.Width - w) / 2;
-                y = wa.Y + margin;
-                break;
-            default: // BottomCenter
-                x = wa.X + (wa.Width - w) / 2;
-                y = wa.Y + wa.Height - h - margin;
-                break;
-        }
+        // HUD centered horizontally by design (mirrors native Win11 HUDs —
+        // volume, brightness, screen capture). Only vertical anchor is user-
+        // configurable. StartsWith covers legacy corner values from older
+        // settings.json files.
+        string position = Settings.SettingsService.Instance.Current.Overlay.Position ?? "";
+        int x = wa.X + (wa.Width - w) / 2;
+        int y = position.StartsWith("Top")
+            ? wa.Y + margin
+            : wa.Y + wa.Height - h - margin;
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
 
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNOACTIVATE);

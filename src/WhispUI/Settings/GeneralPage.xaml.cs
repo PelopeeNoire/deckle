@@ -82,10 +82,18 @@ public sealed partial class GeneralPage : Page
 
     private void SyncOverlayPositionCombo()
     {
+        // Normalize legacy corner values (TopLeft/TopRight/BottomLeft/BottomRight)
+        // from older settings.json to their Top/Bottom equivalent — the combo now
+        // only exposes centered positions.
+        string current = ViewModel.OverlayPosition ?? "BottomCenter";
+        string normalized = current.StartsWith("Top") ? "TopCenter" : "BottomCenter";
+        if (normalized != current)
+            ViewModel.OverlayPosition = normalized;
+
         for (int i = 0; i < OverlayPositionCombo.Items.Count; i++)
         {
             if (OverlayPositionCombo.Items[i] is ComboBoxItem item &&
-                item.Tag as string == ViewModel.OverlayPosition)
+                item.Tag as string == normalized)
             {
                 OverlayPositionCombo.SelectedIndex = i;
                 return;

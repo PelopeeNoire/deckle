@@ -1,0 +1,37 @@
+potentiellement il te faut  un repo avec plein d'enregistrements  j'en ai plein dans le presse-papier  je peux les coller dans un fichier et te garder ça de côté  pour que comme ça ça te donne des exemples à transcrire derrière
+
+Ce skill c'est Auto Research et tu peux regarder un petit peu si tu peux pas essayer de l'utiliser pour créer des promptes qui fonctionnent avec les modèles simples.  On va prendre à la limite le 3B, mais c'était bien d'avoir le Q8.  On va tester avec ces modèles là qui sont du coup des expos sur Ulama, il y a le 3B, un sweat Q8.  Et du coup avec Auto Research, on a décidé de regarder ce que tu peux faire avec tout ça pour faire un benchmark automatique qui ajuste les promptes pour faire quelque chose de plus qualitatif derrière.
+
+
+pour noter les réponses et puis comme ça on fait générer un modèle  plusieurs scripts, on peut en fait entraîner des skills comme ça, c'est à dire qu'on fait un skill  et on teste ce skill, c'est à dire en voyant qu'on met ce skill  avec la réponse, on essaye de l'améliorer  puis on voit la réponse en face et l'intérêt après c'est de  tirer des statistiques de tout ça et de voir qu'est ce qui est le mieux et il y a un skill qui est fait pour  justement utiliser ces statistiques pour toujours réessayer  on peut mettre un maximum de 10 étapes et comme ça l'idée c'est de faire tester ces modèles  et de réajuster à chaque fois
+
+
+
+ce que j'aimerais non on va pas prendre quoi et c'était vraiment juste pour  tester moi je veux les ministres à la famille ministra le 3 donc elle 3 b  donc voilà avec les versions que tu as normalement tu as sa haute part que dans  la screenshot dans ce que je fais ce que je veux c'est un benchmark pour tester  en fait voilà quel prompte donne les résultats les meilleurs résultats avec  le 14 b et le 3 b on va oublier complètement la valeur de les  reasoning. L'intérêt d'avoir les 3B en Q8 c'était qu'ils aient une meilleure compréhension,  donc je trouvais ça intéressant et ça on l'a que en apportant un fichier gguf, pas  directement depuis Ollamba donc. J'ai un skill quelque part qui me permet de lancer des benchmarks  comme ça et d'adapter le script selon la réponse. Il faut définir des points précis
+
+
+
+J'ai bien changé toutes ces valeurs, elles sont beaucoup plus. Pour le 3B instruct Q8, je l'ai mis à 32K.  Normalement ça fonctionne bien. Et non, ce que tu as vu, ce n'était pas restructuration, c'était nettoyage.  J'ai mis ça à 75 secondes, et restructuration c'est plus, c'est 135 secondes. Et après j'ai mis le prompt à 255.  je fais vraiment des grandes transcriptions. Bon bah si le 3B même en Q8 il est pas bon  on va peut-être utiliser le 14B simplement tout le temps, un struct basique de olama aussi c'était  ça l'intérêt. Parce que le nettoyage quand même la température c'est 0,15 c'est pas beaucoup mais  Mais normalement, quand je suis à 32, c'est assez.
+
+
+
+Moi j'utilise ceux que tu m'as filés, que tu as mis dans défaut, je ne les ai pas réécrits.  Puisque là, je pense que ceux que tu as mis sont bien, mais il faut peut-être les retravailler et être beaucoup plus strict.  Quoique du coup, à part un moment où il a inventé un truc, il faudrait peut-être baisser la température, il faut qu'on joue avec ça.
+
+
+Mais pour le prompt template et l'obsolescence, en fait on avait déjà essayé et ça fonctionnait pas bien quand on mettait pas le template de base.  On s'était dit, c'est bon si on envoie ça à Ollama, Ollama il va détecter tout seul.  Et au final ça fonctionnait pas bien du tout.  Donc on avait mis des templates prédéfinis mais c'était pas allé bon non plus, ça fonctionnait pas bien non plus.  Ah c'est là qu'ils nous ont répondu de façon bizarre ouais.
+
+En fait, je ne sais pas trop par où prendre le bout, donc je te laisse un peu me guider peut-être.
+
+
+
+mais je pense pas que la réception au stop c'est ça qui prend problème  soit on garde uniquement  et c'est vrai  celle originale  et on essaie de recopier dedans de recoller dedans si jamais on n'y arrive  pas  mais si on n'y arrive pas et bien on arrête comme ça ça évite peut-être  beaucoup de problèmes de toute façon c'est copié dans le  c'est copié dans le presse papier  hum
+
+
+Là, c'était presque le cas.  Et en fait, si j'avais dépassé un peu, ça aurait été réécrit.  Et donc, c'est ça qui prouve, je pense, que c'est réécrit par un LM quand ça dépasse  et donc que ça continue d'enregistrer.  Donc, c'est un problème qu'il faut qu'on regarde aussi.Ok, ça fonctionne, on va tester.  J'espère que ça marche, parce que sinon ça va faire un peu  n'importe quoi dans la console.  Je pense que tu peux commit.  Moi, je vais continuer.  J'espère qu'il aura le contexte,  mais je peux lui redire.  Je ne suis plus sûr quand on était sinon.bon tu vois que c'est pas top  ça colle toujours, ça dit que c'est bon dans les logs mais ça colle toujours dans la console  ça a pas fonctionné
+
+
+
+
+
+
+

@@ -125,18 +125,32 @@
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
             <TitleBar.Content>
-                <!-- Single AutoSuggestBox. The TitleBar prioritizes its Content
-                     width vs caption buttons, and the AutoSuggestBox shrinks
-                     naturally down to MinWidth. No custom icon/field swap
-                     — Win11 Settings pattern. -->
-                <AutoSuggestBox x:Name="SearchBox"
-                                QueryIcon="Find"
-                                PlaceholderText="Search logs"
-                                MinWidth="140"
-                                MaxWidth="760"
-                                HorizontalAlignment="Stretch"
-                                VerticalAlignment="Center"
-                                TextChanged="OnSearchTextChanged" />
+                <!-- Fixed-width search, same pattern as WinUI 3 Gallery. Below
+                     the narrow threshold (see code-behind), SearchBox collapses
+                     and SearchIconButton takes over; clicking the icon reveals
+                     the search, focus leaving it restores the icon. -->
+                <Grid HorizontalAlignment="Right"
+                      VerticalAlignment="Center"
+                      Margin="8,0">
+                    <AutoSuggestBox x:Name="SearchBox"
+                                    QueryIcon="Find"
+                                    PlaceholderText="Search logs"
+                                    Width="320"
+                                    VerticalAlignment="Center"
+                                    TextChanged="OnSearchTextChanged"
+                                    LostFocus="OnSearchBoxLostFocus" />
+                    <Button x:Name="SearchIconButton"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Visibility="Collapsed"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            MinWidth="36"
+                            Padding="8,4"
+                            ToolTipService.ToolTip="Search logs"
+                            Click="OnSearchIconClick">
+                        <FontIcon Glyph="&#xE721;" FontSize="16" />
+                    </Button>
+                </Grid>
             </TitleBar.Content>
         </TitleBar>
 

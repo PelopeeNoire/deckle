@@ -32,7 +32,8 @@
       "Glob",
       "Grep",
       "Skill(benchmark-loop)",
-      "Skill(benchmark-loop:*)"
+      "Skill(benchmark-loop:*)",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }

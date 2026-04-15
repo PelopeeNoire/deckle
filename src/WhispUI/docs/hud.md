@@ -2,7 +2,7 @@
 
 ## Spec Window
 
-Window WinUI 3, 314x78 DIPs, positionnee via `DisplayArea.Primary.WorkArea` selon `Settings.Overlay.Position` (BottomCenter, BottomRight, TopCenter). `OverlappedPresenter` non resizable, `IsAlwaysOnTop=true`, `ExtendsContentIntoTitleBar=true`, `hasTitleBar: false`.
+Window WinUI 3, 314x78 DIPs, positionnee via `DisplayArea.Primary.WorkArea`. Centre horizontalement par design (miroir des HUD natifs Win11 — volume, luminosite, capture ecran) ; l'ancrage vertical est configurable via `Settings.Overlay.Position` (TopCenter ou BottomCenter, default BottomCenter). Les anciennes valeurs de coin (TopLeft / BottomRight / ...) eventuellement presentes dans un `settings.json` legacy sont normalisees vers TopCenter/BottomCenter par `StartsWith("Top")`. `OverlappedPresenter` non resizable, `IsAlwaysOnTop=true`, `ExtendsContentIntoTitleBar=true`, `hasTitleBar: false`.
 
 - **Show** : `MoveAndResize` (recalcule DPI a chaque show) puis `ShowWindow(SW_SHOWNOACTIVATE)` + `SetWindowPos(HWND_TOP, SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE)`. **Jamais `SetForegroundWindow`**.
 - **Hide** : `ShowWindow(SW_HIDE)`.

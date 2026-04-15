@@ -89,6 +89,13 @@ public sealed partial class LogWindow : Window, ILogSink
     private string _currentSearch = "";
     private bool _isRecording;
 
+    // Below this window width (DIPs), the inline SearchBox collapses into an
+    // icon-only button to keep the TitleBar readable. Pattern matches Windows
+    // 11 Task Manager: icon in the TitleBar, click reveals the SearchBox,
+    // focus leaving it restores the icon.
+    private const double SearchCollapseThreshold = 520.0;
+    private bool _isSearchNarrow;
+
     public LogWindow()
     {
         InitializeComponent();
@@ -162,6 +169,9 @@ public sealed partial class LogWindow : Window, ILogSink
             _isVisible = false;
             AppWindow.Hide();
         };
+
+        // Responsive TitleBar search (Task Manager pattern).
+        SizeChanged += OnWindowSizeChanged;
     }
 
     // ── ILogSink (receives entries from LogService) ────────────────────────────
@@ -401,6 +411,45 @@ public sealed partial class LogWindow : Window, ILogSink
         ApplyFilter();
     }
 
+    // ── TitleBar search: responsive collapse ──────────────────────────────────
+
+    private void OnWindowSizeChanged(object sender, WindowSizeChangedEventArgs args)
+    {
+        bool narrow = args.Size.Width < SearchCollapseThreshold;
+        if (narrow == _isSearchNarrow) return;
+        _isSearchNarrow = narrow;
+        if (narrow) ShowSearchIcon();
+        else ShowSearchBox();
+    }
+
+    private void OnSearchIconClick(object sender, RoutedEventArgs e)
+    {
+        ShowSearchBox();
+        SearchBox.Focus(FocusState.Programmatic);
+    }
+
+    private void OnSearchBoxLostFocus(object sender, RoutedEventArgs e)
+    {
+        // Only retract when window is narrow; in wide mode the SearchBox is
+        // permanently visible. Also retract only if the user didn't leave a
+        // non-empty filter behind, so the search remains reachable to clear it.
+        if (!_isSearchNarrow) return;
+        if (!string.IsNullOrEmpty(SearchBox.Text)) return;
+        ShowSearchIcon();
+    }
+
+    private void ShowSearchBox()
+    {
+        SearchIconButton.Visibility = Visibility.Collapsed;
+        SearchBox.Visibility = Visibility.Visible;
+    }
+
+    private void ShowSearchIcon()
+    {
+        SearchBox.Visibility = Visibility.Collapsed;
+        SearchIconButton.Visibility = Visibility.Visible;
+    }
+
     // ── Click-to-copy + drag-to-select + floating badge ────────────────────
     //
     // Hover: "Copy" badge to the right of the hovered line.
@@ -415,12 +464,28 @@ public sealed partial class LogWindow : Window, ILogSink
     {
         if (!e.GetCurrentPoint(LogItems).Properties.IsLeftButtonPressed) return;
 
+        // Ignore presses that originate from the internal ScrollBar of the
+        // ListView. Without this, dragging the scrollbar thumb bubbles a
+        // PointerPressed up to the ListView, starts drag-select, and items
+        // traversed during the drag get selected + copied on release.
+        if (IsFromScrollBar(e.OriginalSource as DependencyObject)) return;
+
         _isDragging = true;
         var localY = e.GetCurrentPoint(LogItems).Position.Y;
         var container = FindContainerAtY(localY);
         _dragStartIndex = container?.Content is LogEntry entry
             ? _visible.IndexOf(entry)
             : -1;
+    }
+
+    private static bool IsFromScrollBar(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar) return true;
+            source = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(source);
+        }
+        return false;
     }
 
     private void OnLogPointerMoved(object sender, PointerRoutedEventArgs e)
