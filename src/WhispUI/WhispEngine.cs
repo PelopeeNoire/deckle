@@ -62,7 +62,12 @@ internal sealed class WhispEngine : IDisposable
     private volatile bool   _isRecording   = false;
     private volatile bool   _stopRecording = false;
     private volatile bool   _shouldPaste   = false;
-    private volatile bool   _useLlm        = false;
+
+    // Name of the rewrite profile chosen by the hotkey that started this
+    // recording (null = no manual rewrite; fall back to AutoRewriteRules
+    // based on recording duration). Captured at StartRecording time and
+    // consumed at the end of Transcribe().
+    private string?         _manualProfileName = null;
 
     // Model lifecycle: lazy load on first hotkey, unload after idle timeout.
     // _pipelineActive guards against unloading while Record+Transcribe runs.
@@ -317,7 +322,10 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Start recording ─────────────────────────────────────────────────────
 
-    public void StartRecording(bool useLlm, bool shouldPaste)
+    // manualProfileName: when non-null, rewrite the transcription with that
+    // profile at the end (manual slot A/B hotkeys). When null, fall back to
+    // AutoRewriteRules based on recording duration.
+    public void StartRecording(string? manualProfileName, bool shouldPaste)
     {
         if (_isRecording) return;
 
@@ -336,11 +344,11 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        _isRecording    = true;
-        _stopRecording  = false;
-        _shouldPaste    = shouldPaste;
-        _useLlm         = useLlm;
-        _pipelineActive = true;
+        _isRecording       = true;
+        _stopRecording     = false;
+        _shouldPaste       = shouldPaste;
+        _manualProfileName = manualProfileName;
+        _pipelineActive    = true;
         lock (_segmentsLock) _segments.Clear();
 
         // Cancel any pending idle unload — a new pipeline is starting.
@@ -818,13 +826,13 @@ internal sealed class WhispEngine : IDisposable
         double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
 
         // Rewrite profile resolution:
-        // - Alt+Ctrl+` (manual) → ManualProfileName profile
-        // - Alt+` (normal) + auto-rewrite → first matching AutoRewriteRule
+        // - manual slot hotkey → the profile name passed to StartRecording
+        // - primary hotkey     → first matching AutoRewriteRule (duration-based)
         Settings.RewriteProfile? profile = null;
-        if (_useLlm && llmSettings.Enabled)
+        if (!string.IsNullOrWhiteSpace(_manualProfileName) && llmSettings.Enabled)
         {
             profile = llmSettings.Profiles.Find(p =>
-                string.Equals(p.Name, llmSettings.ManualProfileName, StringComparison.OrdinalIgnoreCase));
+                string.Equals(p.Name, _manualProfileName, StringComparison.OrdinalIgnoreCase));
         }
         else if (llmSettings.Enabled && llmSettings.AutoRewriteRules.Count > 0)
         {
