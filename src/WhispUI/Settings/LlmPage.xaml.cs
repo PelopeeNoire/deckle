@@ -13,7 +13,7 @@ namespace WhispUI.Settings;
 
 // ─── LlmPage — host fin ────────────────────────────────────────────────────
 //
-// Empile les cinq sections en UserControls autonomes (General, ManualShortcut,
+// Empile les cinq sections en UserControls autonomes (General, ShortcutSlots,
 // Rules, Profiles, Models) + l'InfoBar de statut Ollama. Tout le contenu
 // fonctionnel vit dans Settings/Llm/. Seules restent ici :
 //
@@ -25,7 +25,7 @@ namespace WhispUI.Settings;
 //  - le Reset all global
 //
 // La section Models dépend d'Ollama et reçoit le context via Initialize()
-// + StateChanged. Les autres (General, Profiles, ManualShortcut, Rules)
+// + StateChanged. Les autres (General, Profiles, ShortcutSlots, Rules)
 // rechargent directement depuis SettingsService.
 
 public sealed partial class LlmPage : Page
@@ -44,7 +44,7 @@ public sealed partial class LlmPage : Page
         ProfilesSection.ProfilesChanged += (_, _) =>
         {
             RulesSection.Reload();
-            ManualShortcutSection.Reload();
+            ShortcutSlotsSection.Reload();
         };
         ModelsSection.RefreshRequested += async (_, _) => await RefreshOllamaStateAsync();
     }
@@ -60,7 +60,7 @@ public sealed partial class LlmPage : Page
     {
         GeneralSection.Reload();
         ProfilesSection.Reload();
-        ManualShortcutSection.Reload();
+        ShortcutSlotsSection.Reload();
         RulesSection.Reload();
     }
 

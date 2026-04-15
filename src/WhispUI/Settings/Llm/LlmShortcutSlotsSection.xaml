@@ -1,0 +1,28 @@
+<UserControl
+    x:Class="WhispUI.Settings.Llm.LlmShortcutSlotsSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                   Text="Shortcut slots" />
+
+        <controls:SettingsCard Header="Slot A profile"
+                               Description="Rewrite profile triggered by Ctrl + Win + `."
+                               HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+            <ComboBox x:Name="SlotAProfileCombo"
+                      MinWidth="200"
+                      SelectionChanged="SlotAProfileCombo_SelectionChanged" />
+        </controls:SettingsCard>
+
+        <controls:SettingsCard Header="Slot B profile"
+                               Description="Rewrite profile triggered by Ctrl + Shift + Win + `. Pick (None) to leave this shortcut unbound."
+                               HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+            <ComboBox x:Name="SlotBProfileCombo"
+                      MinWidth="200"
+                      SelectionChanged="SlotBProfileCombo_SelectionChanged" />
+        </controls:SettingsCard>
+    </StackPanel>
+</UserControl>

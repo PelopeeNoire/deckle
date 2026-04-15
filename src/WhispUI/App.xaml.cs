@@ -275,12 +275,32 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         if (_engine is null) return;
 
-        bool useLlm = hotkeyId == NativeMethods.HOTKEY_ID_REWRITE;
+        // Map hotkey id → manual rewrite profile (null = primary, no manual
+        // rewrite — engine falls back to duration-based AutoRewriteRules).
+        // Slot B with a null / blank profile name is treated as "not bound"
+        // and the hotkey is silently ignored so users can leave slot B empty.
+        var llm = Settings.SettingsService.Instance.Current.Llm;
+        string? manualProfile = hotkeyId switch
+        {
+            NativeMethods.HOTKEY_ID_REWRITE   => llm.SlotAProfileName,
+            NativeMethods.HOTKEY_ID_REWRITE_B => llm.SlotBProfileName,
+            _                                  => null,
+        };
+
+        if (hotkeyId == NativeMethods.HOTKEY_ID_REWRITE_B &&
+            string.IsNullOrWhiteSpace(manualProfile) &&
+            !_engine.IsRecording)
+        {
+            DebugLog.Write("HOTKEY", "slot B pressed but no profile bound — ignoring");
+            _log.Step(LogSource.Hotkey, "slot B pressed — no profile bound, ignoring");
+            return;
+        }
 
         if (!_engine.IsRecording)
         {
             DebugLog.Write("HOTKEY", $"start id={hotkeyId}");
-            _log.Step(LogSource.Hotkey, $"start (id={hotkeyId}{(useLlm ? ", LLM" : "")})");
+            _log.Step(LogSource.Hotkey,
+                $"start (id={hotkeyId}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
 
             // Show the HUD immediately in its "Preparing" state so the user
             // gets visual feedback from the very first millisecond after the
@@ -289,7 +309,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             // digits with the recording accent when StatusChanged fires.
             _hudWindow?.ShowPreparing();
 
-            _engine.StartRecording(useLlm: useLlm, shouldPaste: true);
+            _engine.StartRecording(manualProfileName: manualProfile, shouldPaste: true);
         }
         else
         {
