@@ -47,7 +47,7 @@
                          Margin="0,0,0,8" />
 
                 <llm:LlmGeneralSection x:Name="GeneralSection" />
-                <llm:LlmManualShortcutSection x:Name="ManualShortcutSection" />
+                <llm:LlmShortcutSlotsSection x:Name="ShortcutSlotsSection" />
                 <llm:LlmRulesSection x:Name="RulesSection" />
                 <llm:LlmProfilesSection x:Name="ProfilesSection" />
                 <llm:LlmModelsSection x:Name="ModelsSection" />
