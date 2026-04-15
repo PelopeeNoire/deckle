@@ -45,4 +45,7 @@ benchmark/logs/*.csv
 benchmark/reports/last_report.json
 benchmark/reports/results.tsv
 benchmark/reports/autoresearch_report.txt
+
+# Benchmark — transcript corpora (local dictation samples, not for versioning)
+benchmark/data/exemples-transcripts--*.txt
 run.log
