@@ -106,6 +106,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _hudWindow.ShowRecording();
             else if (status == "Transcribing")
                 _hudWindow.SwitchToTranscribing();
+            // Engine emits "Réécriture (...)" today; the FR→EN sweep at
+            // WhispEngine.cs:858 ("Rewriting (...)") lands once the parallel
+            // logs branch is merged. Match both so the dispatcher is robust
+            // across the swap.
+            else if (status.StartsWith("Réécriture") || status.StartsWith("Rewriting"))
+                _hudWindow.SwitchToRewriting();
         };
         _engine.TranscriptionFinished += outcome =>
         {
