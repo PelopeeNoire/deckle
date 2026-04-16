@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -25,7 +26,21 @@ namespace WhispUI.Llm;
 internal class LlmService
 {
     private static readonly LogService _log = LogService.Instance;
-    static readonly HttpClient _http = new();
+
+    // Default HttpClient.Timeout is 100 s — too short for large rewrites
+    // (long transcriptions, big context, CPU-only Ollama). We disable the
+    // built-in timeout and manage cancellation explicitly via a per-request
+    // CancellationTokenSource (REWRITE_HARD_CAP) plus a /api/ps polling task
+    // that keeps the user informed during the wait.
+    static readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
+
+    // Hard cap on a single Rewrite call. Generous: leaves room for slow CPU-only
+    // Ollama setups on big transcripts (20 min audio, 16 K context), but still
+    // guards against a stuck worker.
+    static readonly TimeSpan REWRITE_HARD_CAP = TimeSpan.FromMinutes(15);
+
+    // /api/ps probe cadence while waiting for /api/generate to return.
+    static readonly TimeSpan POLL_INTERVAL = TimeSpan.FromSeconds(60);
 
     static readonly JsonSerializerOptions _jsonOpts = new()
     {
@@ -36,6 +51,7 @@ internal class LlmService
     public string? Rewrite(string text, string endpoint, RewriteProfile profile)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var cts = new CancellationTokenSource(REWRITE_HARD_CAP);
         try
         {
             var (prompt, stops, family) = PromptTemplates.Build(profile.Model, profile.SystemPrompt, text);
@@ -56,20 +72,49 @@ internal class LlmService
 
             string json = JsonSerializer.Serialize(body, _jsonOpts);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var response = _http.PostAsync(generateUrl, content).GetAwaiter().GetResult();
-            response.EnsureSuccessStatusCode();
 
-            string responseJson = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            using var doc = JsonDocument.Parse(responseJson);
-            string? rewritten = doc.RootElement
-                .GetProperty("response")
-                .GetString();
+            // Polling task: hits /api/ps every 60 s while we wait for
+            // /api/generate to return — turns the silent wait into a visible
+            // narrative ("Ollama busy — model X resident...") so the user
+            // knows the engine is still working. Cancelled via pollDone in the
+            // finally block as soon as the request settles.
+            using var pollDone = new CancellationTokenSource();
+            var pollingTask = Task.Run(() => PollOllamaWhileBusy(endpoint, pollDone.Token));
 
+            HttpResponseMessage response;
+            try
+            {
+                response = _http.PostAsync(generateUrl, content, cts.Token).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                pollDone.Cancel();
+                try { pollingTask.GetAwaiter().GetResult(); }
+                catch { /* polling errors are surfaced by their own warnings */ }
+            }
+
+            using (response)
+            {
+                response.EnsureSuccessStatusCode();
+
+                string responseJson = response.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
+                using var doc = JsonDocument.Parse(responseJson);
+                string? rewritten = doc.RootElement
+                    .GetProperty("response")
+                    .GetString();
+
+                sw.Stop();
+                string trimmed = PromptTemplates.StripStops(rewritten ?? "", family).Trim();
+                _log.Info(LogSource.Llm, $"Rewrite OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profile: {profile.Name})");
+                _log.Info(LogSource.Llm, FormatMetrics(doc.RootElement));
+                return trimmed;
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
             sw.Stop();
-            string trimmed = PromptTemplates.StripStops(rewritten ?? "", family).Trim();
-            _log.Info(LogSource.Llm, $"Rewrite OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profile: {profile.Name})");
-            _log.Info(LogSource.Llm, FormatMetrics(doc.RootElement));
-            return trimmed;
+            _log.Warning(LogSource.Llm, $"Ollama took longer than {REWRITE_HARD_CAP.TotalMinutes:F0} min — giving up, raw text preserved");
+            return null;
         }
         catch (Exception ex)
         {
@@ -77,6 +122,88 @@ internal class LlmService
             _log.Warning(LogSource.Llm, $"unavailable: {ex.GetType().Name} {ex.Message} — raw text preserved");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Periodically probes Ollama's /api/ps while a /api/generate call is in
+    /// flight. Emits a Narrative every POLL_INTERVAL describing the resident
+    /// model — gives the user feedback during a long wait. Stops cleanly when
+    /// <paramref name="ct"/> is cancelled by the caller.
+    /// </summary>
+    static async Task PollOllamaWhileBusy(string endpoint, CancellationToken ct)
+    {
+        string psUrl = NormalizePsUrl(endpoint);
+        using var timer = new PeriodicTimer(POLL_INTERVAL);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                try
+                {
+                    using var resp = await _http.GetAsync(psUrl, ct);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        _log.Warning(LogSource.Llm, $"Ollama /api/ps unreachable (HTTP {(int)resp.StatusCode}) — model may have crashed");
+                        continue;
+                    }
+
+                    string body = await resp.Content.ReadAsStringAsync(ct);
+                    using var doc = JsonDocument.Parse(body);
+                    if (!doc.RootElement.TryGetProperty("models", out var modelsArr) ||
+                        modelsArr.ValueKind != JsonValueKind.Array ||
+                        modelsArr.GetArrayLength() == 0)
+                    {
+                        _log.Warning(LogSource.Llm, "Ollama /api/ps reports no resident model — request may be stuck");
+                        continue;
+                    }
+
+                    var first = modelsArr[0];
+                    string name = first.TryGetProperty("name", out var nameProp)
+                        ? nameProp.GetString() ?? "?"
+                        : "?";
+                    long sizeVram = first.TryGetProperty("size_vram", out var vramProp) && vramProp.ValueKind == JsonValueKind.Number
+                        ? vramProp.GetInt64()
+                        : 0;
+                    double vramGb = sizeVram / 1e9;
+
+                    string suffix = "";
+                    if (first.TryGetProperty("expires_at", out var exp) &&
+                        exp.ValueKind == JsonValueKind.String &&
+                        DateTime.TryParse(exp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var expAt))
+                    {
+                        var rem = expAt.ToUniversalTime() - DateTime.UtcNow;
+                        if (rem.TotalSeconds > 0)
+                            suffix = $", expires in {rem.TotalSeconds:F0}s";
+                    }
+
+                    _log.Narrative(LogSource.Llm, $"Ollama busy — {name} resident ({vramGb:F1} GB{suffix})");
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    _log.Warning(LogSource.Llm, $"Ollama /api/ps probe failed: {ex.GetType().Name} {ex.Message}");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected: the caller cancels pollDone as soon as the main request returns.
+        }
+    }
+
+    /// <summary>
+    /// Derives the /api/ps URL from a /api/generate or /api/chat endpoint. If
+    /// the endpoint shape is unknown, treat it as the base and append /api/ps.
+    /// </summary>
+    static string NormalizePsUrl(string endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint)) return endpoint;
+        string trimmed = endpoint.TrimEnd('/');
+        if (trimmed.EndsWith("/api/generate", StringComparison.OrdinalIgnoreCase))
+            return trimmed[..^"/api/generate".Length] + "/api/ps";
+        if (trimmed.EndsWith("/api/chat", StringComparison.OrdinalIgnoreCase))
+            return trimmed[..^"/api/chat".Length] + "/api/ps";
+        return trimmed + "/api/ps";
     }
 
     /// <summary>
