@@ -134,13 +134,32 @@ internal sealed class WhispEngine : IDisposable
     private bool _vadEnded;
     private volatile bool _vadCapturing;
 
-    // Total duration of speech segments parsed from the whisper.cpp VAD log
-    // line "whisper_vad_segments: total duration of speech segments: 12.34 s".
-    // Sentinel -1 means "not yet parsed" — surfaced in the VAD_END narrative,
-    // omitted gracefully when the line shape changes upstream.
-    private float _vadSpeechSec = -1f;
+    // VAD summary fields parsed from the whisper.cpp VAD log lines while
+    // _vadCapturing. All sentinels = -1 mean "not yet parsed" — included in
+    // the consolidated Verbose summary line when present, omitted gracefully
+    // if the line shape changes upstream. Raw whisper_vad* lines are
+    // suppressed from the log surface; the single consolidated Verbose line
+    // (technical totals, LogSource.Whisper) plus a minimalist Narrative
+    // (UX-facing) replace them.
+    private float _vadSpeechSec     = -1f;
+    private int   _vadSegments      = -1;
+    private float _vadReductionPct  = -1f;
+    private float _vadInferenceMs   = -1f;
+    private int   _vadMappingPoints = -1;
     private static readonly Regex _vadSpeechRegex = new(
         @"total duration of speech segments:\s*([\d.]+)\s*s",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex _vadSegmentsRegex = new(
+        @"detected\s+(\d+)\s+speech segments",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex _vadReductionRegex = new(
+        @"\(([\d.]+)%\s*reduction\)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex _vadInferenceRegex = new(
+        @"vad time\s*=\s*([\d.]+)\s*ms",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex _vadMappingRegex = new(
+        @"mapping table with\s+(\d+)\s+points",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private bool _disposed;
@@ -181,54 +200,114 @@ internal sealed class WhispEngine : IDisposable
                 string msg = Marshal.PtrToStringUTF8(textPtr)?.TrimEnd('\r', '\n', ' ') ?? "";
                 if (string.IsNullOrEmpty(msg)) return;
 
+                // Whisper.cpp's VAD module emits per-segment chatter (one line per
+                // detected segment plus several summary lines) — on long recordings
+                // that's hundreds of lines arriving in a single batch after VAD has
+                // already finished, with no temporal value. We parse the summaries
+                // in-flight, then emit one consolidated technical Verbose line plus
+                // a minimalist UX-facing Narrative, and suppress every raw
+                // whisper_vad* line from the log surface (see the early return below).
+                bool isVadLine = msg.StartsWith("whisper_vad", StringComparison.Ordinal);
+
                 // VAD sentinel: only while whisper_full is running (_vadCapturing).
                 // Start the stopwatch on the first "whisper_vad" line (matches both
                 // "whisper_vad:" high-level messages and "whisper_vad_*" sub-module
                 // lines), stop it on the explicit end marker "Reduced audio from
                 // X to Y samples" — emitted last by the VAD module before whisper
                 // moves on to transcription proper.
-                if (_vadCapturing)
+                if (_vadCapturing && isVadLine)
                 {
-                    bool isVadLine = msg.StartsWith("whisper_vad", StringComparison.Ordinal);
-                    if (isVadLine)
+                    if (_vadSw is null)
                     {
-                        if (_vadSw is null)
-                        {
-                            _vadSw = System.Diagnostics.Stopwatch.StartNew();
-                            _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording — a small detector is scanning the audio for spoken segments.");
-                        }
+                        _vadSw = System.Diagnostics.Stopwatch.StartNew();
+                        _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording — a small detector is scanning the audio for spoken segments.");
+                    }
 
-                        // Enrich VAD_END with the total speech duration when
-                        // whisper.cpp prints it. Parse-once: ignore later
-                        // matches in the same window.
-                        if (_vadSpeechSec < 0)
+                    // Parse-once: ignore later matches in the same window.
+                    if (_vadSpeechSec < 0)
+                    {
+                        var m = _vadSpeechRegex.Match(msg);
+                        if (m.Success && float.TryParse(
+                                m.Groups[1].Value,
+                                NumberStyles.Float,
+                                CultureInfo.InvariantCulture,
+                                out float sp))
                         {
-                            var m = _vadSpeechRegex.Match(msg);
-                            if (m.Success && float.TryParse(
-                                    m.Groups[1].Value,
-                                    NumberStyles.Float,
-                                    CultureInfo.InvariantCulture,
-                                    out float sp))
-                            {
-                                _vadSpeechSec = sp;
-                            }
-                        }
-
-                        // Explicit end marker — stable across whisper.cpp versions
-                        // since the function emitting it ("whisper_vad_segments_*")
-                        // is the last step before returning to whisper_full.
-                        if (!_vadEnded && msg.IndexOf("Reduced audio from", StringComparison.Ordinal) >= 0)
-                        {
-                            _vadSw?.Stop();
-                            _vadEnded = true;
-                            double vadSec = _vadSw?.Elapsed.TotalSeconds ?? 0;
-                            if (_vadSpeechSec >= 0)
-                                _log.Narrative(LogSource.Transcribe, $"Speech detected — {_vadSpeechSec:F1} s of speech found in {vadSec:F1} s. Passing to Whisper for transcription.");
-                            else
-                                _log.Narrative(LogSource.Transcribe, $"Speech detection done in {vadSec:F1} s. Passing to Whisper for transcription.");
+                            _vadSpeechSec = sp;
                         }
                     }
+
+                    if (_vadSegments < 0)
+                    {
+                        var m = _vadSegmentsRegex.Match(msg);
+                        if (m.Success && int.TryParse(
+                                m.Groups[1].Value,
+                                NumberStyles.Integer,
+                                CultureInfo.InvariantCulture,
+                                out int segs))
+                        {
+                            _vadSegments = segs;
+                        }
+                    }
+
+                    if (_vadReductionPct < 0)
+                    {
+                        var m = _vadReductionRegex.Match(msg);
+                        if (m.Success && float.TryParse(
+                                m.Groups[1].Value,
+                                NumberStyles.Float,
+                                CultureInfo.InvariantCulture,
+                                out float pct))
+                        {
+                            _vadReductionPct = pct;
+                        }
+                    }
+
+                    if (_vadInferenceMs < 0)
+                    {
+                        var m = _vadInferenceRegex.Match(msg);
+                        if (m.Success && float.TryParse(
+                                m.Groups[1].Value,
+                                NumberStyles.Float,
+                                CultureInfo.InvariantCulture,
+                                out float ms))
+                        {
+                            _vadInferenceMs = ms;
+                        }
+                    }
+
+                    if (_vadMappingPoints < 0)
+                    {
+                        var m = _vadMappingRegex.Match(msg);
+                        if (m.Success && int.TryParse(
+                                m.Groups[1].Value,
+                                NumberStyles.Integer,
+                                CultureInfo.InvariantCulture,
+                                out int pts))
+                        {
+                            _vadMappingPoints = pts;
+                        }
+                    }
+
+                    // Explicit end marker — stable across whisper.cpp versions
+                    // since the function emitting it ("whisper_vad_segments_*")
+                    // is the last step before returning to whisper_full when
+                    // speech was actually found. The no-speech path is closed
+                    // by the post-whisper_full fallback in Transcribe().
+                    if (!_vadEnded && msg.IndexOf("Reduced audio from", StringComparison.Ordinal) >= 0)
+                    {
+                        _vadSw?.Stop();
+                        _vadEnded = true;
+                        EmitVadSummary(_vadSw?.Elapsed.TotalSeconds ?? 0);
+                    }
                 }
+
+                // Suppress raw whisper_vad* lines — they're consumed by the
+                // instrumentation above and replaced by the consolidated Verbose
+                // line + minimalist Narrative emitted at the "Reduced audio from"
+                // marker. Other whisper.cpp lines (Vulkan init, backend, etc.)
+                // continue through the level switch below.
+                if (isVadLine) return;
 
                 // ggml levels: 0=None, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Cont.
                 // Warn/Error surface as normal logs to be visible without enabling
@@ -255,6 +334,40 @@ internal sealed class WhispEngine : IDisposable
             // whisper_log_set missing from a very old libwhisper: log and
             // continue — the rest of the pipeline doesn't depend on it.
             DebugLog.Write("ENGINE", $"whisper_log_set unavailable: {ex.Message}");
+        }
+    }
+
+    // Emits the consolidated technical Verbose line plus the UX-facing
+    // Narrative for the VAD cycle. Two call sites:
+    //   - the hook, on the "Reduced audio from" end marker (speech path).
+    //   - Transcribe(), as a post-whisper_full fallback when VAD ran but no
+    //     end marker was seen (no-speech path: whisper.cpp short-circuits
+    //     before "Reduced audio" when 0 segments, leaving _vadEnded=false).
+    // Caller is responsible for setting _vadEnded=true to keep this idempotent.
+    private void EmitVadSummary(double vadSec)
+    {
+        var parts = new List<string>();
+        if (_vadSegments      >= 0) parts.Add($"{_vadSegments} segments");
+        if (_vadSpeechSec     >= 0) parts.Add($"speech {_vadSpeechSec:F1} s");
+        if (_vadReductionPct  >= 0) parts.Add($"reduction {_vadReductionPct:F1}%");
+        if (_vadInferenceMs   >= 0) parts.Add($"inference {_vadInferenceMs:F0} ms");
+        if (_vadMappingPoints >= 0) parts.Add($"mapping {_vadMappingPoints} pts");
+        parts.Add($"wall {vadSec:F1} s");
+        _log.Verbose(LogSource.Whisper, "vad: " + string.Join(" | ", parts));
+
+        // UX-facing Narrative — minimalist, no technical figures beyond
+        // speech duration. Distinguishes "speech found" from "nothing found".
+        if (_vadSegments == 0)
+        {
+            _log.Narrative(LogSource.Transcribe, "No speech detected in the recording.");
+        }
+        else if (_vadSpeechSec >= 0)
+        {
+            _log.Narrative(LogSource.Transcribe, $"Speech detected — {_vadSpeechSec:F1} s of speech. Passing to Whisper for transcription.");
+        }
+        else
+        {
+            _log.Narrative(LogSource.Transcribe, "Speech detected. Passing to Whisper for transcription.");
         }
     }
 
@@ -572,7 +685,7 @@ internal sealed class WhispEngine : IDisposable
         var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
         _log.Info(LogSource.Record, "Recording started (16kHz mono PCM16)");
 
-        double nextHeartbeatSec = 5.0;
+        double nextHeartbeatSec = 60.0;
 
         while (!_stopRecording)
         {
@@ -605,12 +718,12 @@ internal sealed class WhispEngine : IDisposable
             if (bufferDoneCount > 1)
                 _log.Warning(LogSource.Record, $"lag, {bufferDoneCount} buffers ready simultaneously");
 
-            // Heartbeat ~5s, Verbose → visible in All filter only
+            // Heartbeat ~60s, Verbose → visible in All filter only
             double curSec = allBytes.Count / 32000.0;
             if (curSec >= nextHeartbeatSec)
             {
                 _log.Verbose(LogSource.Record, $"+{curSec:F1}s captured");
-                nextHeartbeatSec += 5.0;
+                nextHeartbeatSec += 60.0;
             }
         }
 
@@ -677,25 +790,6 @@ internal sealed class WhispEngine : IDisposable
     // callback for each new validated segment during decoding, on ITS inference
     // thread — hence the lock on _segments. Final text is assembled from these
     // segments at the end of the call.
-
-    // Detects simple repetition: subsequence of >= 4 words recurring >= 3 times.
-    // Kept as log-only (warning) for diagnostic signal — doesn't filter anything.
-    private static bool LooksRepeated(string text)
-    {
-        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length < 12) return false;
-        for (int n = 4; n <= 8; n++)
-        {
-            var counts = new Dictionary<string, int>();
-            for (int i = 0; i + n <= words.Length; i++)
-            {
-                var key = string.Join(' ', words, i, n);
-                counts[key] = counts.GetValueOrDefault(key) + 1;
-                if (counts[key] >= 3) return true;
-            }
-        }
-        return false;
-    }
 
     private void OnNewSegment(IntPtr ctx, IntPtr state, int n_new, IntPtr user_data)
     {
@@ -824,7 +918,11 @@ internal sealed class WhispEngine : IDisposable
 
         _vadSw = null;
         _vadEnded = false;
-        _vadSpeechSec = -1f;
+        _vadSpeechSec     = -1f;
+        _vadSegments      = -1;
+        _vadReductionPct  = -1f;
+        _vadInferenceMs   = -1f;
+        _vadMappingPoints = -1;
         _vadCapturing = true;
 
         _transcribeSw = System.Diagnostics.Stopwatch.StartNew();
@@ -837,6 +935,20 @@ internal sealed class WhispEngine : IDisposable
         if (_vadSw is { IsRunning: true }) _vadSw.Stop();
         long vadMs = _vadSw?.ElapsedMilliseconds ?? 0;
         long whisperMs = Math.Max(0, transcribeMsTotal - vadMs);
+
+        // No-speech path: whisper.cpp short-circuits before emitting the
+        // "Reduced audio from" marker when VAD finds 0 segments, so the hook
+        // never closes the cycle. Force the close here so the consolidated
+        // Verbose line and the "No speech detected" Narrative still surface.
+        // _vadSegments stays -1 because "detected N speech segments" is also
+        // skipped in the short-circuit — coerce it to 0 so EmitVadSummary
+        // takes the no-speech Narrative branch.
+        if (_vadSw != null && !_vadEnded)
+        {
+            _vadEnded = true;
+            if (_vadSegments < 0) _vadSegments = 0;
+            EmitVadSummary(_vadSw.Elapsed.TotalSeconds);
+        }
 
         nativeAllocs.Free();
 
@@ -861,10 +973,15 @@ internal sealed class WhispEngine : IDisposable
         }
 
         _log.Info(LogSource.Transcribe, $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
-        _log.Narrative(LogSource.Transcribe, $"Whisper transcribed the speech into {nSeg} segments in {transcribeMsTotal / 1000.0:F1} s.");
 
-        if (LooksRepeated(fullText))
-            _log.Warning(LogSource.Transcribe, "repetition detected in text (heuristic signal, no filtering)");
+        // Suppress the post-transcription Narrative when nothing was transcribed
+        // — the "No speech detected in the recording." Narrative emitted by the
+        // VAD cycle is already the last word for the user, and saying "Whisper
+        // transcribed the speech into 0 segments" would be both noisy and silly.
+        if (nSeg > 0)
+        {
+            _log.Narrative(LogSource.Transcribe, $"Whisper transcribed the speech into {nSeg} segments in {transcribeMsTotal / 1000.0:F1} s.");
+        }
 
         if (string.IsNullOrWhiteSpace(fullText))
         {

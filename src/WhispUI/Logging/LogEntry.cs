@@ -4,7 +4,7 @@ namespace WhispUI.Logging;
 // Verbose   : background noise (heartbeats, per-segment dumps, clipboard plumbing).
 // Info      : normal workflow events (recording, return codes, text, copy, paste).
 // Success   : rare verified milestones (model loaded, end-to-end OK) — green ack.
-// Warning   : non-fatal issues (focus loss, empty buffers, repetition detected).
+// Warning   : non-fatal issues (focus loss, empty buffers, slow dependency).
 // Error     : failures (init errors, transcription failures, mic unavailable).
 // Narrative : plain-language explanation of pipeline activity, written for the
 //             user (Steps view) — sits outside the technical hierarchy above.
