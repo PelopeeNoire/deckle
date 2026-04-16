@@ -20,10 +20,13 @@
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
 
-                <!-- 5 templates per wrap dimension, swapped via DataTemplateSelector
+                <!-- 6 templates per wrap dimension, swapped via DataTemplateSelector
                      on Wrap toggle. Each template binds its Foreground to a
                      ThemeResource: WinUI re-resolves automatically on theme
-                     switch, no need to rebuild entries in code. -->
+                     switch, no need to rebuild entries in code.
+                     Narrative uses TextFillColorPrimaryBrush (full strength
+                     body text) so the user-facing pipeline narration reads
+                     as primary content, not as a colored log level. -->
                 <DataTemplate x:Key="NoWrap_Verbose">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -36,7 +39,7 @@
                                FontFamily="Consolas" FontSize="12"
                                TextWrapping="NoWrap" />
                 </DataTemplate>
-                <DataTemplate x:Key="NoWrap_Step">
+                <DataTemplate x:Key="NoWrap_Success">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                FontFamily="Consolas" FontSize="12"
@@ -54,6 +57,12 @@
                                FontFamily="Consolas" FontSize="12"
                                TextWrapping="NoWrap" />
                 </DataTemplate>
+                <DataTemplate x:Key="NoWrap_Narrative">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" />
+                </DataTemplate>
 
                 <DataTemplate x:Key="Wrap_Verbose">
                     <TextBlock Text="{Binding Text}"
@@ -67,7 +76,7 @@
                                FontFamily="Consolas" FontSize="12"
                                TextWrapping="Wrap" />
                 </DataTemplate>
-                <DataTemplate x:Key="Wrap_Step">
+                <DataTemplate x:Key="Wrap_Success">
                     <TextBlock Text="{Binding Text}"
                                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                FontFamily="Consolas" FontSize="12"
@@ -85,19 +94,27 @@
                                FontFamily="Consolas" FontSize="12"
                                TextWrapping="Wrap" />
                 </DataTemplate>
+                <DataTemplate x:Key="Wrap_Narrative">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" />
+                </DataTemplate>
 
                 <local:LogLevelTemplateSelector x:Key="NoWrapSelector"
                     Verbose="{StaticResource NoWrap_Verbose}"
                     Info="{StaticResource NoWrap_Info}"
-                    Step="{StaticResource NoWrap_Step}"
+                    Success="{StaticResource NoWrap_Success}"
                     Warning="{StaticResource NoWrap_Warning}"
-                    Error="{StaticResource NoWrap_Error}" />
+                    Error="{StaticResource NoWrap_Error}"
+                    Narrative="{StaticResource NoWrap_Narrative}" />
                 <local:LogLevelTemplateSelector x:Key="WrapSelector"
                     Verbose="{StaticResource Wrap_Verbose}"
                     Info="{StaticResource Wrap_Info}"
-                    Step="{StaticResource Wrap_Step}"
+                    Success="{StaticResource Wrap_Success}"
                     Warning="{StaticResource Wrap_Warning}"
-                    Error="{StaticResource Wrap_Error}" />
+                    Error="{StaticResource Wrap_Error}"
+                    Narrative="{StaticResource Wrap_Narrative}" />
 
                 <!-- Compact container for dense log rendering: reduced padding,
                      hover highlight preserved (signals click-to-copy). -->
@@ -166,9 +183,10 @@
                                   Margin="4,0,0,0"
                                   VerticalAlignment="Center"
                                   SelectionChanged="OnLevelSelectorChanged">
+                <controls:SelectorBarItem x:Name="LevelSteps" Text="Steps" />
                 <controls:SelectorBarItem x:Name="LevelFull" Text="All" />
                 <controls:SelectorBarItem x:Name="LevelFiltered" Text="Activity" />
-                <controls:SelectorBarItem x:Name="LevelCritical" Text="Errors" />
+                <controls:SelectorBarItem x:Name="LevelCritical" Text="Alerts" />
             </controls:SelectorBar>
 
             <!-- Native overflow via IsDynamicOverflowEnabled (true by default)
@@ -225,11 +243,16 @@
              honored. Left click = copy line, right click = native MenuFlyout.
              Floating "Copy" badge positioned to the right of the hovered item. -->
         <Grid Grid.Row="2" x:Name="LogSurface">
+            <!-- Bottom padding 24 keeps the last line above the horizontal
+                 scrollbar (which floats over the content in WinUI 3). Without
+                 it, when scrolled to the bottom, the freshest line is masked
+                 by the scrollbar — and the bottom is exactly where new entries
+                 land. -->
             <ListView x:Name="LogItems"
                       Background="{ThemeResource LayerFillColorDefaultBrush}"
                       BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                       BorderThickness="0,1,0,0"
-                      Padding="12,4"
+                      Padding="12,4,12,24"
                       ItemContainerStyle="{StaticResource LogItemContainerStyle}"
                       ItemTemplateSelector="{StaticResource NoWrapSelector}"
                       SelectionMode="Extended"
