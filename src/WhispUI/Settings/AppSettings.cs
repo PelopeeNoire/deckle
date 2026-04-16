@@ -151,12 +151,12 @@ public sealed class LlmSettings
     public bool Enabled { get; set; } = true;
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
 
-    // Profile used by the Ctrl+Win+` shortcut (slot A).
-    public string SlotAProfileName { get; set; } = "Prompt";
+    // Profile used by the Primary Rewrite shortcut (Shift+Win+`).
+    public string PrimaryRewriteProfileName { get; set; } = "Prompt";
 
-    // Profile used by the Ctrl+Shift+Win+` shortcut (slot B).
-    // null = slot B disabled (hotkey fires but rewriting is skipped).
-    public string? SlotBProfileName { get; set; }
+    // Profile used by the Secondary Rewrite shortcut (Ctrl+Win+`).
+    // null = secondary rewrite disabled (hotkey fires but rewriting is skipped).
+    public string? SecondaryRewriteProfileName { get; set; }
 
     // Bloc anti-préambule partagé par tous les profils par défaut. Répété en
     // tête de chaque system prompt parce que les modèles instruct sont

@@ -4,7 +4,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Input;
-using Windows.System;
 using System.Collections.ObjectModel;
 using System.Text;
 using Windows.ApplicationModel.DataTransfer;
@@ -20,17 +19,18 @@ using WhispUI.Shell;
 namespace WhispUI;
 
 // SelectorBar mode — single active at a time (native exclusive selection).
-internal enum LogFilterMode { All, Steps, Critical }
+internal enum LogFilterMode { Steps, All, Activity, Alerts }
 
-// Level-based template selector — 5 templates per wrap dimension. Instantiated
+// Level-based template selector — 6 templates per wrap dimension. Instantiated
 // twice in XAML resources (NoWrapSelector / WrapSelector), swapped on toggle.
 public sealed class LogLevelTemplateSelector : DataTemplateSelector
 {
-    public DataTemplate? Verbose { get; set; }
-    public DataTemplate? Info    { get; set; }
-    public DataTemplate? Step    { get; set; }
-    public DataTemplate? Warning { get; set; }
-    public DataTemplate? Error   { get; set; }
+    public DataTemplate? Verbose   { get; set; }
+    public DataTemplate? Info      { get; set; }
+    public DataTemplate? Success   { get; set; }
+    public DataTemplate? Warning   { get; set; }
+    public DataTemplate? Error     { get; set; }
+    public DataTemplate? Narrative { get; set; }
 
     protected override DataTemplate SelectTemplateCore(object item) => Pick(item);
 
@@ -43,12 +43,13 @@ public sealed class LogLevelTemplateSelector : DataTemplateSelector
         {
             return e.Level switch
             {
-                LogLevel.Verbose => Verbose!,
-                LogLevel.Info    => Info!,
-                LogLevel.Step    => Step!,
-                LogLevel.Warning => Warning!,
-                LogLevel.Error   => Error!,
-                _                => Info!,
+                LogLevel.Verbose   => Verbose!,
+                LogLevel.Info      => Info!,
+                LogLevel.Success   => Success!,
+                LogLevel.Warning   => Warning!,
+                LogLevel.Error     => Error!,
+                LogLevel.Narrative => Narrative!,
+                _                  => Info!,
             };
         }
         return Info!;
@@ -85,7 +86,7 @@ public sealed partial class LogWindow : Window, ILogSink
     private ScrollViewer? _listScrollViewer;
     private ItemsStackPanel? _itemsPanel;
 
-    private LogFilterMode _filterMode = LogFilterMode.All;
+    private LogFilterMode _filterMode = LogFilterMode.Steps;
     private string _currentSearch = "";
     private bool _isRecording;
 
@@ -102,14 +103,6 @@ public sealed partial class LogWindow : Window, ILogSink
         _hwnd = WindowNative.GetWindowHandle(this);
 
         LogItems.ItemsSource = _visible;
-
-        // Shift+wheel → horizontal scroll. The ListView's internal ScrollViewer
-        // marks PointerWheelChanged as handled; AddHandler with
-        // handledEventsToo=true to intercept anyway.
-        LogItems.AddHandler(
-            UIElement.PointerWheelChangedEvent,
-            new PointerEventHandler(OnLogPointerWheel),
-            handledEventsToo: true);
 
         // Click-to-copy + drag-to-select: PointerPressed/Released are marked
         // handled by the ListView for its own selection management, so
@@ -143,8 +136,9 @@ public sealed partial class LogWindow : Window, ILogSink
         // Win11 required (OK here); falls back to transparent otherwise.
         SystemBackdrop = new MicaBackdrop();
 
-        // Initial SelectorBar selection.
-        LevelSelector.SelectedItem = LevelFull;
+        // Initial SelectorBar selection: Steps view, the user-facing pipeline
+        // narration. All / Activity / Alerts remain one click away.
+        LevelSelector.SelectedItem = LevelSteps;
 
         Title = "WhispUI Logs";
         // ~1:2 aspect ratio (vertical) — two stacked squares. Fits on a 4K display.
@@ -283,14 +277,19 @@ public sealed partial class LogWindow : Window, ILogSink
     private bool Matches(LogEntry e)
     {
         // Level filter:
-        //   All      → everything passes (including Verbose)
-        //   Steps    → Activity: Info + Step + Warning + Error (Verbose hidden)
-        //   Critical → Errors: Warning + Error only
+        //   Steps    → user-facing narration only (Narrative)
+        //   All      → everything passes (including Verbose and Narrative)
+        //   Activity → technical activity: Info + Success + Warning + Error
+        //              (Verbose AND Narrative hidden)
+        //   Alerts   → Warning + Error only
         bool levelOk = _filterMode switch
         {
+            LogFilterMode.Steps    => e.Level == LogLevel.Narrative,
             LogFilterMode.All      => true,
-            LogFilterMode.Steps    => e.Level != LogLevel.Verbose,
-            LogFilterMode.Critical => e.Level == LogLevel.Warning || e.Level == LogLevel.Error,
+            LogFilterMode.Activity => e.Level != LogLevel.Verbose
+                                   && e.Level != LogLevel.Narrative,
+            LogFilterMode.Alerts   => e.Level == LogLevel.Warning
+                                   || e.Level == LogLevel.Error,
             _                      => true,
         };
         if (!levelOk) return false;
@@ -347,35 +346,6 @@ public sealed partial class LogWindow : Window, ILogSink
         return null;
     }
 
-    private void OnLogPointerWheel(object sender, PointerRoutedEventArgs e)
-    {
-        // Hide Copy badge during scroll.
-        CopyBadge.Visibility = Visibility.Collapsed;
-
-        // Shift not pressed → let the ScrollViewer handle native vertical scroll.
-        var mods = e.KeyModifiers;
-        if ((mods & VirtualKeyModifiers.Shift) == 0) return;
-
-        var sv = GetListViewScrollViewer();
-        if (sv is null) return;
-
-        // In wrap mode, horizontal scroll is disabled: nothing to do.
-        if (sv.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
-
-        var point = e.GetCurrentPoint(LogItems);
-        int delta = point.Properties.MouseWheelDelta;
-        if (delta == 0) return;
-
-        // Windows convention: 120 units = one notch. Scroll ~80 px per notch,
-        // inverted from delta (delta>0 = wheel up = scroll left).
-        double offset = sv.HorizontalOffset - (delta / 120.0) * 80.0;
-        if (offset < 0) offset = 0;
-        if (offset > sv.ScrollableWidth) offset = sv.ScrollableWidth;
-
-        sv.ChangeView(offset, null, null, disableAnimation: true);
-        e.Handled = true;
-    }
-
     private void OnClearClick(object sender, RoutedEventArgs e) => ClearAll();
 
     private void OnWrapToggleClick(object sender, RoutedEventArgs e)
@@ -389,17 +359,14 @@ public sealed partial class LogWindow : Window, ILogSink
         // where to break). Attached property on the ListView.
         ScrollViewer.SetHorizontalScrollBarVisibility(LogItems,
             wrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
-
-        // Invalidate the internal ScrollViewer cache (same object, but
-        // its visibility changed).
-        _listScrollViewer = null;
     }
 
     private void OnLevelSelectorChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         var sel = sender.SelectedItem;
-        _filterMode = sel == LevelCritical ? LogFilterMode.Critical
-                    : sel == LevelFiltered ? LogFilterMode.Steps
+        _filterMode = sel == LevelSteps    ? LogFilterMode.Steps
+                    : sel == LevelFiltered ? LogFilterMode.Activity
+                    : sel == LevelCritical ? LogFilterMode.Alerts
                     : LogFilterMode.All;
         ApplyFilter();
     }

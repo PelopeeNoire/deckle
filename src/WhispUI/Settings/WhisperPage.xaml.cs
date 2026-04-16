@@ -120,7 +120,7 @@ public sealed partial class WhisperPage : Page
                 // state, model folder re-scan).
                 ViewModel.PropertyChanged += OnViewModelPropertyChanged;
 
-                _log.Step(LogSource.SetWhisper, "Loaded complete — page ready");
+                _log.Success(LogSource.SetWhisper, "Loaded complete — page ready");
             }
             catch (Exception ex)
             {

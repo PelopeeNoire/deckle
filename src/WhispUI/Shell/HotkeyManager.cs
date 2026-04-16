@@ -34,10 +34,10 @@ internal sealed class HotkeyManager : IDisposable
     {
         (NativeMethods.HOTKEY_ID_TRANSCRIBE,
             NativeMethods.MOD_WIN | NativeMethods.MOD_NOREPEAT),
-        (NativeMethods.HOTKEY_ID_REWRITE,
+        (NativeMethods.HOTKEY_ID_PRIMARY_REWRITE,
+            NativeMethods.MOD_SHIFT | NativeMethods.MOD_WIN | NativeMethods.MOD_NOREPEAT),
+        (NativeMethods.HOTKEY_ID_SECONDARY_REWRITE,
             NativeMethods.MOD_CONTROL | NativeMethods.MOD_WIN | NativeMethods.MOD_NOREPEAT),
-        (NativeMethods.HOTKEY_ID_REWRITE_B,
-            NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT | NativeMethods.MOD_WIN | NativeMethods.MOD_NOREPEAT),
     };
 
     public HotkeyManager(IntPtr hwnd, Action<int> onHotkey)
