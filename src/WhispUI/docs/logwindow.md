@@ -59,11 +59,7 @@ Piege WinUI 3 : `ItemsControl.ItemTemplateSelector` n'est pas honore a l'executi
 
 Le toggle swap le template **et** bascule `HorizontalScrollBarVisibility` entre `Auto` et `Disabled`. Sans ca, `TextWrapping="Wrap"` ne s'applique pas — le `ScrollViewer` mesure son contenu en largeur infinie tant que le scroll horizontal est autorise.
 
-Shift+molette -> scroll horizontal via `AddHandler(PointerWheelChangedEvent, ..., handledEventsToo: true)` car le ScrollViewer marque l'event handled pour son propre scroll vertical.
-
-**Piege Shift+molette / scroll vertical parasite** : WinUI 3 n'a pas de routing Tunnel/Preview. Le ScrollViewer interne du ListView traite `PointerWheelChanged` AVANT tout handler externe (meme attache via `AddHandler(..., handledEventsToo: true)`) et a deja applique son scroll vertical quand notre code s'execute. `e.Handled = true` n'annule pas ce qui a deja eu lieu. Resultat sans correctif : Shift+molette scrolle horizontalement ET verticalement.
-
-Correctif : champ `_lastNonShiftVerticalOffset` synchronise en continu via `ScrollViewer.ViewChanged` (toutes sources de scroll : molette, scrollbar, clavier, `ScrollIntoView`). Le handler ViewChanged ignore les updates pendant que Shift est enfonce (`InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)`), pour que la baseline reste figee sur l'offset d'avant-shift. Quand Shift+molette arrive, `ChangeView(newH, _lastNonShiftVerticalOffset, ...)` restaure cet offset gele en meme temps qu'on applique le scroll horizontal. Souscription au ViewChanged faite des `LogItems.Loaded` pour que la baseline soit valide des le tout premier Shift+molette.
+**Shift+molette = comportement natif WinUI 3 assume**. Le ScrollViewer interne du ListView scrolle verticalement (pas horizontalement), parce que WinUI 3 n'expose pas de routing Tunnel/Preview pour intercepter `PointerWheelChanged` avant que le SV interne ne le consomme. Toute tentative custom (re-injection horizontale via `ChangeView`, baseline sync via `ViewChanged`) produit un effet visuel saccade/inverse a chaque cran de molette — pire qu'un simple comportement natif. Pour parcourir une longue ligne sans wrap : utiliser la scrollbar horizontale, ou activer le toggle Wrap.
 
 ## Padding bas du ListView
 

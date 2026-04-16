@@ -121,9 +121,15 @@ internal sealed class WhispEngine : IDisposable
 
     // VAD timing — whisper.cpp's Silero VAD runs inside whisper_full() natively,
     // so we can't bracket it with a C# stopwatch. Instead we watch the native
-    // log hook for "whisper_vad_*" lines: the first one starts the stopwatch,
-    // the first non-VAD line that follows stops it. _vadCapturing gates the
-    // detection to the whisper_full call window — load-time logs can't trip it.
+    // log hook for "whisper_vad" lines: the first one starts the stopwatch,
+    // the sentinel "Reduced audio from X to Y samples" (last line emitted by
+    // the VAD module before whisper_full hands speech chunks to transcription)
+    // stops it. _vadCapturing gates the detection to the whisper_full call
+    // window — load-time logs can't trip it.
+    //
+    // Earlier heuristic ("first non-VAD line stops the stopwatch") tripped on
+    // "whisper_backend_init_gpu" emitted during VAD context creation, well
+    // before actual detection ran (VAD wall time mis-reported as 0 s).
     private System.Diagnostics.Stopwatch? _vadSw;
     private bool _vadEnded;
     private volatile bool _vadCapturing;
@@ -176,18 +182,20 @@ internal sealed class WhispEngine : IDisposable
                 if (string.IsNullOrEmpty(msg)) return;
 
                 // VAD sentinel: only while whisper_full is running (_vadCapturing).
-                // Start the stopwatch on the first "whisper_vad_*" line, stop it on
-                // the first non-VAD line that follows. Standard Silero integration
-                // runs VAD upfront, so a single start/stop pair is enough.
+                // Start the stopwatch on the first "whisper_vad" line (matches both
+                // "whisper_vad:" high-level messages and "whisper_vad_*" sub-module
+                // lines), stop it on the explicit end marker "Reduced audio from
+                // X to Y samples" — emitted last by the VAD module before whisper
+                // moves on to transcription proper.
                 if (_vadCapturing)
                 {
-                    bool isVadLine = msg.StartsWith("whisper_vad_", StringComparison.Ordinal);
+                    bool isVadLine = msg.StartsWith("whisper_vad", StringComparison.Ordinal);
                     if (isVadLine)
                     {
                         if (_vadSw is null)
                         {
                             _vadSw = System.Diagnostics.Stopwatch.StartNew();
-                            _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording.");
+                            _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording — a small detector is scanning the audio for spoken segments.");
                         }
 
                         // Enrich VAD_END with the total speech duration when
@@ -205,16 +213,20 @@ internal sealed class WhispEngine : IDisposable
                                 _vadSpeechSec = sp;
                             }
                         }
-                    }
-                    else if (_vadSw is { IsRunning: true } && !_vadEnded)
-                    {
-                        _vadSw.Stop();
-                        _vadEnded = true;
-                        double vadSec = _vadSw.Elapsed.TotalSeconds;
-                        if (_vadSpeechSec >= 0)
-                            _log.Narrative(LogSource.Transcribe, $"Found {_vadSpeechSec:F1} s of speech in {vadSec:F1} s.");
-                        else
-                            _log.Narrative(LogSource.Transcribe, $"Speech detection done in {vadSec:F1} s.");
+
+                        // Explicit end marker — stable across whisper.cpp versions
+                        // since the function emitting it ("whisper_vad_segments_*")
+                        // is the last step before returning to whisper_full.
+                        if (!_vadEnded && msg.IndexOf("Reduced audio from", StringComparison.Ordinal) >= 0)
+                        {
+                            _vadSw?.Stop();
+                            _vadEnded = true;
+                            double vadSec = _vadSw?.Elapsed.TotalSeconds ?? 0;
+                            if (_vadSpeechSec >= 0)
+                                _log.Narrative(LogSource.Transcribe, $"Speech detected — {_vadSpeechSec:F1} s of speech found in {vadSec:F1} s. Passing to Whisper for transcription.");
+                            else
+                                _log.Narrative(LogSource.Transcribe, $"Speech detection done in {vadSec:F1} s. Passing to Whisper for transcription.");
+                        }
                     }
                 }
 
@@ -410,7 +422,7 @@ internal sealed class WhispEngine : IDisposable
 
                 _recordingSw = System.Diagnostics.Stopwatch.StartNew();
                 StatusChanged?.Invoke("Recording");
-                _log.Narrative(LogSource.Record, "Recording from the microphone.");
+                _log.Narrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
 
                 float[] audio = Record();
                 _isRecording = false;
@@ -624,7 +636,7 @@ internal sealed class WhispEngine : IDisposable
 
         double totalSec = allBytes.Count / 32000.0;
         _log.Info(LogSource.Record, $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
-        _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Processing now.");
+        _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
 
         // Tail RMS: measures the energy of the final 600ms to see if we're
         // cutting during a syllable (lost punctuation) or in a clean silence.
@@ -792,7 +804,11 @@ internal sealed class WhispEngine : IDisposable
 
         float audioSec = (float)audio.Length / 16_000f;
         _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
-        _log.Narrative(LogSource.Transcribe, "Transcribing the speech.");
+        // Workflow narration: VAD_END handles the "now transcribing" intro in
+        // its own line (it sits between VAD completion and transcription start),
+        // so a separate TRANSCRIBE_START narrative would be redundant — and
+        // would even fire out of order, before VAD_START which runs inside
+        // whisper_full's hook.
         _strategyLabel = wparams.strategy == 1 ? $"beam{wparams.beam_search_beam_size}" : "greedy";
         string strategyLabelVerbose = wparams.strategy == 1 ? $"beam(size={wparams.beam_search_beam_size})" : "greedy";
         _log.Verbose(LogSource.Transcribe, $"params: {strategyLabelVerbose} | temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
@@ -845,7 +861,7 @@ internal sealed class WhispEngine : IDisposable
         }
 
         _log.Info(LogSource.Transcribe, $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
-        _log.Narrative(LogSource.Transcribe, $"Transcribed {nSeg} segments, {fullText.Length} characters in {transcribeMsTotal / 1000.0:F1} s.");
+        _log.Narrative(LogSource.Transcribe, $"Whisper transcribed the speech into {nSeg} segments in {transcribeMsTotal / 1000.0:F1} s.");
 
         if (LooksRepeated(fullText))
             _log.Warning(LogSource.Transcribe, "repetition detected in text (heuristic signal, no filtering)");
@@ -893,7 +909,7 @@ internal sealed class WhispEngine : IDisposable
         if (profile is not null)
         {
             StatusChanged?.Invoke($"Réécriture ({profile.Name})...");
-            _log.Narrative(LogSource.Llm, $"Cleaning up the transcript with the {profile.Name} profile.");
+            _log.Narrative(LogSource.Llm, $"A local language model (Ollama) is now rewriting the transcript with the {profile.Name} profile.");
             var swLlm = System.Diagnostics.Stopwatch.StartNew();
             string? rewritten = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
             swLlm.Stop();
@@ -902,7 +918,7 @@ internal sealed class WhispEngine : IDisposable
             {
                 fullText = rewritten;
                 CopyToClipboard(fullText);
-                _log.Narrative(LogSource.Llm, $"Cleaned up in {swLlm.Elapsed.TotalSeconds:F1} s.");
+                _log.Narrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s — the polished text is ready to paste.");
             }
         }
 
@@ -925,14 +941,14 @@ internal sealed class WhispEngine : IDisposable
         if (_shouldPaste && pasteVerified)
         {
             string exeName = Win32Util.GetExeName(NativeMethods.GetForegroundWindow());
-            _log.Narrative(LogSource.Paste, $"Pasted into {exeName}.");
+            _log.Narrative(LogSource.Paste, $"Final text pasted into {exeName}.");
         }
 
         // Technical recap stays available for tuning sessions but drops out of
         // the user-facing Activity / Steps views — visible only under "All".
         string recap = $"total {recDurationSec:F1}s ({_strategyLabel} trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         _log.Verbose(LogSource.Done, recap);
-        _log.Narrative(LogSource.Done, $"Done. {fullText.Length} characters from {recDurationSec:F1} s of dictation.");
+        _log.Narrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
 
         StatusChanged?.Invoke("Ready");
         _recordingSw?.Stop();
