@@ -8,7 +8,7 @@ La récupération progressive passe par `new_segment_callback` (binding du champ
 
 Chaque segment est poussé sous lock dans `List<TranscribedSegment> _segments` (`Text` / `T0` / `T1` / `NoSpeechProb`), depuis le thread d'inférence de whisper.cpp. Le texte final est assemblé à partir de cette liste — garantit qu'un segment loggé est exactement un segment du texte produit.
 
-Un seul thread worker `Record → Transcribe` au lieu de deux threads parallèles (plus de `BlockingCollection`). `MatchHallucination` et la mémoire `initial_prompt` chunk-par-chunk supprimées. `LooksRepeated` conservée en log-only sur le texte complet.
+Un seul thread worker `Record → Transcribe` au lieu de deux threads parallèles (plus de `BlockingCollection`). `MatchHallucination` et la mémoire `initial_prompt` chunk-par-chunk supprimées.
 
 ## Instrumentation par segment — tuning hallucinations
 

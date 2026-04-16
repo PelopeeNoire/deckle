@@ -54,4 +54,20 @@ internal static class Win32Util
             return $"(describe err: {ex.Message})";
         }
     }
+
+    // Process name for an HWND — just the exe, no title, no focus probe.
+    // Used by the user-facing narrative log to name the target app of a paste.
+    public static string GetExeName(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "(unknown)";
+        try
+        {
+            NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
+            return Process.GetProcessById((int)pid).ProcessName;
+        }
+        catch
+        {
+            return "(unknown)";
+        }
+    }
 }

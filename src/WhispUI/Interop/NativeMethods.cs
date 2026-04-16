@@ -31,9 +31,9 @@ internal static class NativeMethods
     // Official value is 3, not 4 (4 is MAPVK_VK_TO_VSC_EX, the inverse mapping).
     public const uint MAPVK_VSC_TO_VK_EX = 3;
 
-    public const int HOTKEY_ID_TRANSCRIBE = 1; // Win+[left-of-1]
-    public const int HOTKEY_ID_REWRITE    = 2; // Ctrl+Win+[left-of-1]   (slot A)
-    public const int HOTKEY_ID_REWRITE_B  = 3; // Ctrl+Shift+Win+[left-of-1] (slot B)
+    public const int HOTKEY_ID_TRANSCRIBE        = 1; // Win+[left-of-1]
+    public const int HOTKEY_ID_PRIMARY_REWRITE   = 2; // Shift+Win+[left-of-1]
+    public const int HOTKEY_ID_SECONDARY_REWRITE = 3; // Ctrl+Win+[left-of-1]
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);

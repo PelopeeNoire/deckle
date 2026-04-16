@@ -90,7 +90,13 @@ internal static class WhisperParamsMapper
         // ── Contexte et segmentation ──────────────────────────────────────
         // UseContext (UI) = inverse de no_context (natif).
         wparams.no_context = (byte)(s.Context.UseContext ? 0 : 1);
-        wparams.n_max_text_ctx = s.Context.MaxTokens;
+        // MaxTokens <= 0 means "auto" — leave whisper.cpp's default (16384).
+        // Writing -1 here makes whisper.cpp compute
+        // max_prompt_ctx = min(-1, n_text_ctx/2) = -1 then clamp the initial
+        // prompt to 1 token, surfacing a confusing "initial prompt is too long"
+        // warning on every transcription.
+        if (s.Context.MaxTokens > 0)
+            wparams.n_max_text_ctx = s.Context.MaxTokens;
 
         // ── VAD ───────────────────────────────────────────────────────────
         IntPtr vadPathPtr = IntPtr.Zero;
