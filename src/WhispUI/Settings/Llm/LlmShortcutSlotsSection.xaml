@@ -7,22 +7,22 @@
 
     <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
         <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                   Text="Shortcut slots" />
+                   Text="Rewrite shortcuts" />
 
-        <controls:SettingsCard Header="Slot A profile"
-                               Description="Rewrite profile triggered by Ctrl + Win + `."
+        <controls:SettingsCard Header="Primary rewrite profile"
+                               Description="Profile triggered by Shift + Win + `."
                                HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
-            <ComboBox x:Name="SlotAProfileCombo"
+            <ComboBox x:Name="PrimaryRewriteProfileCombo"
                       MinWidth="200"
-                      SelectionChanged="SlotAProfileCombo_SelectionChanged" />
+                      SelectionChanged="PrimaryRewriteProfileCombo_SelectionChanged" />
         </controls:SettingsCard>
 
-        <controls:SettingsCard Header="Slot B profile"
-                               Description="Rewrite profile triggered by Ctrl + Shift + Win + `. Pick (None) to leave this shortcut unbound."
+        <controls:SettingsCard Header="Secondary rewrite profile"
+                               Description="Profile triggered by Ctrl + Win + `. Pick (None) to leave this shortcut unbound."
                                HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
-            <ComboBox x:Name="SlotBProfileCombo"
+            <ComboBox x:Name="SecondaryRewriteProfileCombo"
                       MinWidth="200"
-                      SelectionChanged="SlotBProfileCombo_SelectionChanged" />
+                      SelectionChanged="SecondaryRewriteProfileCombo_SelectionChanged" />
         </controls:SettingsCard>
     </StackPanel>
 </UserControl>
