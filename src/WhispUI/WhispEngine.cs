@@ -484,8 +484,8 @@ internal sealed class WhispEngine : IDisposable
     // ── Start recording ─────────────────────────────────────────────────────
 
     // manualProfileName: when non-null, rewrite the transcription with that
-    // profile at the end (manual slot A/B hotkeys). When null, fall back to
-    // AutoRewriteRules based on recording duration.
+    // profile at the end (manual primary/secondary rewrite hotkeys). When
+    // null, fall back to AutoRewriteRules based on recording duration.
     public void StartRecording(string? manualProfileName, bool shouldPaste)
     {
         if (_isRecording) return;
@@ -1000,13 +1000,18 @@ internal sealed class WhispEngine : IDisposable
         double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
 
         // Rewrite profile resolution:
-        // - manual slot hotkey → the profile name passed to StartRecording
-        // - primary hotkey     → first matching AutoRewriteRule (duration-based)
+        // - manual rewrite hotkey → the profile name passed to StartRecording
+        // - plain transcribe hotkey → first matching AutoRewriteRule (duration-based)
         Settings.RewriteProfile? profile = null;
         if (!string.IsNullOrWhiteSpace(_manualProfileName) && llmSettings.Enabled)
         {
             profile = llmSettings.Profiles.Find(p =>
                 string.Equals(p.Name, _manualProfileName, StringComparison.OrdinalIgnoreCase));
+            if (profile is null)
+            {
+                _log.Warning(LogSource.Llm,
+                    $"manual profile '{_manualProfileName}' not found in Profiles — transcript pasted without rewriting. Pick an existing profile on the Rewriting page.");
+            }
         }
         else if (llmSettings.Enabled && llmSettings.AutoRewriteRules.Count > 0)
         {

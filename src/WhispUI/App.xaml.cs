@@ -275,32 +275,44 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         if (_engine is null) return;
 
-        // Map hotkey id → manual rewrite profile (null = primary, no manual
-        // rewrite — engine falls back to duration-based AutoRewriteRules).
-        // Slot B with a null / blank profile name is treated as "not bound"
-        // and the hotkey is silently ignored so users can leave slot B empty.
+        // Friendly name for logs — avoid raw numeric ids in user-facing traces.
+        string hotkeyName = hotkeyId switch
+        {
+            NativeMethods.HOTKEY_ID_TRANSCRIBE        => "transcribe",
+            NativeMethods.HOTKEY_ID_PRIMARY_REWRITE   => "primary rewrite",
+            NativeMethods.HOTKEY_ID_SECONDARY_REWRITE => "secondary rewrite",
+            _                                         => $"id={hotkeyId}",
+        };
+
+        // Map hotkey id → manual rewrite profile name (null for plain
+        // transcribe — engine then falls back to duration-based AutoRewriteRules).
         var llm = Settings.SettingsService.Instance.Current.Llm;
         string? manualProfile = hotkeyId switch
         {
-            NativeMethods.HOTKEY_ID_REWRITE   => llm.SlotAProfileName,
-            NativeMethods.HOTKEY_ID_REWRITE_B => llm.SlotBProfileName,
-            _                                  => null,
+            NativeMethods.HOTKEY_ID_PRIMARY_REWRITE   => llm.PrimaryRewriteProfileName,
+            NativeMethods.HOTKEY_ID_SECONDARY_REWRITE => llm.SecondaryRewriteProfileName,
+            _                                         => null,
         };
 
-        if (hotkeyId == NativeMethods.HOTKEY_ID_REWRITE_B &&
+        // Rewrite hotkeys with no profile assigned → no-op (user left the
+        // shortcut unbound). We don't start recording at all: no mic probe,
+        // no HUD, no transcription. The warning makes it visible in logs.
+        bool isRewriteHotkey = hotkeyId == NativeMethods.HOTKEY_ID_PRIMARY_REWRITE
+                            || hotkeyId == NativeMethods.HOTKEY_ID_SECONDARY_REWRITE;
+        if (isRewriteHotkey &&
             string.IsNullOrWhiteSpace(manualProfile) &&
             !_engine.IsRecording)
         {
-            DebugLog.Write("HOTKEY", "slot B pressed but no profile bound — ignoring");
-            _log.Success(LogSource.Hotkey, "slot B pressed — no profile bound, ignoring");
+            DebugLog.Write("HOTKEY", $"{hotkeyName} pressed but no profile bound — ignoring");
+            _log.Warning(LogSource.Hotkey, $"{hotkeyName} pressed — no profile bound, ignoring");
             return;
         }
 
         if (!_engine.IsRecording)
         {
-            DebugLog.Write("HOTKEY", $"start id={hotkeyId}");
+            DebugLog.Write("HOTKEY", $"start {hotkeyName}");
             _log.Success(LogSource.Hotkey,
-                $"start (id={hotkeyId}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
+                $"start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
 
             // Show the HUD immediately in its "Preparing" state so the user
             // gets visual feedback from the very first millisecond after the
@@ -313,7 +325,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         else
         {
-            DebugLog.Write("HOTKEY", $"stop id={hotkeyId}");
+            DebugLog.Write("HOTKEY", $"stop {hotkeyName}");
             _log.Success(LogSource.Hotkey, "stop");
             _engine.StopRecording();
         }

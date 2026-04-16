@@ -52,18 +52,18 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
 
-                <controls:SettingsCard Header="Rewrite (slot A)"
-                                       Description="Same as Transcribe, but the text is rewritten by the profile assigned to slot A (see Rewriting page)."
+                <controls:SettingsCard Header="Primary rewrite"
+                                       Description="Transcribe, then rewrite with the primary profile before pasting. Choose the profile on the Rewriting page."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
-                    <TextBlock Text="Ctrl + Win + `"
+                    <TextBlock Text="Shift + Win + `"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>
 
-                <controls:SettingsCard Header="Rewrite (slot B)"
-                                       Description="Same as Transcribe, but the text is rewritten by the profile assigned to slot B (see Rewriting page)."
+                <controls:SettingsCard Header="Secondary rewrite"
+                                       Description="Transcribe, then rewrite with the secondary profile before pasting. Choose the profile on the Rewriting page."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
-                    <TextBlock Text="Ctrl + Shift + Win + `"
+                    <TextBlock Text="Ctrl + Win + `"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </controls:SettingsCard>

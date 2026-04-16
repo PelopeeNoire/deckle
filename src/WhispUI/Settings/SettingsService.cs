@@ -59,14 +59,22 @@ public sealed class SettingsService
 
         Directory.CreateDirectory(configDir);
 
-        _current = Load();
+        _current = Load(out bool migrated);
         _debounceTimer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
+
+        // If the on-disk file carried legacy keys, rewrite it now so the
+        // obsolete entries are gone after the first launch — no need to wait
+        // for the user to mutate a setting in the UI.
+        if (migrated) Flush();
     }
 
     // Charge depuis le disque. En cas d'absence, d'erreur JSON ou de fichier
     // tronqué, retourne des défauts et réécrit un fichier propre.
-    private AppSettings Load()
+    // `migrated` out: true when the on-disk JSON carried legacy keys that
+    // were rewritten in memory — the caller flushes to persist the cleanup.
+    private AppSettings Load(out bool migrated)
     {
+        migrated = false;
         try
         {
             if (!File.Exists(_configPath))
@@ -78,11 +86,14 @@ public sealed class SettingsService
 
             string json = File.ReadAllText(_configPath);
 
-            // One-shot migration: legacy "manualProfileName" → "slotAProfileName"
-            // (hotkey slots V1, 2026-04-15). Applied before strict deserialization
-            // so the legacy key is consumed even if AppSettings no longer carries
-            // it. Next Save() rewrites the file without the old key.
-            json = MigrateLegacyKeys(json);
+            // One-shot migrations applied before strict deserialization so legacy
+            // keys are consumed even though AppSettings no longer carries them.
+            // The caller flushes right after if `migrated` is true so the file
+            // on disk ends up without the obsolete keys.
+            //   • manualProfileName         → slotAProfileName            (V1 slots, 2026-04-15)
+            //   • slotAProfileName          → primaryRewriteProfileName   (primary/secondary rename, 2026-04-16)
+            //   • slotBProfileName          → secondaryRewriteProfileName (primary/secondary rename, 2026-04-16)
+            (json, migrated) = MigrateLegacyKeys(json);
 
             var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
             return parsed ?? new AppSettings();
@@ -95,30 +106,53 @@ public sealed class SettingsService
     }
 
     // One-shot rename of legacy JSON keys before strict deserialization.
-    // Non-destructive: if the legacy key is missing or the new key is already
-    // present, returns the input unchanged.
-    private static string MigrateLegacyKeys(string json)
+    // Non-destructive: for each rename, if the legacy key is missing or the
+    // new key is already present, that rename is skipped. Returns the input
+    // unchanged (and migrated=false) when no mutation applied.
+    private static (string json, bool migrated) MigrateLegacyKeys(string json)
     {
         try
         {
             var root = JsonNode.Parse(json) as JsonObject;
-            if (root is null) return json;
+            if (root is null) return (json, false);
+            if (root["llm"] is not JsonObject llm) return (json, false);
 
-            if (root["llm"] is JsonObject llm &&
-                llm["manualProfileName"] is JsonNode legacy &&
+            bool mutated = false;
+
+            if (llm["manualProfileName"] is JsonNode legacyManual &&
                 llm["slotAProfileName"] is null)
             {
-                llm["slotAProfileName"] = legacy.DeepClone();
+                llm["slotAProfileName"] = legacyManual.DeepClone();
                 llm.Remove("manualProfileName");
                 DebugLog.Write("SETTINGS", "migrated llm.manualProfileName → llm.slotAProfileName");
-                return root.ToJsonString();
+                mutated = true;
             }
+
+            if (llm["slotAProfileName"] is JsonNode legacySlotA &&
+                llm["primaryRewriteProfileName"] is null)
+            {
+                llm["primaryRewriteProfileName"] = legacySlotA.DeepClone();
+                llm.Remove("slotAProfileName");
+                DebugLog.Write("SETTINGS", "migrated llm.slotAProfileName → llm.primaryRewriteProfileName");
+                mutated = true;
+            }
+
+            if (llm["slotBProfileName"] is JsonNode legacySlotB &&
+                llm["secondaryRewriteProfileName"] is null)
+            {
+                llm["secondaryRewriteProfileName"] = legacySlotB.DeepClone();
+                llm.Remove("slotBProfileName");
+                DebugLog.Write("SETTINGS", "migrated llm.slotBProfileName → llm.secondaryRewriteProfileName");
+                mutated = true;
+            }
+
+            return (mutated ? root.ToJsonString() : json, mutated);
         }
         catch (Exception ex)
         {
             DebugLog.Write("SETTINGS", $"migration skipped: {ex.GetType().Name}: {ex.Message}");
         }
-        return json;
+        return (json, false);
     }
 
     // Appelé par l'UI après chaque mutation. Ne bloque pas — debounce 300 ms
