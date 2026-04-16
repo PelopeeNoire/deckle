@@ -4,7 +4,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Input;
-using Windows.System;
 using System.Collections.ObjectModel;
 using System.Text;
 using Windows.ApplicationModel.DataTransfer;
@@ -91,16 +90,6 @@ public sealed partial class LogWindow : Window, ILogSink
     private string _currentSearch = "";
     private bool _isRecording;
 
-    // Baseline vertical offset, kept in sync with the inner ScrollViewer
-    // through its ViewChanged event — *except* while Shift is held, where we
-    // freeze the baseline so the parasite vertical scroll triggered by the
-    // wheel doesn't overwrite it. WinUI 3 has no preview/tunnel routing: the
-    // inner ScrollViewer always processes PointerWheelChanged before any
-    // handler we attach, so we can't intercept the vertical scroll under
-    // Shift+wheel — only restore the previous offset after the fact.
-    private double _lastNonShiftVerticalOffset;
-    private bool _scrollViewerSubscribed;
-
     // Below this window width (DIPs), the inline SearchBox collapses into an
     // icon-only button to keep the TitleBar readable. Pattern matches Windows
     // 11 Task Manager: icon in the TitleBar, click reveals the SearchBox,
@@ -115,14 +104,6 @@ public sealed partial class LogWindow : Window, ILogSink
 
         LogItems.ItemsSource = _visible;
 
-        // Shift+wheel → horizontal scroll. The ListView's internal ScrollViewer
-        // marks PointerWheelChanged as handled; AddHandler with
-        // handledEventsToo=true to intercept anyway.
-        LogItems.AddHandler(
-            UIElement.PointerWheelChangedEvent,
-            new PointerEventHandler(OnLogPointerWheel),
-            handledEventsToo: true);
-
         // Click-to-copy + drag-to-select: PointerPressed/Released are marked
         // handled by the ListView for its own selection management, so
         // AddHandler with handledEventsToo=true.
@@ -134,12 +115,6 @@ public sealed partial class LogWindow : Window, ILogSink
             UIElement.PointerReleasedEvent,
             new PointerEventHandler(OnLogPointerReleased),
             handledEventsToo: true);
-
-        // Subscribe to the inner ScrollViewer's ViewChanged as soon as the
-        // visual tree is built, so the Shift+wheel baseline is in sync from
-        // the very first interaction (otherwise a Shift+wheel before any
-        // other scroll would leave the baseline at 0).
-        LogItems.Loaded += (_, _) => GetListViewScrollViewer();
 
         // App icons: resolved once, shared with tray.
         LoadAppIcons();
@@ -355,30 +330,7 @@ public sealed partial class LogWindow : Window, ILogSink
         // layout pass. We find it in the visual tree and cache it.
         if (_listScrollViewer is not null) return _listScrollViewer;
         _listScrollViewer = FindDescendant<ScrollViewer>(LogItems);
-        if (_listScrollViewer is not null && !_scrollViewerSubscribed)
-        {
-            _listScrollViewer.ViewChanged += OnListScrollViewerViewChanged;
-            _lastNonShiftVerticalOffset = _listScrollViewer.VerticalOffset;
-            _scrollViewerSubscribed = true;
-        }
         return _listScrollViewer;
-    }
-
-    private void OnListScrollViewerViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
-    {
-        if (e.IsIntermediate) return;
-        if (sender is not ScrollViewer sv) return;
-
-        // Freeze the baseline while Shift is held so the inner ScrollViewer's
-        // parasite vertical scroll under Shift+wheel doesn't poison the value
-        // we're about to restore. Any other scroll source — wheel without
-        // Shift, scrollbar drag, keyboard, AutoScroll/ScrollIntoView — keeps
-        // the baseline fresh.
-        var shift = Microsoft.UI.Input.InputKeyboardSource
-            .GetKeyStateForCurrentThread(VirtualKey.Shift);
-        if ((shift & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0) return;
-
-        _lastNonShiftVerticalOffset = sv.VerticalOffset;
     }
 
     private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
@@ -394,36 +346,6 @@ public sealed partial class LogWindow : Window, ILogSink
         return null;
     }
 
-    private void OnLogPointerWheel(object sender, PointerRoutedEventArgs e)
-    {
-        // Hide Copy badge during scroll.
-        CopyBadge.Visibility = Visibility.Collapsed;
-
-        var sv = GetListViewScrollViewer();
-        if (sv is null) return;
-
-        bool shift = (e.KeyModifiers & VirtualKeyModifiers.Shift) != 0;
-        if (!shift) return;
-
-        // In wrap mode, horizontal scroll is disabled: nothing to do.
-        if (sv.HorizontalScrollBarVisibility == ScrollBarVisibility.Disabled) return;
-
-        int delta = e.GetCurrentPoint(LogItems).Properties.MouseWheelDelta;
-        if (delta == 0) return;
-
-        // Windows convention: 120 units = one notch. Scroll ~80 px per notch,
-        // inverted from delta (delta>0 = wheel up = scroll left).
-        double newH = sv.HorizontalOffset - (delta / 120.0) * 80.0;
-        newH = Math.Clamp(newH, 0, sv.ScrollableWidth);
-
-        // The inner ScrollViewer already moved vertically before this handler
-        // fires (handledEventsToo) — restore the baseline kept fresh by
-        // OnListScrollViewerViewChanged to cancel that parasite vertical
-        // scroll while we apply the horizontal one.
-        sv.ChangeView(newH, _lastNonShiftVerticalOffset, null, disableAnimation: true);
-        e.Handled = true;
-    }
-
     private void OnClearClick(object sender, RoutedEventArgs e) => ClearAll();
 
     private void OnWrapToggleClick(object sender, RoutedEventArgs e)
@@ -437,15 +359,6 @@ public sealed partial class LogWindow : Window, ILogSink
         // where to break). Attached property on the ListView.
         ScrollViewer.SetHorizontalScrollBarVisibility(LogItems,
             wrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto);
-
-        // Invalidate the SV cache (same instance in practice, but the wrap
-        // toggle is a good moment to drop and let GetListViewScrollViewer
-        // re-resolve + re-subscribe if WinUI ever rebuilds it).
-        if (_listScrollViewer is not null)
-            _listScrollViewer.ViewChanged -= OnListScrollViewerViewChanged;
-        _listScrollViewer = null;
-        _scrollViewerSubscribed = false;
-        GetListViewScrollViewer();
     }
 
     private void OnLevelSelectorChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
