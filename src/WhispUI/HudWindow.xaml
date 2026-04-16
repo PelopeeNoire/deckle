@@ -1,92 +1,16 @@
 <Window
     x:Class="WhispUI.HudWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Un seul layer de surface : fond card low-opacity par-dessus Mica.
-         Le contour et les coins arrondis sont gérés par DWM (window rounding
-         Windows 11 natif). Pas de Border, pas de CornerRadius XAML, pas de
-         stroke dessiné en doublon — sinon double liseré avec l'edge DWM. -->
-    <Grid x:Name="RootGrid"
-          Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-        <!-- Layout "normal" : chrono + indicateur. Caché en mode erreur. -->
-        <Grid x:Name="NormalLayout"
-              HorizontalAlignment="Stretch"
-              VerticalAlignment="Stretch">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <!-- container clock : padding Figma 32 / 24 / 12 / 24 (l/t/r/b). -->
-            <Border Grid.Column="0" Padding="0">
-                <TextBlock x:Name="ClockText"
-                           FontFamily="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single"
-                           FontWeight="ExtraLight"
-                           FontSize="48"
-                           TextLineBounds="Tight"
-                           CharacterSpacing="-325"
-                           Margin="24,0,0,0"
-                           HorizontalAlignment="Left"
-                           VerticalAlignment="Center"
-                           Foreground="{ThemeResource TextFillColorPrimaryBrush}">
-                    <Run x:Name="Min1" Text="0" />
-                    <Run x:Name="Min2" Text="0" />
-                    <Run Text="." />
-                    <Run x:Name="Sec1" Text="0" />
-                    <Run x:Name="Sec2" Text="0" />
-                    <Run Text="." />
-                    <Run x:Name="Cs1"  Text="0" />
-                    <Run x:Name="Cs2"  Text="0" />
-                </TextBlock>
-            </Border>
-
-            <!-- container indicator : padding Figma 12 uniforme, sous-grille 32x32. -->
-            <Border Grid.Column="1" Padding="12,12,12,12">
-                <Grid Width="32" Height="32">
-                    <Ellipse x:Name="StatusDot"
-                             Width="4" Height="4"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center"
-                             Fill="{ThemeResource SystemFillColorCriticalBrush}" />
-                    <ProgressRing x:Name="TranscribeRing"
-                                  Width="32" Height="32"
-                                  IsActive="False"
-                                  Visibility="Collapsed" />
-                </Grid>
-            </Border>
-        </Grid>
-
-        <!-- Layout "erreur" : icône + titre + message. Visible uniquement
-             quand ShowError() est appelée (micro absent/occupé). Auto-hide
-             après ~5s côté code-behind. -->
-        <Grid x:Name="ErrorLayout"
-              Visibility="Collapsed"
-              Padding="16,10,16,10"
-              HorizontalAlignment="Stretch"
-              VerticalAlignment="Center">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <FontIcon x:Name="ErrorIcon"
-                      Grid.Column="0"
-                      Glyph="&#xF140;"
-                      FontSize="24"
-                      Margin="4,0,12,0"
-                      VerticalAlignment="Center"
-                      Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                <TextBlock x:Name="ErrorTitle"
-                           Style="{StaticResource BodyStrongTextBlockStyle}"
-                           TextTrimming="CharacterEllipsis"
-                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
-                <TextBlock x:Name="ErrorBody"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           TextTrimming="CharacterEllipsis"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            </StackPanel>
-        </Grid>
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:WhispUI.Controls">
+    <!-- Root is transparent: each hosted UserControl draws its own card
+         surface (HudChrono = 314x78, HudMessage = 272x78 centered in a
+         400x160 window). The card backing therefore matches whichever
+         control is active, leaving the surrounding margin transparent
+         for the Composition halo+drop shadow to bleed into during the
+         message Full phase. -->
+    <Grid x:Name="RootGrid">
+        <controls:HudChrono  x:Name="Chrono"  Visibility="Visible" />
+        <controls:HudMessage x:Name="Message" Visibility="Collapsed" />
     </Grid>
 </Window>
