@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using WhispUI.Interop;
 using WhispUI.Llm;
 using WhispUI.Logging;
@@ -126,6 +128,15 @@ internal sealed class WhispEngine : IDisposable
     private bool _vadEnded;
     private volatile bool _vadCapturing;
 
+    // Total duration of speech segments parsed from the whisper.cpp VAD log
+    // line "whisper_vad_segments: total duration of speech segments: 12.34 s".
+    // Sentinel -1 means "not yet parsed" — surfaced in the VAD_END narrative,
+    // omitted gracefully when the line shape changes upstream.
+    private float _vadSpeechSec = -1f;
+    private static readonly Regex _vadSpeechRegex = new(
+        @"total duration of speech segments:\s*([\d.]+)\s*s",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private bool _disposed;
 
     // ── Observable properties ──────────────────────────────────────────────────
@@ -173,12 +184,37 @@ internal sealed class WhispEngine : IDisposable
                     bool isVadLine = msg.StartsWith("whisper_vad_", StringComparison.Ordinal);
                     if (isVadLine)
                     {
-                        if (_vadSw is null) _vadSw = System.Diagnostics.Stopwatch.StartNew();
+                        if (_vadSw is null)
+                        {
+                            _vadSw = System.Diagnostics.Stopwatch.StartNew();
+                            _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording.");
+                        }
+
+                        // Enrich VAD_END with the total speech duration when
+                        // whisper.cpp prints it. Parse-once: ignore later
+                        // matches in the same window.
+                        if (_vadSpeechSec < 0)
+                        {
+                            var m = _vadSpeechRegex.Match(msg);
+                            if (m.Success && float.TryParse(
+                                    m.Groups[1].Value,
+                                    NumberStyles.Float,
+                                    CultureInfo.InvariantCulture,
+                                    out float sp))
+                            {
+                                _vadSpeechSec = sp;
+                            }
+                        }
                     }
                     else if (_vadSw is { IsRunning: true } && !_vadEnded)
                     {
                         _vadSw.Stop();
                         _vadEnded = true;
+                        double vadSec = _vadSw.Elapsed.TotalSeconds;
+                        if (_vadSpeechSec >= 0)
+                            _log.Narrative(LogSource.Transcribe, $"Found {_vadSpeechSec:F1} s of speech in {vadSec:F1} s.");
+                        else
+                            _log.Narrative(LogSource.Transcribe, $"Speech detection done in {vadSec:F1} s.");
                     }
                 }
 
@@ -268,7 +304,7 @@ internal sealed class WhispEngine : IDisposable
             return false;
         }
 
-        _log.Step(LogSource.Model, $"Model loaded ({sw.ElapsedMilliseconds} ms)");
+        _log.Success(LogSource.Model, $"Model loaded ({sw.ElapsedMilliseconds} ms)");
         return true;
     }
 
@@ -303,7 +339,7 @@ internal sealed class WhispEngine : IDisposable
 
             NativeMethods.whisper_free(_ctx);
             _ctx = IntPtr.Zero;
-            _log.Step(LogSource.Model, $"Model unloaded after {MODEL_IDLE_TIMEOUT_MS / 1000}s idle (VRAM freed)");
+            _log.Success(LogSource.Model, $"Model unloaded after {MODEL_IDLE_TIMEOUT_MS / 1000}s idle (VRAM freed)");
             StatusChanged?.Invoke("Ready");
         }
     }
@@ -374,6 +410,7 @@ internal sealed class WhispEngine : IDisposable
 
                 _recordingSw = System.Diagnostics.Stopwatch.StartNew();
                 StatusChanged?.Invoke("Recording");
+                _log.Narrative(LogSource.Record, "Recording from the microphone.");
 
                 float[] audio = Record();
                 _isRecording = false;
@@ -587,6 +624,7 @@ internal sealed class WhispEngine : IDisposable
 
         double totalSec = allBytes.Count / 32000.0;
         _log.Info(LogSource.Record, $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
+        _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Processing now.");
 
         // Tail RMS: measures the energy of the final 600ms to see if we're
         // cutting during a syllable (lost punctuation) or in a clean silence.
@@ -754,6 +792,7 @@ internal sealed class WhispEngine : IDisposable
 
         float audioSec = (float)audio.Length / 16_000f;
         _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
+        _log.Narrative(LogSource.Transcribe, "Transcribing the speech.");
         _strategyLabel = wparams.strategy == 1 ? $"beam{wparams.beam_search_beam_size}" : "greedy";
         string strategyLabelVerbose = wparams.strategy == 1 ? $"beam(size={wparams.beam_search_beam_size})" : "greedy";
         _log.Verbose(LogSource.Transcribe, $"params: {strategyLabelVerbose} | temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
@@ -769,6 +808,7 @@ internal sealed class WhispEngine : IDisposable
 
         _vadSw = null;
         _vadEnded = false;
+        _vadSpeechSec = -1f;
         _vadCapturing = true;
 
         _transcribeSw = System.Diagnostics.Stopwatch.StartNew();
@@ -805,6 +845,7 @@ internal sealed class WhispEngine : IDisposable
         }
 
         _log.Info(LogSource.Transcribe, $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
+        _log.Narrative(LogSource.Transcribe, $"Transcribed {nSeg} segments, {fullText.Length} characters in {transcribeMsTotal / 1000.0:F1} s.");
 
         if (LooksRepeated(fullText))
             _log.Warning(LogSource.Transcribe, "repetition detected in text (heuristic signal, no filtering)");
@@ -852,6 +893,7 @@ internal sealed class WhispEngine : IDisposable
         if (profile is not null)
         {
             StatusChanged?.Invoke($"Réécriture ({profile.Name})...");
+            _log.Narrative(LogSource.Llm, $"Cleaning up the transcript with the {profile.Name} profile.");
             var swLlm = System.Diagnostics.Stopwatch.StartNew();
             string? rewritten = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
             swLlm.Stop();
@@ -860,6 +902,7 @@ internal sealed class WhispEngine : IDisposable
             {
                 fullText = rewritten;
                 CopyToClipboard(fullText);
+                _log.Narrative(LogSource.Llm, $"Cleaned up in {swLlm.Elapsed.TotalSeconds:F1} s.");
             }
         }
 
@@ -879,11 +922,17 @@ internal sealed class WhispEngine : IDisposable
             pasteMs = swPaste.ElapsedMilliseconds;
         }
 
-        string recap = $"total {recDurationSec:F1}s ({_strategyLabel} trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
         if (_shouldPaste && pasteVerified)
-            _log.Step(LogSource.Transcribe, $"End-to-end OK — {fullText.Length} chars pasted ({recap})");
-        else
-            _log.Verbose(LogSource.Done, recap);
+        {
+            string exeName = Win32Util.GetExeName(NativeMethods.GetForegroundWindow());
+            _log.Narrative(LogSource.Paste, $"Pasted into {exeName}.");
+        }
+
+        // Technical recap stays available for tuning sessions but drops out of
+        // the user-facing Activity / Steps views — visible only under "All".
+        string recap = $"total {recDurationSec:F1}s ({_strategyLabel} trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
+        _log.Verbose(LogSource.Done, recap);
+        _log.Narrative(LogSource.Done, $"Done. {fullText.Length} characters from {recDurationSec:F1} s of dictation.");
 
         StatusChanged?.Invoke("Ready");
         _recordingSw?.Stop();

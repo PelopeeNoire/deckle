@@ -180,7 +180,7 @@ public sealed partial class SettingsWindow : Window
             }
             else
             {
-                _log.Step(LogSource.Settings, $"{pageType.Name} navigation OK");
+                _log.Success(LogSource.Settings, $"{pageType.Name} navigation OK");
             }
         }
         catch (Exception ex)

@@ -292,14 +292,14 @@ public partial class App : Microsoft.UI.Xaml.Application
             !_engine.IsRecording)
         {
             DebugLog.Write("HOTKEY", "slot B pressed but no profile bound — ignoring");
-            _log.Step(LogSource.Hotkey, "slot B pressed — no profile bound, ignoring");
+            _log.Success(LogSource.Hotkey, "slot B pressed — no profile bound, ignoring");
             return;
         }
 
         if (!_engine.IsRecording)
         {
             DebugLog.Write("HOTKEY", $"start id={hotkeyId}");
-            _log.Step(LogSource.Hotkey,
+            _log.Success(LogSource.Hotkey,
                 $"start (id={hotkeyId}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
 
             // Show the HUD immediately in its "Preparing" state so the user
@@ -314,7 +314,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         else
         {
             DebugLog.Write("HOTKEY", $"stop id={hotkeyId}");
-            _log.Step(LogSource.Hotkey, "stop");
+            _log.Success(LogSource.Hotkey, "stop");
             _engine.StopRecording();
         }
     }

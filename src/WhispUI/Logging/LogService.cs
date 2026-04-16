@@ -36,11 +36,12 @@ public sealed class LogService
     // An optional UserFeedback payload can be attached at emission. When
     // present, sinks routing to the user (HudFeedbackSink) surface it; the
     // log entry still flows normally through file/LogWindow sinks.
-    public void Verbose(string source, string msg, UserFeedback? feedback = null) => Emit(source, msg, LogLevel.Verbose, feedback);
-    public void Info(string source, string msg, UserFeedback? feedback = null)    => Emit(source, msg, LogLevel.Info, feedback);
-    public void Step(string source, string msg, UserFeedback? feedback = null)    => Emit(source, msg, LogLevel.Step, feedback);
-    public void Warning(string source, string msg, UserFeedback? feedback = null) => Emit(source, msg, LogLevel.Warning, feedback);
-    public void Error(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Error, feedback);
+    public void Verbose(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Verbose, feedback);
+    public void Info(string source, string msg, UserFeedback? feedback = null)      => Emit(source, msg, LogLevel.Info, feedback);
+    public void Success(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Success, feedback);
+    public void Warning(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Warning, feedback);
+    public void Error(string source, string msg, UserFeedback? feedback = null)     => Emit(source, msg, LogLevel.Error, feedback);
+    public void Narrative(string source, string msg, UserFeedback? feedback = null) => Emit(source, msg, LogLevel.Narrative, feedback);
 
     private void Emit(string source, string message, LogLevel level, UserFeedback? feedback)
     {
