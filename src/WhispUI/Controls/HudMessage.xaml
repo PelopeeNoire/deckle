@@ -3,26 +3,18 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Outer Grid spans the whole UserControl (which itself fills the
-         window — 400x160 during Message state). ShadowHost is the
-         attach point for the Composition halo+drop visual; sizing it to
-         the outer Grid means the shadow can bleed into the transparent
-         margin around the 272x78 card without being clipped. -->
-    <Grid x:Name="OuterRoot">
-        <Border x:Name="ShadowHost"
-                Background="Transparent"
-                IsHitTestVisible="False" />
+    <!-- Same minimum-element pattern as HudChrono: a Grid root, the
+         MessageCard Border (opaque card surface with the rounded corner)
+         and the content Grid as sibling on top. The card paints
+         LayerFillColorDefaultBrush — opaque, theme-tracked. No Composition
+         stroke. The semantic hue lives only on the 16x16 badge (resolved
+         from a theme brush so it tracks dark/light/high-contrast). -->
+    <Grid x:Name="MessageRoot">
+        <Border x:Name="MessageCard"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                CornerRadius="{ThemeResource OverlayCornerRadius}" />
 
-        <!-- Card surface — fixed 272x78 across HUD states. Centered so
-             the surrounding margin (during the 400x160 Full phase) is the
-             halo bleed area. -->
-        <Grid x:Name="MessageRoot"
-              Width="272" Height="78"
-              Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Padding="16,12,12,12">
-
+        <Grid Padding="16,12,12,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -44,7 +36,7 @@
             <Border x:Name="BadgeBackground"
                     Grid.Column="1"
                     Width="16" Height="16"
-                    CornerRadius="4"
+                    CornerRadius="8"
                     VerticalAlignment="Top"
                     HorizontalAlignment="Right">
                 <FontIcon x:Name="BadgeGlyph"
