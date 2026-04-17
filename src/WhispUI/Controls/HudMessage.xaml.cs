@@ -1,107 +1,52 @@
-using System.Numerics;
-using Microsoft.UI.Composition;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
-using Windows.UI;
 using WhispUI.Composition;
 
 namespace WhispUI.Controls;
 
 // Message card used for Pasted / Copied / Error / UserFeedback feedback.
 //
-// Card layout fixed at 272x78. The semantic badge (16x16) carries the full
-// hue; the title + subtitle stay in standard Win11 text brushes. The
-// composite halo+drop shadow lives in Composition (HudComposition) and is
-// attached to ShadowHost — sized to the full UserControl bounds so the
-// bleed extends into the transparent margin around the card during the
-// Full phase of the hybrid resize.
+// Fixed 272x78, fills the whole HUD window. The semantic badge (16x16) is
+// painted with a Win11 system fill brush resolved from Application.Resources
+// at Show time — tracks the live theme. Title + subtitle stay in standard
+// Win11 text brushes (theme-resource-bound). The rounded card surface is the
+// MessageCard Border in XAML (LayerFillColorDefaultBrush + OverlayCornerRadius).
+// No Composition stroke for messages.
 public sealed partial class HudMessage : UserControl
 {
-    private const float CardWidth  = 272f;
-    private const float CardHeight =  78f;
-    // Default outer dims when the layout pass has not yet run. Match the
-    // window's HUD_WIDTH_MESSAGE / HUD_HEIGHT_MESSAGE so the shadow starts
-    // centered on the first attach.
-    private const float DefaultOuterWidth  = 400f;
-    private const float DefaultOuterHeight = 160f;
-
-    private Visual? _shadowVisual;
-    private CompositionPropertySet? _shadowAnim;
+    private string? _badgeBrushKey;
 
     public HudMessage()
     {
         InitializeComponent();
 
-        // Window resizes mid-message (400x160 Full → 272x78 retracted) drive
-        // an OuterRoot SizeChanged. Recompute the shadow Offset so the visual
-        // stays centered on the card; otherwise the Offset baked at attach time
-        // (computed for 400x160) would push it outside the smaller window.
-        OuterRoot.SizeChanged += (_, _) => CenterShadow();
+        // Re-resolve the badge brush on theme switch so the 16x16 badge
+        // follows dark/light. The brush keys live in the system theme
+        // dictionaries — assigning a Brush in code does not track theme
+        // changes the way ThemeResource bindings do.
+        MessageRoot.ActualThemeChanged += (_, _) =>
+        {
+            if (_badgeBrushKey is not null)
+                BadgeBackground.Background = ResolveBadgeBrush(_badgeBrushKey);
+        };
     }
 
-    // Push payload into the static layout, attach the composite shadow, and
-    // kick the Saturation animation. Called by HudWindow.SetState when
-    // entering HudState.Message.
-    public void Show(MessagePayload payload)
+    // Pushes payload into the static layout. Called by HudWindow.SetState
+    // when entering HudState.Message.
+    internal void Show(MessagePayload payload)
     {
         var entry = HudPalette.Resolve(payload.Kind);
 
         MessageTitle.Text    = payload.Title    ?? string.Empty;
         MessageSubtitle.Text = payload.Subtitle ?? string.Empty;
 
-        BadgeBackground.Background = new SolidColorBrush(entry.Full);
+        _badgeBrushKey = entry.BrushKey;
+        BadgeBackground.Background = ResolveBadgeBrush(entry.BrushKey);
         BadgeGlyph.Glyph           = entry.Glyph;
-
-        AttachShadow(entry.Full, entry.Attenuated);
-        AnimateToAttenuated();
     }
 
-    private void AttachShadow(Color full, Color attenuated)
-    {
-        DetachShadow();
-
-        var hostVisual = ElementCompositionPreview.GetElementVisual(ShadowHost);
-        var compositor = hostVisual.Compositor;
-
-        var (visual, props) = HudComposition.CreateMessageShadow(
-            compositor, new Vector2(CardWidth, CardHeight), full, attenuated);
-
-        _shadowVisual = visual;
-        _shadowAnim   = props;
-        ElementCompositionPreview.SetElementChildVisual(ShadowHost, visual);
-
-        // Initial position. Subsequent window resizes (Full → retracted) are
-        // handled by the OuterRoot.SizeChanged subscription in the constructor.
-        CenterShadow();
-    }
-
-    private void CenterShadow()
-    {
-        if (_shadowVisual is null) return;
-        float outerW = (float)OuterRoot.ActualWidth;
-        float outerH = (float)OuterRoot.ActualHeight;
-        if (outerW <= 0f) outerW = DefaultOuterWidth;
-        if (outerH <= 0f) outerH = DefaultOuterHeight;
-        _shadowVisual.Offset = new Vector3(
-            (outerW - CardWidth)  / 2f,
-            (outerH - CardHeight) / 2f,
-            0f);
-    }
-
-    private void AnimateToAttenuated()
-    {
-        if (_shadowAnim is null) return;
-        var compositor = ElementCompositionPreview.GetElementVisual(ShadowHost).Compositor;
-        HudComposition.AnimateShadowToAttenuated(
-            compositor, _shadowAnim, TimeSpan.FromMilliseconds(650));
-    }
-
-    private void DetachShadow()
-    {
-        if (_shadowVisual is null) return;
-        ElementCompositionPreview.SetElementChildVisual(ShadowHost, null);
-        _shadowVisual = null;
-        _shadowAnim   = null;
-    }
+    private static Brush ResolveBadgeBrush(string key) =>
+        (Application.Current.Resources[key] as Brush)
+        ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
 }

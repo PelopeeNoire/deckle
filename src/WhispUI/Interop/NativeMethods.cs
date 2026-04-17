@@ -59,10 +59,12 @@ internal static class NativeMethods
     public static readonly IntPtr HWND_TOPMOST  = new(-1);
     public static readonly IntPtr HWND_NOTOPMOST = new(-2);
 
-    public const uint SWP_NOSIZE     = 0x0001;
-    public const uint SWP_NOMOVE     = 0x0002;
-    public const uint SWP_NOACTIVATE = 0x0010;
-    public const uint SWP_SHOWWINDOW = 0x0040;
+    public const uint SWP_NOSIZE       = 0x0001;
+    public const uint SWP_NOMOVE       = 0x0002;
+    public const uint SWP_NOZORDER     = 0x0004;
+    public const uint SWP_NOACTIVATE   = 0x0010;
+    public const uint SWP_FRAMECHANGED = 0x0020;
+    public const uint SWP_SHOWWINDOW   = 0x0040;
 
     // SW_SHOWNOACTIVATE : affiche la fenêtre sans lui donner le focus
     public const int SW_SHOWNOACTIVATE = 4;
@@ -310,28 +312,15 @@ internal static class NativeMethods
     // le RAWINPUT — on appelle GetCursorPos pour avoir la position absolue à jour.
 
     public const uint WM_INPUT       = 0x00FF;
-    // WM_NCACTIVATE : DWM l'envoie pour changer l'etat actif/inactif du chrome
-    // non-client (titlebar, border, shadow). Intercepte dans le subclass de la
-    // HudWindow pour forcer wParam=TRUE en permanence, afin que DWM peigne la
-    // HUD avec l'ombre "Shell Shadows / Active Window" meme quand elle n'a
-    // pas le focus clavier (HUD est toujours SW_SHOWNOACTIVATE + WS_EX_NOACTIVATE).
-    public const uint WM_NCACTIVATE  = 0x0086;
     public const uint RIDEV_INPUTSINK = 0x00000100;
 
-    // ── DWM : system backdrop type ────────────────────────────────────────────
-    // Signal canonique pour dire a DWM : "cette fenetre est un popup transient,
-    // peint-la comme un menu/flyout/dialog" — y compris l'ombre Shell riche.
-    // Sans ca, DWM reste en DWMSBT_AUTO et applique le rendu shell par defaut
-    // (ombre aplatie). Requis Windows 11 Build 22621+.
-    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
-    public const int DWMSBT_TRANSIENTWINDOW    = 3;
-
-    [DllImport("dwmapi.dll")]
-    public static extern int DwmSetWindowAttribute(
-        IntPtr hwnd,
-        int dwAttribute,
-        ref int pvAttribute,
-        int cbAttribute);
+    // WM_NCCALCSIZE lets us claim the entire window rect as client area.
+    // Returning 0 with wParam=TRUE leaves rgrc[0] unchanged, so Windows
+    // concludes there is no non-client area to paint — no caption, no
+    // frame, no 3D edge — regardless of what WS_DLGFRAME / WS_EX_WINDOWEDGE
+    // bits are still on the HWND. Canonical pattern for borderless custom-
+    // chrome windows (used by Chromium, Electron, PowerToys).
+    public const uint WM_NCCALCSIZE  = 0x0083;
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterRawInputDevices(
@@ -342,7 +331,20 @@ internal static class NativeMethods
     // un alpha 0-255 à la fenêtre entière, par-dessus la composition WinUI 3
     // (Mica compris). Sans ça, animer Content.Opacity ne touche pas le backdrop.
 
+    public const int  GWL_STYLE    = -16;
     public const int  GWL_EXSTYLE   = -20;
+
+    // WS_CAPTION is the composite style (WS_BORDER | WS_DLGFRAME) that causes
+    // Windows to paint a title bar *and* the thin frame around the client
+    // area. OverlappedPresenter.SetBorderAndTitleBar(false, false) is supposed
+    // to clear both bits but does not fully — the frame around the client
+    // area remains visible, which reads as a rough XP-style outline on
+    // WS_EX_LAYERED overlays. Stripping WS_CAPTION explicitly on GWL_STYLE is
+    // the documented Win32 workaround (Microsoft Q&A 1300756, WinUIEx #134,
+    // WindowsAppSDK #3622).
+    public const uint WS_CAPTION    = 0x00C00000;
+    public const uint WS_THICKFRAME = 0x00040000;
+
     public const uint WS_EX_LAYERED    = 0x00080000;
     // WS_EX_TOOLWINDOW : exclut la fenêtre d'Alt+Tab et de la taskbar. Effet
     // de bord observé (non documenté) : les fenêtres tool topmost apparaissent
@@ -367,6 +369,37 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+    // ── DWM window attributes ─────────────────────────────────────────────────
+    //
+    // DWMWA_WINDOW_CORNER_PREFERENCE (33) controls whether DWM clips the HWND
+    // to rounded corners at the compositor level. DWMWA_BORDER_COLOR (34)
+    // controls the 1-dip system accent stroke DWM paints around the HWND.
+    // DWMWA_COLOR_NONE (0xFFFFFFFE) is the sentinel that disables that stroke.
+
+    public const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    public const uint DWMWCP_DEFAULT                 = 0;
+    public const uint DWMWCP_DONOTROUND              = 1;
+    public const uint DWMWCP_ROUND                   = 2;
+    public const uint DWMWCP_ROUNDSMALL              = 3;
+
+    public const uint DWMWA_BORDER_COLOR = 34;
+    public const uint DWMWA_COLOR_NONE   = 0xFFFFFFFE;
+
+    // DWMWA_SYSTEMBACKDROP_TYPE (38) controls the DWM system backdrop layer
+    // rendered behind the window (Mica / Acrylic / Tabbed). DWMSBT_NONE (1)
+    // explicitly disables the backdrop — distinct from DWMSBT_AUTO (0) which
+    // lets the OS pick. WinUI 3 may auto-apply a backdrop when the Window's
+    // SystemBackdrop property is unset on recent WindowsAppSDK versions;
+    // setting the DWM attribute is the Win32-side guarantee that nothing
+    // paints behind our opaque content.
+    public const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    public const uint DWMSBT_AUTO              = 0;
+    public const uint DWMSBT_NONE              = 1;
+
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    public static extern int DwmSetWindowAttribute(
+        IntPtr hwnd, uint dwAttribute, ref uint pvAttribute, uint cbAttribute);
 
     // ── Message-only window (tray + hotkey host) ─────────────────────────────
     //

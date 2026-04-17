@@ -1,20 +1,18 @@
-using System.Numerics;
-using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
-using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
-using WhispUI.Composition;
 
 namespace WhispUI.Controls;
 
-// Chrono + status dot + processing-surface overlay (stroke + shadows).
+// Chrono card — container + clock only.
 //
-// Owns the Bitcount Single MM.SS.cc clock, the progressive digit accent
+// Owns the Bitcount Single MM.SS.cc clock and the progressive digit accent
 // (each digit that ever changed locks to SystemFillColorCriticalBrush until
-// the next ApplyState(Recording) reset), and the Composition mount point
-// for the Transcribing / Rewriting overlays.
+// the next ApplyState(Recording) reset). Static 1-dip card stroke toggled
+// per state (hidden for Recording, visible for Charging/Transcribing/
+// Rewriting) — animated Composition variant for Transcribing/Rewriting
+// will replace the static thickness in a later pass.
 //
 // The vsync rendering hook (CompositionTarget.Rendering) drives the clock
 // — no DispatcherTimer, no jitter when the UI thread is busy.
@@ -34,7 +32,6 @@ public sealed partial class HudChrono : UserControl
     private bool _tMin1, _tMin2, _tSec1, _tSec2, _tCs1, _tCs2;
 
     private HudState _state = HudState.Hidden;
-    private Visual? _processingVisual;
 
     public HudChrono()
     {
@@ -64,7 +61,7 @@ public sealed partial class HudChrono : UserControl
         ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
 
     // Single state-driven entry point. Called by HudWindow.SetState.
-    public void ApplyState(HudState next)
+    internal void ApplyState(HudState next)
     {
         _state = next;
         switch (next)
@@ -92,7 +89,6 @@ public sealed partial class HudChrono : UserControl
     {
         _stopwatch.Reset();
         UnhookRendering();
-        DetachProcessingVisual();
 
         _lastMin = _lastSec = _lastCs = -1;
         _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
@@ -104,13 +100,15 @@ public sealed partial class HudChrono : UserControl
         Min1.Foreground = neutral; Min2.Foreground = neutral;
         Sec1.Foreground = neutral; Sec2.Foreground = neutral;
         Cs1.Foreground  = neutral; Cs2.Foreground  = neutral;
-        StatusDot.Fill  = neutral;
+
+        ChronoCard.BorderThickness = new Thickness(1);
     }
 
     private void ApplyRecording()
     {
         _stopwatch.Restart();
-        DetachProcessingVisual();
+
+        ChronoCard.BorderThickness = new Thickness(0);
 
         _lastMin = _lastSec = _lastCs = -1;
         _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
@@ -128,68 +126,61 @@ public sealed partial class HudChrono : UserControl
         Cs1.ClearValue(TextElement.ForegroundProperty);
         Cs2.ClearValue(TextElement.ForegroundProperty);
 
-        StatusDot.Fill = ResolveCriticalBrush();
-
         UpdateClock();
         HookRendering();
     }
 
     private void ApplyTranscribing()
     {
-        // Freeze the clock at its last value — the digits stay readable
-        // while the transcribing stroke + shadow play around the surface.
+        // Freeze the clock at its last value.
         _stopwatch.Stop();
         UnhookRendering();
-        UpdateClock();
 
-        StatusDot.Fill = ResolveNeutralBrush();
-        AttachProcessingVisual(HudComposition.CreateTranscribingStroke);
+        // Order matters: UpdateClock first to write the final elapsed value
+        // (which may relock the last-changed digit to the red accent because
+        // the stopwatch advanced between the last vsync tick and the Stop),
+        // then ResetDigitAccent to clear that accent. Reversed, we'd reset
+        // first and UpdateClock would immediately repaint the freshly-changed
+        // centisecond digit in red — exactly the "stuck red digit" symptom.
+        UpdateClock();
+        ResetDigitAccent();
+
+        ChronoCard.BorderThickness = new Thickness(1);
     }
 
     private void ApplyRewriting()
     {
-        // Same freeze as Transcribing — only the overlay differs.
         _stopwatch.Stop();
         UnhookRendering();
-        UpdateClock();
 
-        StatusDot.Fill = ResolveNeutralBrush();
-        AttachProcessingVisual(HudComposition.CreateRewritingStroke);
+        UpdateClock();
+        ResetDigitAccent();
+
+        ChronoCard.BorderThickness = new Thickness(1);
+    }
+
+    // Drops the per-digit "ever-changed" accent flags and clears the local
+    // Foreground on each Run so they fall back to ClockText.Foreground
+    // (TextFillColorPrimaryBrush, theme-tracked). Called when the chrono
+    // freezes (Transcribing/Rewriting) so the red accent accumulated during
+    // Recording disappears on stop.
+    private void ResetDigitAccent()
+    {
+        _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
+        Min1.ClearValue(TextElement.ForegroundProperty);
+        Min2.ClearValue(TextElement.ForegroundProperty);
+        Sec1.ClearValue(TextElement.ForegroundProperty);
+        Sec2.ClearValue(TextElement.ForegroundProperty);
+        Cs1.ClearValue(TextElement.ForegroundProperty);
+        Cs2.ClearValue(TextElement.ForegroundProperty);
     }
 
     private void ApplyHidden()
     {
         _stopwatch.Stop();
         UnhookRendering();
-        DetachProcessingVisual();
-    }
 
-    private void AttachProcessingVisual(Func<Compositor, Vector2, ContainerVisual> factory)
-    {
-        DetachProcessingVisual();
-
-        var hostVisual = ElementCompositionPreview.GetElementVisual(ProcessingSurfaceHost);
-        var compositor = hostVisual.Compositor;
-
-        // ActualWidth/Height may be 0 on first attach if the layout pass has
-        // not run yet. Fall back to the chrono nominal size so the visual is
-        // valid; the next layout pass will not auto-resize it, but Charging/
-        // Recording reset the surface anyway and the user reaches Transcribing
-        // only after the HUD has been measured at least once.
-        float w = (float)ProcessingSurfaceHost.ActualWidth;
-        float h = (float)ProcessingSurfaceHost.ActualHeight;
-        if (w <= 0f) w = 314f;
-        if (h <= 0f) h = 78f;
-
-        _processingVisual = factory(compositor, new Vector2(w, h));
-        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, _processingVisual);
-    }
-
-    private void DetachProcessingVisual()
-    {
-        if (_processingVisual is null) return;
-        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, null);
-        _processingVisual = null;
+        ChronoCard.BorderThickness = new Thickness(0);
     }
 
     private void HookRendering()

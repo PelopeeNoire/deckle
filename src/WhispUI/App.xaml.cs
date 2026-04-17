@@ -52,8 +52,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         // LogWindow created once, never destroyed.
         _logWindow = new LogWindow();
 
-        // Register logging sinks — DebugLogSink first (survives UI crashes).
-        _log.AddSink(new DebugLogSink());
         _log.AddSink(_logWindow);
 
         // SettingsWindow created once, never destroyed. No initial Show:

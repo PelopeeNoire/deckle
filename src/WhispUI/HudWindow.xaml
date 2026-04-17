@@ -3,13 +3,14 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:WhispUI.Controls">
-    <!-- Root is transparent: each hosted UserControl draws its own card
-         surface (HudChrono = 314x78, HudMessage = 272x78 centered in a
-         400x160 window). The card backing therefore matches whichever
-         control is active, leaving the surrounding margin transparent
-         for the Composition halo+drop shadow to bleed into during the
-         message Full phase. -->
-    <Grid x:Name="RootGrid">
+    <!-- Window is fixed 272x78. The RootGrid paints the same card fill as
+         each hosted control's Border so the sliver between the card's XAML
+         CornerRadius and the HWND rectangle is the same color end-to-end —
+         nothing visible bleeds through at the edge. DWMWCP_ROUND set in
+         code-behind clips the outer HWND silhouette to the Win11 standard
+         radius. Theme follows the system. -->
+    <Grid x:Name="RootGrid"
+          Background="{ThemeResource LayerFillColorDefaultBrush}">
         <controls:HudChrono  x:Name="Chrono"  Visibility="Visible" />
         <controls:HudMessage x:Name="Message" Visibility="Collapsed" />
     </Grid>
