@@ -94,17 +94,20 @@ public sealed partial class HudWindow : Window
         presenter.SetBorderAndTitleBar(hasBorder: false, hasTitleBar: false);
         AppWindow.SetPresenter(presenter);
 
-        // Round the HWND at the DWM level, kill the DWM accent stroke, and
-        // force DWMSBT_NONE on the backdrop so DWM paints nothing behind our
-        // opaque content. DWMWCP_ROUND matches Windows 11's standard radius;
-        // DWMWA_COLOR_NONE on DWMWA_BORDER_COLOR disables the 1-dip DWM
-        // system accent border; DWMSBT_NONE explicitly disables Mica /
-        // Acrylic — belt-and-suspenders with SystemBackdrop = null above.
+        // Round the HWND at the DWM level, request the system default accent
+        // border stroke, and force DWMSBT_NONE on the backdrop so DWM paints
+        // nothing behind our opaque content. DWMWCP_ROUND matches Windows 11's
+        // standard radius; DWMWA_COLOR_DEFAULT on DWMWA_BORDER_COLOR tells DWM
+        // to paint the 1-dip system-native frame stroke around the rounded
+        // HWND silhouette (tracks theme/accent) — this is the "Windows default
+        // frame" visible on every first-party Win11 app. DWMSBT_NONE
+        // explicitly disables Mica / Acrylic (belt-and-suspenders with
+        // SystemBackdrop = null above).
         uint cornerPref = NativeMethods.DWMWCP_ROUND;
         NativeMethods.DwmSetWindowAttribute(
             _hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE,
             ref cornerPref, sizeof(uint));
-        uint borderColor = NativeMethods.DWMWA_COLOR_NONE;
+        uint borderColor = NativeMethods.DWMWA_COLOR_DEFAULT;
         NativeMethods.DwmSetWindowAttribute(
             _hwnd, NativeMethods.DWMWA_BORDER_COLOR,
             ref borderColor, sizeof(uint));

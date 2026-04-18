@@ -12,11 +12,21 @@
          hidden for Recording, visible for Charging/Transcribing/Rewriting.
          Rounded silhouette produced by this Border alone. -->
     <Grid x:Name="ChronoRoot">
+        <!-- Opaque card fill only — no XAML stroke. The system frame
+             stroke is drawn by DWM at the HWND level (DWMWA_BORDER_COLOR =
+             DWMWA_COLOR_DEFAULT in HudWindow.xaml.cs) and is always on for
+             every state; the Composition accent stroke (Transcribing /
+             Rewriting) adds an inner 1-dip layer, 1 dip inset inside. -->
         <Border x:Name="ChronoCard"
                 Background="{ThemeResource LayerFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="0"
                 CornerRadius="{ThemeResource OverlayCornerRadius}" />
+
+        <!-- Attach point for Composition strokes (Transcribing / Rewriting).
+             Transparent, non-hit-testable — hosts the ShapeVisual via
+             ElementCompositionPreview.SetElementChildVisual. Covers the whole
+             card so the visual's coordinate space matches ActualWidth/Height. -->
+        <Border x:Name="ProcessingSurfaceHost"
+                IsHitTestVisible="False" />
 
         <TextBlock x:Name="ClockText"
                    FontFamily="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single"

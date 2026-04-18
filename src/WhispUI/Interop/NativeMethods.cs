@@ -383,8 +383,9 @@ internal static class NativeMethods
     public const uint DWMWCP_ROUND                   = 2;
     public const uint DWMWCP_ROUNDSMALL              = 3;
 
-    public const uint DWMWA_BORDER_COLOR = 34;
-    public const uint DWMWA_COLOR_NONE   = 0xFFFFFFFE;
+    public const uint DWMWA_BORDER_COLOR  = 34;
+    public const uint DWMWA_COLOR_DEFAULT = 0xFFFFFFFF; // system default accent stroke
+    public const uint DWMWA_COLOR_NONE    = 0xFFFFFFFE; // disables the stroke entirely
 
     // DWMWA_SYSTEMBACKDROP_TYPE (38) controls the DWM system backdrop layer
     // rendered behind the window (Mica / Acrylic / Tabbed). DWMSBT_NONE (1)
