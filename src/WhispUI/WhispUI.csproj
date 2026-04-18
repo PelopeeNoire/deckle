@@ -28,6 +28,11 @@
     <!-- SettingsCard / SettingsExpander — canonical Windows 11 pattern for settings pages
          (spacing, section headers, animations documented on Microsoft Learn). -->
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
+    <!-- Win2D — Direct2D-backed drawing on CompositionDrawingSurface. Used by the HUD
+         Rewriting stroke to paint a true angular-gradient rainbow; CompositionLinearGradientBrush
+         only supports bbox-linear mapping, so a rotating gradient around a rounded rect
+         perimeter requires Win2D + a surface brush. -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
   </ItemGroup>
 
   <ItemGroup>

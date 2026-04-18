@@ -1,18 +1,27 @@
+using System.Numerics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using WhispUI.Composition;
 
 namespace WhispUI.Controls;
 
-// Chrono card — container + clock only.
+// Chrono card — container + clock + processing stroke attach.
 //
 // Owns the Bitcount Single MM.SS.cc clock and the progressive digit accent
 // (each digit that ever changed locks to SystemFillColorCriticalBrush until
-// the next ApplyState(Recording) reset). Static 1-dip card stroke toggled
-// per state (hidden for Recording, visible for Charging/Transcribing/
-// Rewriting) — animated Composition variant for Transcribing/Rewriting
-// will replace the static thickness in a later pass.
+// the next ApplyState(Recording) reset). Stroke sources:
+//   - DWM frame (always on)     — 1-dip system accent stroke on the rounded
+//                                  HWND silhouette (DWMWA_BORDER_COLOR =
+//                                  DWMWA_COLOR_DEFAULT in HudWindow). Plays
+//                                  the role of the permanent "Windows frame".
+//   - Composition accent (state) — 1-dip stroke 1 dip inside the HWND, added
+//                                  on top of DWM for Transcribing (diagonal
+//                                  gradient) and Rewriting (8 colored arcs).
+// The two layers are at different inset positions, so they never overlap
+// pixel-wise — DWM at the outer edge, Composition 1 dip inside.
 //
 // The vsync rendering hook (CompositionTarget.Rendering) drives the clock
 // — no DispatcherTimer, no jitter when the UI thread is busy.
@@ -101,14 +110,14 @@ public sealed partial class HudChrono : UserControl
         Sec1.Foreground = neutral; Sec2.Foreground = neutral;
         Cs1.Foreground  = neutral; Cs2.Foreground  = neutral;
 
-        ChronoCard.BorderThickness = new Thickness(1);
+        DetachProcessingVisual();
     }
 
     private void ApplyRecording()
     {
         _stopwatch.Restart();
 
-        ChronoCard.BorderThickness = new Thickness(0);
+        DetachProcessingVisual();
 
         _lastMin = _lastSec = _lastCs = -1;
         _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
@@ -145,7 +154,7 @@ public sealed partial class HudChrono : UserControl
         UpdateClock();
         ResetDigitAccent();
 
-        ChronoCard.BorderThickness = new Thickness(1);
+        AttachProcessingVisual(HudCompositionKind.Transcribing);
     }
 
     private void ApplyRewriting()
@@ -156,7 +165,7 @@ public sealed partial class HudChrono : UserControl
         UpdateClock();
         ResetDigitAccent();
 
-        ChronoCard.BorderThickness = new Thickness(1);
+        AttachProcessingVisual(HudCompositionKind.Rewriting);
     }
 
     // Drops the per-digit "ever-changed" accent flags and clears the local
@@ -180,7 +189,47 @@ public sealed partial class HudChrono : UserControl
         _stopwatch.Stop();
         UnhookRendering();
 
-        ChronoCard.BorderThickness = new Thickness(0);
+        DetachProcessingVisual();
+    }
+
+    // ── Composition stroke attach ─────────────────────────────────────────────
+    //
+    // ProcessingSurfaceHost (XAML Border) is the attach point for the
+    // Composition ShapeVisual produced by HudComposition. The visual sits
+    // above ChronoCard and below the ClockText in the Grid z-order, so its
+    // stroke paints on the card surface but the clock text reads on top.
+    //
+    // Fallback dims (272, 78) catch the pre-layout attach (ActualWidth/Height
+    // are 0 before the first measure pass). The visual is not auto-resized
+    // on subsequent layout passes — acceptable here because Charging/Recording
+    // always resets the surface, and Transcribing/Rewriting only fire after
+    // at least one full chrono measure.
+
+    private enum HudCompositionKind { Transcribing, Rewriting }
+
+    private void AttachProcessingVisual(HudCompositionKind kind)
+    {
+        float w = (float)ProcessingSurfaceHost.ActualWidth;
+        float h = (float)ProcessingSurfaceHost.ActualHeight;
+        if (w == 0f || h == 0f) { w = 272f; h = 78f; }
+        var size = new Vector2(w, h);
+
+        var compositor = ElementCompositionPreview
+            .GetElementVisual(ProcessingSurfaceHost).Compositor;
+
+        var visual = kind switch
+        {
+            HudCompositionKind.Transcribing => HudComposition.CreateTranscribingStroke(compositor, size),
+            HudCompositionKind.Rewriting    => HudComposition.CreateRewritingStroke(compositor, size),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, visual);
+    }
+
+    private void DetachProcessingVisual()
+    {
+        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, null);
     }
 
     private void HookRendering()
