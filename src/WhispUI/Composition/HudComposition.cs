@@ -1,6 +1,5 @@
 using System.Numerics;
 using Microsoft.Graphics.Canvas;
-using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.UI.Composition;
 using Microsoft.Graphics.DirectX;
@@ -28,40 +27,79 @@ namespace WhispUI.Composition;
 // match produced a visible bleed.
 internal static class HudComposition
 {
-    // ── Tunables ──────────────────────────────────────────────────────────
+    // ╔════════════════════════════════════════════════════════════════════╗
+    // ║  Tunables                                                          ║
+    // ╚════════════════════════════════════════════════════════════════════╝
     // Every value in this block drives visible rendering. Edit and rebuild.
-    // The rest of the file is structural: wedge count, brush wiring,
-    // composition math — change those only when revising the pipeline.
+    // The rest of the file is structural (brush wiring, composition math)
+    // — change those only when revising the pipeline itself.
+    //
+    // Grouped by subsystem. This whole block is expected to shrink once
+    // the visual design is locked — tunables that no longer need live
+    // iteration will migrate back into the rendering code or to a config
+    // file. For now, maximum surface for iteration.
 
-    // Shared stroke geometry.
+    // ── Shared stroke geometry ────────────────────────────────────────────
     private const float  StrokeThickness              = 1f;    // dip, stroke width
     private const float  InsetDip                     = 1f;    // dip, inset from HUD edge
-    private const float  CornerRadiusDip              = 6.5f;  // dip, rounded-rect corner radius
+    private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
-    // Transcribing shimmer — diagonal grey gradient rotating around the card.
-    private const double TranscribingPeriodSeconds    = 3.0;   // seconds for one full turn
-    private const byte   TranscribingGreyDark         = 0x75;  // low gradient stop (0x00..0xFF)
-    private const byte   TranscribingGreyLight        = 0xBF;  // high gradient stop (0x00..0xFF)
+    // ── Transcribing — linear grey shimmer ────────────────────────────────
+    // Kept simple on purpose: this state is slated for architectural
+    // unification with Rewriting (same Win2D conic pipeline, just
+    // RewritingHsvSaturation = 0 for greyscale). Once that lands, these
+    // tunables disappear and Transcribing reuses the Rewriting knobs.
+    private const double TranscribingPeriodSeconds    = 4.0;   // seconds for one full turn
+    private const byte   TranscribingGreyDark         = 0x65;  // low gradient stop (0x00..0xFF)
+    private const byte   TranscribingGreyLight        = 0xDF;  // high gradient stop (0x00..0xFF)
 
-    // Rewriting rainbow — conic stroke rotating around the card.
-    private const double RewritingPeriodSeconds       = 4.0;   // seconds for one full turn
-    private const float  RewritingHsvSaturation       = 1f;    // 0..1, HSV S (drop for pastel)
-    private const float  RewritingHsvValue            = 1f;    // 0..1, HSV V (drop for darker)
-    // Alpha fade of the source disc — the conic is fully opaque inside the
-    // core, then ramps to RewritingEdgeAlpha at the outer radius.
-    //   RewritingAlphaCorePct   — 0..1, core radius as fraction of the
-    //                             fade radius below. Lower → fade starts
-    //                             sooner (tighter colour concentration).
-    //   RewritingFadeRadiusPct  — fade outer radius as fraction of
-    //                             pxSquare/2 (= 136 px at the 272-dip HUD).
-    //                             <1 tightens the coloured region,
-    //                             >1 softens it.
-    //   RewritingEdgeAlpha      — 0..255, alpha at the outer radius. 0 is
-    //                             fully transparent; raise to keep some
-    //                             colour at the extremities.
-    private const float  RewritingAlphaCorePct        = 0.6f;
-    private const float  RewritingFadeRadiusPct       = 1f;
-    private const byte   RewritingEdgeAlpha           = 0;
+    // ── Rewriting — colour palette ────────────────────────────────────────
+    // HSV-based rainbow sweep, continuous at the 0/2π hue wrap.
+    //   HsvSaturation / HsvValue — 0..1. Drop S for pastel, V for darker.
+    //   HueStart                  — 0..1, offset in the colour wheel where
+    //                               hue 0 sits. 0 = red at 3 o'clock,
+    //                               0.33 = green at 3 o'clock, etc.
+    //   HueRange                  — 0..1, fraction of the wheel the palette
+    //                               covers. 1 = full rainbow, 0.5 = half
+    //                               rainbow mirrored, 0.1 = nearly
+    //                               monochrome. Combined with HueStart this
+    //                               carves arbitrary palette slices (cool
+    //                               tones only, warm tones only, etc.).
+    private const float  RewritingHsvSaturation       = 1f;
+    private const float  RewritingHsvValue            = 1f;
+    private const float  RewritingHueStart            = 0f;
+    private const float  RewritingHueRange            = 1f;
+
+    // ── Rewriting — source sampling ───────────────────────────────────────
+    //   WedgeCount — number of pie wedges painted to form the conic.
+    //                360 = smooth, lower values give a chunky, stepped
+    //                rainbow (try 24 or 12 for a retro look).
+    private const int    RewritingWedgeCount          = 360;
+
+    // ── Rewriting — base rotation ─────────────────────────────────────────
+    // Single constant-rate spin. A secondary "burst" animation (accel/decel
+    // overlaid on this base) is planned but not yet implemented.
+    //   PeriodSeconds    — seconds per full turn.
+    //   Direction        — +1 = screen-clockwise, -1 = CCW.
+    //   PhaseTurns       — initial rotation as fraction of a full turn
+    //                      (0..1). Shifts where the "red tip" sits at t=0.
+    // Cubic bezier easing of the 0 → 2π keyframe. Four scalars are the
+    // P1.X, P1.Y, P2.X, P2.Y of the curve. (0,0,1,1) = linear,
+    // (0.42,0,0.58,1) = ease-in-out, (0,0,0.58,1) = ease-out,
+    // (0.42,0,1,1) = ease-in. Because this animation loops forever, keep
+    // the start and end tangents matched (symmetric bezier, e.g.
+    // (a,b,1-a,1-b)) to avoid a visible jolt at the loop boundary.
+    private const double RewritingPeriodSeconds       = 8.0;
+    private const float  RewritingRotationDirection   = 1f;
+    private const float  RewritingRotationPhaseTurns  = 0f;
+    private const float  RewritingRotationEaseP1X     = 0f;
+    private const float  RewritingRotationEaseP1Y     = 0f;
+    private const float  RewritingRotationEaseP2X     = 1f;
+    private const float  RewritingRotationEaseP2Y     = 1f;
+
+    // ╔════════════════════════════════════════════════════════════════════╗
+    // ║  End of tunables                                                   ║
+    // ╚════════════════════════════════════════════════════════════════════╝
 
     // Diagonal gradient stroke for Transcribing, animated as a shimmer that
     // rotates around the card centre. StartPoint and EndPoint are animated
@@ -149,29 +187,31 @@ internal static class HudComposition
     // rotates. Palette-tuned variant (brand colours, uneven hue weighting)
     // is a follow-up once the base rendering is stable.
     //
-    // The source surface is SQUARE (pxSquare × pxSquare with
-    // pxSquare = max(pxW, pxH)) rather than matching the visual rect. Two
-    // reasons:
-    //   1. Under rotation, a rectangular source that matches the elongated
-    //      visual can't cover the visual at all angles — at 90° the rotated
-    //      source's short dimension leaves horizontal tails untouched and
-    //      those pixels sample outside the source bounds → transparent
-    //      gaps that breathe as the source rotates.
-    //   2. The radial alpha fade becomes a true circle (RadiusX = RadiusY),
-    //      which is rotation-invariant: the visible alpha distribution
-    //      stays identical at every angle. No more perceived acceleration
-    //      from a rotating elliptical mask.
-    // The brush uses CompositionStretch.UniformToFill so the square source
-    // is centred in the visual and its short dimension scales to cover the
-    // visual width — the visible rect is a horizontal slice through the
-    // full square, within which the circular fade only touches the
-    // horizontal edges.
+    // The source surface is SQUARE and sized so its inscribed circle
+    // contains the visual at every rotation: pxSquare = ceil(√(pxW² + pxH²))
+    // = visual diagonal. Smaller squares (e.g. max(pxW, pxH)) leave the
+    // visual corners outside the source at intermediate angles — those
+    // pixels sample out of bounds and go transparent, producing gaps that
+    // sweep around with rotation. The inscribed-circle criterion is the
+    // exact minimum. The brush uses CompositionStretch.None so the source
+    // is drawn 1:1 pixel centred in the visual (alignment ratios default
+    // to 0.5), preserving its oversized brush-space footprint; any other
+    // stretch mode rescales the source back down to the visual's extent
+    // and defeats the coverage guarantee.
     //
     // Rotation uses ExpressionAnimation because TransformMatrix is a
     // Matrix3x2 with no built-in KeyFrameAnimation type. A scalar Angle on a
     // CompositionPropertySet drives a standard 0 → 2π keyframe animation, and
     // the matrix is rebuilt every frame by an expression that rotates around
-    // the source centre (pxSquare/2, pxSquare/2).
+    // the VISUAL centre (innerSize.X/2, innerSize.Y/2) — not the source
+    // centre. CompositionSurfaceBrush.TransformMatrix is evaluated in the
+    // coordinate space of the SpriteVisual the brush paints onto, AFTER
+    // Stretch/alignment have placed the source. Stretch.None centres a
+    // pxSquare×pxSquare source on the visual centre, so rotating around the
+    // visual centre spins the centred source in place. Rotating around the
+    // source centre (pxSquare/2, pxSquare/2) instead would orbit the source
+    // around a point well outside the visual — exactly the "half the stroke
+    // missing at most phases" symptom we hit.
     internal static ContainerVisual CreateRewritingStroke(
         Compositor compositor, Vector2 hostSize)
     {
@@ -181,7 +221,13 @@ internal static class HudComposition
         var innerSize = new Vector2(hostSize.X - 2f * InsetDip, hostSize.Y - 2f * InsetDip);
         int pxW = Math.Max(1, (int)MathF.Ceiling(innerSize.X));
         int pxH = Math.Max(1, (int)MathF.Ceiling(innerSize.Y));
-        int pxSquare = Math.Max(pxW, pxH);
+        // Source side must be ≥ the visual diagonal so that the source's
+        // inscribed circle contains all four corners of the visual at every
+        // rotation. Using max(pxW, pxH) is insufficient: the visual's
+        // half-diagonal (≈141.5 px for 272×78) exceeds that square's
+        // half-side (136), so corners sample outside the source at
+        // intermediate angles → transparent gaps that sweep with rotation.
+        int pxSquare = (int)Math.Ceiling(Math.Sqrt((double)pxW * pxW + (double)pxH * pxH));
 
         var canvasDevice   = CanvasDevice.GetSharedDevice();
         var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(compositor, canvasDevice);
@@ -195,54 +241,35 @@ internal static class HudComposition
             ds.Clear(Colors.Transparent);
             var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
             float radius = pxSquare * MathF.Sqrt(2f) * 0.5f;
-            const int wedges = 360;
+            int wedges = Math.Max(3, RewritingWedgeCount);
             float step = MathF.Tau / wedges;
 
-            // Circular opacity mask — RadiusX == RadiusY, so the alpha
-            // distribution is rotation-invariant. Opaque inside the inner
-            // core (RewritingAlphaCorePct of the fade radius), linear ramp
-            // to RewritingEdgeAlpha at the outer radius
-            // (RewritingFadeRadiusPct × pxSquare/2).
-            //
-            // Win2D's CanvasBlend enum has no DestinationIn, so the mask is
-            // applied upstream via CreateLayer(ICanvasBrush) — every draw
-            // call inside the layer scope is multiplied by the brush alpha.
-            float fadeRadius = pxSquare / 2f * RewritingFadeRadiusPct;
-            var fadeStops = new[]
+            for (int i = 0; i < wedges; i++)
             {
-                new CanvasGradientStop { Position = 0f,                    Color = Colors.White },
-                new CanvasGradientStop { Position = RewritingAlphaCorePct, Color = Colors.White },
-                new CanvasGradientStop { Position = 1f,                    Color = Color.FromArgb(RewritingEdgeAlpha, 0xFF, 0xFF, 0xFF) },
-            };
-            using var radial = new CanvasRadialGradientBrush(canvasDevice, fadeStops)
-            {
-                Center  = centre,
-                RadiusX = fadeRadius,
-                RadiusY = fadeRadius,
-            };
+                float a0  = i * step;
+                float a1  = a0 + step;
+                float mid = a0 + step * 0.5f;
 
-            using (ds.CreateLayer(radial))
-            {
-                for (int i = 0; i < wedges; i++)
-                {
-                    float a0  = i * step;
-                    float a1  = a0 + step;
-                    float mid = a0 + step * 0.5f;
+                float hue = RewritingHueStart + (mid / MathF.Tau) * RewritingHueRange;
+                var color = HsvToRgb(hue, RewritingHsvSaturation, RewritingHsvValue);
 
-                    var color = HsvToRgb(mid / MathF.Tau, RewritingHsvSaturation, RewritingHsvValue);
+                var p0 = centre;
+                var p1 = centre + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius;
+                var p2 = centre + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * radius;
 
-                    var p0 = centre;
-                    var p1 = centre + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius;
-                    var p2 = centre + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * radius;
-
-                    using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
-                    ds.FillGeometry(wedge, color);
-                }
+                using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
+                ds.FillGeometry(wedge, color);
             }
         }
 
+        // Stretch = None draws the source 1:1 pixel, centred in the visual
+        // (HorizontalAlignmentRatio/VerticalAlignmentRatio default to 0.5).
+        // UniformToFill would rescale the square so its long side matches the
+        // visual's long side, collapsing a 283-px source back to 272 px in
+        // brush space — which negates the whole point of oversizing it for
+        // rotation coverage.
         var sourceBrush = compositor.CreateSurfaceBrush(surface);
-        sourceBrush.Stretch = CompositionStretch.UniformToFill;
+        sourceBrush.Stretch = CompositionStretch.None;
 
         // Mask surface — a rounded-rect stroke painted opaque white on a
         // transparent background. Inset by 0.5 dip so the 1-dip stroke is
@@ -267,31 +294,45 @@ internal static class HudComposition
         var maskBrush = compositor.CreateSurfaceBrush(maskSurface);
         maskBrush.Stretch = CompositionStretch.Fill;
 
+        // Rotation keyframe animation. Start angle = phase offset, end angle
+        // = start + one full turn in the configured direction. Cubic bezier
+        // easing on the end keyframe shapes the intra-period speed curve
+        // (default linear). The animation loops forever; keep start and end
+        // speeds matched (symmetric bezier) to avoid a visible jolt at the
+        // loop boundary.
+        float startAngle = MathF.Tau * RewritingRotationPhaseTurns;
+        float endAngle   = startAngle + MathF.Tau * RewritingRotationDirection;
+
         var rotationProps = compositor.CreatePropertySet();
-        rotationProps.InsertScalar("Angle", 0f);
+        rotationProps.InsertScalar("Angle", startAngle);
+
+        var easing = compositor.CreateCubicBezierEasingFunction(
+            new Vector2(RewritingRotationEaseP1X, RewritingRotationEaseP1Y),
+            new Vector2(RewritingRotationEaseP2X, RewritingRotationEaseP2Y));
 
         var angleAnim = compositor.CreateScalarKeyFrameAnimation();
-        angleAnim.InsertKeyFrame(0f, 0f);
-        angleAnim.InsertKeyFrame(1f, MathF.Tau);
+        angleAnim.InsertKeyFrame(0f, startAngle);
+        angleAnim.InsertKeyFrame(1f, endAngle, easing);
         angleAnim.Duration          = TimeSpan.FromSeconds(RewritingPeriodSeconds);
         angleAnim.IterationBehavior = AnimationIterationBehavior.Forever;
         rotationProps.StartAnimation("Angle", angleAnim);
 
-        // Rotation around the source centre via the
+        // Rotation around the VISUAL centre via the
         //   T(-c) · R(θ) · T(+c)
-        // composite, expressed in Composition's Matrix3x2 helpers. The
-        // square source already covers every rotation angle, so no scale
-        // factor is needed. CreateRotation takes radians; row-vector
-        // convention means translations flank the rotation symmetrically.
-        float halfSquare = pxSquare / 2f;
+        // composite, expressed in Composition's Matrix3x2 helpers.
+        // CreateRotation takes radians; row-vector convention means
+        // translations flank the rotation symmetrically.
+        // c = innerSize/2 because TransformMatrix is in SpriteVisual space
+        // (post-Stretch/alignment), not in source pixel space.
+        var visualCentre = new Vector2(innerSize.X / 2f, innerSize.Y / 2f);
 
         var matrixExpr = compositor.CreateExpressionAnimation(
             "Matrix3x2.CreateTranslation(negCentre) * " +
             "Matrix3x2.CreateRotation(props.Angle) * " +
             "Matrix3x2.CreateTranslation(posCentre)");
         matrixExpr.SetReferenceParameter("props", rotationProps);
-        matrixExpr.SetVector2Parameter("negCentre", new Vector2(-halfSquare, -halfSquare));
-        matrixExpr.SetVector2Parameter("posCentre", new Vector2( halfSquare,  halfSquare));
+        matrixExpr.SetVector2Parameter("negCentre", -visualCentre);
+        matrixExpr.SetVector2Parameter("posCentre",  visualCentre);
         sourceBrush.StartAnimation("TransformMatrix", matrixExpr);
 
         var compositeBrush = compositor.CreateMaskBrush();
