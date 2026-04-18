@@ -1,5 +1,6 @@
 using System.Numerics;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.UI.Composition;
 using Microsoft.Graphics.DirectX;
@@ -20,15 +21,47 @@ namespace WhispUI.Composition;
 // Geometry is inset by 1 dip so the 1-dip centered stroke sits between
 // 0.5 dip and 1.5 dip from the outer edge — fully inside the DWM rounded
 // silhouette (which clips at the 8-dip corner), zero risk of partial
-// clipping at the rounded corners. CornerRadius follows the inset
-// (OverlayCornerRadius = 8 dip → 7 dip for the geometry).
+// clipping at the rounded corners. CornerRadius follows the inset, tuned
+// slightly under the geometric ideal (6.5 dip instead of 7) to keep the
+// Win2D-rasterised stroke clear of the DWM corner — Win2D and DWM do not
+// use identical antialiasing at high-curvature corners and a literal
+// match produced a visible bleed.
 internal static class HudComposition
 {
-    private const float  StrokeThickness           = 1f;
-    private const float  InsetDip                  = 1f;
-    private const float  CornerRadiusDip           = 7f;
-    private const double TranscribingPeriodSeconds = 3.0;
-    private const double RewritingPeriodSeconds    = 4.0;
+    // ── Tunables ──────────────────────────────────────────────────────────
+    // Every value in this block drives visible rendering. Edit and rebuild.
+    // The rest of the file is structural: wedge count, brush wiring,
+    // composition math — change those only when revising the pipeline.
+
+    // Shared stroke geometry.
+    private const float  StrokeThickness              = 1f;    // dip, stroke width
+    private const float  InsetDip                     = 1f;    // dip, inset from HUD edge
+    private const float  CornerRadiusDip              = 6.5f;  // dip, rounded-rect corner radius
+
+    // Transcribing shimmer — diagonal grey gradient rotating around the card.
+    private const double TranscribingPeriodSeconds    = 3.0;   // seconds for one full turn
+    private const byte   TranscribingGreyDark         = 0x75;  // low gradient stop (0x00..0xFF)
+    private const byte   TranscribingGreyLight        = 0xBF;  // high gradient stop (0x00..0xFF)
+
+    // Rewriting rainbow — conic stroke rotating around the card.
+    private const double RewritingPeriodSeconds       = 4.0;   // seconds for one full turn
+    private const float  RewritingHsvSaturation       = 1f;    // 0..1, HSV S (drop for pastel)
+    private const float  RewritingHsvValue            = 1f;    // 0..1, HSV V (drop for darker)
+    // Alpha fade of the source disc — the conic is fully opaque inside the
+    // core, then ramps to RewritingEdgeAlpha at the outer radius.
+    //   RewritingAlphaCorePct   — 0..1, core radius as fraction of the
+    //                             fade radius below. Lower → fade starts
+    //                             sooner (tighter colour concentration).
+    //   RewritingFadeRadiusPct  — fade outer radius as fraction of
+    //                             pxSquare/2 (= 136 px at the 272-dip HUD).
+    //                             <1 tightens the coloured region,
+    //                             >1 softens it.
+    //   RewritingEdgeAlpha      — 0..255, alpha at the outer radius. 0 is
+    //                             fully transparent; raise to keep some
+    //                             colour at the extremities.
+    private const float  RewritingAlphaCorePct        = 0.6f;
+    private const float  RewritingFadeRadiusPct       = 1f;
+    private const byte   RewritingEdgeAlpha           = 0;
 
     // Diagonal gradient stroke for Transcribing, animated as a shimmer that
     // rotates around the card centre. StartPoint and EndPoint are animated
@@ -52,8 +85,10 @@ internal static class HudComposition
         var gradient = compositor.CreateLinearGradientBrush();
         gradient.StartPoint = new Vector2(1f, 0.5f);
         gradient.EndPoint   = new Vector2(0f, 0.5f);
-        gradient.ColorStops.Add(compositor.CreateColorGradientStop(0.0f, Color.FromArgb(0xFF, 0x75, 0x75, 0x75)));
-        gradient.ColorStops.Add(compositor.CreateColorGradientStop(1.0f, Color.FromArgb(0xFF, 0xBF, 0xBF, 0xBF)));
+        gradient.ColorStops.Add(compositor.CreateColorGradientStop(0.0f,
+            Color.FromArgb(0xFF, TranscribingGreyDark,  TranscribingGreyDark,  TranscribingGreyDark)));
+        gradient.ColorStops.Add(compositor.CreateColorGradientStop(1.0f,
+            Color.FromArgb(0xFF, TranscribingGreyLight, TranscribingGreyLight, TranscribingGreyLight)));
 
         var period = TimeSpan.FromSeconds(TranscribingPeriodSeconds);
 
@@ -108,74 +143,106 @@ internal static class HudComposition
     // out the stroke; the source fills it with colour.
     //
     // The conic gradient is painted as 360 pie wedges fanning out from the
-    // surface centre. Each wedge's colour is a linear RGB lerp between two
-    // adjacent brand colours (8 stops, 45° each), which preserves the exact
-    // hardcoded palette instead of falling back to an HSV sweep.
+    // surface centre. Each wedge's colour is HSV(hue, 1, 1) with
+    // hue = angle / 2π — a continuous spectrum sweep whose derivative is
+    // continuous at the 0/2π wrap, so no seam is visible as the rainbow
+    // rotates. Palette-tuned variant (brand colours, uneven hue weighting)
+    // is a follow-up once the base rendering is stable.
+    //
+    // The source surface is SQUARE (pxSquare × pxSquare with
+    // pxSquare = max(pxW, pxH)) rather than matching the visual rect. Two
+    // reasons:
+    //   1. Under rotation, a rectangular source that matches the elongated
+    //      visual can't cover the visual at all angles — at 90° the rotated
+    //      source's short dimension leaves horizontal tails untouched and
+    //      those pixels sample outside the source bounds → transparent
+    //      gaps that breathe as the source rotates.
+    //   2. The radial alpha fade becomes a true circle (RadiusX = RadiusY),
+    //      which is rotation-invariant: the visible alpha distribution
+    //      stays identical at every angle. No more perceived acceleration
+    //      from a rotating elliptical mask.
+    // The brush uses CompositionStretch.UniformToFill so the square source
+    // is centred in the visual and its short dimension scales to cover the
+    // visual width — the visible rect is a horizontal slice through the
+    // full square, within which the circular fade only touches the
+    // horizontal edges.
     //
     // Rotation uses ExpressionAnimation because TransformMatrix is a
     // Matrix3x2 with no built-in KeyFrameAnimation type. A scalar Angle on a
     // CompositionPropertySet drives a standard 0 → 2π keyframe animation, and
     // the matrix is rebuilt every frame by an expression that rotates around
-    // (halfW, halfH) of the source surface.
+    // the source centre (pxSquare/2, pxSquare/2).
     internal static ContainerVisual CreateRewritingStroke(
         Compositor compositor, Vector2 hostSize)
     {
-        var arcColors = new[]
-        {
-            Color.FromArgb(0xFF, 0xFF, 0x00, 0x00), // red
-            Color.FromArgb(0xFF, 0xFF, 0xBF, 0x00), // amber
-            Color.FromArgb(0xFF, 0x80, 0xFF, 0x00), // lime
-            Color.FromArgb(0xFF, 0x00, 0xFF, 0x40), // green
-            Color.FromArgb(0xFF, 0x00, 0xFF, 0xFF), // cyan
-            Color.FromArgb(0xFF, 0x00, 0x40, 0xFF), // blue
-            Color.FromArgb(0xFF, 0x80, 0x00, 0xFF), // violet
-            Color.FromArgb(0xFF, 0xFF, 0x00, 0xBF), // magenta
-        };
-
         var container = compositor.CreateContainerVisual();
         container.Size = hostSize;
 
         var innerSize = new Vector2(hostSize.X - 2f * InsetDip, hostSize.Y - 2f * InsetDip);
         int pxW = Math.Max(1, (int)MathF.Ceiling(innerSize.X));
         int pxH = Math.Max(1, (int)MathF.Ceiling(innerSize.Y));
+        int pxSquare = Math.Max(pxW, pxH);
 
         var canvasDevice   = CanvasDevice.GetSharedDevice();
         var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(compositor, canvasDevice);
         var surface        = graphicsDevice.CreateDrawingSurface(
-            new Windows.Foundation.Size(pxW, pxH),
+            new Windows.Foundation.Size(pxSquare, pxSquare),
             DirectXPixelFormat.B8G8R8A8UIntNormalized,
             DirectXAlphaMode.Premultiplied);
 
         using (var ds = CanvasComposition.CreateDrawingSession(surface))
         {
             ds.Clear(Colors.Transparent);
-            var centre = new Vector2(pxW / 2f, pxH / 2f);
-            float radius = new Vector2(pxW, pxH).Length();
+            var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
+            float radius = pxSquare * MathF.Sqrt(2f) * 0.5f;
             const int wedges = 360;
             float step = MathF.Tau / wedges;
 
-            for (int i = 0; i < wedges; i++)
+            // Circular opacity mask — RadiusX == RadiusY, so the alpha
+            // distribution is rotation-invariant. Opaque inside the inner
+            // core (RewritingAlphaCorePct of the fade radius), linear ramp
+            // to RewritingEdgeAlpha at the outer radius
+            // (RewritingFadeRadiusPct × pxSquare/2).
+            //
+            // Win2D's CanvasBlend enum has no DestinationIn, so the mask is
+            // applied upstream via CreateLayer(ICanvasBrush) — every draw
+            // call inside the layer scope is multiplied by the brush alpha.
+            float fadeRadius = pxSquare / 2f * RewritingFadeRadiusPct;
+            var fadeStops = new[]
             {
-                float a0  = i * step;
-                float a1  = a0 + step;
-                float mid = a0 + step * 0.5f;
+                new CanvasGradientStop { Position = 0f,                    Color = Colors.White },
+                new CanvasGradientStop { Position = RewritingAlphaCorePct, Color = Colors.White },
+                new CanvasGradientStop { Position = 1f,                    Color = Color.FromArgb(RewritingEdgeAlpha, 0xFF, 0xFF, 0xFF) },
+            };
+            using var radial = new CanvasRadialGradientBrush(canvasDevice, fadeStops)
+            {
+                Center  = centre,
+                RadiusX = fadeRadius,
+                RadiusY = fadeRadius,
+            };
 
-                float hueSeg = mid / MathF.Tau * arcColors.Length;
-                int idx      = (int)MathF.Floor(hueSeg) % arcColors.Length;
-                float t      = hueSeg - MathF.Floor(hueSeg);
-                var color    = LerpColor(arcColors[idx], arcColors[(idx + 1) % arcColors.Length], t);
+            using (ds.CreateLayer(radial))
+            {
+                for (int i = 0; i < wedges; i++)
+                {
+                    float a0  = i * step;
+                    float a1  = a0 + step;
+                    float mid = a0 + step * 0.5f;
 
-                var p0 = centre;
-                var p1 = centre + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius;
-                var p2 = centre + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * radius;
+                    var color = HsvToRgb(mid / MathF.Tau, RewritingHsvSaturation, RewritingHsvValue);
 
-                using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
-                ds.FillGeometry(wedge, color);
+                    var p0 = centre;
+                    var p1 = centre + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius;
+                    var p2 = centre + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * radius;
+
+                    using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
+                    ds.FillGeometry(wedge, color);
+                }
             }
         }
 
         var sourceBrush = compositor.CreateSurfaceBrush(surface);
-        sourceBrush.Stretch = CompositionStretch.Fill;
+        sourceBrush.Stretch = CompositionStretch.UniformToFill;
 
         // Mask surface — a rounded-rect stroke painted opaque white on a
         // transparent background. Inset by 0.5 dip so the 1-dip stroke is
@@ -210,21 +277,21 @@ internal static class HudComposition
         angleAnim.IterationBehavior = AnimationIterationBehavior.Forever;
         rotationProps.StartAnimation("Angle", angleAnim);
 
-        // Rotation around the surface centre via the composite
+        // Rotation around the source centre via the
         //   T(-c) · R(θ) · T(+c)
-        // expressed in Composition's Matrix3x2 helpers. CreateRotation takes
-        // radians; row-vector convention means translations flank the rotation
-        // symmetrically.
-        float halfW = pxW / 2f;
-        float halfH = pxH / 2f;
+        // composite, expressed in Composition's Matrix3x2 helpers. The
+        // square source already covers every rotation angle, so no scale
+        // factor is needed. CreateRotation takes radians; row-vector
+        // convention means translations flank the rotation symmetrically.
+        float halfSquare = pxSquare / 2f;
 
         var matrixExpr = compositor.CreateExpressionAnimation(
             "Matrix3x2.CreateTranslation(negCentre) * " +
             "Matrix3x2.CreateRotation(props.Angle) * " +
             "Matrix3x2.CreateTranslation(posCentre)");
         matrixExpr.SetReferenceParameter("props", rotationProps);
-        matrixExpr.SetVector2Parameter("negCentre", new Vector2(-halfW, -halfH));
-        matrixExpr.SetVector2Parameter("posCentre", new Vector2( halfW,  halfH));
+        matrixExpr.SetVector2Parameter("negCentre", new Vector2(-halfSquare, -halfSquare));
+        matrixExpr.SetVector2Parameter("posCentre", new Vector2( halfSquare,  halfSquare));
         sourceBrush.StartAnimation("TransformMatrix", matrixExpr);
 
         var compositeBrush = compositor.CreateMaskBrush();
@@ -240,13 +307,27 @@ internal static class HudComposition
         return container;
     }
 
-    private static Color LerpColor(Color a, Color b, float t)
+    // HSV → RGB conversion (h, s, v in [0, 1]). Continuous derivative at
+    // h = 0 / h = 1 wrap, which is the whole point of using this instead of
+    // an RGB lerp over a closed palette.
+    private static Color HsvToRgb(float h, float s, float v)
     {
-        t = Math.Clamp(t, 0f, 1f);
+        h = ((h % 1f) + 1f) % 1f;
+        float c       = v * s;
+        float hPrime  = h * 6f;
+        float x       = c * (1f - MathF.Abs((hPrime % 2f) - 1f));
+        float r, g, b;
+        if      (hPrime < 1f) { r = c; g = x; b = 0f; }
+        else if (hPrime < 2f) { r = x; g = c; b = 0f; }
+        else if (hPrime < 3f) { r = 0f; g = c; b = x; }
+        else if (hPrime < 4f) { r = 0f; g = x; b = c; }
+        else if (hPrime < 5f) { r = x; g = 0f; b = c; }
+        else                  { r = c; g = 0f; b = x; }
+        float m = v - c;
         return Color.FromArgb(
-            (byte)(a.A + (b.A - a.A) * t),
-            (byte)(a.R + (b.R - a.R) * t),
-            (byte)(a.G + (b.G - a.G) * t),
-            (byte)(a.B + (b.B - a.B) * t));
+            0xFF,
+            (byte)MathF.Round((r + m) * 255f),
+            (byte)MathF.Round((g + m) * 255f),
+            (byte)MathF.Round((b + m) * 255f));
     }
 }
