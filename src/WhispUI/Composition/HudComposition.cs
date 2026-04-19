@@ -104,12 +104,12 @@ internal static class HudComposition
         //                   plateaus. See StartRotation header for the
         //                   full UX explanation. Hue can ease freely (the
         //                   eye doesn't track the colour wheel directly).
-        public double HuePeriodSeconds   { get; init; } = 4.0;
+        public double HuePeriodSeconds   { get; init; } = 5.0;
         public float  HueDirection       { get; init; } = 1f;
         public float  HuePhaseTurns      { get; init; } = 0f;
-        public float  HueEaseP1X         { get; init; } = 0f;
+        public float  HueEaseP1X         { get; init; } = 0.2f;
         public float  HueEaseP1Y         { get; init; } = 0f;
-        public float  HueEaseP2X         { get; init; } = 1f;
+        public float  HueEaseP2X         { get; init; } = 0.8f;
         public float  HueEaseP2Y         { get; init; } = 1f;
         public float  HueRotationFloor   { get; init; } = 0.4f;
 
@@ -141,7 +141,7 @@ internal static class HudComposition
         public float  ConicSpanTurns     { get; init; } = 0.4f;
         public float  ConicLeadFadeTurns { get; init; } = 1f;
         public float  ConicTailFadeTurns { get; init; } = 1f;
-        public float  ConicFadeCurve     { get; init; } = 4f;
+        public float  ConicFadeCurve     { get; init; } = 2f;
         public bool   ArcMirror          { get; init; } = true;
 
         // ── Arc rotation ─────────────────────────────────────────────────
@@ -157,12 +157,12 @@ internal static class HudComposition
         //   RotationFloor — floor for the arc. The arc is the silhouette
         //                   the eye tracks — keep this floor higher than
         //                   the hue's so a "freeze" never reads as a bug.
-        public double ArcPeriodSeconds   { get; init; } = 8.0;
+        public double ArcPeriodSeconds   { get; init; } = 7.0;
         public float  ArcDirection       { get; init; } = 1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
-        public float  ArcEaseP1X         { get; init; } = 0f;
+        public float  ArcEaseP1X         { get; init; } = 0.5f;
         public float  ArcEaseP1Y         { get; init; } = 0f;
-        public float  ArcEaseP2X         { get; init; } = 1f;
+        public float  ArcEaseP2X         { get; init; } = 0.2f;
         public float  ArcEaseP2Y         { get; init; } = 1f;
         public float  ArcRotationFloor   { get; init; } = 0.8f;
 
@@ -213,7 +213,7 @@ internal static class HudComposition
         public float  RewritingHueShiftTurns    { get; init; } = 0f;
         public float  RewritingExposure         { get; init; } = 0f;
         public float  RewritingOpacity          { get; init; } = 1f;
-        public double RewritingBlendSeconds     { get; init; } = 0.4;
+        public double RewritingBlendSeconds     { get; init; } = 1.2;
 
         // Transcribing variant — defaults to greyscale (saturation 0) and
         // neutral exposure. Saturation and Exposure are split Dark / Light
@@ -227,7 +227,7 @@ internal static class HudComposition
         public float  TranscribingExposureDark    { get; init; } = 0f;
         public float  TranscribingExposureLight   { get; init; } = 0f;
         public float  TranscribingOpacity         { get; init; } = 1f;
-        public double TranscribingBlendSeconds    { get; init; } = 0.4;
+        public double TranscribingBlendSeconds    { get; init; } = 0.8;
     }
 
     // Live handle to a processing stroke created by CreateProcessingStroke.
