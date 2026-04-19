@@ -38,6 +38,11 @@ modelfile-fastapply
 **/xaml.out
 .claude/settings.local.json
 
+# Ad hoc file-based crash logs (see HudComposition.DebugLog pattern) —
+# keep the folder itself versioned so the path exists when code writes to it.
+logs/*
+!logs/.gitkeep
+
 # Benchmark — run artifacts (regenerated on each launch)
 benchmark/__pycache__/
 benchmark/logs/*.log
