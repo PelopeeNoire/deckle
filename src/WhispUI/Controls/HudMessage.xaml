@@ -1,0 +1,49 @@
+<UserControl
+    x:Class="WhispUI.Controls.HudMessage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Same minimum-element pattern as HudChrono: a Grid root, the
+         MessageCard Border (opaque card surface with the rounded corner)
+         and the content Grid as sibling on top. The card paints
+         LayerFillColorDefaultBrush — opaque, theme-tracked. No Composition
+         stroke. The semantic hue lives only on the 16x16 badge (resolved
+         from a theme brush so it tracks dark/light/high-contrast). -->
+    <Grid x:Name="MessageRoot">
+        <Border x:Name="MessageCard"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                CornerRadius="{ThemeResource OverlayCornerRadius}" />
+
+        <Grid Padding="16,12,12,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0"
+                        VerticalAlignment="Center"
+                        Spacing="2">
+                <TextBlock x:Name="MessageTitle"
+                           Style="{StaticResource BodyStrongTextBlockStyle}"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                <TextBlock x:Name="MessageSubtitle"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <Border x:Name="BadgeBackground"
+                    Grid.Column="1"
+                    Width="16" Height="16"
+                    CornerRadius="8"
+                    VerticalAlignment="Top"
+                    HorizontalAlignment="Right">
+                <FontIcon x:Name="BadgeGlyph"
+                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                          FontSize="11"
+                          Foreground="White" />
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

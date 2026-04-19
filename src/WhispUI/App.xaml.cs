@@ -52,8 +52,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         // LogWindow created once, never destroyed.
         _logWindow = new LogWindow();
 
-        // Register logging sinks — DebugLogSink first (survives UI crashes).
-        _log.AddSink(new DebugLogSink());
         _log.AddSink(_logWindow);
 
         // SettingsWindow created once, never destroyed. No initial Show:
@@ -106,6 +104,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                 _hudWindow.ShowRecording();
             else if (status == "Transcribing")
                 _hudWindow.SwitchToTranscribing();
+            // Engine emits "Réécriture (...)" today; the FR→EN sweep at
+            // WhispEngine.cs:858 ("Rewriting (...)") lands once the parallel
+            // logs branch is merged. Match both so the dispatcher is robust
+            // across the swap.
+            else if (status.StartsWith("Réécriture") || status.StartsWith("Rewriting"))
+                _hudWindow.SwitchToRewriting();
         };
         _engine.TranscriptionFinished += outcome =>
         {
