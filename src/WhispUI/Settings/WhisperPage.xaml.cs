@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -25,6 +26,11 @@ public sealed partial class WhisperPage : Page
     // AutoSuggestBox's SuggestionChosen during initial sync — these handlers
     // set VM properties which would trigger PushToSettings() needlessly.
     private bool _initializing;
+
+    // Re-entry guard for the corpus consent flow: the Toggled handler reverts
+    // the switch when the user cancels the dialog, and that revert would
+    // retrigger Toggled in turn.
+    private bool _suppressCorpusToggle;
 
     // Full list of installed Whisper models on disk, scanned once per
     // page entry. Feeds the model AutoSuggestBox as a filterable source.
@@ -143,6 +149,7 @@ public sealed partial class WhisperPage : Page
         SyncLanguageCombo();
         _startupModel = ViewModel.Model;
         _startupUseGpu = ViewModel.UseGpu;
+        UpdateCorpusFolderVisibility();
         _initializing = false;
     }
 
@@ -166,7 +173,16 @@ public sealed partial class WhisperPage : Page
                 _initializing = true;
                 try { RefreshModelNames(); } finally { _initializing = false; }
                 break;
+            case nameof(WhisperViewModel.CorpusLoggingEnabled):
+                UpdateCorpusFolderVisibility();
+                break;
         }
+    }
+
+    private void UpdateCorpusFolderVisibility()
+    {
+        CorpusFolderCard.Visibility = ViewModel.CorpusLoggingEnabled
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── Slider display text ─────────────────────────────────────────────────
@@ -520,7 +536,58 @@ public sealed partial class WhisperPage : Page
         ViewModel.Load();
         RefreshModelNames();
         SyncLanguageCombo();
+        UpdateCorpusFolderVisibility();
         _initializing = false;
         UpdateRestartState();
+    }
+
+    // ── Corpus logging handlers ────────────────────────────────────────────
+    //
+    // Off → On: show a consent dialog. Cancel reverts the toggle (guarded
+    // via _suppressCorpusToggle to avoid re-entering this handler during
+    // the revert). On → Off: no confirmation — the user can turn it back
+    // on later if needed.
+
+    private async void CorpusLoggingToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_initializing || _suppressCorpusToggle) return;
+        if (!CorpusLoggingToggle.IsOn) return;
+
+        bool confirmed = await CorpusConsentDialog.ShowAsync(this.XamlRoot);
+        if (confirmed) return;
+
+        _suppressCorpusToggle = true;
+        try
+        {
+            CorpusLoggingToggle.IsOn = false;
+        }
+        finally
+        {
+            _suppressCorpusToggle = false;
+        }
+    }
+
+    private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? path = CorpusLog.GetDirectoryPath();
+        if (string.IsNullOrEmpty(path))
+        {
+            _log.Warning(LogSource.SetWhisper, "Corpus folder unresolved — cannot open");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetWhisper, $"Open corpus folder failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 }

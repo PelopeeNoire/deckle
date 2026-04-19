@@ -13,48 +13,107 @@
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
                    Margin="1,0,0,8"
-                   Text="When you use the plain transcription shortcut (Alt+`), recordings longer than a threshold are automatically rewritten. Rules are listed from shortest to longest — evaluation picks the longest matching threshold first." />
+                   Text="When you use the plain transcription shortcut (Alt+`), long recordings are automatically rewritten. Pick the metric that drives the rule below, then define thresholds. Rules are listed from shortest to longest — evaluation picks the longest matching threshold first." />
 
-        <ItemsRepeater ItemsSource="{x:Bind Rules}">
-            <ItemsRepeater.Layout>
-                <StackLayout Spacing="4" />
-            </ItemsRepeater.Layout>
-            <ItemsRepeater.ItemTemplate>
-                <DataTemplate x:DataType="vm:RuleViewModel">
-                    <controls:SettingsCard
-                        Header="{x:Bind ProfileName, Mode=OneWay}"
-                        Description="{x:Bind Description, Mode=OneWay}">
-                        <StackPanel Orientation="Horizontal"
-                                    Spacing="8"
-                                    VerticalAlignment="Center">
-                            <NumberBox Minimum="0" Maximum="600"
-                                       SmallChange="5" LargeChange="30"
-                                       SpinButtonPlacementMode="Compact"
-                                       Value="{x:Bind MinDurationSeconds, Mode=TwoWay}"
-                                       MinWidth="100" />
-                            <TextBlock Text="s"
-                                       VerticalAlignment="Center"
-                                       Style="{StaticResource BodyTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <ComboBox MinWidth="160"
-                                      Tag="{x:Bind}"
-                                      Loaded="ProfileCombo_Loaded"
-                                      SelectionChanged="ProfileCombo_SelectionChanged" />
-                            <Button Tag="{x:Bind}"
-                                    Click="DeleteRule_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
-                                    <TextBlock Text="Remove" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </controls:SettingsCard>
-                </DataTemplate>
-            </ItemsRepeater.ItemTemplate>
-        </ItemsRepeater>
+        <controls:SettingsCard Header="Rule metric"
+                               Description="Word count matches LLM context load more directly than wall-clock duration (slow dictations and rapid ones don't cost the same even at equal length).">
+            <RadioButtons x:Name="MetricRadios"
+                          SelectionChanged="MetricRadios_SelectionChanged"
+                          MaxColumns="2">
+                <x:String>By word count</x:String>
+                <x:String>By recording duration</x:String>
+            </RadioButtons>
+        </controls:SettingsCard>
 
-        <Button Content="Add rule"
-                Click="AddRule_Click"
-                Margin="0,4,0,0" />
+        <StackPanel x:Name="WordsRulesPanel"
+                    Spacing="{StaticResource SettingsCardSpacing}">
+            <ItemsRepeater ItemsSource="{x:Bind RulesByWords}">
+                <ItemsRepeater.Layout>
+                    <StackLayout Spacing="4" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RuleByWordsViewModel">
+                        <controls:SettingsCard
+                            Header="{x:Bind ProfileName, Mode=OneWay}"
+                            Description="{x:Bind Description, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <NumberBox Minimum="0" Maximum="10000"
+                                           SmallChange="50" LargeChange="500"
+                                           SpinButtonPlacementMode="Compact"
+                                           Value="{x:Bind MinWordCount, Mode=TwoWay}"
+                                           MinWidth="100" />
+                                <TextBlock Text="words"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <ComboBox MinWidth="160"
+                                          Tag="{x:Bind}"
+                                          Loaded="ProfileComboByWords_Loaded"
+                                          SelectionChanged="ProfileComboByWords_SelectionChanged" />
+                                <Button Tag="{x:Bind}"
+                                        Click="DeleteRuleByWords_Click">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                        <TextBlock Text="Remove" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+
+            <Button Content="Add rule"
+                    Click="AddRuleByWords_Click"
+                    Margin="0,4,0,0" />
+        </StackPanel>
+
+        <StackPanel x:Name="DurationRulesPanel"
+                    Spacing="{StaticResource SettingsCardSpacing}"
+                    Visibility="Collapsed">
+            <ItemsRepeater ItemsSource="{x:Bind Rules}">
+                <ItemsRepeater.Layout>
+                    <StackLayout Spacing="4" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RuleViewModel">
+                        <controls:SettingsCard
+                            Header="{x:Bind ProfileName, Mode=OneWay}"
+                            Description="{x:Bind Description, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <NumberBox Minimum="0" Maximum="600"
+                                           SmallChange="5" LargeChange="30"
+                                           SpinButtonPlacementMode="Compact"
+                                           Value="{x:Bind MinDurationSeconds, Mode=TwoWay}"
+                                           MinWidth="100" />
+                                <TextBlock Text="s"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <ComboBox MinWidth="160"
+                                          Tag="{x:Bind}"
+                                          Loaded="ProfileCombo_Loaded"
+                                          SelectionChanged="ProfileCombo_SelectionChanged" />
+                                <Button Tag="{x:Bind}"
+                                        Click="DeleteRule_Click">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                        <TextBlock Text="Remove" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+
+            <Button Content="Add rule"
+                    Click="AddRule_Click"
+                    Margin="0,4,0,0" />
+        </StackPanel>
     </StackPanel>
 </UserControl>

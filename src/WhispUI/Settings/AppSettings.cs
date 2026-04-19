@@ -21,6 +21,18 @@ public sealed class AppSettings
     public DecodingSettings Decoding { get; set; } = new();
     public ContextSettings Context { get; set; } = new();
     public LlmSettings Llm { get; set; } = new();
+    public CorpusLoggingSettings CorpusLogging { get; set; } = new();
+}
+
+// Corpus logging: opt-in capture of each (raw, rewritten) pair in a per-profile
+// JSONL file, for offline iteration on rewrite prompts. Off by default — the
+// user consents through a ContentDialog before it starts writing.
+// DataDirectory is reserved for a future "custom path" setting; empty = use
+// the default resolver (<repo>/benchmark/data/).
+public sealed class CorpusLoggingSettings
+{
+    public bool   Enabled       { get; set; } = false;
+    public string DataDirectory { get; set; } = "";
 }
 
 // Paramètres d'enregistrement audio. AudioInputDeviceId = index du périphérique
@@ -125,6 +137,11 @@ public sealed class DecodingSettings
 // de /api/chat et overrident les defaults du Modelfile côté Ollama.
 public sealed class RewriteProfile
 {
+    // Stable identifier across renames. 12 hex chars (Guid N format truncated).
+    // Generated on first load for legacy profiles by SettingsService.MigrateProfileIds.
+    // Used as the join key for corpus telemetry — survives a user renaming Name.
+    public string Id { get; set; } = "";
+
     public string Name { get; set; } = "";
     public string Model { get; set; } = "";
     public string SystemPrompt { get; set; } = "";
@@ -136,13 +153,29 @@ public sealed class RewriteProfile
     public double? RepeatPenalty { get; set; }
 }
 
-// Règle d'auto-réécriture : quand la durée d'enregistrement dépasse
+// Règle d'auto-réécriture (durée) : quand la durée d'enregistrement dépasse
 // MinDurationSeconds, le profil ProfileName est utilisé. Les règles sont
 // évaluées dans l'ordre décroissant de MinDurationSeconds (la plus longue
 // qui matche gagne).
 public sealed class AutoRewriteRule
 {
     public int MinDurationSeconds { get; set; } = 0;
+
+    // Stable reference to RewriteProfile.Id. Preferred over ProfileName for
+    // lookup; ProfileName is kept so legacy configs keep resolving during
+    // migration and so the JSON stays human-readable.
+    public string ProfileId { get; set; } = "";
+    public string ProfileName { get; set; } = "";
+}
+
+// Mirror of AutoRewriteRule keyed on word count instead of duration. Words
+// reflect LLM context load more faithfully than recording time (a slow 10-min
+// dictation does not cost the same as a rapid-fire one). Evaluated descending
+// by MinWordCount, same rule as the duration list.
+public sealed class AutoRewriteRuleByWords
+{
+    public int MinWordCount { get; set; } = 0;
+    public string ProfileId { get; set; } = "";
     public string ProfileName { get; set; } = "";
 }
 
@@ -157,6 +190,12 @@ public sealed class LlmSettings
     // Profile used by the Secondary Rewrite shortcut (Ctrl+Win+`).
     // null = secondary rewrite disabled (hotkey fires but rewriting is skipped).
     public string? SecondaryRewriteProfileName { get; set; }
+
+    // Stable companions to the *ProfileName* fields above — resolved to
+    // RewriteProfile.Id. Lookup at runtime prefers Id, falls back to Name
+    // for legacy configs. Filled by SettingsService.MigrateProfileIds.
+    public string? PrimaryRewriteProfileId { get; set; }
+    public string? SecondaryRewriteProfileId { get; set; }
 
     // Bloc anti-préambule partagé par tous les profils par défaut. Répété en
     // tête de chaque system prompt parce que les modèles instruct sont
@@ -252,6 +291,17 @@ public sealed class LlmSettings
     {
         new() { MinDurationSeconds = 600, ProfileName = "Restructuration" },
         new() { MinDurationSeconds = 60,  ProfileName = "Nettoyage" }
+    };
+
+    // Which metric drives auto-rule selection. Default "Words" — a better
+    // proxy for LLM context load than wall-clock duration. Switch to
+    // "Duration" to keep the legacy behaviour.
+    public string RuleMetric { get; set; } = "Words";
+
+    public List<AutoRewriteRuleByWords> AutoRewriteRulesByWords { get; set; } = new()
+    {
+        new() { MinWordCount = 1000, ProfileName = "Restructuration" },
+        new() { MinWordCount = 100,  ProfileName = "Nettoyage" }
     };
 }
 

@@ -594,6 +594,35 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
+                <!-- ── Corpus logging ───────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Corpus logging" />
+
+                <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="1,0,0,8"
+                           Text="Save every transcription (raw and rewritten) to per-profile JSONL files for personal analysis. Off by default. Nothing is sent over the network." />
+
+                <controls:SettingsCard x:Name="CorpusLoggingCard"
+                                       Header="Save transcriptions locally"
+                                       Description="Append raw and rewritten text to files under benchmark\data\, one per rewrite profile."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE81C;}">
+                    <ToggleSwitch x:Name="CorpusLoggingToggle"
+                                  IsOn="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=TwoWay}"
+                                  Toggled="CorpusLoggingToggle_Toggled" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="CorpusFolderCard"
+                                       Header="Storage folder"
+                                       Description="Open the folder that holds the corpus JSONL files."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE838;}"
+                                       Visibility="Collapsed">
+                    <Button x:Name="OpenCorpusFolderButton"
+                            Content="Open folder"
+                            Click="OpenCorpusFolderButton_Click" />
+                </controls:SettingsCard>
+
             </StackPanel>
             </Grid>
         </ScrollViewer>
