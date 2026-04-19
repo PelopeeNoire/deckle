@@ -6,15 +6,128 @@ param(
     [ValidateSet('Release','Debug')]
     [string]$Configuration = 'Release',
     # Explicit path to MSBuild.exe (takes priority over env + vswhere).
-    [string]$MsBuild
+    [string]$MsBuild,
+    # Build a specific repo or worktree instead of the one containing this
+    # script. Accepts any path — main repo or any git worktree root.
+    [string]$Target,
+    # Interactive picker: lists the main repo + all linked worktrees via
+    # `git worktree list` and prompts for a choice. Overrides -Target.
+    [switch]$Pick
 )
 
 $ErrorActionPreference = 'Stop'
 $ScriptDir  = $PSScriptRoot                                  # scripts/
-$RepoRoot   = Split-Path $ScriptDir                          # repo root
+
+# =============================================================================
+# RepoRoot resolution
+# -----------------------------------------------------------------------------
+# Default: build the repo containing this script copy — the VS Code "Run"
+# flow (PowerShell extension on the open file) naturally picks the
+# worktree Louis is editing in.
+#
+# Override: -Target "<path>" picks any path. -Pick lists the worktrees
+# and prompts. Both are for terminal use; VS Code Run should stay no-arg.
+# =============================================================================
+function Select-WorktreeInteractive {
+    param([string]$ContextDir)
+
+    Push-Location $ContextDir
+    try {
+        $raw = git worktree list --porcelain 2>$null
+    } finally {
+        Pop-Location
+    }
+    if (-not $raw) { throw "git worktree list failed — not a git repo?" }
+
+    $paths = @()
+    foreach ($line in $raw) {
+        if ($line -like 'worktree *') { $paths += $line.Substring(9) }
+    }
+    if ($paths.Count -eq 0) { throw "No worktrees found" }
+
+    Write-Host ""
+    Write-Host "Available worktrees:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt $paths.Count; $i++) {
+        Write-Host ("  [{0}] {1}" -f $i, $paths[$i])
+    }
+    Write-Host ""
+    $choice = Read-Host "Pick a worktree (0-$($paths.Count - 1))"
+    $idx = 0
+    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 0 -or $idx -ge $paths.Count) {
+        throw "Invalid choice: $choice"
+    }
+    return $paths[$idx]
+}
+
+if ($Pick) {
+    $RepoRoot = Select-WorktreeInteractive -ContextDir $ScriptDir
+} elseif ($Target) {
+    if (-not (Test-Path $Target)) { throw "Target not found: $Target" }
+    $RepoRoot = (Get-Item $Target).FullName
+} else {
+    $RepoRoot = Split-Path $ScriptDir
+}
+
+Write-Host "Repo: $RepoRoot" -ForegroundColor DarkGray
+
 $ProjectDir = Join-Path $RepoRoot 'src\WhispUI'
 $Csproj     = Join-Path $ProjectDir 'WhispUI.csproj'
 $ExePath    = Join-Path $ProjectDir "bin\x64\$Configuration\net10.0-windows10.0.19041.0\WhispUI.exe"
+
+if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$RepoRoot' a WhispUI repo?" }
+
+# =============================================================================
+# Worktree junctions for gitignored folders
+# -----------------------------------------------------------------------------
+# `native/` (whisper.cpp DLLs, MinGW runtime) and `models/` (Whisper .bin)
+# are gitignored, so a fresh git worktree doesn't have them. The csproj
+# references `..\..\native\*.dll` with PreserveNewest, so an empty path
+# silently produces an exe without the transcription engine.
+#
+# When running from a worktree, resolve the main repo via
+# `git rev-parse --git-common-dir` and junction the missing folders.
+# No-op when running from the main repo or when git is unavailable.
+# =============================================================================
+function Ensure-WorktreeJunctions {
+    param([string]$RepoRoot)
+
+    $needed = @('native', 'models')
+    $missing = @($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })
+    if ($missing.Count -eq 0) { return }
+
+    Push-Location $RepoRoot
+    try {
+        $commonDir = git rev-parse --git-common-dir 2>$null
+    } catch {
+        return
+    } finally {
+        Pop-Location
+    }
+    if (-not $commonDir) { return }
+
+    if (-not [System.IO.Path]::IsPathRooted($commonDir)) {
+        $commonDir = Join-Path $RepoRoot $commonDir
+    }
+    $mainRepo = (Get-Item (Split-Path $commonDir)).FullName
+
+    if ($mainRepo -eq (Get-Item $RepoRoot).FullName) {
+        # Main repo — the folders are genuinely missing, not a worktree gap.
+        return
+    }
+
+    foreach ($folder in $missing) {
+        $source = Join-Path $mainRepo $folder
+        $target = Join-Path $RepoRoot $folder
+        if (-not (Test-Path $source)) {
+            Write-Host "Worktree junction skipped ($folder not in main repo): $source" -ForegroundColor Yellow
+            continue
+        }
+        Write-Host "Creating junction: $target -> $source" -ForegroundColor Cyan
+        New-Item -ItemType Junction -Path $target -Value $source | Out-Null
+    }
+}
+
+Ensure-WorktreeJunctions -RepoRoot $RepoRoot
 
 # =============================================================================
 # MSBuild configuration
