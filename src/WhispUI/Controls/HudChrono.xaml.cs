@@ -1,4 +1,5 @@
 using System.Numerics;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
@@ -56,6 +57,16 @@ public sealed partial class HudChrono : UserControl
             if (_tSec2) Sec2.Foreground = _digitAccentBrush;
             if (_tCs1)  Cs1.Foreground  = _digitAccentBrush;
             if (_tCs2)  Cs2.Foreground  = _digitAccentBrush;
+
+            // Transcribing exposure is theme-aware (Dark vs Light split).
+            // Re-apply the variant on live theme change so the arc
+            // brightness matches the new substrate immediately.
+            if (_state == HudState.Transcribing && _processingStroke != null)
+            {
+                _processingStroke.ApplyVariant(
+                    ProcessingVariant.Transcribing,
+                    ChronoRoot.ActualTheme == ElementTheme.Dark);
+            }
         };
     }
 
@@ -154,7 +165,7 @@ public sealed partial class HudChrono : UserControl
         UpdateClock();
         ResetDigitAccent();
 
-        AttachProcessingVisual(HudCompositionKind.Transcribing);
+        AttachProcessingVisual(ProcessingVariant.Transcribing);
     }
 
     private void ApplyRewriting()
@@ -165,7 +176,7 @@ public sealed partial class HudChrono : UserControl
         UpdateClock();
         ResetDigitAccent();
 
-        AttachProcessingVisual(HudCompositionKind.Rewriting);
+        AttachProcessingVisual(ProcessingVariant.Rewriting);
     }
 
     // Drops the per-digit "ever-changed" accent flags and clears the local
@@ -204,32 +215,50 @@ public sealed partial class HudChrono : UserControl
     // on subsequent layout passes — acceptable here because Charging/Recording
     // always resets the surface, and Transcribing/Rewriting only fire after
     // at least one full chrono measure.
+    //
+    // Single persistent stroke, live-modulated variants. The stroke is
+    // created once on first enter into a processing state; subsequent
+    // state changes (Transcribing ↔ Rewriting) call ApplyVariant on the
+    // SAME visual, which blends SaturationEffect / HueRotationEffect /
+    // ExposureEffect properties over a config-driven BlendSeconds — no
+    // surface rebuild, no GC hit, no lag. See HudComposition for the
+    // variant knob list and defaults.
 
-    private enum HudCompositionKind { Transcribing, Rewriting }
+    private HudComposition.ProcessingStroke? _processingStroke;
 
-    private void AttachProcessingVisual(HudCompositionKind kind)
+    private void AttachProcessingVisual(ProcessingVariant variant)
     {
-        float w = (float)ProcessingSurfaceHost.ActualWidth;
-        float h = (float)ProcessingSurfaceHost.ActualHeight;
-        if (w == 0f || h == 0f) { w = 272f; h = 78f; }
-        var size = new Vector2(w, h);
+        bool isDark = ChronoRoot.ActualTheme == ElementTheme.Dark;
 
-        var compositor = ElementCompositionPreview
-            .GetElementVisual(ProcessingSurfaceHost).Compositor;
-
-        var visual = kind switch
+        if (_processingStroke == null)
         {
-            HudCompositionKind.Transcribing => HudComposition.CreateTranscribingStroke(compositor, size),
-            HudCompositionKind.Rewriting    => HudComposition.CreateRewritingStroke(compositor, size),
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-        };
+            var compositor = ElementCompositionPreview
+                .GetElementVisual(ProcessingSurfaceHost).Compositor;
 
-        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, visual);
+            float w = (float)ProcessingSurfaceHost.ActualWidth;
+            float h = (float)ProcessingSurfaceHost.ActualHeight;
+            if (w == 0f || h == 0f) { w = 272f; h = 78f; }
+            var size = new Vector2(w, h);
+
+            _processingStroke = HudComposition.CreateProcessingStroke(compositor, size);
+            ElementCompositionPreview.SetElementChildVisual(
+                ProcessingSurfaceHost, _processingStroke.Visual);
+        }
+
+        // First-ever attach starts at the baked-in Rewriting baseline; the
+        // call below smoothly blends to the requested variant. Subsequent
+        // attaches (state change on the already-attached visual) blend
+        // from the previous variant to the new one — same code path.
+        _processingStroke.ApplyVariant(variant, isDark);
     }
 
     private void DetachProcessingVisual()
     {
+        if (_processingStroke == null) return;
+
         ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, null);
+        _processingStroke.Dispose();
+        _processingStroke = null;
     }
 
     private void HookRendering()
