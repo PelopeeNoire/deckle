@@ -1,0 +1,26 @@
+{
+    // WhispUI build profiles — un profil par emplacement.
+    // À régénérer quand un worktree est ajouté / supprimé.
+    //
+    // Select from the Run and Debug panel (Ctrl+Shift+D), then F5.
+    // Uses the PowerShell extension (ms-vscode.powershell).
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Build: main",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/scripts/build-run.ps1",
+            "args": [ "-Target", "D:\\projects\\ai\\transcription" ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Build: worktree dazzling-hawking-f95387",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/scripts/build-run.ps1",
+            "args": [ "-Target", "D:\\worktrees\\transcription\\dazzling-hawking-f95387" ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
