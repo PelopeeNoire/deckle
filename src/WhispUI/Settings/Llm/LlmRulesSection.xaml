@@ -13,15 +13,15 @@
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
                    Margin="1,0,0,8"
-                   Text="When you use the plain transcription shortcut (Alt+`), long recordings are automatically rewritten. Pick the metric that drives the rule below, then define thresholds. Rules are listed from shortest to longest — evaluation picks the longest matching threshold first." />
+                   Text="When you use the plain transcription shortcut (Alt+`), long recordings are automatically rewritten. Pick the metric that drives the rule below, then define thresholds." />
 
         <controls:SettingsCard Header="Rule metric"
-                               Description="Word count matches LLM context load more directly than wall-clock duration (slow dictations and rapid ones don't cost the same even at equal length).">
+                               Description="Word count reflects LLM context load more directly than wall-clock duration.">
             <RadioButtons x:Name="MetricRadios"
                           SelectionChanged="MetricRadios_SelectionChanged"
                           MaxColumns="2">
-                <x:String>By word count</x:String>
-                <x:String>By recording duration</x:String>
+                <x:String>Word count</x:String>
+                <x:String>Duration</x:String>
             </RadioButtons>
         </controls:SettingsCard>
 
