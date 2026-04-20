@@ -17,6 +17,22 @@ public sealed partial class LlmGeneralSection : UserControl
 
     public event EventHandler? EndpointChanged;
 
+    // Exposed as a DependencyProperty so LlmPage can bind the IsEnabled of
+    // dependent sections (endpoint, shortcut slots, rules, profiles, models)
+    // to this master toggle via x:Bind OneWay.
+    public static readonly DependencyProperty IsRewritingEnabledProperty =
+        DependencyProperty.Register(
+            nameof(IsRewritingEnabled),
+            typeof(bool),
+            typeof(LlmGeneralSection),
+            new PropertyMetadata(false));
+
+    public bool IsRewritingEnabled
+    {
+        get => (bool)GetValue(IsRewritingEnabledProperty);
+        private set => SetValue(IsRewritingEnabledProperty, value);
+    }
+
     public LlmGeneralSection()
     {
         InitializeComponent();
@@ -28,6 +44,7 @@ public sealed partial class LlmGeneralSection : UserControl
         var s = SettingsService.Instance.Current.Llm;
         EnabledToggle.IsOn = s.Enabled;
         EndpointBox.Text = s.OllamaEndpoint;
+        IsRewritingEnabled = s.Enabled;
         _loading = false;
     }
 
@@ -36,6 +53,7 @@ public sealed partial class LlmGeneralSection : UserControl
         if (_loading) return;
         SettingsService.Instance.Current.Llm.Enabled = EnabledToggle.IsOn;
         SettingsService.Instance.Save();
+        IsRewritingEnabled = EnabledToggle.IsOn;
     }
 
     private void EndpointBox_TextChanged(object sender, TextChangedEventArgs e)

@@ -18,7 +18,8 @@
 
         <controls:SettingsExpander Header="Ollama endpoint"
                                    Description="The URL of your local Ollama instance."
-                                   HeaderIcon="{ui:FontIcon Glyph=&#xE968;}">
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE968;}"
+                                   IsEnabled="{x:Bind IsRewritingEnabled, Mode=OneWay}">
             <controls:SettingsExpander.Items>
                 <controls:SettingsCard ContentAlignment="Vertical">
                     <TextBox x:Name="EndpointBox"
