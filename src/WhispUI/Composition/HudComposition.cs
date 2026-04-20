@@ -100,8 +100,8 @@ internal static class HudComposition
         //   EaseP1/P2     — cubic-bezier control points. (0,0,1,1) linear,
         //                   (0.42,0,0.58,1) standard ease-in-out, sharper
         //                   curves give bigger speed contrast.
-        //   RotationFloor — guarantees minimum velocity even on the eased
-        //                   plateaus. See StartRotation header for the
+        //   VelocityFloor — guarantees minimum angular velocity even on the
+        //                   eased plateaus. See StartRotation header for the
         //                   full UX explanation. Hue can ease freely (the
         //                   eye doesn't track the colour wheel directly).
         public double HuePeriodSeconds   { get; init; } = 8.0;
@@ -111,7 +111,7 @@ internal static class HudComposition
         public float  HueEaseP1Y         { get; init; } = 0f;
         public float  HueEaseP2X         { get; init; } = 0.8f;
         public float  HueEaseP2Y         { get; init; } = 1f;
-        public float  HueRotationFloor   { get; init; } = 0f;
+        public float  HueVelocityFloor   { get; init; } = 0f;
 
         // ── Arc mask shape ───────────────────────────────────────────────
         // White pie slice in [0, 2π·Span] composited with the conic via
@@ -154,9 +154,10 @@ internal static class HudComposition
         //   Direction     — +1 CW, -1 CCW.
         //   PhaseTurns    — start offset in turns.
         //   EaseP1/P2     — cubic-bezier control points (see Hue).
-        //   RotationFloor — floor for the arc. The arc is the silhouette
-        //                   the eye tracks — keep this floor higher than
-        //                   the hue's so a "freeze" never reads as a bug.
+        //   VelocityFloor — angular-velocity floor for the arc. The arc is
+        //                   the silhouette the eye tracks — keep this floor
+        //                   higher than the hue's so a "freeze" never reads
+        //                   as a bug.
         public double ArcPeriodSeconds   { get; init; } = 8.0;
         public float  ArcDirection       { get; init; } = -1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
@@ -164,7 +165,7 @@ internal static class HudComposition
         public float  ArcEaseP1Y         { get; init; } = 0f;
         public float  ArcEaseP2X         { get; init; } = 0.2f;
         public float  ArcEaseP2Y         { get; init; } = 1f;
-        public float  ArcRotationFloor   { get; init; } = 0f;
+        public float  ArcVelocityFloor   { get; init; } = 0f;
 
         // No base stroke layer — the permanent HUD outline is the DWM
         // frame (DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT in HudWindow),
@@ -605,7 +606,7 @@ internal static class HudComposition
             cfg.HuePhaseTurns,
             cfg.HueEaseP1X, cfg.HueEaseP1Y,
             cfg.HueEaseP2X, cfg.HueEaseP2Y,
-            cfg.HueRotationFloor);
+            cfg.HueVelocityFloor);
 
         StartRotation(
             compositor, arcMaskBrush, visualCentre,
@@ -614,7 +615,7 @@ internal static class HudComposition
             cfg.ArcPhaseTurns,
             cfg.ArcEaseP1X, cfg.ArcEaseP1Y,
             cfg.ArcEaseP2X, cfg.ArcEaseP2Y,
-            cfg.ArcRotationFloor);
+            cfg.ArcVelocityFloor);
 
         // ── Effect graph ─────────────────────────────────────────────────
         //   Conic ──► Sat ──► Hue ──► Exp ──► AlphaMask(Arc) ──► AlphaMask(Stroke)
