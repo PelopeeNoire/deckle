@@ -81,6 +81,11 @@
                               SelectionChanged="AudioInputCombo_SelectionChanged" />
                 </controls:SettingsCard>
 
+                <controls:SettingsCard Header="Auto-paste after transcription"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
                 <controls:SettingsExpander Header="Show the overlay while recording"
                                            Description="A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
