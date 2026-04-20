@@ -75,11 +75,14 @@ internal class LlmService
 
             // Polling task: hits /api/ps every 60 s while we wait for
             // /api/generate to return — turns the silent wait into a visible
-            // narrative ("Ollama busy — model X resident...") so the user
-            // knows the engine is still working. Cancelled via pollDone in the
+            // warning ("Ollama busy — model X resident...") so the user
+            // knows the engine is still working. Classified Warning (not
+            // Narrative) because the polling only fires at all if /api/generate
+            // hasn't returned after POLL_INTERVAL — by definition an unusually
+            // long wait the user should notice. Cancelled via pollDone in the
             // finally block as soon as the request settles.
             using var pollDone = new CancellationTokenSource();
-            var pollingTask = Task.Run(() => PollOllamaWhileBusy(endpoint, pollDone.Token));
+            var pollingTask = Task.Run(() => PollOllamaWhileBusy(endpoint, sw, pollDone.Token));
 
             HttpResponseMessage response;
             try
@@ -126,11 +129,14 @@ internal class LlmService
 
     /// <summary>
     /// Periodically probes Ollama's /api/ps while a /api/generate call is in
-    /// flight. Emits a Narrative every POLL_INTERVAL describing the resident
-    /// model — gives the user feedback during a long wait. Stops cleanly when
-    /// <paramref name="ct"/> is cancelled by the caller.
+    /// flight. Emits a Warning every POLL_INTERVAL describing the resident
+    /// model and the elapsed wait — gives the user feedback during a long
+    /// wait. Warning (not Narrative) because the polling only starts after
+    /// POLL_INTERVAL has elapsed without a response, which is by definition
+    /// an unusual delay. Stops cleanly when <paramref name="ct"/> is cancelled
+    /// by the caller.
     /// </summary>
-    static async Task PollOllamaWhileBusy(string endpoint, CancellationToken ct)
+    static async Task PollOllamaWhileBusy(string endpoint, System.Diagnostics.Stopwatch requestElapsed, CancellationToken ct)
     {
         string psUrl = NormalizePsUrl(endpoint);
         using var timer = new PeriodicTimer(POLL_INTERVAL);
@@ -166,17 +172,26 @@ internal class LlmService
                         : 0;
                     double vramGb = sizeVram / 1e9;
 
-                    string suffix = "";
+                    // `expires_at` is Ollama's keep_alive countdown for the
+                    // resident model (= 5 min after the last request here).
+                    // Rendered as "unloads in Xs" to keep it distinct from
+                    // the 15-min REWRITE_HARD_CAP on our side — both are
+                    // durations but they mean different things.
+                    string unloadSuffix = "";
                     if (first.TryGetProperty("expires_at", out var exp) &&
                         exp.ValueKind == JsonValueKind.String &&
                         DateTime.TryParse(exp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var expAt))
                     {
                         var rem = expAt.ToUniversalTime() - DateTime.UtcNow;
                         if (rem.TotalSeconds > 0)
-                            suffix = $", expires in {rem.TotalSeconds:F0}s";
+                            unloadSuffix = $", unloads in {rem.TotalSeconds:F0}s";
                     }
 
-                    _log.Narrative(LogSource.Llm, $"Ollama busy — {name} resident ({vramGb:F1} GB{suffix})");
+                    double waitedSeconds = requestElapsed.Elapsed.TotalSeconds;
+                    double capMinutes    = REWRITE_HARD_CAP.TotalMinutes;
+                    _log.Warning(
+                        LogSource.Llm,
+                        $"Ollama busy — {name} resident ({vramGb:F1} GB{unloadSuffix}). Waited {waitedSeconds:F0}s so far (giving up at {capMinutes:F0} min).");
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
