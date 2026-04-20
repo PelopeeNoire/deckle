@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 using WhispUI.Composition;
 
 namespace WhispUI.Controls;
@@ -67,6 +68,11 @@ public sealed partial class HudChrono : UserControl
                     ProcessingVariant.Transcribing,
                     ChronoRoot.ActualTheme == ElementTheme.Dark);
             }
+
+            // Recording outline is a single opaque theme-coloured stroke —
+            // Retheme swaps the ColorBrush live so a dark↔light flip mid-
+            // recording doesn't leave the outline stuck on the old palette.
+            _recordingOutline?.Retheme(ResolvePrimaryTextColor());
         };
     }
 
@@ -79,6 +85,14 @@ public sealed partial class HudChrono : UserControl
     private static Brush ResolveNeutralBrush() =>
         (Application.Current.Resources["TextFillColorTertiaryBrush"] as Brush)
         ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
+
+    // Theme colour for the recording outline. Uses TextFillColorPrimary
+    // (white on dark, black on light, with the brush's built-in contrast
+    // alpha). Returned as a raw Windows.UI.Color because CompositionColorBrush
+    // takes Color, not Brush.
+    private static Color ResolvePrimaryTextColor() =>
+        (Application.Current.Resources["TextFillColorPrimaryBrush"] as SolidColorBrush)?.Color
+        ?? Microsoft.UI.Colors.White;
 
     // Single state-driven entry point. Called by HudWindow.SetState.
     internal void ApplyState(HudState next)
@@ -122,13 +136,18 @@ public sealed partial class HudChrono : UserControl
         Cs1.Foreground  = neutral; Cs2.Foreground  = neutral;
 
         DetachProcessingVisual();
+        DetachRecordingOutline();
     }
 
     private void ApplyRecording()
     {
         _stopwatch.Restart();
 
+        // Both overlays are mutually exclusive on ProcessingSurfaceHost —
+        // detach any lingering processing stroke before attaching the
+        // recording outline.
         DetachProcessingVisual();
+        AttachRecordingOutline();
 
         _lastMin = _lastSec = _lastCs = -1;
         _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
@@ -165,6 +184,7 @@ public sealed partial class HudChrono : UserControl
         UpdateClock();
         ResetDigitAccent();
 
+        DetachRecordingOutline();
         AttachProcessingVisual(ProcessingVariant.Transcribing);
     }
 
@@ -176,6 +196,7 @@ public sealed partial class HudChrono : UserControl
         UpdateClock();
         ResetDigitAccent();
 
+        DetachRecordingOutline();
         AttachProcessingVisual(ProcessingVariant.Rewriting);
     }
 
@@ -201,6 +222,7 @@ public sealed partial class HudChrono : UserControl
         UnhookRendering();
 
         DetachProcessingVisual();
+        DetachRecordingOutline();
     }
 
     // ── Composition stroke attach ─────────────────────────────────────────────
@@ -262,6 +284,71 @@ public sealed partial class HudChrono : UserControl
         ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, null);
         _processingStroke.Dispose();
         _processingStroke = null;
+    }
+
+    // ── Recording outline attach + audio-level pump ───────────────────────────
+    //
+    // ProcessingSurfaceHost doubles as the attach point for the recording
+    // outline during HudState.Recording — the two overlays are mutually
+    // exclusive so there's no z-order conflict. The outline is a single
+    // theme-coloured stroke with opacity animated off a PropertySet scalar;
+    // HudWindow.OnAudioLevel forwards engine mic RMS to UpdateAudioLevel,
+    // which EMAs the signal (τ ≈ 1 s at 20 Hz) and pushes the smoothed
+    // value into the PropertySet. See HudComposition.RecordingOutline.
+    //
+    // EmaAlpha 0.95 at 20 Hz source → τ = -T / ln(alpha) ≈ 0.05 / 0.0513
+    // ≈ 0.97 s. Dominates the Composition-side 50 ms micro-keyframes, so
+    // the outline rise/fall is what the user perceives, not the sample
+    // grid.
+    private HudComposition.RecordingOutline? _recordingOutline;
+    private float _smoothedLevel;
+    private const float EmaAlpha = 0.95f;
+
+    // Forwarded from HudWindow.OnAudioLevel. Called from the recording
+    // audio thread. No-op if the outline is not attached (any non-Recording
+    // state), so the engine event can stay subscribed permanently.
+    // CompositionPropertySet updates are thread-safe per Composition's
+    // contract — no DispatcherQueue marshalling.
+    internal void UpdateAudioLevel(float rms)
+    {
+        if (_recordingOutline is null) return;
+        _smoothedLevel = _smoothedLevel * EmaAlpha + rms * (1f - EmaAlpha);
+        _recordingOutline.UpdateLevel(_smoothedLevel);
+    }
+
+    private void AttachRecordingOutline()
+    {
+        if (_recordingOutline != null) return;
+
+        // Reset the EMA accumulator so leftover energy from the previous
+        // recording session doesn't seed the new outline with a non-zero
+        // opacity floor.
+        _smoothedLevel = 0f;
+
+        var compositor = ElementCompositionPreview
+            .GetElementVisual(ProcessingSurfaceHost).Compositor;
+
+        // Same fallback dims as AttachProcessingVisual — ActualWidth/Height
+        // are 0 before the first measure pass, and the surface host is a
+        // fixed-size Border so the fallback matches its layout rect.
+        float w = (float)ProcessingSurfaceHost.ActualWidth;
+        float h = (float)ProcessingSurfaceHost.ActualHeight;
+        if (w == 0f || h == 0f) { w = 272f; h = 78f; }
+        var size = new Vector2(w, h);
+
+        _recordingOutline = HudComposition.CreateRecordingOutline(
+            compositor, size, ResolvePrimaryTextColor());
+        ElementCompositionPreview.SetElementChildVisual(
+            ProcessingSurfaceHost, _recordingOutline.Visual);
+    }
+
+    private void DetachRecordingOutline()
+    {
+        if (_recordingOutline is null) return;
+
+        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, null);
+        _recordingOutline.Dispose();
+        _recordingOutline = null;
     }
 
     private void HookRendering()

@@ -150,6 +150,14 @@ public partial class App : Microsoft.UI.Xaml.Application
         // redistributes activation while Ctrl+V is still in the target's input queue.
         _engine.OnReadyToPaste = () => _hudWindow.HideSync();
 
+        // Mic RMS → HUD recording outline. Fires ~20 Hz from the recording
+        // audio thread; OnAudioLevel pushes into a CompositionPropertySet,
+        // thread-safe per Composition's contract — no dispatcher needed.
+        // Method group so it can be unsubscribed symmetrically later if
+        // needed; no-op when the outline isn't attached (any non-Recording
+        // state), so permanent subscription is fine.
+        _engine.AudioLevel += _hudWindow.OnAudioLevel;
+
         // Initial status — model loads on-demand at first hotkey, not at startup.
         _tray.UpdateStatus("Ready");
         _log.Info(LogSource.Status, "Ready");
