@@ -31,40 +31,52 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
         _loading = true;
         var s = SettingsService.Instance.Current.Llm;
 
-        // Primary: every defined profile, default to the first if the saved
-        // name no longer matches any profile (e.g. user renamed it).
+        // Primary: every defined profile. Match the saved slot first by stable
+        // ProfileId (survives renames), then fall back to ProfileName for
+        // pre-migration configs.
         PrimaryRewriteProfileCombo.Items.Clear();
-        int primaryIndex = -1;
+        int primaryIndex = ResolveSlotIndex(s, s.PrimaryRewriteProfileId, s.PrimaryRewriteProfileName);
         for (int i = 0; i < s.Profiles.Count; i++)
-        {
             PrimaryRewriteProfileCombo.Items.Add(new ComboBoxItem { Content = s.Profiles[i].Name });
-            if (string.Equals(s.Profiles[i].Name, s.PrimaryRewriteProfileName, StringComparison.OrdinalIgnoreCase))
-                primaryIndex = i;
-        }
         PrimaryRewriteProfileCombo.SelectedIndex = primaryIndex >= 0 ? primaryIndex
             : (s.Profiles.Count > 0 ? 0 : -1);
 
         // Secondary: same list prefixed with "(None)". Default to (None) when
-        // the saved name is null/blank or no longer resolves.
+        // nothing resolves.
         SecondaryRewriteProfileCombo.Items.Clear();
         SecondaryRewriteProfileCombo.Items.Add(new ComboBoxItem { Content = NoneSentinel });
-        int secondaryIndex = 0; // (None) at index 0
         for (int i = 0; i < s.Profiles.Count; i++)
-        {
             SecondaryRewriteProfileCombo.Items.Add(new ComboBoxItem { Content = s.Profiles[i].Name });
-            if (!string.IsNullOrWhiteSpace(s.SecondaryRewriteProfileName) &&
-                string.Equals(s.Profiles[i].Name, s.SecondaryRewriteProfileName, StringComparison.OrdinalIgnoreCase))
-                secondaryIndex = i + 1;
-        }
-        SecondaryRewriteProfileCombo.SelectedIndex = secondaryIndex;
+        int secondaryIndex = ResolveSlotIndex(s, s.SecondaryRewriteProfileId, s.SecondaryRewriteProfileName);
+        SecondaryRewriteProfileCombo.SelectedIndex = secondaryIndex >= 0 ? secondaryIndex + 1 : 0;
 
         _loading = false;
+    }
+
+    private static int ResolveSlotIndex(LlmSettings s, string? id, string? name)
+    {
+        if (!string.IsNullOrEmpty(id))
+        {
+            for (int i = 0; i < s.Profiles.Count; i++)
+                if (s.Profiles[i].Id == id) return i;
+        }
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            for (int i = 0; i < s.Profiles.Count; i++)
+                if (string.Equals(s.Profiles[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    return i;
+        }
+        return -1;
     }
 
     private void PrimaryRewriteProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || PrimaryRewriteProfileCombo.SelectedItem is not ComboBoxItem item) return;
-        SettingsService.Instance.Current.Llm.PrimaryRewriteProfileName = item.Content?.ToString() ?? "";
+        var s = SettingsService.Instance.Current.Llm;
+        string name = item.Content?.ToString() ?? "";
+        s.PrimaryRewriteProfileName = name;
+        s.PrimaryRewriteProfileId = s.Profiles.Find(p =>
+            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
         SettingsService.Instance.Save();
     }
 
@@ -72,8 +84,11 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
     {
         if (_loading || SecondaryRewriteProfileCombo.SelectedItem is not ComboBoxItem item) return;
         string? content = item.Content?.ToString();
-        SettingsService.Instance.Current.Llm.SecondaryRewriteProfileName =
-            string.Equals(content, NoneSentinel, StringComparison.Ordinal) ? null : content;
+        var s = SettingsService.Instance.Current.Llm;
+        bool none = string.Equals(content, NoneSentinel, StringComparison.Ordinal);
+        s.SecondaryRewriteProfileName = none ? null : content;
+        s.SecondaryRewriteProfileId = none ? null : s.Profiles.Find(p =>
+            string.Equals(p.Name, content, StringComparison.OrdinalIgnoreCase))?.Id;
         SettingsService.Instance.Save();
     }
 }

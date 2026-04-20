@@ -84,6 +84,28 @@ public partial class GeneralViewModel : ObservableObject
         App.ApplyTheme(value);
     }
 
+    // ── Diagnostics ──────────────────────────────────────────────────────────
+
+    [ObservableProperty]
+    public partial bool CorpusLoggingEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial string CorpusDataDirectory { get; set; }
+
+    partial void OnCorpusLoggingEnabledChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"CorpusLogging.Enabled ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnCorpusDataDirectoryChanged(string value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"CorpusLogging.DataDirectory ← \"{value}\"");
+        PushToSettings();
+    }
+
     // ── Sync with SettingsService ────────────────────────────────────────────
 
     public GeneralViewModel()
@@ -99,6 +121,8 @@ public partial class GeneralViewModel : ObservableObject
         OverlayPosition = "BottomCenter";
         StartMinimized = true;
         Theme = "System";
+        CorpusLoggingEnabled = false;
+        CorpusDataDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
     }
@@ -115,6 +139,8 @@ public partial class GeneralViewModel : ObservableObject
             OverlayPosition = s.Overlay.Position;
             StartMinimized = s.Startup.StartMinimized;
             Theme = s.Appearance.Theme;
+            CorpusLoggingEnabled = s.CorpusLogging.Enabled;
+            CorpusDataDirectory = s.CorpusLogging.DataDirectory;
         }
         finally
         {
@@ -131,6 +157,8 @@ public partial class GeneralViewModel : ObservableObject
         s.Overlay.Position = OverlayPosition;
         s.Startup.StartMinimized = StartMinimized;
         s.Appearance.Theme = Theme;
+        s.CorpusLogging.Enabled = CorpusLoggingEnabled;
+        s.CorpusLogging.DataDirectory = CorpusDataDirectory ?? "";
         SettingsService.Instance.Save();
     }
 }

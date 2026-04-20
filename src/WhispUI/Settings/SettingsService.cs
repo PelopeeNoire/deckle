@@ -80,6 +80,7 @@ public sealed class SettingsService
             if (!File.Exists(_configPath))
             {
                 var defaults = new AppSettings();
+                MigrateProfileIds(defaults);
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(defaults, _jsonOptions));
                 return defaults;
             }
@@ -95,8 +96,9 @@ public sealed class SettingsService
             //   • slotBProfileName          → secondaryRewriteProfileName (primary/secondary rename, 2026-04-16)
             (json, migrated) = MigrateLegacyKeys(json);
 
-            var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
-            return parsed ?? new AppSettings();
+            var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
+            if (MigrateProfileIds(parsed)) migrated = true;
+            return parsed;
         }
         catch (Exception ex)
         {
@@ -153,6 +155,76 @@ public sealed class SettingsService
             DebugLog.Write("SETTINGS", $"migration skipped: {ex.GetType().Name}: {ex.Message}");
         }
         return (json, false);
+    }
+
+    // Fills stable ids where missing: each RewriteProfile gets a 12-char Guid
+    // suffix, and AutoRewriteRules / shortcut slots get their ProfileId resolved
+    // from ProfileName. Returns true if anything was mutated so the caller can
+    // flush the rewritten config to disk on first launch after upgrade.
+    // Internal (not private) so page-level resets can re-run the migration
+    // against a freshly-instantiated LlmSettings block.
+    internal static bool MigrateProfileIds(AppSettings s)
+    {
+        bool mutated = false;
+
+        foreach (var p in s.Llm.Profiles)
+        {
+            if (string.IsNullOrWhiteSpace(p.Id))
+            {
+                p.Id = Guid.NewGuid().ToString("N").Substring(0, 12);
+                mutated = true;
+            }
+        }
+
+        string? IdForName(string? name) =>
+            string.IsNullOrWhiteSpace(name)
+                ? null
+                : s.Llm.Profiles.Find(p =>
+                    string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
+
+        foreach (var rule in s.Llm.AutoRewriteRules)
+        {
+            if (!string.IsNullOrEmpty(rule.ProfileId)) continue;
+            string? resolved = IdForName(rule.ProfileName);
+            if (resolved is not null)
+            {
+                rule.ProfileId = resolved;
+                mutated = true;
+            }
+        }
+
+        foreach (var rule in s.Llm.AutoRewriteRulesByWords)
+        {
+            if (!string.IsNullOrEmpty(rule.ProfileId)) continue;
+            string? resolved = IdForName(rule.ProfileName);
+            if (resolved is not null)
+            {
+                rule.ProfileId = resolved;
+                mutated = true;
+            }
+        }
+
+        if (s.Llm.PrimaryRewriteProfileId is null)
+        {
+            string? resolved = IdForName(s.Llm.PrimaryRewriteProfileName);
+            if (resolved is not null)
+            {
+                s.Llm.PrimaryRewriteProfileId = resolved;
+                mutated = true;
+            }
+        }
+
+        if (s.Llm.SecondaryRewriteProfileId is null)
+        {
+            string? resolved = IdForName(s.Llm.SecondaryRewriteProfileName);
+            if (resolved is not null)
+            {
+                s.Llm.SecondaryRewriteProfileId = resolved;
+                mutated = true;
+            }
+        }
+
+        return mutated;
     }
 
     // Appelé par l'UI après chaque mutation. Ne bloque pas — debounce 300 ms
