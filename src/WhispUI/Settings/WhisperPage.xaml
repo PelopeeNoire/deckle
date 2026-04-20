@@ -207,7 +207,8 @@
 
                         <controls:SettingsCard x:Name="VadThresholdCard"
                                                Header="Detection threshold"
-                                               Description="How confident WhispUI must be that a sound is speech. Higher values filter more noise but may miss quiet speech. Default: 0.5.">
+                                               Description="How confident WhispUI must be that a sound is speech. Higher values filter more noise but may miss quiet speech. Default: 0.5."
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <Slider x:Name="VadThresholdSlider"
                                         Style="{StaticResource SettingSliderStyle}"
@@ -229,7 +230,8 @@
 
                         <controls:SettingsCard x:Name="VadMinSpeechCard"
                                                Header="Minimum speech duration"
-                                               Description="Sounds shorter than this (in milliseconds) are ignored. Raise to filter out short clicks and pops. Default: 250 ms.">
+                                               Description="Sounds shorter than this (in milliseconds) are ignored. Raise to filter out short clicks and pops. Default: 250 ms."
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <NumberBox x:Name="VadMinSpeechBox"
                                            Minimum="0"
@@ -249,7 +251,8 @@
 
                         <controls:SettingsCard x:Name="VadMinSilenceCard"
                                                Header="Minimum silence duration"
-                                               Description="Gaps shorter than this (in milliseconds) are kept as part of the same speech segment. Default: 500 ms.">
+                                               Description="Gaps shorter than this (in milliseconds) are kept as part of the same speech segment. Default: 500 ms."
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <NumberBox x:Name="VadMinSilenceBox"
                                            Minimum="0"
@@ -269,7 +272,8 @@
 
                         <controls:SettingsCard x:Name="VadMaxSpeechCard"
                                                Header="Maximum segment length"
-                                               Description="Force-split a continuous speech segment after this many seconds. Default: 30 s.">
+                                               Description="Force-split a continuous speech segment after this many seconds. Default: 30 s."
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <!-- Bug WinUI 3 release (net10 / trimming) :
                                      poser Minimum="5" ou Value="5" en XAML
@@ -301,7 +305,8 @@
 
                         <controls:SettingsCard x:Name="VadSpeechPadCard"
                                                Header="Speech padding"
-                                               Description="Extra audio (in milliseconds) kept before and after each detected segment, so words aren't clipped at the edges. Default: 200 ms.">
+                                               Description="Extra audio (in milliseconds) kept before and after each detected segment, so words aren't clipped at the edges. Default: 200 ms."
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <NumberBox x:Name="VadSpeechPadBox"
                                            Minimum="0"
@@ -321,7 +326,8 @@
 
                         <controls:SettingsCard x:Name="VadOverlapCard"
                                                Header="Window overlap"
-                                               Description="Fraction of overlap between consecutive analysis windows. Higher values catch fast transitions at a small CPU cost. Default: 0.1.">
+                                               Description="Fraction of overlap between consecutive analysis windows. Higher values catch fast transitions at a small CPU cost. Default: 0.1."
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <Slider x:Name="VadOverlapSlider"
                                         Style="{StaticResource SettingSliderStyle}"
