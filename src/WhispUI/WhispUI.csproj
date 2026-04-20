@@ -19,6 +19,23 @@
     <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
+  <!-- Release-only publish options. Debug keeps multi-file output for faster
+       iteration; single-file only matters when producing the distribution ZIP.
+       PublishSingleFile bundles the managed assemblies into WhispUI.exe.
+       Content files (native DLLs, Assets, models) stay alongside the exe —
+       IncludeNativeLibrariesForSelfExtract is NOT set on purpose so the
+       whisper.cpp / MinGW DLLs remain visible and swappable on disk.
+
+       PublishTrimmed is NOT enabled: WinUI 3 + XAML compilation + x:Bind
+       generated code rely on reflection paths the IL linker can't prove
+       safe. We already hit one trimming crash in the wild (Slider with a
+       range excluding 0 — see project_winui3_slider_bug.md). Trimming stays
+       off until there's a concrete size/perf motive AND a runtime test
+       matrix proves it safe. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
