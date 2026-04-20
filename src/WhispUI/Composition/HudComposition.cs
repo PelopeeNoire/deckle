@@ -832,4 +832,153 @@ internal static class HudComposition
             (byte)MathF.Round((g + m) * 255f),
             (byte)MathF.Round((b + m) * 255f));
     }
+
+    // ╔════════════════════════════════════════════════════════════════════╗
+    // ║  Recording outline — single theme-coloured stroke, opacity-driven  ║
+    // ╚════════════════════════════════════════════════════════════════════╝
+    //
+    // Attached to HudChrono.ProcessingSurfaceHost only during the Recording
+    // state. Its single animable channel is SpriteVisual.Opacity, bound to
+    // a PropertySet scalar "Level" via an ExpressionAnimation — the
+    // HudChrono consumer pushes EMA-smoothed mic RMS into Level, and the
+    // Composition renderthread (vsynced to the monitor refresh) interpolates
+    // between 20 Hz samples via short 50 ms KeyFrameAnimations. No C#-side
+    // framerate is fixed: 60 Hz and 240 Hz monitors both get a continuous
+    // ramp without code change.
+    //
+    // Detached before a ProcessingStroke (Transcribing / Rewriting) is
+    // attached on the same surface host — the two strokes never coexist,
+    // so they share the inset / radius / silhouette metrics for pixel
+    // compatibility but their attach is mutually exclusive.
+
+    // Live handle returned by CreateRecordingOutline. Callers hold onto it
+    // to push level updates (thread-safe from the recording thread) and to
+    // recolour the stroke when the UI theme flips at runtime.
+    internal sealed class RecordingOutline : IDisposable
+    {
+        public ContainerVisual Visual { get; }
+
+        private readonly Compositor _compositor;
+        private readonly CompositionPropertySet _props;
+        private readonly CompositionColorBrush _colorBrush;
+
+        internal RecordingOutline(
+            ContainerVisual visual,
+            Compositor compositor,
+            CompositionPropertySet props,
+            CompositionColorBrush colorBrush)
+        {
+            Visual      = visual;
+            _compositor = compositor;
+            _props      = props;
+            _colorBrush = colorBrush;
+        }
+
+        // Push a new target level in [0, 1]. Clamped, then animated with a
+        // 50 ms linear key-frame from the current value to the target.
+        // InsertExpressionKeyFrame("this.CurrentValue") makes successive
+        // overlapping calls blend naturally from wherever the previous
+        // animation had reached — no reset to 0, no step discontinuity.
+        //
+        // Composition contracts CompositionPropertySet + StartAnimation as
+        // thread-safe off the UI thread, so this can be called directly
+        // from the recording audio thread without marshalling. The render
+        // pipeline picks up the new animation at the next frame.
+        public void UpdateLevel(float level)
+        {
+            float clamped = Math.Clamp(level, 0f, 1f);
+            var anim = _compositor.CreateScalarKeyFrameAnimation();
+            anim.InsertExpressionKeyFrame(0f, "this.CurrentValue");
+            anim.InsertKeyFrame(1f, clamped);
+            anim.Duration = TimeSpan.FromMilliseconds(50);
+            _props.StartAnimation("Level", anim);
+        }
+
+        // Swap the stroke colour live. The caller resolves the new Color
+        // from a theme brush (TextFillColorPrimaryBrush in practice) on
+        // ActualThemeChanged and hands it in; the ColorBrush flip propagates
+        // through the AlphaMaskEffect pipeline at the next frame.
+        public void Retheme(Color color) => _colorBrush.Color = color;
+
+        public void Dispose() => Visual.Dispose();
+    }
+
+    // Build a RecordingOutline for the HUD surface. `color` is the resolved
+    // theme colour for the stroke (typically TextFillColorPrimary — white on
+    // dark, black on light). Inset / corner radius / thickness mirror
+    // CreateConicArcStroke so the two strokes paint on the exact same
+    // silhouette.
+    internal static RecordingOutline CreateRecordingOutline(
+        Compositor compositor, Vector2 hostSize, Color color)
+    {
+        var container = compositor.CreateContainerVisual();
+        container.Size = hostSize;
+
+        var innerSize = new Vector2(hostSize.X - 2f * InsetDip, hostSize.Y - 2f * InsetDip);
+        int pxW = Math.Max(1, (int)MathF.Ceiling(innerSize.X));
+        int pxH = Math.Max(1, (int)MathF.Ceiling(innerSize.Y));
+
+        var canvasDevice   = CanvasDevice.GetSharedDevice();
+        var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(compositor, canvasDevice);
+
+        // Stroke silhouette — same geometry as CreateConicArcStroke (the
+        // 15 lines are duplicated rather than factored into a shared helper
+        // to keep the two pipelines decoupled; refactor only if a third
+        // consumer appears).
+        var strokeMaskSurface = graphicsDevice.CreateDrawingSurface(
+            new Windows.Foundation.Size(pxW, pxH),
+            DirectXPixelFormat.B8G8R8A8UIntNormalized,
+            DirectXAlphaMode.Premultiplied);
+
+        using (var ds = CanvasComposition.CreateDrawingSession(strokeMaskSurface))
+        {
+            ds.Clear(Colors.Transparent);
+            var rect = new Windows.Foundation.Rect(
+                StrokeThickness / 2f,
+                StrokeThickness / 2f,
+                pxW - StrokeThickness,
+                pxH - StrokeThickness);
+            ds.DrawRoundedRectangle(rect, CornerRadiusDip, CornerRadiusDip, Colors.White, StrokeThickness);
+        }
+
+        var strokeMaskBrush = compositor.CreateSurfaceBrush(strokeMaskSurface);
+        strokeMaskBrush.Stretch = CompositionStretch.Fill;
+
+        // Plain opaque colour source — Retheme() mutates .Color live.
+        var colorBrush = compositor.CreateColorBrush(color);
+
+        // AlphaMaskEffect: output = (color.RGB, color.A * strokeMask.A).
+        // Non-silhouette pixels go transparent, silhouette pixels take the
+        // theme colour. SpriteVisual.Opacity multiplies in on top.
+        var effectGraph = new AlphaMaskEffect
+        {
+            Source    = new CompositionEffectSourceParameter("Color"),
+            AlphaMask = new CompositionEffectSourceParameter("Stroke"),
+        };
+        var effectFactory = compositor.CreateEffectFactory(effectGraph);
+        var effectBrush   = effectFactory.CreateBrush();
+        effectBrush.SetSourceParameter("Color",  colorBrush);
+        effectBrush.SetSourceParameter("Stroke", strokeMaskBrush);
+
+        var strokeVisual = compositor.CreateSpriteVisual();
+        strokeVisual.Size    = innerSize;
+        strokeVisual.Offset  = new Vector3(InsetDip, InsetDip, 0f);
+        strokeVisual.Brush   = effectBrush;
+        strokeVisual.Opacity = 0f;
+
+        // PropertySet scalar "Level" — the single live channel. Seeded at
+        // 0 so the outline spawns invisible; the first EMA-smoothed RMS
+        // push animates it up from there.
+        var props = compositor.CreatePropertySet();
+        props.InsertScalar("Level", 0f);
+
+        // Bind SpriteVisual.Opacity to props.Level — one ExpressionAnimation
+        // evaluated every Composition frame, no C# tick, no dispatcher.
+        var opacityExpr = compositor.CreateExpressionAnimation("props.Level");
+        opacityExpr.SetReferenceParameter("props", props);
+        strokeVisual.StartAnimation("Opacity", opacityExpr);
+
+        container.Children.InsertAtTop(strokeVisual);
+        return new RecordingOutline(container, compositor, props, colorBrush);
+    }
 }
