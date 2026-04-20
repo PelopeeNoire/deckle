@@ -52,6 +52,11 @@ public sealed class AppearanceSettings
 public sealed class StartupSettings
 {
     public bool StartMinimized { get; set; } = true;
+
+    // Run a silent dummy transcription at launch to warm up the Whisper model
+    // (load + first inference pay the heavy cost). The real first hotkey press
+    // then skips the cold start. Hidden from HUD and tray — pure background.
+    public bool WarmupOnLaunch { get; set; } = true;
 }
 
 // Overlay HUD affiché pendant l'enregistrement/transcription.

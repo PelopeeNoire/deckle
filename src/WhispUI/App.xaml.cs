@@ -150,6 +150,14 @@ public partial class App : Microsoft.UI.Xaml.Application
         _hotkeyManager.Register();
         DebugLog.Write("APP", "tray + hotkeys registered on message-only host");
 
+        // Silent warmup — runs a dummy transcription on a zero-filled buffer
+        // so the first real hotkey doesn't pay the cold model load + first
+        // inference cost. Fire-and-forget on a background thread; the engine
+        // gates HUD/TranscriptionFinished events internally during the
+        // warmup Transcribe() pass so nothing surfaces to the user.
+        if (Settings.SettingsService.Instance.Current.Startup.WarmupOnLaunch)
+            _engine.Warmup();
+
         // Apply saved theme (System/Light/Dark).
         ApplyTheme(Settings.SettingsService.Instance.Current.Appearance.Theme);
 

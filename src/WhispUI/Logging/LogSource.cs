@@ -13,6 +13,7 @@ public static class LogSource
 
     // ── Engine pipeline ──────────────────────────────────────────────────────
     public const string Hotkey     = "HOTKEY";
+    public const string Engine     = "ENGINE";
     public const string Model      = "MODEL";
     public const string Init       = "INIT";
     public const string Record     = "RECORD";
