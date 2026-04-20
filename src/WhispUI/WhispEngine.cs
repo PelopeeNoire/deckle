@@ -47,6 +47,25 @@ internal sealed class WhispEngine : IDisposable
     // mutation from WhispUI occurs while SendInput is in flight to the target.
     public Action? OnReadyToPaste { get; set; }
 
+    // All StatusChanged / TranscriptionFinished emissions route through these
+    // two helpers so the startup warmup can silence them in a single place
+    // instead of peppering the pipeline with if-checks. _isWarmup is set only
+    // around the Transcribe() call inside Warmup() — model load and other
+    // lifecycle events stay visible on the tray.
+    private volatile bool _isWarmup = false;
+
+    private void RaiseStatus(string status)
+    {
+        if (_isWarmup) return;
+        StatusChanged?.Invoke(status);
+    }
+
+    private void RaiseFinished(TranscriptionOutcome outcome)
+    {
+        if (_isWarmup) return;
+        TranscriptionFinished?.Invoke(outcome);
+    }
+
     // ── Configuration ─────────────────────────────────────────────────────────
 
     const string MODEL_FILE = "ggml-large-v3.bin";
@@ -383,7 +402,7 @@ internal sealed class WhispEngine : IDisposable
     /// </summary>
     private bool LoadModel()
     {
-        StatusChanged?.Invoke("Loading model");
+        RaiseStatus("Loading model");
 
         DebugLog.Write("ENGINE", "load started, path=" + _modelPath);
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -402,7 +421,7 @@ internal sealed class WhispEngine : IDisposable
                     "Whisper model not found",
                     $"File missing: {_modelPath}. Check settings.",
                     UserFeedbackSeverity.Error));
-            StatusChanged?.Invoke("Ready");
+            RaiseStatus("Ready");
             return false;
         }
         _log.Info(LogSource.Model, "init whisper_init_from_file_with_params (use_gpu=1)");
@@ -425,7 +444,7 @@ internal sealed class WhispEngine : IDisposable
                     "Failed to load model",
                     "Low GPU memory or corrupt file.",
                     UserFeedbackSeverity.Error));
-            StatusChanged?.Invoke("Ready");
+            RaiseStatus("Ready");
             return false;
         }
 
@@ -465,7 +484,7 @@ internal sealed class WhispEngine : IDisposable
             NativeMethods.whisper_free(_ctx);
             _ctx = IntPtr.Zero;
             _log.Success(LogSource.Model, $"Model unloaded after {MODEL_IDLE_TIMEOUT_MS / 1000}s idle (VRAM freed)");
-            StatusChanged?.Invoke("Ready");
+            RaiseStatus("Ready");
         }
     }
 
@@ -479,6 +498,69 @@ internal sealed class WhispEngine : IDisposable
         else
             _idleTimer.Change(MODEL_IDLE_TIMEOUT_MS, Timeout.Infinite);
         _log.Verbose(LogSource.Model, $"idle timer set ({MODEL_IDLE_TIMEOUT_MS / 1000}s)");
+    }
+
+    // ── Warmup ──────────────────────────────────────────────────────────────
+    //
+    // Runs a silent "first inference" at startup so the real first hotkey
+    // press doesn't pay the cold cost (context alloc + GPU warm + kernel
+    // compile + weight paging). We push 1.6 s of zero samples through the
+    // full Transcribe() path — long enough for Silero VAD to execute at
+    // least one window and for whisper_full to enter. With an all-zero
+    // buffer VAD returns 0 speech segments and whisper_full short-circuits
+    // before any decode, so the cost stays in the low-hundreds-of-ms range.
+    //
+    // StatusChanged / TranscriptionFinished are gated during Transcribe()
+    // via _isWarmup so the HUD never appears and the tray doesn't flash.
+    // LoadModel stays audible ("Loading model" → "Ready") because that's
+    // done before _isWarmup flips — useful signal on the tray that the
+    // engine is warming without any intrusive UI.
+    //
+    // Fire-and-forget on a background thread — the call site in
+    // App.OnLaunched must not block UI-thread startup. Named Warmup (not
+    // WarmupAsync) because the method returns void: the *Async suffix in
+    // C# is reserved for methods returning Task / ValueTask.
+    public void Warmup()
+    {
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                if (!EnsureModelLoaded())
+                {
+                    _log.Warning(LogSource.Engine, "warmup aborted — model load failed");
+                    return;
+                }
+
+                // 1.6 s at 16 kHz = 25 600 samples. Any buffer ≥ one VAD
+                // window works; 1.6 s keeps it well above the min-speech /
+                // min-silence thresholds exposed in Settings so the
+                // short-circuit triggers reliably whatever the user tuned.
+                float[] silentBuffer = new float[25_600];
+
+                _isWarmup = true;
+                try
+                {
+                    Transcribe(silentBuffer);
+                }
+                finally
+                {
+                    _isWarmup = false;
+                }
+
+                sw.Stop();
+                _log.Verbose(LogSource.Engine, $"warmup complete in {sw.ElapsedMilliseconds} ms");
+            }
+            catch (Exception ex)
+            {
+                _isWarmup = false;
+                _log.Error(LogSource.Engine, $"warmup failed: {ex.GetType().Name}: {ex.Message}");
+            }
+        });
+        thread.IsBackground = true;
+        thread.Start();
     }
 
     // ── Start recording ─────────────────────────────────────────────────────
@@ -529,17 +611,17 @@ internal sealed class WhispEngine : IDisposable
             {
                 if (!EnsureModelLoaded())
                 {
-                    TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+                    RaiseFinished(TranscriptionOutcome.None);
                     return;
                 }
 
                 _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-                StatusChanged?.Invoke("Recording");
+                RaiseStatus("Recording");
                 _log.Narrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
 
                 float[] audio = Record();
                 _isRecording = false;
-                StatusChanged?.Invoke("Transcribing");
+                RaiseStatus("Transcribing");
                 Transcribe(audio);
                 ResetIdleTimer();
             }
@@ -554,8 +636,8 @@ internal sealed class WhispEngine : IDisposable
                         "Unexpected error",
                         "Try again. If it persists, check the logs.",
                         UserFeedbackSeverity.Error));
-                StatusChanged?.Invoke("Ready");
-                TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+                RaiseStatus("Ready");
+                RaiseFinished(TranscriptionOutcome.None);
             }
             finally
             {
@@ -859,16 +941,16 @@ internal sealed class WhispEngine : IDisposable
         IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
         {
-            StatusChanged?.Invoke("Model not ready");
-            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+            RaiseStatus("Model not ready");
+            RaiseFinished(TranscriptionOutcome.None);
             return;
         }
 
         if (audio.Length == 0)
         {
             _log.Warning(LogSource.Transcribe, "empty audio buffer, nothing to transcribe");
-            StatusChanged?.Invoke("Ready");
-            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+            RaiseStatus("Ready");
+            RaiseFinished(TranscriptionOutcome.None);
             return;
         }
 
@@ -955,8 +1037,8 @@ internal sealed class WhispEngine : IDisposable
         if (result != 0)
         {
             _log.Error(LogSource.Transcribe, $"whisper_full returned code {result}");
-            StatusChanged?.Invoke("Erreur transcription");
-            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+            RaiseStatus("Erreur transcription");
+            RaiseFinished(TranscriptionOutcome.None);
             return;
         }
 
@@ -985,8 +1067,8 @@ internal sealed class WhispEngine : IDisposable
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
-            StatusChanged?.Invoke("Ready");
-            TranscriptionFinished?.Invoke(TranscriptionOutcome.None);
+            RaiseStatus("Ready");
+            RaiseFinished(TranscriptionOutcome.None);
             return;
         }
 
@@ -1061,7 +1143,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (profile is not null)
         {
-            StatusChanged?.Invoke($"Réécriture ({profile.Name})...");
+            RaiseStatus($"Réécriture ({profile.Name})...");
             _log.Narrative(LogSource.Llm, $"A local language model (Ollama) is now rewriting the transcript with the {profile.Name} profile.");
             var swLlm = System.Diagnostics.Stopwatch.StartNew();
             string? rewritten = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
@@ -1103,7 +1185,7 @@ internal sealed class WhispEngine : IDisposable
         _log.Verbose(LogSource.Done, recap);
         _log.Narrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
 
-        StatusChanged?.Invoke("Ready");
+        RaiseStatus("Ready");
         _recordingSw?.Stop();
 
         // Outcome : Pasted on a verified paste delivery, ClipboardOnly when
@@ -1153,7 +1235,7 @@ internal sealed class WhispEngine : IDisposable
             Logging.CorpusLog.Append(slug, entry);
         }
 
-        TranscriptionFinished?.Invoke(outcome);
+        RaiseFinished(outcome);
     }
 
     // ── Presse-papier ─────────────────────────────────────────────────────────

@@ -120,6 +120,11 @@
                     <ToggleSwitch IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
+                <controls:SettingsCard Header="Warm up Whisper at launch"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
                 <!-- ── Appearance ──────────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
                            Text="Appearance" />
