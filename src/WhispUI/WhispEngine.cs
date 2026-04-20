@@ -1056,9 +1056,8 @@ internal sealed class WhispEngine : IDisposable
         }
 
         // Preserve the raw text before any rewrite replaces fullText — the
-        // corpus logger (fired at the very end) needs both sides of the pair.
+        // corpus logger (fired at the very end) captures only the raw side.
         string rawText = fullText;
-        string? rewriteText = null;
 
         if (profile is not null)
         {
@@ -1070,7 +1069,6 @@ internal sealed class WhispEngine : IDisposable
             llmMs = swLlm.ElapsedMilliseconds;
             if (!string.IsNullOrWhiteSpace(rewritten))
             {
-                rewriteText = rewritten;
                 fullText = rewritten;
                 CopyToClipboard(fullText);
                 _log.Narrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s — the polished text is ready to paste.");
@@ -1129,31 +1127,19 @@ internal sealed class WhispEngine : IDisposable
             Pasted:      pasteVerified,
             Outcome:     outcome.ToString()));
 
-        // Corpus logging — only fires on consented transcriptions that went
-        // through a rewrite profile. A raw-only transcription does not yield
-        // the paired (raw, rewrite) sample that makes the corpus useful for
-        // iterating on prompts offline.
+        // Corpus logging — captures the raw Whisper output only. We don't
+        // persist the rewrite: prompts evolve, so paired (raw, rewrite)
+        // samples go stale the moment the prompt is edited. Raw text stays
+        // useful for benchmarking Whisper itself (initial prompt, VAD, model
+        // swap). One file per rewrite profile so samples stay sliceable by
+        // the workflow they came from, even without the rewrite payload.
         var corpusSettings = Settings.SettingsService.Instance.Current.CorpusLogging;
         if (corpusSettings.Enabled && profile is not null)
         {
             var whisperSettings = Settings.SettingsService.Instance.Current.Transcription;
-            int rewriteWords = Logging.TextMetrics.CountWords(rewriteText);
             int rawChars = rawText.Length;
-            int rewriteChars = rewriteText?.Length ?? 0;
-
-            Logging.CorpusRewrite? rewritePayload = rewriteText is null ? null :
-                new Logging.CorpusRewrite(
-                    PromptId:   profile.Id,
-                    PromptName: profile.Name,
-                    Model:      profile.Model ?? "",
-                    ElapsedMs:  llmMs,
-                    Text:       rewriteText,
-                    WordCount:  rewriteWords,
-                    CharCount:  rewriteChars);
 
             var metrics = new Logging.CorpusMetrics(
-                WordsRatio:     rawWordCount > 0 && rewriteText is not null ? rewriteWords / (double)rawWordCount : null,
-                CharsRatio:     rawChars > 0 && rewriteText is not null ? rewriteChars / (double)rawChars : null,
                 WordsPerSecond: recDurationSec > 0 ? rawWordCount / recDurationSec : 0);
 
             var entry = new Logging.CorpusEntry(
@@ -1161,7 +1147,6 @@ internal sealed class WhispEngine : IDisposable
                 DurationSeconds: recDurationSec,
                 Whisper:         new Logging.CorpusWhisper(whisperSettings.Model, whisperSettings.Language, whisperMs),
                 Raw:             new Logging.CorpusRaw(rawText, rawWordCount, rawChars),
-                Rewrite:         rewritePayload,
                 Metrics:         metrics);
 
             string slug = $"{Logging.CorpusLog.Slugify(profile.Name)}-{profile.Id}";

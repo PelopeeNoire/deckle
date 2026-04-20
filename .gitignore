@@ -53,4 +53,6 @@ benchmark/reports/autoresearch_report.txt
 
 # Benchmark — transcript corpora (local dictation samples, not for versioning)
 benchmark/data/exemples-transcripts--*.txt
+# Corpus logger output (one JSONL per rewrite profile, see CorpusLog.cs)
+benchmark/data/*.jsonl
 run.log

@@ -1,29 +1,39 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Interop;
+using WhispUI.Logging;
 using WhispUI.Settings.ViewModels;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace WhispUI.Settings;
 
 public sealed partial class GeneralPage : Page
 {
+    private static readonly LogService _log = LogService.Instance;
+
     public GeneralViewModel ViewModel { get; } = new();
 
     // Guards combo SelectionChanged during initial sync — these handlers
     // set VM properties which would trigger PushToSettings() needlessly.
     private bool _initializing;
 
+    // Re-entry guard for the corpus consent flow: the Toggled handler reverts
+    // the switch when the user cancels the dialog, and that revert would
+    // retrigger Toggled in turn.
+    private bool _suppressCorpusToggle;
+
     public GeneralPage()
     {
         InitializeComponent();
         NavigationCacheMode = NavigationCacheMode.Required;
 
-        _initializing = true;
-        ViewModel.Load();
-        PopulateAudioInputDevices();
-        SyncOverlayPositionCombo();
-        SyncThemeCombo();
-        _initializing = false;
+        LoadAndSync();
     }
 
     // NavigationCacheMode.Required reuses the page instance — the constructor
@@ -33,12 +43,26 @@ public sealed partial class GeneralPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        LoadAndSync();
+    }
+
+    // x:Bind TwoWay bindings apply their initial value to the visual tree
+    // during the first layout pass — AFTER the ctor returns. That causes
+    // ToggleSwitch.Toggled to fire unsynchronously for the seed value, so
+    // a simple `_initializing = false` at the end of this method would come
+    // too early and let the handler think the user flipped the switch.
+    // Deferring the flag release via DispatcherQueue priority Low pushes it
+    // past the layout pass, after all initial bindings have settled.
+    private void LoadAndSync()
+    {
         _initializing = true;
         ViewModel.Load();
         PopulateAudioInputDevices();
         SyncOverlayPositionCombo();
         SyncThemeCombo();
-        _initializing = false;
+        SyncCorpusFolderPlaceholder();
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low,
+            () => _initializing = false);
     }
 
     // ── Audio input ──────────────────────────────────────────────────────────
@@ -135,6 +159,103 @@ public sealed partial class GeneralPage : Page
             item.Tag is string theme)
         {
             ViewModel.Theme = theme;
+        }
+    }
+
+    // ── Corpus storage folder ────────────────────────────────────────────────
+    //
+    // Show the default resolver's path as the TextBox placeholder rather than
+    // a generic "(auto)" — lets the user see where logs will land without
+    // opening File Explorer. Empty fallback "(auto)" only when the dev layout
+    // resolver can't find a benchmark/ folder.
+
+    private void SyncCorpusFolderPlaceholder()
+    {
+        string? defaultPath = CorpusLog.GetDefaultDirectoryPath();
+        CorpusFolderBox.PlaceholderText = string.IsNullOrEmpty(defaultPath) ? "(auto)" : defaultPath;
+    }
+
+    // ── Corpus logging handlers ─────────────────────────────────────────────
+    //
+    // Off → On: show a consent dialog. Cancel reverts the toggle (guarded
+    // via _suppressCorpusToggle to avoid re-entering this handler during
+    // the revert). On → Off: no confirmation — the user can turn it back on
+    // later if needed.
+
+    private async void CorpusLoggingToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_initializing || _suppressCorpusToggle) return;
+        if (!CorpusLoggingToggle.IsOn) return;
+
+        bool confirmed = await CorpusConsentDialog.ShowAsync(this.XamlRoot);
+        if (confirmed) return;
+
+        _suppressCorpusToggle = true;
+        try
+        {
+            CorpusLoggingToggle.IsOn = false;
+        }
+        finally
+        {
+            _suppressCorpusToggle = false;
+        }
+    }
+
+    // FolderPicker is a WinRT API designed for packaged apps — in an
+    // unpackaged WinUI 3 host it needs the parent HWND wired via
+    // WinRT.Interop or ShowAsync throws E_INVALIDARG (COMException 0x80070057).
+    private async void ChangeCorpusFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FolderPicker
+            {
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeFilter.Add("*");
+
+            var settingsWin = App.SettingsWin
+                ?? throw new InvalidOperationException("Settings window not initialized");
+            var hwnd = WindowNative.GetWindowHandle(settingsWin);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is null) return;
+
+            ViewModel.CorpusDataDirectory = folder.Path;
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetGeneral,
+                $"Change corpus folder failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        // GetDirectoryPath() already falls back to the default resolver when
+        // CorpusLogging.DataDirectory is empty.
+        string? path = CorpusLog.GetDirectoryPath();
+
+        if (string.IsNullOrEmpty(path))
+        {
+            _log.Warning(LogSource.SetGeneral, "Corpus folder unresolved — cannot open");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetGeneral,
+                $"Open corpus folder failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

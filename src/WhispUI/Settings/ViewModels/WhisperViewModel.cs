@@ -257,18 +257,6 @@ public partial class WhisperViewModel : ObservableObject
         PushToSettings();
     }
 
-    // ── Corpus logging ───────────────────────────────────────────────────────
-
-    [ObservableProperty]
-    public partial bool CorpusLoggingEnabled { get; set; }
-
-    partial void OnCorpusLoggingEnabledChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetWhisper, $"CorpusLogging.Enabled ← {value}");
-        PushToSettings();
-    }
-
     // ── Constructor ──────────────────────────────────────────────────────────
 
     public WhisperViewModel()
@@ -297,7 +285,6 @@ public partial class WhisperViewModel : ObservableObject
         SuppressRegex = "";
         UseContext = true;
         MaxTokens = -1;
-        CorpusLoggingEnabled = false;
 
         // _isSyncing stays true — Load() will set it to false.
     }
@@ -332,7 +319,6 @@ public partial class WhisperViewModel : ObservableObject
             SuppressRegex = s.OutputFilters.SuppressRegex;
             UseContext = s.Context.UseContext;
             MaxTokens = s.Context.MaxTokens;
-            CorpusLoggingEnabled = s.CorpusLogging.Enabled;
         }
         finally
         {
@@ -375,8 +361,6 @@ public partial class WhisperViewModel : ObservableObject
         s.Context.UseContext = UseContext;
         if (!double.IsNaN(MaxTokens))
             s.Context.MaxTokens = (int)MaxTokens;
-
-        s.CorpusLogging.Enabled = CorpusLoggingEnabled;
 
         SettingsService.Instance.Save();
     }

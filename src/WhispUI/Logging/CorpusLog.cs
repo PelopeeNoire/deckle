@@ -4,20 +4,28 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using WhispUI.Settings;
 
 namespace WhispUI.Logging;
 
 // ── CorpusLog ────────────────────────────────────────────────────────────────
 //
-// Append-only JSONL sink, one file per rewrite profile, for long-horizon
-// offline iteration on rewrite prompts. Deliberately distinct from the
-// latency CSV (TelemetryLog) — different consumer, different shape, different
-// retention expectations.
+// Append-only JSONL sink capturing the raw Whisper output of every
+// consented transcription, for offline benchmarking of the transcription
+// step itself (initial prompt, VAD thresholds, model swaps). Deliberately
+// distinct from the latency CSV (TelemetryLog) — different consumer,
+// different shape, different retention expectations.
 //
-// Target: <repo>/benchmark/data/<profile-slug>.jsonl. Resolution walks up
-// from the exe looking for a sibling "benchmark" folder, same algorithm as
-// TelemetryLog. Kept outside %LOCALAPPDATA% for the same reasons: the dev
-// build is unpackaged, and the whole benchmark/ tree lives with the repo.
+// We don't capture the rewrite: prompts evolve constantly, which would turn
+// every past sample into noise the moment the prompt is edited. Raw text
+// stays useful across prompt iterations.
+//
+// Target: the custom path set in CorpusLogging.DataDirectory if non-empty,
+// otherwise <repo>/benchmark/data/<profile-slug>.jsonl. The default resolver
+// walks up from the exe looking for a sibling "benchmark" folder, same
+// algorithm as TelemetryLog. Kept outside %LOCALAPPDATA% for the same
+// reasons: the dev build is unpackaged, and the whole benchmark/ tree lives
+// with the repo.
 //
 // Thread-safety: single global lock — writes are rare (one per transcription),
 // locking per-file adds complexity without payoff.
@@ -37,32 +45,24 @@ internal sealed record CorpusRaw(
     [property: JsonPropertyName("word_count")] int    WordCount,
     [property: JsonPropertyName("char_count")] int    CharCount);
 
-internal sealed record CorpusRewrite(
-    [property: JsonPropertyName("prompt_id")]   string PromptId,
-    [property: JsonPropertyName("prompt_name")] string PromptName,
-    [property: JsonPropertyName("model")]       string Model,
-    [property: JsonPropertyName("elapsed_ms")]  long   ElapsedMs,
-    [property: JsonPropertyName("text")]        string Text,
-    [property: JsonPropertyName("word_count")]  int    WordCount,
-    [property: JsonPropertyName("char_count")]  int    CharCount);
-
 internal sealed record CorpusMetrics(
-    [property: JsonPropertyName("words_ratio")]      double? WordsRatio,
-    [property: JsonPropertyName("chars_ratio")]      double? CharsRatio,
-    [property: JsonPropertyName("words_per_second")] double  WordsPerSecond);
+    [property: JsonPropertyName("words_per_second")] double WordsPerSecond);
 
+// Captures only the raw Whisper output, not the rewrite. The rewrite changes
+// every time the prompt is edited, so a corpus of (raw, rewrite) pairs
+// becomes stale as soon as the prompt evolves — we keep raw-only samples
+// which stay useful across prompt iterations.
 internal sealed record CorpusEntry(
     [property: JsonPropertyName("timestamp")]        DateTimeOffset Timestamp,
     [property: JsonPropertyName("duration_seconds")] double         DurationSeconds,
     [property: JsonPropertyName("whisper")]          CorpusWhisper  Whisper,
     [property: JsonPropertyName("raw")]              CorpusRaw      Raw,
-    [property: JsonPropertyName("rewrite")]          CorpusRewrite? Rewrite,
     [property: JsonPropertyName("metrics")]          CorpusMetrics  Metrics);
 
 internal static class CorpusLog
 {
     private static readonly object _lock = new();
-    private static readonly Lazy<string?> _baseDir = new(ResolveBaseDir);
+    private static readonly Lazy<string?> _defaultBaseDir = new(ResolveDefaultBaseDir);
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -77,11 +77,12 @@ internal static class CorpusLog
     // human-readable part but keeps the id suffix stable.
     public static void Append(string slugPrefix, CorpusEntry entry)
     {
-        string? dir = _baseDir.Value;
+        string? dir = GetDirectoryPath();
         if (dir is null || string.IsNullOrWhiteSpace(slugPrefix)) return;
 
         try
         {
+            Directory.CreateDirectory(dir);
             string safe = Sanitize(slugPrefix);
             string path = Path.Combine(dir, safe + ".jsonl");
             string line = JsonSerializer.Serialize(entry, _json);
@@ -99,10 +100,32 @@ internal static class CorpusLog
     }
 
     // Resolved storage directory — surfaced so the Settings UI can wire up an
-    // "Open storage folder" link. Returns null if the benchmark marker can't
-    // be found (dev layout is detected by walking up from the exe looking for
-    // a sibling "benchmark" folder).
-    public static string? GetDirectoryPath() => _baseDir.Value;
+    // "Open storage folder" link. Returns the user-configured path if set
+    // (CorpusLogging.DataDirectory), otherwise falls back to the default dev
+    // resolver (<repo>/benchmark/data/). Returns null only when both are
+    // unavailable — the dev layout can't be detected AND the user hasn't
+    // configured a path.
+    public static string? GetDirectoryPath()
+    {
+        string custom = "";
+        try
+        {
+            custom = SettingsService.Instance.Current.CorpusLogging.DataDirectory ?? "";
+        }
+        catch
+        {
+            // Settings not initialized yet — fall through to the default.
+        }
+
+        if (!string.IsNullOrWhiteSpace(custom))
+            return custom;
+
+        return _defaultBaseDir.Value;
+    }
+
+    // Default resolver output only — ignores the user-configured path. Used
+    // by Settings to show the auto-path as a placeholder in the TextBox.
+    public static string? GetDefaultDirectoryPath() => _defaultBaseDir.Value;
 
     // Turns a human profile name into a safe, readable slug. Lowercase ASCII,
     // hyphens between words, no filesystem-hostile characters.
@@ -122,7 +145,7 @@ internal static class CorpusLog
         return s;
     }
 
-    private static string? ResolveBaseDir()
+    private static string? ResolveDefaultBaseDir()
     {
         try
         {
