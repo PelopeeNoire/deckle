@@ -47,10 +47,14 @@
                          Margin="0,0,0,8" />
 
                 <llm:LlmGeneralSection x:Name="GeneralSection" />
-                <llm:LlmShortcutSlotsSection x:Name="ShortcutSlotsSection" />
-                <llm:LlmRulesSection x:Name="RulesSection" />
-                <llm:LlmProfilesSection x:Name="ProfilesSection" />
-                <llm:LlmModelsSection x:Name="ModelsSection" />
+                <llm:LlmShortcutSlotsSection x:Name="ShortcutSlotsSection"
+                                             IsEnabled="{x:Bind GeneralSection.IsRewritingEnabled, Mode=OneWay}" />
+                <llm:LlmRulesSection x:Name="RulesSection"
+                                     IsEnabled="{x:Bind GeneralSection.IsRewritingEnabled, Mode=OneWay}" />
+                <llm:LlmProfilesSection x:Name="ProfilesSection"
+                                        IsEnabled="{x:Bind GeneralSection.IsRewritingEnabled, Mode=OneWay}" />
+                <llm:LlmModelsSection x:Name="ModelsSection"
+                                      IsEnabled="{x:Bind GeneralSection.IsRewritingEnabled, Mode=OneWay}" />
 
             </StackPanel>
         </Grid>
