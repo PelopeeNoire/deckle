@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using WhispUI.Logging;
+using WhispUI.Shell;
 
 namespace WhispUI.Settings.ViewModels;
 
@@ -71,11 +72,35 @@ public partial class GeneralViewModel : ObservableObject
 
     // ── Startup ──────────────────────────────────────────────────────────────
 
+    // AutostartEnabled is not backed by AppSettings — the source of truth is
+    // HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WhispUI. Load() reads
+    // the registry, OnAutostartEnabledChanged writes it. If the write fails,
+    // we revert the UI state so the toggle stays consistent with reality.
+    [ObservableProperty]
+    public partial bool AutostartEnabled { get; set; }
+
     [ObservableProperty]
     public partial bool StartMinimized { get; set; }
 
     [ObservableProperty]
     public partial bool WarmupOnLaunch { get; set; }
+
+    partial void OnAutostartEnabledChanged(bool value)
+    {
+        if (_isSyncing) return;
+        bool ok = value ? AutostartService.Enable() : AutostartService.Disable();
+        if (ok)
+        {
+            _log.Info(LogSource.SetGeneral, $"Start with Windows ← {value}");
+            return;
+        }
+
+        // Write refused (GPO, ACL, missing ProcessPath…) — revert the toggle
+        // so what the user sees matches what's actually in the registry.
+        _isSyncing = true;
+        try { AutostartEnabled = !value; }
+        finally { _isSyncing = false; }
+    }
 
     partial void OnStartMinimizedChanged(bool value)
     {
@@ -150,6 +175,7 @@ public partial class GeneralViewModel : ObservableObject
         OverlayEnabled = true;
         OverlayFadeOnProximity = true;
         OverlayPosition = "BottomCenter";
+        AutostartEnabled = false;
         StartMinimized = true;
         WarmupOnLaunch = true;
         Theme = "System";
@@ -171,6 +197,7 @@ public partial class GeneralViewModel : ObservableObject
             OverlayEnabled = s.Overlay.Enabled;
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
             OverlayPosition = s.Overlay.Position;
+            AutostartEnabled = AutostartService.IsEnabled();
             StartMinimized = s.Startup.StartMinimized;
             WarmupOnLaunch = s.Startup.WarmupOnLaunch;
             Theme = s.Appearance.Theme;
