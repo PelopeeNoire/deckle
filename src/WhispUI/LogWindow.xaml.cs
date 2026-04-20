@@ -90,6 +90,12 @@ public sealed partial class LogWindow : Window, ILogSink
     private string _currentSearch = "";
     private bool _isRecording;
 
+    // Typing in the SearchBox triggers a filter pass over the full buffer (up
+    // to 5000 entries). On fast typists, that blocked the UI thread enough to
+    // freeze the HUD animation. 200 ms debounce: long enough to avoid filtering
+    // mid-word, short enough that the user doesn't perceive lag after they pause.
+    private DispatcherTimer? _searchDebounce;
+
     // Below this window width (DIPs), the inline SearchBox collapses into an
     // icon-only button to keep the TitleBar readable. Pattern matches Windows
     // 11 Task Manager: icon in the TitleBar, click reveals the SearchBox,
@@ -375,7 +381,14 @@ public sealed partial class LogWindow : Window, ILogSink
     {
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
         _currentSearch = sender.Text ?? "";
-        ApplyFilter();
+
+        if (_searchDebounce is null)
+        {
+            _searchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _searchDebounce.Tick += (_, _) => { _searchDebounce!.Stop(); ApplyFilter(); };
+        }
+        _searchDebounce.Stop();
+        _searchDebounce.Start();
     }
 
     // ── TitleBar search: responsive collapse ──────────────────────────────────
