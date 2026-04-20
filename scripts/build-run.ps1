@@ -70,14 +70,42 @@ function Select-WorktreeInteractive {
 
     Write-Host ""
     Write-Host $header -ForegroundColor Cyan
-    $top = [Console]::CursorTop
-    # Reserve N blank lines so cursor positioning stays within existing buffer.
-    for ($i = 0; $i -lt $labels.Count; $i++) { Write-Host "" }
+
+    # Render each line once so the buffer grows naturally, then capture the
+    # final cursor position. Going the other way (capture then reserve via
+    # Write-Host "") breaks when the buffer scrolls on near-bottom terminals.
+    for ($i = 0; $i -lt $labels.Count; $i++) {
+        $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
+        if ($i -eq $selected) {
+            Write-Host ($prefix + $labels[$i]) -ForegroundColor Green
+        } else {
+            Write-Host ($prefix + $labels[$i])
+        }
+    }
+    $bottom = [Console]::CursorTop
+    $top    = [Math]::Max(0, $bottom - $labels.Count)
 
     [Console]::CursorVisible = $false
     try {
         while ($true) {
-            for ($i = 0; $i -lt $labels.Count; $i++) {
+            $key = [Console]::ReadKey($true)
+            $prev = $selected
+            switch ($key.Key) {
+                'UpArrow'   { if ($selected -gt 0)                   { $selected-- } }
+                'DownArrow' { if ($selected -lt $entries.Count - 1)  { $selected++ } }
+                'Enter'     {
+                    [Console]::SetCursorPosition(0, $bottom)
+                    return $entries[$selected].Path
+                }
+                'Escape'    {
+                    [Console]::SetCursorPosition(0, $bottom)
+                    throw "Cancelled"
+                }
+            }
+            if ($selected -eq $prev) { continue }
+
+            # Repaint just the two lines that changed (prev and new).
+            foreach ($i in @($prev, $selected)) {
                 [Console]::SetCursorPosition(0, $top + $i)
                 $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
                 $line   = $prefix + $labels[$i]
@@ -87,21 +115,6 @@ function Select-WorktreeInteractive {
                     Write-Host $line -ForegroundColor Green -NoNewline
                 } else {
                     Write-Host $line -NoNewline
-                }
-            }
-            $key = [Console]::ReadKey($true)
-            switch ($key.Key) {
-                'UpArrow'   { if ($selected -gt 0)                   { $selected-- } }
-                'DownArrow' { if ($selected -lt $entries.Count - 1)  { $selected++ } }
-                'Enter'     {
-                    [Console]::SetCursorPosition(0, $top + $labels.Count)
-                    Write-Host ""
-                    return $entries[$selected].Path
-                }
-                'Escape'    {
-                    [Console]::SetCursorPosition(0, $top + $labels.Count)
-                    Write-Host ""
-                    throw "Cancelled"
                 }
             }
         }
