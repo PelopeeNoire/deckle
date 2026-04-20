@@ -21,6 +21,8 @@ namespace WhispUI.Settings;
 // libérer après whisper_full() via FreeAllocations().
 internal static class WhisperParamsMapper
 {
+    private static readonly LogService _log = LogService.Instance;
+
     internal readonly struct NativeAllocations
     {
         public readonly IntPtr Language;
@@ -124,7 +126,9 @@ internal static class WhisperParamsMapper
             else
             {
                 wparams.vad = 0;
-                DebugLog.Write("SETTINGS", $"VAD requested but model not found: {vadModelPath}");
+                _log.Warning(LogSource.Whisper,
+                    $"Silero VAD model not found at {vadModelPath} — VAD disabled. " +
+                    $"Download from https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin");
             }
         }
 
