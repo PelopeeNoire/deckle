@@ -645,22 +645,31 @@ internal static class HudComposition
         // AlphaMaskEffect semantics: output = (Source.RGB, Source.A * Mask.A).
         // Both masks compound; the final pixel RGB is the (effect-modified)
         // conic colour, alpha = conic.A · arc.A · stroke.A.
+        //
+        // Initial effect values use the Transcribing (Dark) baseline. The
+        // stroke is only ever created on the first enter into a processing
+        // state, and that state is always Transcribing (Rewriting can only
+        // follow a prior Transcribing). Seeding Rewriting values here caused
+        // a visible rainbow flash on cold start before the first ApplyVariant
+        // blend reached greyscale. Using Transcribing Dark saturation=0 keeps
+        // the first paint frame already greyscale; any theme/exposure mismatch
+        // is corrected instantly by the ApplyVariant call that follows attach.
         var saturationEffect = new SaturationEffect
         {
             Name       = "Sat",
-            Saturation = cfg.RewritingSaturation,
+            Saturation = cfg.TranscribingSaturationDark,
             Source     = new CompositionEffectSourceParameter("Conic"),
         };
         var hueEffect = new HueRotationEffect
         {
             Name   = "Hue",
-            Angle  = cfg.RewritingHueShiftTurns * MathF.Tau,
+            Angle  = cfg.TranscribingHueShiftTurns * MathF.Tau,
             Source = saturationEffect,
         };
         var exposureEffect = new ExposureEffect
         {
             Name     = "Exp",
-            Exposure = cfg.RewritingExposure,
+            Exposure = cfg.TranscribingExposureDark,
             Source   = hueEffect,
         };
         var effectGraph = new AlphaMaskEffect
@@ -688,9 +697,9 @@ internal static class HudComposition
         // animates these; the ExpressionAnimations below propagate their
         // values to the effect-brush properties every frame.
         var effectProps = compositor.CreatePropertySet();
-        effectProps.InsertScalar("Saturation", cfg.RewritingSaturation);
-        effectProps.InsertScalar("HueAngle",   cfg.RewritingHueShiftTurns * MathF.Tau);
-        effectProps.InsertScalar("Exposure",   cfg.RewritingExposure);
+        effectProps.InsertScalar("Saturation", cfg.TranscribingSaturationDark);
+        effectProps.InsertScalar("HueAngle",   cfg.TranscribingHueShiftTurns * MathF.Tau);
+        effectProps.InsertScalar("Exposure",   cfg.TranscribingExposureDark);
 
         BindEffectProperty(compositor, effectBrush, "Sat.Saturation", effectProps, "Saturation");
         BindEffectProperty(compositor, effectBrush, "Hue.Angle",      effectProps, "HueAngle");
@@ -700,7 +709,7 @@ internal static class HudComposition
         strokeVisual.Size    = innerSize;
         strokeVisual.Offset  = new Vector3(InsetDip, InsetDip, 0f);
         strokeVisual.Brush   = effectBrush;
-        strokeVisual.Opacity = cfg.RewritingOpacity;
+        strokeVisual.Opacity = cfg.TranscribingOpacity;
 
         container.Children.InsertAtTop(strokeVisual);
         return new ProcessingStroke(container, compositor, effectProps, strokeVisual, cfg);
