@@ -47,9 +47,9 @@ logs/*
 benchmark/__pycache__/
 benchmark/logs/*.log
 benchmark/logs/*.csv
-benchmark/reports/last_report.json
-benchmark/reports/results.tsv
-benchmark/reports/autoresearch_report.txt
+benchmark/logs/reports/last_report.json
+benchmark/logs/reports/results.tsv
+benchmark/logs/reports/autoresearch_report.txt
 
 # Benchmark — transcript corpora (local dictation samples, not for versioning)
 benchmark/data/exemples-transcripts--*.txt
