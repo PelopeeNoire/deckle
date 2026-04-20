@@ -82,6 +82,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Auto-paste after transcription"
+                                       Description="Paste the transcribed text into the focused field once transcription finishes. Turn off to keep the text in the clipboard and paste manually."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
@@ -126,6 +127,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Warm up Whisper at launch"
+                                       Description="Run a silent transcription at startup so the first real recording is fast. Costs a few seconds of GPU at launch."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
                 </controls:SettingsCard>
