@@ -45,7 +45,7 @@
                            Text="Shortcuts" />
 
                 <controls:SettingsCard Header="Transcribe"
-                                       Description="Start and stop transcription. The result is pasted into the focused field."
+                                       Description="Start and stop transcription. The text is copied to the clipboard."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
                     <TextBlock Text="Win + `"
                                VerticalAlignment="Center"
@@ -53,7 +53,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Primary rewrite"
-                                       Description="Transcribe, then rewrite with the primary profile before pasting. Choose the profile on the Rewriting page."
+                                       Description="Transcribe, then rewrite with the primary profile. Choose the profile on the Rewriting page."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
                     <TextBlock Text="Shift + Win + `"
                                VerticalAlignment="Center"
@@ -61,7 +61,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Secondary rewrite"
-                                       Description="Transcribe, then rewrite with the secondary profile before pasting. Choose the profile on the Rewriting page."
+                                       Description="Transcribe, then rewrite with the secondary profile. Choose the profile on the Rewriting page."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
                     <TextBlock Text="Ctrl + Win + `"
                                VerticalAlignment="Center"
@@ -82,7 +82,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Auto-paste after transcription"
-                                       Description="Paste the transcribed text into the focused field once transcription finishes. Turn off to keep the text in the clipboard and paste manually."
+                                       Description="Also tries to paste into the focused field. The paste is strict and only fires when the target can be safely confirmed — so it rarely triggers. The clipboard is always the reliable path."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
