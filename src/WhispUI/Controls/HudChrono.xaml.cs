@@ -245,10 +245,13 @@ public sealed partial class HudChrono : UserControl
                 ProcessingSurfaceHost, _processingStroke.Visual);
         }
 
-        // First-ever attach starts at the baked-in Rewriting baseline; the
-        // call below smoothly blends to the requested variant. Subsequent
-        // attaches (state change on the already-attached visual) blend
-        // from the previous variant to the new one — same code path.
+        // First-ever attach starts at the baked-in Transcribing (Dark)
+        // baseline — greyscale, neutral exposure — so the stroke appears
+        // already in Transcribing look, no rainbow flash on cold start.
+        // The call below blends to the requested variant (snapping the
+        // theme-split exposure if we're on Light). Subsequent attaches
+        // (state change on the already-attached visual) blend from the
+        // previous variant to the new one — same code path.
         _processingStroke.ApplyVariant(variant, isDark);
     }
 
