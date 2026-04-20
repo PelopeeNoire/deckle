@@ -39,8 +39,8 @@ internal static class HudComposition
     // ╚════════════════════════════════════════════════════════════════════╝
     // Fixed for both states — stroke metrics are a property of the HUD
     // rect, not of the animation.
-    private const float  StrokeThickness              = 6f;    // dip, stroke width
-    private const float  InsetDip                     = -3f;    // dip, inset from HUD edge
+    private const float  StrokeThickness              = 4f;    // dip, stroke width
+    private const float  InsetDip                     = 4f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -104,14 +104,14 @@ internal static class HudComposition
         //                   plateaus. See StartRotation header for the
         //                   full UX explanation. Hue can ease freely (the
         //                   eye doesn't track the colour wheel directly).
-        public double HuePeriodSeconds   { get; init; } = 5.0;
+        public double HuePeriodSeconds   { get; init; } = 8.0;
         public float  HueDirection       { get; init; } = 1f;
         public float  HuePhaseTurns      { get; init; } = 0f;
         public float  HueEaseP1X         { get; init; } = 0.2f;
         public float  HueEaseP1Y         { get; init; } = 0f;
         public float  HueEaseP2X         { get; init; } = 0.8f;
         public float  HueEaseP2Y         { get; init; } = 1f;
-        public float  HueRotationFloor   { get; init; } = 0.6f;
+        public float  HueRotationFloor   { get; init; } = 0f;
 
         // ── Arc mask shape ───────────────────────────────────────────────
         // White pie slice in [0, 2π·Span] composited with the conic via
@@ -158,13 +158,13 @@ internal static class HudComposition
         //                   the eye tracks — keep this floor higher than
         //                   the hue's so a "freeze" never reads as a bug.
         public double ArcPeriodSeconds   { get; init; } = 8.0;
-        public float  ArcDirection       { get; init; } = 1f;
+        public float  ArcDirection       { get; init; } = -1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
         public float  ArcEaseP1X         { get; init; } = 0.5f;
         public float  ArcEaseP1Y         { get; init; } = 0f;
         public float  ArcEaseP2X         { get; init; } = 0.2f;
         public float  ArcEaseP2Y         { get; init; } = 1f;
-        public float  ArcRotationFloor   { get; init; } = 0.8f;
+        public float  ArcRotationFloor   { get; init; } = 0f;
 
         // No base stroke layer — the permanent HUD outline is the DWM
         // frame (DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT in HudWindow),
@@ -224,7 +224,7 @@ internal static class HudComposition
         public float  TranscribingSaturationDark  { get; init; } = 0f;
         public float  TranscribingSaturationLight { get; init; } = 0f;
         public float  TranscribingHueShiftTurns   { get; init; } = 0f;
-        public float  TranscribingExposureDark    { get; init; } = 1f;
+        public float  TranscribingExposureDark    { get; init; } = 0f;
         public float  TranscribingExposureLight   { get; init; } = 1f;
         public float  TranscribingOpacity         { get; init; } = 1f;
         public double TranscribingBlendSeconds    { get; init; } = 1.2;
