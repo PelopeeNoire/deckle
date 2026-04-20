@@ -60,6 +60,72 @@ internal static class HudComposition
     //      animated by ApplyVariant. Edit these to shape each state's look.
     //   3. BlendSeconds — per-variant transition duration.
 
+    // ── Lexicon — vocabulary shared across the struct fields below ──────
+    //
+    // Paint-time (HSV conic palette baked once into a surface):
+    //   HsvSaturation  0 = greyscale, 1 = full rainbow. Pastel in between.
+    //   HsvValue       0 = black, 1 = full luminance. Affects readability
+    //                  against the substrate — lower if Light theme
+    //                  greyscale disappears into LayerFillColor.
+    //   HueStart       rotates hue 0 on the wheel (0 = red at 3 o'clock).
+    //   HueRange       wheel slice. 1 = full rainbow, 0.5 = half, 0 = mono.
+    //   WedgeCount     pie wedges. 360 = smooth ring, 12/24 = retro steps.
+    //
+    // Arc mask shape (white pie slice composited with the conic via
+    // AlphaMaskEffect, with alpha ramps at both ends):
+    //   Span           arc length in turns. 0.5 mirrored = half-circle
+    //                  each; smaller = more "off" space between.
+    //   LeadFade/Tail  fade extents in turns at each end (head fade-in /
+    //                  tail fade-out). If Lead+Tail > Span they scale to
+    //                  meet at the arc mid (pure bell, no flat core).
+    //   FadeCurve      pow(t, curve) shape. 1 = linear ribbon,
+    //                  2 = quadratic soft fade, 3+ = crisp comet bell,
+    //                  <1 = near hard-edged solid.
+    //   Mirror         paint a second arc at +π for a symmetric double
+    //                  comet (Span clamps to 0.5 in mirror mode).
+    //
+    // Rotation (applied independently to the conic and the arc mask —
+    // rational period ratios like 2:1 or 3:2 close cleanly every LCM):
+    //   PeriodSeconds  seconds per full turn. Lower = faster.
+    //   Direction      +1 CW, -1 CCW.
+    //   PhaseTurns     start offset in turns (0..1).
+    //   EaseP1/P2      cubic-bezier control points. (0,0,1,1) = linear,
+    //                  (0.42,0,0.58,1) = standard ease-in-out, sharper
+    //                  curves give bigger speed contrast.
+    //   VelocityFloor  minimum angular velocity even on the eased
+    //                  plateaus. See StartRotation header for the full
+    //                  UX rationale. Hue can ease freely (the eye does
+    //                  not track the colour wheel directly); the arc is
+    //                  the silhouette the eye tracks, so keep the arc
+    //                  floor higher so a "freeze" never reads as a bug.
+    //
+    // Runtime variant knobs (live properties on the SINGLE kept-alive
+    // stroke — SaturationEffect, HueRotationEffect, ExposureEffect on the
+    // colour pipeline, plus SpriteVisual.Opacity — animated by
+    // ApplyVariant. Switching variants is a property animation on the
+    // same GPU resources — no surface rebuild, no GC, no lag):
+    //   Saturation     multiplier on the baked conic. 0 = greyscale,
+    //                  1 = baseline colour. Combines with HsvSaturation.
+    //   HueShiftTurns  runtime rotation of the colour wheel.
+    //                  0 = no shift, 0.5 = red↔cyan swap, 1 = no change.
+    //                  Negatives shift the other way.
+    //   Exposure       EV stops. 0 = no change, +1 ≈ 2× brighter,
+    //                  -1 ≈ half. Typical range [-2, +2]. Split
+    //                  Dark / Light for Transcribing so the greyscale
+    //                  stays readable against both substrates.
+    //   Opacity        SpriteVisual.Opacity in [0..1]. Dims the whole
+    //                  stroke including the silhouette; 0.6-0.8 reads
+    //                  as a subtle calm variant.
+    //   BlendSeconds   duration of the blend from the previous variant.
+    //                  0.2-0.4 = snappy, 0.6-1.0 = breathing. Per-variant
+    //                  so entering Transcribing can be slower than the
+    //                  return to Rewriting.
+    //
+    // No base stroke layer — the permanent HUD outline is the DWM frame
+    // (DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT in HudWindow), 1-dip and
+    // theme/accent-aware. Rotating arcs composite on top; transparent
+    // regions between arcs expose the DWM stroke.
+
     // Config for CreateConicArcStroke. Init-only fields with defaults —
     // each wrapper overrides only what it needs. The explicit
     // parameterless constructor is required by C# for struct field
@@ -68,42 +134,22 @@ internal static class HudComposition
     // `internal` (not `private`) so the internal ProcessingStroke ctor
     // can reference it without CS0051. Still effectively HudComposition-
     // scoped — nothing outside this file constructs one.
+    //
+    // See the Lexicon above for what each field means; only per-field
+    // deviations from the generic definition are repeated here.
     internal readonly struct ConicArcStrokeConfig
     {
         public ConicArcStrokeConfig() {}
 
-        // ── Colour palette ───────────────────────────────────────────────
-        // HSV rainbow, continuous at the 0/2π wrap.
-        //   HsvSaturation — 0 = greyscale; 1 = full rainbow. In between =
-        //                   pastel/tinted.
-        //   HsvValue      — arc brightness, 0 = black, 1 = full luminance.
-        //   HueStart      — rotates hue 0 on the wheel (0 = red at 3 o'clock).
-        //   HueRange      — slice carved out of the wheel:
-        //                     1   = full rainbow,
-        //                     0.5 = half (e.g. red→cyan),
-        //                     0   = monochrome.
-        //   WedgeCount    — pie wedges in the conic. 360 = smooth ring,
-        //                   24 or 12 = retro stepped look.
+        // ── Colour palette (paint-time, baked once) ──────────────────────
         public float  HsvSaturation      { get; init; } = 1f;
         public float  HsvValue           { get; init; } = 1f;
         public float  HueStart           { get; init; } = 0f;
         public float  HueRange           { get; init; } = 1f;
         public int    WedgeCount         { get; init; } = 360;
 
-        // ── Hue rotation ─────────────────────────────────────────────────
-        // Spins the conic underneath the (fixed) arc mask, so the colour
-        // at the arc head walks the wheel over time.
-        //   PeriodSeconds — seconds per full turn. Lower = faster colour
-        //                   walk under the arc.
-        //   Direction     — +1 CW, -1 CCW.
-        //   PhaseTurns    — start offset in turns (0..1).
-        //   EaseP1/P2     — cubic-bezier control points. (0,0,1,1) linear,
-        //                   (0.42,0,0.58,1) standard ease-in-out, sharper
-        //                   curves give bigger speed contrast.
-        //   VelocityFloor — guarantees minimum angular velocity even on the
-        //                   eased plateaus. See StartRotation header for the
-        //                   full UX explanation. Hue can ease freely (the
-        //                   eye doesn't track the colour wheel directly).
+        // ── Hue rotation — spins the conic under the fixed arc mask,
+        //    so the colour at the arc head walks the wheel over time ─────
         public double HuePeriodSeconds   { get; init; } = 8.0;
         public float  HueDirection       { get; init; } = 1f;
         public float  HuePhaseTurns      { get; init; } = 0f;
@@ -113,51 +159,16 @@ internal static class HudComposition
         public float  HueEaseP2Y         { get; init; } = 1f;
         public float  HueVelocityFloor   { get; init; } = 0f;
 
-        // ── Arc mask shape ───────────────────────────────────────────────
-        // White pie slice in [0, 2π·Span] composited with the conic via
-        // AlphaMaskEffect. Three zones along the slice:
-        //   [0, LeadFade]              → alpha ramps 0 → 1   (head fade-in)
-        //   [LeadFade, Span-TailFade]  → alpha = 1            (solid core)
-        //   [Span-TailFade, Span]      → alpha ramps 1 → 0   (tail fade-out)
-        // If Lead+Tail > Span, both scale down so they meet at the arc mid
-        // — pure bell, no flat core. ArcDirection picks which end reads
-        // as "head".
-        //
-        //   Span      — arc length in turns. 0.5 mirrored = half-circle each
-        //               (filling the ring with two opposite arcs); smaller
-        //               = shorter visible arc with more "off" space between.
-        //   Lead/Tail — fade extents in turns at each end of the arc.
-        //   FadeCurve — alpha shape via pow(t, curve):
-        //                 1   = linear ramp ("ribbon").
-        //                 2   = quadratic, soft fade with a clear plateau
-        //                       ("arc with fade").
-        //                 3+  = high-power, dim across most of the ramp,
-        //                       crisp peak ("comet bell").
-        //                 <1  = climbs to ~1 immediately, fade barely
-        //                       visible, arc reads as hard-edged solid.
-        //   Mirror    — paint a second arc at +π for symmetric double
-        //               comet. Span clamps to 0.5 in mirror mode to prevent
-        //               overlap.
+        // ── Arc mask shape (white pie slice, alpha-ramped at both ends) ─
         public float  ConicSpanTurns     { get; init; } = 0.4f;
         public float  ConicLeadFadeTurns { get; init; } = 1f;
         public float  ConicTailFadeTurns { get; init; } = 1f;
         public float  ConicFadeCurve     { get; init; } = 4f;
         public bool   ArcMirror          { get; init; } = true;
 
-        // ── Arc rotation ─────────────────────────────────────────────────
-        // Rotates the arc mask, fully independent of the hue rotation.
-        // Rational period ratios (e.g. 2:1, 3:2) close cleanly every LCM
-        // seconds; near-equal periods feel locked; opposite directions
-        // give a strong cross-sweep.
-        //   PeriodSeconds — seconds per full turn. This is what the eye
-        //                   reads as "the speed of the loading animation".
-        //   Direction     — +1 CW, -1 CCW.
-        //   PhaseTurns    — start offset in turns.
-        //   EaseP1/P2     — cubic-bezier control points (see Hue).
-        //   VelocityFloor — angular-velocity floor for the arc. The arc is
-        //                   the silhouette the eye tracks — keep this floor
-        //                   higher than the hue's so a "freeze" never reads
-        //                   as a bug.
+        // ── Arc rotation — rotates the arc mask independently of the
+        //    hue rotation. This is what the eye reads as "the speed of
+        //    the loading animation" ─────────────────────────────────────
         public double ArcPeriodSeconds   { get; init; } = 8.0;
         public float  ArcDirection       { get; init; } = -1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
@@ -167,66 +178,20 @@ internal static class HudComposition
         public float  ArcEaseP2Y         { get; init; } = 1f;
         public float  ArcVelocityFloor   { get; init; } = 0f;
 
-        // No base stroke layer — the permanent HUD outline is the DWM
-        // frame (DWMWA_BORDER_COLOR = DWMWA_COLOR_DEFAULT in HudWindow),
-        // 1-dip and theme/accent-aware. Rotating arcs composite on top;
-        // transparent regions between arcs expose the DWM stroke.
-
-        // ── Runtime variants — Rewriting vs Transcribing ─────────────────
-        // The stroke visual is created once and kept alive across both
-        // processing states. Per-state differentiation is applied LIVE via
-        // Composition effect properties (SaturationEffect, HueRotationEffect,
-        // ExposureEffect on the colour pipeline, plus SpriteVisual.Opacity
-        // on the whole visual), so switching state is a property animation
-        // on the same GPU resources — no surface rebuild, no GC hit, no lag.
-        //
-        // Each variant below lists the "target values" reached by the live
-        // properties when that variant is active. The transition from the
-        // previous variant blends over the matching BlendSeconds.
-        //
-        //   Saturation      — SaturationEffect multiplier on the baked conic
-        //                     palette. 0 = greyscale, 1 = baseline colour.
-        //                     In between = tinted. Combines with HsvSaturation
-        //                     above (baseline at paint time).
-        //   HueShiftTurns   — rotates the entire colour wheel at runtime.
-        //                     0   = no shift,
-        //                     0.5 = swap red ↔ cyan,
-        //                     1   = full turn (no visible change).
-        //                     Negative values allowed (shift other way).
-        //   Exposure        — EV stops. 0 = no change. +1 ≈ twice as bright,
-        //                     -1 ≈ half. Typical range [-2, +2]. Split into
-        //                     Dark / Light for Transcribing so the stroke
-        //                     stays readable against both substrates (the
-        //                     Acrylic dark vs the near-white Layer light).
-        //   Opacity         — 0..1 on the SpriteVisual. 1 = full, 0 = fully
-        //                     transparent. Dims the entire stroke including
-        //                     the silhouette, so a small dimming reads
-        //                     strong. Try 0.6-0.8 for a subtle calm variant.
-        //   BlendSeconds    — duration of the blend from the previous
-        //                     variant to this one. 0.2-0.4 = snappy,
-        //                     0.6-1.0 = breathing. Set independently per
-        //                     variant so entering Transcribing can be
-        //                     slower than returning to Rewriting, etc.
-
-        // Rewriting baseline — neutral values leave the baked palette
-        // untouched. Tweak to tint / dim / desaturate the Rewriting look.
+        // ── Rewriting variant — target values for the live effect
+        //    pipeline. Baseline neutrals leave the baked palette alone ──
         public float  RewritingSaturation       { get; init; } = 1f;
         public float  RewritingHueShiftTurns    { get; init; } = 0f;
         public float  RewritingExposure         { get; init; } = 0f;
         public float  RewritingOpacity          { get; init; } = 1f;
         public double RewritingBlendSeconds     { get; init; } = 1.2;
 
-        // Transcribing variant — defaults to greyscale (saturation 0).
-        // Saturation and Exposure are split Dark / Light so the arc can
-        // take a different feel against each substrate. The baked palette
-        // is painted at HsvValue=1 (maximum luminance), so the greyscale
-        // result is near-white. On Dark that reads as a bright light-grey
-        // stroke against the Acrylic dark substrate (neutral exposure).
-        // On Light the same near-white would disappear into the
-        // LayerFillColor substrate — pull it down with a negative exposure
-        // so it reads as a visible mid-grey stroke against the light card.
-        // HueShift / Opacity stay unified across themes — widen later if
-        // you need per-theme control there too.
+        // ── Transcribing variant — greyscale (Saturation 0) by default.
+        //    Saturation + Exposure are split Dark/Light because the baked
+        //    palette is at HsvValue=1 (near-white), so on Light the
+        //    greyscale has to be pulled down by negative exposure to stay
+        //    visible against LayerFillColor. HueShift/Opacity stay
+        //    unified — widen later if per-theme control is needed ───────
         public float  TranscribingSaturationDark  { get; init; } = 0f;
         public float  TranscribingSaturationLight { get; init; } = 0f;
         public float  TranscribingHueShiftTurns   { get; init; } = 0f;
