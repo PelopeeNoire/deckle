@@ -280,6 +280,9 @@ public sealed partial class HudChrono : UserControl
     private void UpdateClock()
     {
         var elapsed = _stopwatch.Elapsed;
+        int capSec = Settings.SettingsService.Instance.Current.Recording.MaxRecordingDurationSeconds;
+        if (capSec > 0 && elapsed.TotalSeconds > capSec)
+            elapsed = TimeSpan.FromSeconds(capSec);
         int totalMin = (int)elapsed.TotalMinutes;
         int min = totalMin % 100;
         int sec = elapsed.Seconds;
