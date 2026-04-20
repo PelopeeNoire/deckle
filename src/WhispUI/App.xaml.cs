@@ -45,15 +45,15 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        // Cold-start instrumentation. A running Stopwatch + one line per
-        // milestone is enough to spot a regression (the shape of the
-        // sequence matters more than μs precision). Written via DebugLog
-        // only — LogService sinks aren't attached yet on the first calls.
+        // Cold-start instrumentation. Milestones accumulate into a local
+        // list during construction and get flushed as a single aggregate
+        // line through LogService at the end of OnLaunched — LogWindow
+        // receives it under [APP]. A naive "one _log.Info per milestone"
+        // approach would lose the earliest ones (LogService has no sink
+        // before _logWindow is constructed and AddSink is called).
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        void Milestone(string name) =>
-            DebugLog.Write("APP", $"  milestone {name} +{sw.ElapsedMilliseconds}ms");
-
-        DebugLog.Write("APP", "OnLaunched");
+        var milestones = new List<string>();
+        void Milestone(string name) => milestones.Add($"{name} +{sw.ElapsedMilliseconds}ms");
 
         _engine = new WhispEngine();
         Milestone("engine");
@@ -161,7 +161,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         _tray.Register(_messageHost.Hwnd);
         _hotkeyManager = new HotkeyManager(_messageHost.Hwnd, OnHotkey);
         _hotkeyManager.Register();
-        DebugLog.Write("APP", "tray + hotkeys registered on message-only host");
         Milestone("hotkeys");
 
         // Silent warmup — runs a dummy transcription on a zero-filled buffer
@@ -185,12 +184,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             string? pageTag = settingsIdx + 1 < cliArgs.Length
                 ? cliArgs[settingsIdx + 1]
                 : null;
-            DebugLog.Write("APP", $"--settings flag detected, page={pageTag ?? "(default)"}");
+            _log.Info(LogSource.App, $"--settings flag detected, page={pageTag ?? "(default)"}");
             _settingsWindow?.ShowAndActivate(pageTag);
         }
 
         sw.Stop();
-        DebugLog.Write("APP", $"OnLaunched done: {sw.ElapsedMilliseconds}ms total");
+        milestones.Add($"total {sw.ElapsedMilliseconds}ms");
+        _log.Info(LogSource.App, "startup milestones: " + string.Join(" | ", milestones));
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────
