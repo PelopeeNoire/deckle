@@ -1205,6 +1205,7 @@ internal sealed class WhispEngine : IDisposable
             Strategy:    _strategyLabel,
             NSegments:   nSeg,
             TextChars:   fullText.Length,
+            TextWords:   Logging.TextMetrics.CountWords(fullText),
             Profile:     profile?.Name ?? "",
             Pasted:      pasteVerified,
             Outcome:     outcome.ToString()));

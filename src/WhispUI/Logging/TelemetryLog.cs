@@ -13,6 +13,7 @@ internal sealed record TelemetrySample(
     string Strategy,
     int    NSegments,
     int    TextChars,
+    int    TextWords,
     string Profile,
     bool   Pasted,
     string Outcome);
@@ -26,7 +27,7 @@ internal static class TelemetryLog
 {
     private const string Header =
         "timestamp,audio_sec,vad_ms,whisper_ms,llm_ms,clipboard_ms,paste_ms,"
-        + "strategy,n_segments,text_chars,profile,pasted,outcome";
+        + "strategy,n_segments,text_chars,text_words,profile,pasted,outcome";
 
     private static readonly object _lock = new();
     private static readonly Lazy<string?> _path = new(ResolvePath);
@@ -48,7 +49,7 @@ internal static class TelemetryLog
                 w.WriteLine(
                     $"{ts},{s.AudioSec.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)},"
                     + $"{s.VadMs},{s.WhisperMs},{s.LlmMs},{s.ClipboardMs},{s.PasteMs},"
-                    + $"{Escape(s.Strategy)},{s.NSegments},{s.TextChars},"
+                    + $"{Escape(s.Strategy)},{s.NSegments},{s.TextChars},{s.TextWords},"
                     + $"{Escape(s.Profile)},{s.Pasted.ToString().ToLowerInvariant()},{Escape(s.Outcome)}");
             }
         }
