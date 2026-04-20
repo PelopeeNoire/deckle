@@ -355,6 +355,22 @@ internal sealed class WhispEngine : IDisposable
                 // continue through the level switch below.
                 if (isVadLine) return;
 
+                // Downgrade the "no GPU found" line emitted by the second
+                // whisper_backend_init_gpu call (triggered during VAD context
+                // creation). whisper.cpp historically hardcoded use_gpu=false
+                // in whisper_vad_init_context — the main Whisper backend runs
+                // fine on Vulkan, this second init only reports "no GPU found"
+                // because nothing asked for GPU. Bénin but alarming at Warn
+                // level. Kept as Verbose so it stays discoverable in diagnostic
+                // mode. Targeted match: both prefix and body required, to avoid
+                // masking a real GPU failure phrased differently.
+                if (msg.StartsWith("whisper_backend_init_gpu", StringComparison.Ordinal) &&
+                    msg.IndexOf("no GPU found", StringComparison.Ordinal) >= 0)
+                {
+                    _log.Verbose(LogSource.Whisper, msg);
+                    return;
+                }
+
                 // ggml levels: 0=None, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Cont.
                 // Warn/Error surface as normal logs to be visible without enabling
                 // Verbose filter. Info/Debug/Cont stay in Verbose.
