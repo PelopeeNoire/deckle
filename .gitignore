@@ -53,4 +53,12 @@ benchmark/reports/autoresearch_report.txt
 
 # Benchmark — transcript corpora (local dictation samples, not for versioning)
 benchmark/data/exemples-transcripts--*.txt
+
+# Corpus logging — per-profile JSONL of personal transcriptions (raw + rewrite).
+# Private content, never push to a public remote.
+benchmark/data/*.jsonl
+
+# Claude Code runtime state (locks, caches) — keep the tracked agent/skill defs
+.claude/scheduled_tasks.lock
+
 run.log
