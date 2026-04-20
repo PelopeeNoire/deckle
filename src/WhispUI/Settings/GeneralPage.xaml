@@ -87,11 +87,13 @@
                     <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard Header="Fade when your cursor is near"
-                                               Description="Make the overlay transparent when you move over it, so it never blocks what's underneath.">
+                                               Description="Make the overlay transparent when you move over it, so it never blocks what's underneath."
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
                             <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
                         </controls:SettingsCard>
                         <controls:SettingsCard Header="Screen position"
-                                               Description="Where the overlay appears on your primary display. Applied on the next recording.">
+                                               Description="Where the overlay appears on your primary display. Applied on the next recording."
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
                             <ComboBox x:Name="OverlayPositionCombo"
                                       MinWidth="160"
                                       SelectionChanged="OverlayPositionCombo_SelectionChanged">
