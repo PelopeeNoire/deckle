@@ -80,4 +80,16 @@ Write-Host "Publish ($Configuration x64) -> $PublishDir" -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw "MSBuild Publish failed (code $LASTEXITCODE)" }
 
 Write-Host "OK: $PublishDir" -ForegroundColor Green
+
+# Post-publish summary. Release bundles managed assemblies into WhispUI.exe
+# (PublishSingleFile=true in the csproj), so the exe size should be ~50-150 MB
+# for a WinUI 3 app. Native DLLs stay alongside as separate files on purpose.
+$exe = Join-Path $PublishDir 'WhispUI.exe'
+if (Test-Path $exe) {
+    $exeSize = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+    $total   = [math]::Round(((Get-ChildItem $PublishDir -Recurse -File | Measure-Object -Property Length -Sum).Sum) / 1MB, 1)
+    $files   = (Get-ChildItem $PublishDir -File).Count
+    Write-Host ("  WhispUI.exe: {0} MB | dir total: {1} MB | top-level files: {2}" -f $exeSize, $total, $files) -ForegroundColor DarkGray
+}
+
 if ($Open) { Start-Process explorer.exe $PublishDir }
