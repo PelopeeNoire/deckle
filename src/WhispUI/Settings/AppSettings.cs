@@ -22,6 +22,16 @@ public sealed class AppSettings
     public ContextSettings Context { get; set; } = new();
     public LlmSettings Llm { get; set; } = new();
     public CorpusLoggingSettings CorpusLogging { get; set; } = new();
+    public PasteSettings Paste { get; set; } = new();
+}
+
+// Auto-paste after transcription. Off by default — the clipboard is the safe
+// default and the user explicitly opts in to SendInput-driven paste. When
+// false, the engine skips PasteFromClipboard entirely and the HUD shows the
+// "Copied to clipboard" message instead of "Pasted".
+public sealed class PasteSettings
+{
+    public bool AutoPasteEnabled { get; set; } = false;
 }
 
 // Corpus logging: opt-in capture of each (raw, rewritten) pair in a per-profile
