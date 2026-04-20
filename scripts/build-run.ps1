@@ -37,26 +37,77 @@ function Select-WorktreeInteractive {
     } finally {
         Pop-Location
     }
-    if (-not $raw) { throw "git worktree list failed — not a git repo?" }
+    if (-not $raw) { throw "git worktree list failed - not a git repo?" }
 
-    $paths = @()
+    # Parse porcelain output into (path, branch) tuples.
+    $entries = @()
+    $curPath = $null
+    $curBranch = $null
     foreach ($line in $raw) {
-        if ($line -like 'worktree *') { $paths += $line.Substring(9) }
+        if ($line -like 'worktree *') {
+            if ($curPath) {
+                $entries += [pscustomobject]@{ Path = $curPath; Branch = ($curBranch ?? '(detached)') }
+            }
+            $curPath = $line.Substring(9)
+            $curBranch = $null
+        } elseif ($line -like 'branch *') {
+            $curBranch = ($line.Substring(7)) -replace '^refs/heads/', ''
+        }
     }
-    if ($paths.Count -eq 0) { throw "No worktrees found" }
+    if ($curPath) {
+        $entries += [pscustomobject]@{ Path = $curPath; Branch = ($curBranch ?? '(detached)') }
+    }
+    if ($entries.Count -eq 0) { throw "No worktrees found" }
+
+    # Pre-format each line with branch badge + path. Path is truncated on
+    # overflow so the header doesn't wrap and break the cursor math.
+    $labels = foreach ($e in $entries) {
+        "{0,-28} {1}" -f ("[$($e.Branch)]"), $e.Path
+    }
+
+    $selected = 0
+    $header   = "Pick a worktree (Up/Down, Enter = confirm, Esc = cancel):"
 
     Write-Host ""
-    Write-Host "Available worktrees:" -ForegroundColor Cyan
-    for ($i = 0; $i -lt $paths.Count; $i++) {
-        Write-Host ("  [{0}] {1}" -f $i, $paths[$i])
+    Write-Host $header -ForegroundColor Cyan
+    $top = [Console]::CursorTop
+    # Reserve N blank lines so cursor positioning stays within existing buffer.
+    for ($i = 0; $i -lt $labels.Count; $i++) { Write-Host "" }
+
+    [Console]::CursorVisible = $false
+    try {
+        while ($true) {
+            for ($i = 0; $i -lt $labels.Count; $i++) {
+                [Console]::SetCursorPosition(0, $top + $i)
+                $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
+                $line   = $prefix + $labels[$i]
+                $pad    = [Console]::WindowWidth - $line.Length - 1
+                if ($pad -gt 0) { $line += (' ' * $pad) }
+                if ($i -eq $selected) {
+                    Write-Host $line -ForegroundColor Green -NoNewline
+                } else {
+                    Write-Host $line -NoNewline
+                }
+            }
+            $key = [Console]::ReadKey($true)
+            switch ($key.Key) {
+                'UpArrow'   { if ($selected -gt 0)                   { $selected-- } }
+                'DownArrow' { if ($selected -lt $entries.Count - 1)  { $selected++ } }
+                'Enter'     {
+                    [Console]::SetCursorPosition(0, $top + $labels.Count)
+                    Write-Host ""
+                    return $entries[$selected].Path
+                }
+                'Escape'    {
+                    [Console]::SetCursorPosition(0, $top + $labels.Count)
+                    Write-Host ""
+                    throw "Cancelled"
+                }
+            }
+        }
+    } finally {
+        [Console]::CursorVisible = $true
     }
-    Write-Host ""
-    $choice = Read-Host "Pick a worktree (0-$($paths.Count - 1))"
-    $idx = 0
-    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 0 -or $idx -ge $paths.Count) {
-        throw "Invalid choice: $choice"
-    }
-    return $paths[$idx]
 }
 
 if ($Pick) {
@@ -88,7 +139,7 @@ if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$Repo
 # `git rev-parse --git-common-dir` and junction the missing folders.
 # No-op when running from the main repo or when git is unavailable.
 # =============================================================================
-function Ensure-WorktreeJunctions {
+function Sync-WorktreeJunctions {
     param([string]$RepoRoot)
 
     $needed = @('native', 'models')
@@ -127,7 +178,7 @@ function Ensure-WorktreeJunctions {
     }
 }
 
-Ensure-WorktreeJunctions -RepoRoot $RepoRoot
+Sync-WorktreeJunctions -RepoRoot $RepoRoot
 
 # =============================================================================
 # MSBuild configuration

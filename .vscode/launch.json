@@ -1,11 +1,20 @@
 {
-    // WhispUI build profiles — un profil par emplacement.
-    // À régénérer quand un worktree est ajouté / supprimé.
+    // WhispUI build profiles. Select from the Run and Debug panel (Ctrl+Shift+D),
+    // then F5. Uses the PowerShell extension (ms-vscode.powershell).
     //
-    // Select from the Run and Debug panel (Ctrl+Shift+D), then F5.
-    // Uses the PowerShell extension (ms-vscode.powershell).
+    // Le profil "Pick" ouvre un menu flèches dans le terminal et liste tous
+    // les worktrees. VSCodium reste ouvert sur main, on choisit la branche
+    // à builder sans switcher.
     "version": "0.2.0",
     "configurations": [
+        {
+            "name": "Build: pick worktree (arrow keys)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/scripts/build-run.ps1",
+            "args": [ "-Pick" ],
+            "cwd": "${workspaceFolder}"
+        },
         {
             "name": "Build: main",
             "type": "PowerShell",
@@ -15,11 +24,27 @@
             "cwd": "${workspaceFolder}"
         },
         {
-            "name": "Build: worktree dazzling-hawking-f95387",
+            "name": "Build: main (Restore)",
             "type": "PowerShell",
             "request": "launch",
             "script": "${workspaceFolder}/scripts/build-run.ps1",
-            "args": [ "-Target", "D:\\worktrees\\transcription\\dazzling-hawking-f95387" ],
+            "args": [ "-Target", "D:\\projects\\ai\\transcription", "-Restore" ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Build: main (Debug config)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/scripts/build-run.ps1",
+            "args": [ "-Target", "D:\\projects\\ai\\transcription", "-Configuration", "Debug" ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Build: pick (no run)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/scripts/build-run.ps1",
+            "args": [ "-Pick", "-NoRun" ],
             "cwd": "${workspaceFolder}"
         }
     ]
