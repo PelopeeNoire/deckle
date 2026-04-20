@@ -62,10 +62,24 @@ function Select-WorktreeInteractive {
     }
     if ($entries.Count -eq 0) { throw "No worktrees found" }
 
-    # Pre-format each line with branch badge + path. Path is truncated on
-    # overflow so the header doesn't wrap and break the cursor math.
+    # Pre-format each line with branch badge + path. We MUST truncate so the
+    # rendered line fits on a single terminal row — the cursor math below
+    # assumes 1 label = 1 physical line, and a wrapped line pushes CursorTop
+    # by 2, which poisons `$top = $bottom - $labels.Count` and causes the
+    # previous selection to stay visible above the new one (ghost entries).
+    # Elide the path's prefix so the tail (worktree folder name, usually the
+    # distinctive part) stays legible.
+    $maxLineLen = [Console]::WindowWidth - 5  # "  > " prefix + trailing gap
     $labels = foreach ($e in $entries) {
-        "{0,-28} {1}" -f ("[$($e.Branch)]"), $e.Path
+        $branch  = "{0,-28}" -f "[$($e.Branch)]"
+        $path    = $e.Path
+        $budget  = $maxLineLen - $branch.Length - 1  # -1 for the separating space
+        if ($budget -lt 4) {
+            $path = [char]0x2026  # single ellipsis char, path blown by a huge branch label
+        } elseif ($path.Length -gt $budget) {
+            $path = ([char]0x2026) + $path.Substring($path.Length - ($budget - 1))
+        }
+        "$branch $path"
     }
 
     $selected = 0
