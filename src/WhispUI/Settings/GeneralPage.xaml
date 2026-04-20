@@ -148,7 +148,8 @@
                         <controls:SettingsCard x:Name="CorpusFolderCard"
                                                ContentAlignment="Vertical"
                                                Header="Folder path"
-                                               Description="Leave empty to use the default location.">
+                                               Description="Leave empty to use the default location."
+                                               IsEnabled="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=OneWay}">
                             <!-- Grid + "*" column lets the TextBox shrink when the
                                  Settings window is narrow. A StackPanel Horizontal
                                  would keep children at their natural width and
