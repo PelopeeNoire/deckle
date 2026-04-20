@@ -39,8 +39,8 @@ internal static class HudComposition
     // ╚════════════════════════════════════════════════════════════════════╝
     // Fixed for both states — stroke metrics are a property of the HUD
     // rect, not of the animation.
-    private const float  StrokeThickness              = 2f;    // dip, stroke width
-    private const float  InsetDip                     = 0f;    // dip, inset from HUD edge
+    private const float  StrokeThickness              = 6f;    // dip, stroke width
+    private const float  InsetDip                     = -3f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -141,7 +141,7 @@ internal static class HudComposition
         public float  ConicSpanTurns     { get; init; } = 0.4f;
         public float  ConicLeadFadeTurns { get; init; } = 1f;
         public float  ConicTailFadeTurns { get; init; } = 1f;
-        public float  ConicFadeCurve     { get; init; } = 3f;
+        public float  ConicFadeCurve     { get; init; } = 4f;
         public bool   ArcMirror          { get; init; } = true;
 
         // ── Arc rotation ─────────────────────────────────────────────────
@@ -224,8 +224,8 @@ internal static class HudComposition
         public float  TranscribingSaturationDark  { get; init; } = 0f;
         public float  TranscribingSaturationLight { get; init; } = 0f;
         public float  TranscribingHueShiftTurns   { get; init; } = 0f;
-        public float  TranscribingExposureDark    { get; init; } = 0f;
-        public float  TranscribingExposureLight   { get; init; } = 0f;
+        public float  TranscribingExposureDark    { get; init; } = 1f;
+        public float  TranscribingExposureLight   { get; init; } = 1f;
         public float  TranscribingOpacity         { get; init; } = 1f;
         public double TranscribingBlendSeconds    { get; init; } = 1.2;
     }
