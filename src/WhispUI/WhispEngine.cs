@@ -47,6 +47,21 @@ internal sealed class WhispEngine : IDisposable
     // mutation from WhispUI occurs while SendInput is in flight to the target.
     public Action? OnReadyToPaste { get; set; }
 
+    // Microphone level, linear RMS [0, 1], throttled ~20 Hz (one emission per
+    // 50 ms sub-window of the captured audio). Fired from the recording thread
+    // — subscribers marshal to UI. Consumer-less for now (HUD contour animation
+    // will hook in later).
+    public event Action<float>? AudioLevel;
+
+    // Per-segment notification from whisper.cpp's new_segment_callback — fired
+    // after the segment has been appended to _segments. T0/T1 are centiseconds
+    // since the start of the current Transcribe call. Confidence is the linear
+    // average p over text tokens. Fired from the inference thread — subscribers
+    // marshal to UI.
+    public event Action<SegmentArgs>? NewSegment;
+
+    public readonly record struct SegmentArgs(string Text, long T0, long T1, float Confidence);
+
     // All StatusChanged / TranscriptionFinished emissions route through these
     // two helpers so the startup warmup can silence them in a single place
     // instead of peppering the pipeline with if-checks. _isWarmup is set only
@@ -805,6 +820,7 @@ internal sealed class WhispEngine : IDisposable
                         var data = new byte[hdr.dwBytesRecorded];
                         Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
                         allBytes.AddRange(data);
+                        EmitAudioLevels(data);
                     }
 
                     hdr.dwFlags &= ~(uint)0x00000001;
@@ -892,6 +908,36 @@ internal sealed class WhispEngine : IDisposable
         return PcmToFloat(allBytes.ToArray());
     }
 
+    // waveIn delivers 500ms PCM16 buffers; we slice each into 10 × 50ms
+    // sub-windows so AudioLevel fires at ~20 Hz — fine enough for a smooth
+    // contour animation without swamping subscribers. RMS is linear [0, 1],
+    // clamped so a rare overshoot from quantization never escapes the range.
+    private void EmitAudioLevels(byte[] pcm16)
+    {
+        var handler = AudioLevel;
+        if (handler is null) return;
+
+        const int SubWindowMs     = 50;
+        const int BytesPerSubWin  = 16000 * 2 * SubWindowMs / 1000; // 1600 bytes
+        const int SamplesPerSubWin = BytesPerSubWin / 2;            // 800 samples
+
+        int offset = 0;
+        while (offset + BytesPerSubWin <= pcm16.Length)
+        {
+            double sumSq = 0;
+            for (int i = 0; i < SamplesPerSubWin; i++)
+            {
+                short s = (short)(pcm16[offset + i * 2] | (pcm16[offset + i * 2 + 1] << 8));
+                double v = s / 32768.0;
+                sumSq += v * v;
+            }
+            double rms = Math.Sqrt(sumSq / SamplesPerSubWin);
+            if (rms > 1.0) rms = 1.0;
+            handler((float)rms);
+            offset += BytesPerSubWin;
+        }
+    }
+
     // ── Whisper transcription ────────────────────────────────────────────────
     //
     // Monolithic call: all audio is passed at once to whisper_full(), which
@@ -961,6 +1007,8 @@ internal sealed class WhispEngine : IDisposable
                     _log.Narrative(LogSource.Transcribe,
                         "Whisper got stuck repeating the same segment — stopping transcription early. The text captured so far is preserved.");
                 }
+
+                NewSegment?.Invoke(new SegmentArgs(segText, t0, t1, avgP));
 
                 // dur = segment duration, gap = silence (or overlap) with the previous one.
                 // In a typical hallucination loop, dur≈3.0s contiguous (gap=+0.0s) repeats
