@@ -335,7 +335,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             // digits with the recording accent when StatusChanged fires.
             _hudWindow?.ShowPreparing();
 
-            _engine.StartRecording(manualProfileName: manualProfile, shouldPaste: true);
+            _engine.StartRecording(
+                manualProfileName: manualProfile,
+                shouldPaste: Settings.SettingsService.Instance.Current.Paste.AutoPasteEnabled);
         }
         else
         {
