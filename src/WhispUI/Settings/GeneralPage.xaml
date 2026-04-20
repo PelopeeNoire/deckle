@@ -117,7 +117,7 @@
                 <controls:SettingsCard Header="Start with Windows"
                                        Description="Launch WhispUI automatically when you sign in."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
-                    <ToggleSwitch IsEnabled="False" />
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutostartEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Start minimized"
