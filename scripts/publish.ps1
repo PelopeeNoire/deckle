@@ -3,6 +3,10 @@ param(
     [ValidateSet('Release','Debug')]
     [string]$Configuration = 'Release',
     [switch]$Open,
+    # Skip launching the published exe after publish (default = launch).
+    [switch]$NoRun,
+    # Block until the published process exits (implies launch).
+    [switch]$Wait,
     # Explicit path to MSBuild.exe (takes priority over env + vswhere).
     [string]$MsBuild
 )
@@ -93,3 +97,12 @@ if (Test-Path $exe) {
 }
 
 if ($Open) { Start-Process explorer.exe $PublishDir }
+
+# Launch the published exe so the publish-run loop matches build-run.ps1.
+# Skip with -NoRun when producing a release artifact without testing it.
+if (-not $NoRun) {
+    if (-not (Test-Path $exe)) { throw "Exe not found after publish: $exe" }
+    Write-Host "Run $exe" -ForegroundColor Green
+    $proc = Start-Process -FilePath $exe -PassThru
+    if ($Wait) { $proc.WaitForExit() }
+}

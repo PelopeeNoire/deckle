@@ -23,6 +23,16 @@ namespace WhispUI.Shell;
 //   - Aucun conflit avec la tâche planifiée `Whisp` héritée de
 //     WhispInteropTest (cf. CLAUDE.md).
 //
+// Cohabitation multi-install (dev + publish sur la même machine) : la Run
+// key porte un nom fixe `WhispUI`, donc une seule install peut être en
+// autostart à la fois. `IsEnabled` compare la valeur stockée à
+// `Environment.ProcessPath` : chaque install ne voit ON que si elle est
+// celle qui pointe dans le registre. `Disable` ne supprime que si la
+// valeur appartient à l'exe courant, pour éviter qu'une install en
+// désactive une autre. `Enable` écrase toujours — activer depuis une
+// install prend le relais sur l'autre. Deux instances simultanées
+// collisionneraient de toute façon sur RegisterHotKey (err 1409).
+//
 // Tous les appels registry sont encapsulés avec try/catch : en cas de
 // refus (GPO machine, profil corrompu), on log + on retourne false/l'état
 // actuel sans propager — le toggle Settings ne doit jamais crasher l'UI.
@@ -38,7 +48,8 @@ public static class AutostartService
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-            return key?.GetValue(ValueName) is string s && !string.IsNullOrWhiteSpace(s);
+            if (key?.GetValue(ValueName) is not string s) return false;
+            return IsOwnedByCurrentExe(s);
         }
         catch (Exception ex)
         {
@@ -89,6 +100,12 @@ public static class AutostartService
                 // No key means no entry — treat as already disabled.
                 return true;
             }
+            if (key.GetValue(ValueName) is string s && !IsOwnedByCurrentExe(s))
+            {
+                // Entry belongs to another install of WhispUI — leave it alone.
+                _log.Info(LogSource.Settings, "Autostart disable skipped — entry points to a different install");
+                return true;
+            }
             key.DeleteValue(ValueName, throwOnMissingValue: false);
             _log.Info(LogSource.Settings, "Autostart disabled");
             return true;
@@ -98,5 +115,31 @@ public static class AutostartService
             _log.Warning(LogSource.Settings, $"Autostart disable failed: {ex.GetType().Name} {ex.Message}");
             return false;
         }
+    }
+
+    // The Run value is stored as `"C:\path\to\exe.exe"` (quoted). An older
+    // entry without quotes is also tolerated. Anything after the exe path
+    // (arguments) is ignored for ownership comparison.
+    private static string? ExtractExePath(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return null;
+        command = command.Trim();
+        if (command.StartsWith('"'))
+        {
+            int end = command.IndexOf('"', 1);
+            return end < 0 ? null : command.Substring(1, end - 1);
+        }
+        int space = command.IndexOf(' ');
+        return space < 0 ? command : command[..space];
+    }
+
+    private static bool IsOwnedByCurrentExe(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return false;
+        string? stored = ExtractExePath(command);
+        if (string.IsNullOrWhiteSpace(stored)) return false;
+        string? current = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(current)) return false;
+        return string.Equals(stored, current, StringComparison.OrdinalIgnoreCase);
     }
 }
