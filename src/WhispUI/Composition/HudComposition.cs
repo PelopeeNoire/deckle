@@ -170,7 +170,7 @@ internal static class HudComposition
         //    hue rotation. This is what the eye reads as "the speed of
         //    the loading animation" ─────────────────────────────────────
         public double ArcPeriodSeconds   { get; init; } = 8.0;
-        public float  ArcDirection       { get; init; } = -1f;
+        public float  ArcDirection       { get; init; } = 1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
         public float  ArcEaseP1X         { get; init; } = 0.5f;
         public float  ArcEaseP1Y         { get; init; } = 0f;
@@ -184,7 +184,7 @@ internal static class HudComposition
         public float  RewritingHueShiftTurns    { get; init; } = 0f;
         public float  RewritingExposure         { get; init; } = 0f;
         public float  RewritingOpacity          { get; init; } = 1f;
-        public double RewritingBlendSeconds     { get; init; } = 1.2;
+        public double RewritingBlendSeconds     { get; init; } = 1;
 
         // ── Transcribing variant — greyscale (Saturation 0) by default.
         //    Saturation + Exposure are split Dark/Light because the baked
@@ -196,9 +196,9 @@ internal static class HudComposition
         public float  TranscribingSaturationLight { get; init; } = 0f;
         public float  TranscribingHueShiftTurns   { get; init; } = 0f;
         public float  TranscribingExposureDark    { get; init; } = 0f;
-        public float  TranscribingExposureLight   { get; init; } = -1.5f;
+        public float  TranscribingExposureLight   { get; init; } = 0f;
         public float  TranscribingOpacity         { get; init; } = 1f;
-        public double TranscribingBlendSeconds    { get; init; } = 1.2;
+        public double TranscribingBlendSeconds    { get; init; } = 1;
     }
 
     // Live handle to a processing stroke created by CreateProcessingStroke.
