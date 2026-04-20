@@ -14,38 +14,6 @@
             "script": "${workspaceFolder}/scripts/build-run.ps1",
             "args": [ "-Pick" ],
             "cwd": "${workspaceFolder}"
-        },
-        {
-            "name": "Build: main",
-            "type": "PowerShell",
-            "request": "launch",
-            "script": "${workspaceFolder}/scripts/build-run.ps1",
-            "args": [ "-Target", "D:\\projects\\ai\\transcription" ],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "name": "Build: main (Restore)",
-            "type": "PowerShell",
-            "request": "launch",
-            "script": "${workspaceFolder}/scripts/build-run.ps1",
-            "args": [ "-Target", "D:\\projects\\ai\\transcription", "-Restore" ],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "name": "Build: main (Debug config)",
-            "type": "PowerShell",
-            "request": "launch",
-            "script": "${workspaceFolder}/scripts/build-run.ps1",
-            "args": [ "-Target", "D:\\projects\\ai\\transcription", "-Configuration", "Debug" ],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "name": "Build: pick (no run)",
-            "type": "PowerShell",
-            "request": "launch",
-            "script": "${workspaceFolder}/scripts/build-run.ps1",
-            "args": [ "-Pick", "-NoRun" ],
-            "cwd": "${workspaceFolder}"
         }
     ]
 }
