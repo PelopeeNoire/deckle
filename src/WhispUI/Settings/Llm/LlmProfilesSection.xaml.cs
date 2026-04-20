@@ -192,6 +192,7 @@ public sealed partial class LlmProfilesSection : UserControl
             Model = "",
             SystemPrompt = ""
         });
+        SettingsService.Instance.Save();
 
         int index = s.Profiles.Count - 1;
         var vm = new ProfileViewModel();
