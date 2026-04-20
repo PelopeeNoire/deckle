@@ -216,17 +216,22 @@ internal static class HudComposition
         public float  RewritingOpacity          { get; init; } = 1f;
         public double RewritingBlendSeconds     { get; init; } = 1.2;
 
-        // Transcribing variant — defaults to greyscale (saturation 0) and
-        // neutral exposure. Saturation and Exposure are split Dark / Light
-        // so the arc can take a different feel against each substrate
-        // (e.g. lightly tinted grey on dark, stronger grey on light).
+        // Transcribing variant — defaults to greyscale (saturation 0).
+        // Saturation and Exposure are split Dark / Light so the arc can
+        // take a different feel against each substrate. The baked palette
+        // is painted at HsvValue=1 (maximum luminance), so the greyscale
+        // result is near-white. On Dark that reads as a bright light-grey
+        // stroke against the Acrylic dark substrate (neutral exposure).
+        // On Light the same near-white would disappear into the
+        // LayerFillColor substrate — pull it down with a negative exposure
+        // so it reads as a visible mid-grey stroke against the light card.
         // HueShift / Opacity stay unified across themes — widen later if
         // you need per-theme control there too.
         public float  TranscribingSaturationDark  { get; init; } = 0f;
         public float  TranscribingSaturationLight { get; init; } = 0f;
         public float  TranscribingHueShiftTurns   { get; init; } = 0f;
         public float  TranscribingExposureDark    { get; init; } = 0f;
-        public float  TranscribingExposureLight   { get; init; } = 1f;
+        public float  TranscribingExposureLight   { get; init; } = -1.5f;
         public float  TranscribingOpacity         { get; init; } = 1f;
         public double TranscribingBlendSeconds    { get; init; } = 1.2;
     }
