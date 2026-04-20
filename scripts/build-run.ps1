@@ -234,7 +234,14 @@ Get-Process -Name WhispUI -ErrorAction SilentlyContinue | ForEach-Object {
 }
 
 # 2. Build via VS MSBuild (XamlCompiler MSB3073 bug prevents dotnet build CLI)
-$targets = if ($Restore) { 'Restore;Build' } else { 'Build' }
+# Auto-restore on first build in a fresh worktree: obj/ is gitignored, so
+# project.assets.json is missing until NuGet has hydrated it once.
+$assetsFile = Join-Path $ProjectDir 'obj\project.assets.json'
+$needsRestore = $Restore -or -not (Test-Path $assetsFile)
+if ($needsRestore -and -not $Restore) {
+    Write-Host "project.assets.json missing - running Restore first" -ForegroundColor Yellow
+}
+$targets = if ($needsRestore) { 'Restore;Build' } else { 'Build' }
 Write-Host "Build ($targets, $Configuration x64)..." -ForegroundColor Cyan
 & $MsBuildExe $Csproj "-t:$targets" "-p:Configuration=$Configuration" '-p:Platform=x64' '-v:m' '-nologo'
 if ($LASTEXITCODE -ne 0) { throw "MSBuild failed (code $LASTEXITCODE)" }
