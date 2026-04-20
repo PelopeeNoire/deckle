@@ -50,6 +50,14 @@ internal class LlmService
 
     public string? Rewrite(string text, string endpoint, RewriteProfile profile)
     {
+        if (string.IsNullOrWhiteSpace(profile.Model))
+        {
+            _log.Warning(LogSource.Llm,
+                $"profile '{profile.Name}' has no model configured — rewrite skipped. " +
+                $"Set it in Settings → LLM.");
+            return null;
+        }
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         using var cts = new CancellationTokenSource(REWRITE_HARD_CAP);
         try
@@ -122,7 +130,9 @@ internal class LlmService
         catch (Exception ex)
         {
             sw.Stop();
-            _log.Warning(LogSource.Llm, $"unavailable: {ex.GetType().Name} {ex.Message} — raw text preserved");
+            _log.Warning(LogSource.Llm,
+                $"unavailable: {ex.GetType().Name} {ex.Message} " +
+                $"(profile: {profile.Name}, model: {profile.Model}) — raw text preserved");
             return null;
         }
     }
