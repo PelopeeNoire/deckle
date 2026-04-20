@@ -125,6 +125,18 @@ internal sealed class WhispEngine : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void WhisperNewSegmentCallback(IntPtr ctx, IntPtr state, int n_new, IntPtr user_data);
 
+    // whisper.cpp abort_callback signature: bool fn(void* user_data). Called
+    // periodically by the decoder; returning true requests a clean stop —
+    // whisper_full returns 0 with the segments emitted so far. We use it as
+    // the kill switch for the repetition-loop detector.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private delegate bool WhisperAbortCallback(IntPtr user_data);
+
+    private WhisperAbortCallback? _abortCallback;
+    private volatile bool _abortRequested;
+    private readonly RepetitionDetector _repetitionDetector = new();
+
     private readonly record struct TranscribedSegment(string Text, long T0, long T1, float NoSpeechProb);
 
     // Stopwatch started at the beginning of whisper_full — read by OnNewSegment
@@ -913,6 +925,25 @@ internal sealed class WhispEngine : IDisposable
                 lock (_segmentsLock)
                     _segments.Add(new TranscribedSegment(segText, t0, t1, nsp));
 
+                // Repetition-loop guard. If the last N segments are identical
+                // (case/whitespace-normalised), ask whisper to stop — logprob /
+                // entropy thresholds don't catch hallucination loops where the
+                // decoder is confident in the wrong token (p̂ ≈ 0.99). One more
+                // segment may still surface after this call because whisper
+                // only probes abort_callback between decoder steps — that's
+                // fine, we still escape a 237 s × N-segments runaway.
+                if (!_abortRequested &&
+                    _repetitionDetector.ObserveAndShouldAbort(segText, out int streak))
+                {
+                    _abortRequested = true;
+                    string preview = segText.Trim();
+                    if (preview.Length > 60) preview = preview[..60] + "…";
+                    _log.Warning(LogSource.Transcribe,
+                        $"repetition loop detected — {streak} identical segments ('{preview}'); requesting whisper to abort");
+                    _log.Narrative(LogSource.Transcribe,
+                        "Whisper got stuck repeating the same segment — stopping transcription early. The text captured so far is preserved.");
+                }
+
                 // dur = segment duration, gap = silence (or overlap) with the previous one.
                 // In a typical hallucination loop, dur≈3.0s contiguous (gap=+0.0s) repeats
                 // metronomically — visually recognizable pattern without mental math.
@@ -978,6 +1009,15 @@ internal sealed class WhispEngine : IDisposable
         wparams.new_segment_callback = Marshal.GetFunctionPointerForDelegate(_newSegmentCallback);
         wparams.new_segment_callback_user_data = IntPtr.Zero;
 
+        // Abort-on-repetition plumbing. Reset the detector and the flag per
+        // call so a previous transcription's state doesn't leak. Same GC
+        // caveat as the segment callback — keep the delegate rooted.
+        _repetitionDetector.Reset();
+        _abortRequested = false;
+        _abortCallback = _ => _abortRequested;
+        wparams.abort_callback = Marshal.GetFunctionPointerForDelegate(_abortCallback);
+        wparams.abort_callback_user_data = IntPtr.Zero;
+
         float audioSec = (float)audio.Length / 16_000f;
         _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
         // Workflow narration: VAD_END handles the "now transcribing" intro in
@@ -1034,7 +1074,12 @@ internal sealed class WhispEngine : IDisposable
 
         nativeAllocs.Free();
 
-        if (result != 0)
+        // A non-zero return code paired with an abort request means whisper
+        // bailed out on our signal — not a decoder error. Segments emitted
+        // before the abort are still usable, so we fall through to the normal
+        // text-assembly path below. A non-zero return without an abort request
+        // is a real failure — surface it as before.
+        if (result != 0 && !_abortRequested)
         {
             _log.Error(LogSource.Transcribe, $"whisper_full returned code {result}");
             RaiseStatus("Erreur transcription");
