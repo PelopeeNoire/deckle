@@ -187,6 +187,7 @@ public sealed partial class LlmProfilesSection : UserControl
         var s = SettingsService.Instance.Current.Llm;
         s.Profiles.Add(new RewriteProfile
         {
+            Id = Guid.NewGuid().ToString("N").Substring(0, 12),
             Name = "",
             Model = "",
             SystemPrompt = ""

@@ -134,6 +134,57 @@
                     </ComboBox>
                 </controls:SettingsCard>
 
+                <!-- ── Diagnostics ─────────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Diagnostics" />
+
+                <controls:SettingsExpander Header="Corpus logging"
+                                           Description="Save every transcription to local JSONL files for personal analysis."
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE81C;}">
+                    <ToggleSwitch x:Name="CorpusLoggingToggle"
+                                  IsOn="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=TwoWay}"
+                                  Toggled="CorpusLoggingToggle_Toggled" />
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Name="CorpusFolderCard"
+                                               ContentAlignment="Vertical"
+                                               Header="Folder path"
+                                               Description="Leave empty to use the default location.">
+                            <!-- Grid + "*" column lets the TextBox shrink when the
+                                 Settings window is narrow. A StackPanel Horizontal
+                                 would keep children at their natural width and
+                                 clip the rightmost buttons. -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="CorpusFolderBox"
+                                         Grid.Column="0"
+                                         Text="{x:Bind ViewModel.CorpusDataDirectory, Mode=TwoWay}" />
+                                <Button x:Name="ChangeCorpusFolderButton"
+                                        Grid.Column="1"
+                                        Click="ChangeCorpusFolderButton_Click"
+                                        ToolTipService.ToolTip="Pick a folder">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                        <TextBlock Text="Set" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="OpenCorpusFolderButton"
+                                        Grid.Column="2"
+                                        Click="OpenCorpusFolderButton_Click"
+                                        ToolTipService.ToolTip="Open in File Explorer">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="Open" />
+                                        <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
             </StackPanel>
         </Grid>
     </ScrollViewer>

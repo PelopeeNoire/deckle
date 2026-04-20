@@ -119,6 +119,7 @@ public sealed partial class LlmPage : Page
     private async void ResetAll_Click(object sender, RoutedEventArgs e)
     {
         SettingsService.Instance.Current.Llm = new LlmSettings();
+        SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
         SettingsService.Instance.Save();
         Hydrate();
         await RefreshOllamaStateAsync();

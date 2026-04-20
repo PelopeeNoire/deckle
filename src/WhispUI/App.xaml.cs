@@ -290,11 +290,21 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         // Map hotkey id → manual rewrite profile name (null for plain
         // transcribe — engine then falls back to duration-based AutoRewriteRules).
+        // Prefer the stable ProfileId (survives renames): resolve it to the
+        // profile's current Name. Fall back to the legacy *ProfileName field
+        // when the Id slot is empty (pre-migration configs).
         var llm = Settings.SettingsService.Instance.Current.Llm;
+        string? ResolveSlotName(string? id, string? nameFallback) =>
+            (!string.IsNullOrEmpty(id)
+                ? llm.Profiles.Find(p => p.Id == id)?.Name
+                : null)
+            ?? nameFallback;
         string? manualProfile = hotkeyId switch
         {
-            NativeMethods.HOTKEY_ID_PRIMARY_REWRITE   => llm.PrimaryRewriteProfileName,
-            NativeMethods.HOTKEY_ID_SECONDARY_REWRITE => llm.SecondaryRewriteProfileName,
+            NativeMethods.HOTKEY_ID_PRIMARY_REWRITE   =>
+                ResolveSlotName(llm.PrimaryRewriteProfileId, llm.PrimaryRewriteProfileName),
+            NativeMethods.HOTKEY_ID_SECONDARY_REWRITE =>
+                ResolveSlotName(llm.SecondaryRewriteProfileId, llm.SecondaryRewriteProfileName),
             _                                         => null,
         };
 

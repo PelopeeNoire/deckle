@@ -998,6 +998,7 @@ internal sealed class WhispEngine : IDisposable
         long llmMs = 0;
         var llmSettings = Settings.SettingsService.Instance.Current.Llm;
         double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
+        int rawWordCount = Logging.TextMetrics.CountWords(fullText);
 
         // Rewrite profile resolution:
         // - manual rewrite hotkey → the profile name passed to StartRecording
@@ -1013,20 +1014,50 @@ internal sealed class WhispEngine : IDisposable
                     $"manual profile '{_manualProfileName}' not found in Profiles — transcript pasted without rewriting. Pick an existing profile on the Rewriting page.");
             }
         }
-        else if (llmSettings.Enabled && llmSettings.AutoRewriteRules.Count > 0)
+        else if (llmSettings.Enabled)
         {
-            // Descending scan: the longest matching rule wins.
-            foreach (var rule in llmSettings.AutoRewriteRules
-                .OrderByDescending(r => r.MinDurationSeconds))
+            // Pivot between the two auto-rule lists. "Words" is the default —
+            // word count is a truer proxy for LLM context load than wall-clock
+            // duration. "Duration" keeps the legacy behaviour.
+            Settings.RewriteProfile? ResolveRuleProfile(string? id, string? name)
             {
-                if (recDurationSec >= rule.MinDurationSeconds)
+                var byId = !string.IsNullOrEmpty(id)
+                    ? llmSettings.Profiles.Find(p => p.Id == id)
+                    : null;
+                return byId ?? llmSettings.Profiles.Find(p =>
+                    string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+            }
+
+            bool byWords = !string.Equals(llmSettings.RuleMetric, "Duration", StringComparison.OrdinalIgnoreCase);
+            if (byWords && llmSettings.AutoRewriteRulesByWords.Count > 0)
+            {
+                foreach (var rule in llmSettings.AutoRewriteRulesByWords
+                    .OrderByDescending(r => r.MinWordCount))
                 {
-                    profile = llmSettings.Profiles.Find(p =>
-                        string.Equals(p.Name, rule.ProfileName, StringComparison.OrdinalIgnoreCase));
-                    break;
+                    if (rawWordCount >= rule.MinWordCount)
+                    {
+                        profile = ResolveRuleProfile(rule.ProfileId, rule.ProfileName);
+                        break;
+                    }
+                }
+            }
+            else if (!byWords && llmSettings.AutoRewriteRules.Count > 0)
+            {
+                foreach (var rule in llmSettings.AutoRewriteRules
+                    .OrderByDescending(r => r.MinDurationSeconds))
+                {
+                    if (recDurationSec >= rule.MinDurationSeconds)
+                    {
+                        profile = ResolveRuleProfile(rule.ProfileId, rule.ProfileName);
+                        break;
+                    }
                 }
             }
         }
+
+        // Preserve the raw text before any rewrite replaces fullText — the
+        // corpus logger (fired at the very end) captures only the raw side.
+        string rawText = fullText;
 
         if (profile is not null)
         {
@@ -1095,6 +1126,32 @@ internal sealed class WhispEngine : IDisposable
             Profile:     profile?.Name ?? "",
             Pasted:      pasteVerified,
             Outcome:     outcome.ToString()));
+
+        // Corpus logging — captures the raw Whisper output only. We don't
+        // persist the rewrite: prompts evolve, so paired (raw, rewrite)
+        // samples go stale the moment the prompt is edited. Raw text stays
+        // useful for benchmarking Whisper itself (initial prompt, VAD, model
+        // swap). One file per rewrite profile so samples stay sliceable by
+        // the workflow they came from, even without the rewrite payload.
+        var corpusSettings = Settings.SettingsService.Instance.Current.CorpusLogging;
+        if (corpusSettings.Enabled && profile is not null)
+        {
+            var whisperSettings = Settings.SettingsService.Instance.Current.Transcription;
+            int rawChars = rawText.Length;
+
+            var metrics = new Logging.CorpusMetrics(
+                WordsPerSecond: recDurationSec > 0 ? rawWordCount / recDurationSec : 0);
+
+            var entry = new Logging.CorpusEntry(
+                Timestamp:       DateTimeOffset.Now,
+                DurationSeconds: recDurationSec,
+                Whisper:         new Logging.CorpusWhisper(whisperSettings.Model, whisperSettings.Language, whisperMs),
+                Raw:             new Logging.CorpusRaw(rawText, rawWordCount, rawChars),
+                Metrics:         metrics);
+
+            string slug = $"{Logging.CorpusLog.Slugify(profile.Name)}-{profile.Id}";
+            Logging.CorpusLog.Append(slug, entry);
+        }
 
         TranscriptionFinished?.Invoke(outcome);
     }
