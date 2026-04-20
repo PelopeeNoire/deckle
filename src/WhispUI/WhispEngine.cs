@@ -1292,12 +1292,13 @@ internal sealed class WhispEngine : IDisposable
         {
             var whisperSettings = Settings.SettingsService.Instance.Current.Transcription;
             int rawChars = rawText.Length;
+            var timestamp = DateTimeOffset.Now;
 
             var metrics = new Logging.CorpusMetrics(
                 WordsPerSecond: recDurationSec > 0 ? rawWordCount / recDurationSec : 0);
 
             var entry = new Logging.CorpusEntry(
-                Timestamp:       DateTimeOffset.Now,
+                Timestamp:       timestamp,
                 DurationSeconds: recDurationSec,
                 Whisper:         new Logging.CorpusWhisper(whisperSettings.Model, whisperSettings.Language, whisperMs),
                 Raw:             new Logging.CorpusRaw(rawText, rawWordCount, rawChars),
@@ -1305,6 +1306,14 @@ internal sealed class WhispEngine : IDisposable
 
             string slug = $"{Logging.CorpusLog.Slugify(profile.Name)}-{profile.Id}";
             Logging.CorpusLog.Append(slug, entry);
+
+            // Audio capture is a second, nested opt-in gated by the same
+            // profile slug — so a replay pairs JSONL rows with their WAV
+            // 1:1. Same timestamp as the text entry keeps the pairing
+            // unambiguous even if the user triggers a new recording
+            // while the file write is still settling.
+            if (corpusSettings.RecordAudioCorpus)
+                Logging.WavCorpusLog.Append(slug, audio, timestamp);
         }
 
         RaiseFinished(outcome);

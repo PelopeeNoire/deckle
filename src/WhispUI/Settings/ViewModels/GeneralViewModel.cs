@@ -112,6 +112,9 @@ public partial class GeneralViewModel : ObservableObject
     [ObservableProperty]
     public partial string CorpusDataDirectory { get; set; }
 
+    [ObservableProperty]
+    public partial bool RecordAudioCorpus { get; set; }
+
     partial void OnCorpusLoggingEnabledChanged(bool value)
     {
         if (_isSyncing) return;
@@ -123,6 +126,13 @@ public partial class GeneralViewModel : ObservableObject
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"CorpusLogging.DataDirectory ← \"{value}\"");
+        PushToSettings();
+    }
+
+    partial void OnRecordAudioCorpusChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"CorpusLogging.RecordAudioCorpus ← {value}");
         PushToSettings();
     }
 
@@ -145,6 +155,7 @@ public partial class GeneralViewModel : ObservableObject
         Theme = "System";
         CorpusLoggingEnabled = false;
         CorpusDataDirectory = "";
+        RecordAudioCorpus = false;
 
         // _isSyncing stays true — Load() will set it to false.
     }
@@ -165,6 +176,7 @@ public partial class GeneralViewModel : ObservableObject
             Theme = s.Appearance.Theme;
             CorpusLoggingEnabled = s.CorpusLogging.Enabled;
             CorpusDataDirectory = s.CorpusLogging.DataDirectory;
+            RecordAudioCorpus = s.CorpusLogging.RecordAudioCorpus;
         }
         finally
         {
@@ -185,6 +197,7 @@ public partial class GeneralViewModel : ObservableObject
         s.Appearance.Theme = Theme;
         s.CorpusLogging.Enabled = CorpusLoggingEnabled;
         s.CorpusLogging.DataDirectory = CorpusDataDirectory ?? "";
+        s.CorpusLogging.RecordAudioCorpus = RecordAudioCorpus;
         SettingsService.Instance.Save();
     }
 }
