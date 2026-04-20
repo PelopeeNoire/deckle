@@ -61,4 +61,7 @@ benchmark/data/*.jsonl
 # Claude Code runtime state (locks, caches) — keep the tracked agent/skill defs
 .claude/scheduled_tasks.lock
 
+# Symlink to Claude auto-memory directory (created locally, never versioned)
+/memory
+
 run.log
