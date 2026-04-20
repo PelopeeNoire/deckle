@@ -74,10 +74,20 @@ public partial class GeneralViewModel : ObservableObject
     [ObservableProperty]
     public partial bool StartMinimized { get; set; }
 
+    [ObservableProperty]
+    public partial bool WarmupOnLaunch { get; set; }
+
     partial void OnStartMinimizedChanged(bool value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Start minimized ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnWarmupOnLaunchChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Warmup on launch ← {value}");
         PushToSettings();
     }
 
@@ -131,6 +141,7 @@ public partial class GeneralViewModel : ObservableObject
         OverlayFadeOnProximity = true;
         OverlayPosition = "BottomCenter";
         StartMinimized = true;
+        WarmupOnLaunch = true;
         Theme = "System";
         CorpusLoggingEnabled = false;
         CorpusDataDirectory = "";
@@ -150,6 +161,7 @@ public partial class GeneralViewModel : ObservableObject
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
             OverlayPosition = s.Overlay.Position;
             StartMinimized = s.Startup.StartMinimized;
+            WarmupOnLaunch = s.Startup.WarmupOnLaunch;
             Theme = s.Appearance.Theme;
             CorpusLoggingEnabled = s.CorpusLogging.Enabled;
             CorpusDataDirectory = s.CorpusLogging.DataDirectory;
@@ -169,6 +181,7 @@ public partial class GeneralViewModel : ObservableObject
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
         s.Overlay.Position = OverlayPosition;
         s.Startup.StartMinimized = StartMinimized;
+        s.Startup.WarmupOnLaunch = WarmupOnLaunch;
         s.Appearance.Theme = Theme;
         s.CorpusLogging.Enabled = CorpusLoggingEnabled;
         s.CorpusLogging.DataDirectory = CorpusDataDirectory ?? "";
