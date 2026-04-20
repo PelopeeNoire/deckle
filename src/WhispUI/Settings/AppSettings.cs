@@ -50,6 +50,14 @@ public sealed class CorpusLoggingSettings
 public sealed class RecordingSettings
 {
     public int AudioInputDeviceId { get; set; } = -1;
+
+    // Hard cap on a single recording's duration, in seconds. When the capture
+    // loop crosses this threshold, recording auto-stops as if the user had
+    // pressed Stop — the captured audio still goes through the full
+    // VAD → Whisper → (LLM) → paste pipeline. Prevents a forgotten hotkey
+    // from running for hours and hitting a Whisper hallucination loop or
+    // running out of RAM. 0 = no cap (legacy behaviour).
+    public int MaxRecordingDurationSeconds { get; set; } = 20 * 60;
 }
 
 // Apparence globale. Theme = "System" | "Light" | "Dark".
