@@ -40,7 +40,7 @@ internal static class HudComposition
     // Fixed for both states — stroke metrics are a property of the HUD
     // rect, not of the animation.
     private const float  StrokeThickness              = 2f;    // dip, stroke width
-    private const float  InsetDip                     = 1f;    // dip, inset from HUD edge
+    private const float  InsetDip                     = 0f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -111,7 +111,7 @@ internal static class HudComposition
         public float  HueEaseP1Y         { get; init; } = 0f;
         public float  HueEaseP2X         { get; init; } = 0.8f;
         public float  HueEaseP2Y         { get; init; } = 1f;
-        public float  HueRotationFloor   { get; init; } = 0.4f;
+        public float  HueRotationFloor   { get; init; } = 0.6f;
 
         // ── Arc mask shape ───────────────────────────────────────────────
         // White pie slice in [0, 2π·Span] composited with the conic via
@@ -141,7 +141,7 @@ internal static class HudComposition
         public float  ConicSpanTurns     { get; init; } = 0.4f;
         public float  ConicLeadFadeTurns { get; init; } = 1f;
         public float  ConicTailFadeTurns { get; init; } = 1f;
-        public float  ConicFadeCurve     { get; init; } = 2f;
+        public float  ConicFadeCurve     { get; init; } = 3f;
         public bool   ArcMirror          { get; init; } = true;
 
         // ── Arc rotation ─────────────────────────────────────────────────
@@ -157,7 +157,7 @@ internal static class HudComposition
         //   RotationFloor — floor for the arc. The arc is the silhouette
         //                   the eye tracks — keep this floor higher than
         //                   the hue's so a "freeze" never reads as a bug.
-        public double ArcPeriodSeconds   { get; init; } = 7.0;
+        public double ArcPeriodSeconds   { get; init; } = 8.0;
         public float  ArcDirection       { get; init; } = 1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
         public float  ArcEaseP1X         { get; init; } = 0.5f;
@@ -227,7 +227,7 @@ internal static class HudComposition
         public float  TranscribingExposureDark    { get; init; } = 0f;
         public float  TranscribingExposureLight   { get; init; } = 0f;
         public float  TranscribingOpacity         { get; init; } = 1f;
-        public double TranscribingBlendSeconds    { get; init; } = 0.8;
+        public double TranscribingBlendSeconds    { get; init; } = 1.2;
     }
 
     // Live handle to a processing stroke created by CreateProcessingStroke.
