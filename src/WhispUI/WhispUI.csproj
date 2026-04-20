@@ -58,10 +58,6 @@
          only supports bbox-linear mapping, so a rotating gradient around a rounded rect
          perimeter requires Win2D + a surface brush. -->
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
-    <!-- Classic BCL registry API — not in Microsoft.NET.Sdk shared framework (WPF/WinForms
-         SDKs include it transitively; WinUI 3 does not). Used by AutostartService to read
-         and write HKCU\Software\Microsoft\Windows\CurrentVersion\Run. -->
-    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
