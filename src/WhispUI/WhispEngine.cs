@@ -780,6 +780,10 @@ internal sealed class WhispEngine : IDisposable
         _log.Info(LogSource.Record, "Recording started (16kHz mono PCM16)");
 
         double nextHeartbeatSec = 60.0;
+        // Snapshot the cap at recording start so a mid-recording Settings
+        // change doesn't shorten or extend a session already in progress.
+        int maxDurationSec = Settings.SettingsService.Instance.Current.Recording.MaxRecordingDurationSeconds;
+        bool capHit = false;
 
         while (!_stopRecording)
         {
@@ -818,6 +822,20 @@ internal sealed class WhispEngine : IDisposable
             {
                 _log.Verbose(LogSource.Record, $"+{curSec:F1}s captured");
                 nextHeartbeatSec += 60.0;
+            }
+
+            // Duration cap — forces a stop as if the user had pressed the
+            // hotkey. Audio captured so far still flows through the full
+            // pipeline. Only triggers once per session.
+            if (!capHit && maxDurationSec > 0 && curSec >= maxDurationSec)
+            {
+                capHit = true;
+                int minutes = maxDurationSec / 60;
+                _log.Warning(LogSource.Record,
+                    $"recording duration cap reached ({curSec:F1}s ≥ {maxDurationSec}s) — auto-stopping");
+                _log.Narrative(LogSource.Record,
+                    $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
+                _stopRecording = true;
             }
         }
 
