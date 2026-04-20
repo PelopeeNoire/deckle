@@ -45,14 +45,24 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+        // Cold-start instrumentation. A running Stopwatch + one line per
+        // milestone is enough to spot a regression (the shape of the
+        // sequence matters more than μs precision). Written via DebugLog
+        // only — LogService sinks aren't attached yet on the first calls.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        void Milestone(string name) =>
+            DebugLog.Write("APP", $"  milestone {name} +{sw.ElapsedMilliseconds}ms");
+
         DebugLog.Write("APP", "OnLaunched");
 
         _engine = new WhispEngine();
+        Milestone("engine");
 
         // LogWindow created once, never destroyed.
         _logWindow = new LogWindow();
 
         _log.AddSink(_logWindow);
+        Milestone("logwindow");
 
         // SettingsWindow created once, never destroyed. No initial Show:
         // opened only on demand via tray. The "Logs" footer item in
@@ -61,6 +71,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             OnShowLogsRequested = () => _logWindow.ShowAndActivate(),
         };
+        Milestone("settingswindow");
 
         // HudWindow created once, never destroyed. No initial Show: the
         // constructor captures the HWND and sets up subclass / raw input /
@@ -74,6 +85,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // flow only through DebugLogSink / LogWindow. Added after HudWindow
         // is constructed so the closure captures a non-null reference.
         _log.AddSink(new HudFeedbackSink(fb => _hudWindow.ShowUserFeedback(fb)));
+        Milestone("hudwindow");
 
         _tray = new TrayIconManager
         {
@@ -85,6 +97,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             OnRestart         = () => RestartAppFromTray(),
             OnQuit            = () => QuitApp(),
         };
+        Milestone("tray");
 
         // Engine events → UI. StatusChanged, TranscriptionFinished, etc. are
         // called from background threads; LogWindow and HudWindow marshal
@@ -149,6 +162,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         _hotkeyManager = new HotkeyManager(_messageHost.Hwnd, OnHotkey);
         _hotkeyManager.Register();
         DebugLog.Write("APP", "tray + hotkeys registered on message-only host");
+        Milestone("hotkeys");
 
         // Silent warmup — runs a dummy transcription on a zero-filled buffer
         // so the first real hotkey doesn't pay the cold model load + first
@@ -157,6 +171,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // warmup Transcribe() pass so nothing surfaces to the user.
         if (Settings.SettingsService.Instance.Current.Startup.WarmupOnLaunch)
             _engine.Warmup();
+        Milestone("warmup");
 
         // Apply saved theme (System/Light/Dark).
         ApplyTheme(Settings.SettingsService.Instance.Current.Appearance.Theme);
@@ -173,6 +188,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             DebugLog.Write("APP", $"--settings flag detected, page={pageTag ?? "(default)"}");
             _settingsWindow?.ShowAndActivate(pageTag);
         }
+
+        sw.Stop();
+        DebugLog.Write("APP", $"OnLaunched done: {sw.ElapsedMilliseconds}ms total");
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────
