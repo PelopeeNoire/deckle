@@ -27,6 +27,16 @@ public partial class GeneralViewModel : ObservableObject
         PushToSettings();
     }
 
+    [ObservableProperty]
+    public partial bool AutoPasteEnabled { get; set; }
+
+    partial void OnAutoPasteEnabledChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Auto-paste ← {value}");
+        PushToSettings();
+    }
+
     // ── Overlay ──────────────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -116,6 +126,7 @@ public partial class GeneralViewModel : ObservableObject
         _isSyncing = true;
 
         AudioInputDeviceId = -1;
+        AutoPasteEnabled = false;
         OverlayEnabled = true;
         OverlayFadeOnProximity = true;
         OverlayPosition = "BottomCenter";
@@ -134,6 +145,7 @@ public partial class GeneralViewModel : ObservableObject
         {
             var s = SettingsService.Instance.Current;
             AudioInputDeviceId = s.Recording.AudioInputDeviceId;
+            AutoPasteEnabled = s.Paste.AutoPasteEnabled;
             OverlayEnabled = s.Overlay.Enabled;
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
             OverlayPosition = s.Overlay.Position;
@@ -152,6 +164,7 @@ public partial class GeneralViewModel : ObservableObject
     {
         var s = SettingsService.Instance.Current;
         s.Recording.AudioInputDeviceId = AudioInputDeviceId;
+        s.Paste.AutoPasteEnabled = AutoPasteEnabled;
         s.Overlay.Enabled = OverlayEnabled;
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
         s.Overlay.Position = OverlayPosition;
