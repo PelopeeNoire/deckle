@@ -27,6 +27,7 @@ public sealed partial class GeneralPage : Page
     // the switch when the user cancels the dialog, and that revert would
     // retrigger Toggled in turn.
     private bool _suppressCorpusToggle;
+    private bool _suppressAudioCorpusToggle;
 
     public GeneralPage()
     {
@@ -198,6 +199,29 @@ public sealed partial class GeneralPage : Page
         finally
         {
             _suppressCorpusToggle = false;
+        }
+    }
+
+    // Audio corpus consent — separate from the text corpus dialog because
+    // voice recordings carry a different privacy posture. The toggle is
+    // guarded by IsEnabled={CorpusLoggingEnabled} in XAML so it can't reach
+    // the on state while the master text toggle is off.
+    private async void AudioCorpusToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_initializing || _suppressAudioCorpusToggle) return;
+        if (!AudioCorpusToggle.IsOn) return;
+
+        bool confirmed = await AudioCorpusConsentDialog.ShowAsync(this.XamlRoot);
+        if (confirmed) return;
+
+        _suppressAudioCorpusToggle = true;
+        try
+        {
+            AudioCorpusToggle.IsOn = false;
+        }
+        finally
+        {
+            _suppressAudioCorpusToggle = false;
         }
     }
 

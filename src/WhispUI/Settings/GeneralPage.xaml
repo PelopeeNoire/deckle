@@ -157,6 +157,14 @@
                                   IsOn="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=TwoWay}"
                                   Toggled="CorpusLoggingToggle_Toggled" />
                     <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Name="AudioCorpusCard"
+                                               Header="Also save audio (WAV)"
+                                               Description="Writes the raw 16 kHz mono audio of each transcription next to the JSONL file."
+                                               IsEnabled="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=OneWay}">
+                            <ToggleSwitch x:Name="AudioCorpusToggle"
+                                          IsOn="{x:Bind ViewModel.RecordAudioCorpus, Mode=TwoWay}"
+                                          Toggled="AudioCorpusToggle_Toggled" />
+                        </controls:SettingsCard>
                         <controls:SettingsCard x:Name="CorpusFolderCard"
                                                ContentAlignment="Vertical"
                                                Header="Folder path"
