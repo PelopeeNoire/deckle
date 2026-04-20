@@ -19,12 +19,19 @@
     <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
-  <!-- Release-only publish options. Debug keeps multi-file output for faster
-       iteration; single-file only matters when producing the distribution ZIP.
+  <!-- Publish-only options. Gated on _IsPublishing (MSBuild-internal flag
+       set exclusively by the Publish target) so a plain `MSBuild /t:Build`
+       in Release doesn't trigger the WinAppSDK "SingleFile without
+       SelfContained" warning nor pay single-file costs at every iteration.
+
        PublishSingleFile bundles the managed assemblies into WhispUI.exe.
        Content files (native DLLs, Assets, models) stay alongside the exe —
        IncludeNativeLibrariesForSelfExtract is NOT set on purpose so the
        whisper.cpp / MinGW DLLs remain visible and swappable on disk.
+
+       SelfContained pairs with PublishSingleFile per WinAppSDK's SingleFile
+       target requirements, and it's what the distribution ZIP wants anyway
+       (no dependency on a system-wide .NET runtime install).
 
        PublishTrimmed is NOT enabled: WinUI 3 + XAML compilation + x:Bind
        generated code rely on reflection paths the IL linker can't prove
@@ -32,8 +39,9 @@
        range excluding 0 — see project_winui3_slider_bug.md). Trimming stays
        off until there's a concrete size/perf motive AND a runtime test
        matrix proves it safe. -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
     <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>
