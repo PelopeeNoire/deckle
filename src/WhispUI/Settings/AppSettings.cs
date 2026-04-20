@@ -39,10 +39,18 @@ public sealed class PasteSettings
 // user consents through a ContentDialog before it starts writing.
 // DataDirectory is reserved for a future "custom path" setting; empty = use
 // the default resolver (<repo>/benchmark/data/).
+//
+// RecordAudioCorpus is a second, nested opt-in that additionally saves the
+// raw 16 kHz mono PCM audio as a .wav per transcription, alongside the
+// text JSONL. Off by default and meaningless unless Enabled is also true.
+// The audio dimension is a stronger privacy posture than text, so it carries
+// its own consent dialog (AudioCorpusConsentDialog) and cannot be flipped on
+// while the master text toggle is off.
 public sealed class CorpusLoggingSettings
 {
-    public bool   Enabled       { get; set; } = false;
-    public string DataDirectory { get; set; } = "";
+    public bool   Enabled           { get; set; } = false;
+    public string DataDirectory     { get; set; } = "";
+    public bool   RecordAudioCorpus { get; set; } = false;
 }
 
 // Paramètres d'enregistrement audio. AudioInputDeviceId = index du périphérique
