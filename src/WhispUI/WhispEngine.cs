@@ -1144,7 +1144,11 @@ internal sealed class WhispEngine : IDisposable
         if (profile is not null)
         {
             RaiseStatus($"Réécriture ({profile.Name})...");
-            _log.Narrative(LogSource.Llm, $"A local language model (Ollama) is now rewriting the transcript with the {profile.Name} profile.");
+            // Narrative only after the call settles — on success we know it
+            // landed, on failure we say so explicitly. The previous pre-call
+            // "is now rewriting" line lied on failure by implying completion
+            // (no counter-narrative was ever emitted). HUD state + polling
+            // heartbeat already cover live feedback during the wait.
             var swLlm = System.Diagnostics.Stopwatch.StartNew();
             string? rewritten = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
             swLlm.Stop();
@@ -1153,7 +1157,11 @@ internal sealed class WhispEngine : IDisposable
             {
                 fullText = rewritten;
                 CopyToClipboard(fullText);
-                _log.Narrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s — the polished text is ready to paste.");
+                _log.Narrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s with the {profile.Name} profile — the polished text is ready to paste.");
+            }
+            else
+            {
+                _log.Narrative(LogSource.Llm, $"Rewrite failed after {swLlm.Elapsed.TotalSeconds:F1} s — raw transcript kept. Check the log for the Ollama error.");
             }
         }
 
