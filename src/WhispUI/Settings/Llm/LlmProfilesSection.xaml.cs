@@ -202,4 +202,32 @@ public sealed partial class LlmProfilesSection : UserControl
 
         ProfilesChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // Scope: the Profiles list only. Replaces user-authored profiles with the
+    // default three (Nettoyage, Restructuration, Prompt). MigrateProfileIds
+    // rewires slot/rule references to the new default IDs so the related
+    // sections don't end up pointing at orphan profiles. ProfilesChanged
+    // triggers the host to reload Rules + ShortcutSlots.
+    private async void ResetSection_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Reset profiles",
+            Content = "Replace all profiles with the defaults? Your custom profiles and prompts will be lost.",
+            PrimaryButtonText = "Reset",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        var defaults = new LlmSettings();
+        SettingsService.Instance.Current.Llm.Profiles = defaults.Profiles;
+        SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
+        SettingsService.Instance.Save();
+        Reload();
+        ProfilesChanged?.Invoke(this, EventArgs.Empty);
+    }
 }

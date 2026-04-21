@@ -172,8 +172,8 @@ public sealed partial class GeneralPage : Page
 
     private void SyncCorpusFolderPlaceholder()
     {
-        string? defaultPath = CorpusLog.GetDefaultDirectoryPath();
-        CorpusFolderBox.PlaceholderText = string.IsNullOrEmpty(defaultPath) ? "(auto)" : defaultPath;
+        string? defaultPath = CorpusPaths.GetDefaultDirectoryPath();
+        TelemetryFolderBox.PlaceholderText = string.IsNullOrEmpty(defaultPath) ? "(auto)" : defaultPath;
     }
 
     // ── Corpus logging handlers ─────────────────────────────────────────────
@@ -246,24 +246,60 @@ public sealed partial class GeneralPage : Page
             var folder = await picker.PickSingleFolderAsync();
             if (folder is null) return;
 
-            ViewModel.CorpusDataDirectory = folder.Path;
+            ViewModel.TelemetryStorageDirectory = folder.Path;
         }
         catch (Exception ex)
         {
             _log.Error(LogSource.SetGeneral,
-                $"Change corpus folder failed: {ex.GetType().Name}: {ex.Message}");
+                $"Change telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    // ── Reset per section ───────────────────────────────────────────────────
+    //
+    // The VM mutates its partial properties; x:Bind TwoWay refreshes the
+    // toggles/textboxes automatically. Non-bindable combos (audio input,
+    // overlay position, theme) need an explicit re-sync after the reset.
+
+    private void ResetRecording_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetRecordingDefaults();
+        _initializing = true;
+        try
+        {
+            AudioInputCombo.SelectedIndex = 0;
+            SyncOverlayPositionCombo();
+        }
+        finally { _initializing = false; }
+    }
+
+    private void ResetStartup_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetStartupDefaults();
+    }
+
+    private void ResetAppearance_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetAppearanceDefaults();
+        _initializing = true;
+        try { SyncThemeCombo(); }
+        finally { _initializing = false; }
+    }
+
+    private void ResetDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetDiagnosticsDefaults();
     }
 
     private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)
     {
         // GetDirectoryPath() already falls back to the default resolver when
-        // CorpusLogging.DataDirectory is empty.
-        string? path = CorpusLog.GetDirectoryPath();
+        // Telemetry.StorageDirectory is empty.
+        string? path = CorpusPaths.GetDirectoryPath();
 
         if (string.IsNullOrEmpty(path))
         {
-            _log.Warning(LogSource.SetGeneral, "Corpus folder unresolved — cannot open");
+            _log.Warning(LogSource.SetGeneral, "Telemetry folder unresolved — cannot open");
             return;
         }
 
@@ -279,7 +315,7 @@ public sealed partial class GeneralPage : Page
         catch (Exception ex)
         {
             _log.Error(LogSource.SetGeneral,
-                $"Open corpus folder failed: {ex.GetType().Name}: {ex.Message}");
+                $"Open telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

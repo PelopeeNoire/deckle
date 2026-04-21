@@ -1,4 +1,5 @@
 using System;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace WhispUI.Settings.Llm;
@@ -90,5 +91,20 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
         s.SecondaryRewriteProfileId = none ? null : s.Profiles.Find(p =>
             string.Equals(p.Name, content, StringComparison.OrdinalIgnoreCase))?.Id;
         SettingsService.Instance.Save();
+    }
+
+    // Scope: Primary/Secondary rewrite slot bindings only. The Profiles list
+    // itself stays untouched — resetting the shortcut picks should not wipe
+    // user-authored profiles.
+    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    {
+        var defaults = new LlmSettings();
+        var s = SettingsService.Instance.Current.Llm;
+        s.PrimaryRewriteProfileName   = defaults.PrimaryRewriteProfileName;
+        s.PrimaryRewriteProfileId     = defaults.PrimaryRewriteProfileId;
+        s.SecondaryRewriteProfileName = defaults.SecondaryRewriteProfileName;
+        s.SecondaryRewriteProfileId   = defaults.SecondaryRewriteProfileId;
+        SettingsService.Instance.Save();
+        Reload();
     }
 }

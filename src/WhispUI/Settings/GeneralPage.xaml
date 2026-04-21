@@ -69,8 +69,21 @@
                 </controls:SettingsCard>
 
                 <!-- ── Recording ───────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Recording" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Recording" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetRecording_Click" />
+                </Grid>
 
                 <controls:SettingsCard x:Name="AudioInputCard"
                                        Header="Microphone"
@@ -111,8 +124,21 @@
                 </controls:SettingsExpander>
 
                 <!-- ── Startup ─────────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Startup" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Startup" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetStartup_Click" />
+                </Grid>
 
                 <controls:SettingsCard Header="Start with Windows"
                                        Description="Launch WhispUI automatically when you sign in."
@@ -133,8 +159,21 @@
                 </controls:SettingsCard>
 
                 <!-- ── Appearance ──────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Appearance" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Appearance" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetAppearance_Click" />
+                </Grid>
 
                 <controls:SettingsCard Header="App theme"
                                        Description="Light, dark, or follow your Windows theme."
@@ -149,64 +188,83 @@
                 </controls:SettingsCard>
 
                 <!-- ── Diagnostics ─────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Diagnostics" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Diagnostics" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetDiagnostics_Click" />
+                </Grid>
+
+                <controls:SettingsCard Header="Latency telemetry"
+                                       Description="Measure how long each step takes — voice detection, transcription, rewriting, paste — and write the numbers to a local JSONL file. Timings only, no transcript text."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
 
                 <controls:SettingsExpander Header="Corpus logging"
                                            Description="Save every transcription to local JSONL files for personal analysis."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE81C;}">
                     <ToggleSwitch x:Name="CorpusLoggingToggle"
-                                  IsOn="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=TwoWay}"
+                                  IsOn="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=TwoWay}"
                                   Toggled="CorpusLoggingToggle_Toggled" />
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard x:Name="AudioCorpusCard"
                                                Header="Also save audio (WAV)"
                                                Description="Writes the raw 16 kHz mono audio of each transcription next to the JSONL file."
-                                               IsEnabled="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=OneWay}">
+                                               IsEnabled="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=OneWay}">
                             <ToggleSwitch x:Name="AudioCorpusToggle"
                                           IsOn="{x:Bind ViewModel.RecordAudioCorpus, Mode=TwoWay}"
                                           Toggled="AudioCorpusToggle_Toggled" />
                         </controls:SettingsCard>
-                        <controls:SettingsCard x:Name="CorpusFolderCard"
-                                               ContentAlignment="Vertical"
-                                               Header="Folder path"
-                                               Description="Leave empty to use the default location."
-                                               IsEnabled="{x:Bind ViewModel.CorpusLoggingEnabled, Mode=OneWay}">
-                            <!-- Grid + "*" column lets the TextBox shrink when the
-                                 Settings window is narrow. A StackPanel Horizontal
-                                 would keep children at their natural width and
-                                 clip the rightmost buttons. -->
-                            <Grid ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="CorpusFolderBox"
-                                         Grid.Column="0"
-                                         Text="{x:Bind ViewModel.CorpusDataDirectory, Mode=TwoWay}" />
-                                <Button x:Name="ChangeCorpusFolderButton"
-                                        Grid.Column="1"
-                                        Click="ChangeCorpusFolderButton_Click"
-                                        ToolTipService.ToolTip="Pick a folder">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <FontIcon Glyph="&#xE838;" FontSize="14" />
-                                        <TextBlock Text="Set" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="OpenCorpusFolderButton"
-                                        Grid.Column="2"
-                                        Click="OpenCorpusFolderButton_Click"
-                                        ToolTipService.ToolTip="Open in File Explorer">
-                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <TextBlock Text="Open" />
-                                        <FontIcon Glyph="&#xE8A7;" FontSize="12" />
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-                        </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
+
+                <controls:SettingsCard x:Name="TelemetryFolderCard"
+                                       ContentAlignment="Vertical"
+                                       Header="Storage folder"
+                                       Description="Shared root for latency and corpus files. Leave empty to use the default location.">
+                    <!-- Grid + "*" column lets the TextBox shrink when the
+                         Settings window is narrow. A StackPanel Horizontal
+                         would keep children at their natural width and
+                         clip the rightmost buttons. -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TelemetryFolderBox"
+                                 Grid.Column="0"
+                                 Text="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
+                        <Button x:Name="ChangeTelemetryFolderButton"
+                                Grid.Column="1"
+                                Click="ChangeCorpusFolderButton_Click"
+                                ToolTipService.ToolTip="Pick a folder">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                <TextBlock Text="Set" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="OpenTelemetryFolderButton"
+                                Grid.Column="2"
+                                Click="OpenCorpusFolderButton_Click"
+                                ToolTipService.ToolTip="Open in File Explorer">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Open" />
+                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </controls:SettingsCard>
 
             </StackPanel>
         </Grid>

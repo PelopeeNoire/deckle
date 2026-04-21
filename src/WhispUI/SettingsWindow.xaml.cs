@@ -187,7 +187,6 @@ public sealed partial class SettingsWindow : Window
         {
             _log.Error(LogSource.Settings, $"Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
             _log.Error(LogSource.Settings, ex.StackTrace ?? "(no stack)");
-            DebugLog.Write("SETTINGS", $"Navigate({pageType.Name}) THREW: {ex}");
         }
     }
 

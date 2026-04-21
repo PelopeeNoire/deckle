@@ -21,41 +21,6 @@ namespace WhispUI;
 // SelectorBar mode — single active at a time (native exclusive selection).
 internal enum LogFilterMode { Steps, All, Activity, Alerts }
 
-// Level-based template selector — 6 templates per wrap dimension. Instantiated
-// twice in XAML resources (NoWrapSelector / WrapSelector), swapped on toggle.
-public sealed class LogLevelTemplateSelector : DataTemplateSelector
-{
-    public DataTemplate? Verbose   { get; set; }
-    public DataTemplate? Info      { get; set; }
-    public DataTemplate? Success   { get; set; }
-    public DataTemplate? Warning   { get; set; }
-    public DataTemplate? Error     { get; set; }
-    public DataTemplate? Narrative { get; set; }
-
-    protected override DataTemplate SelectTemplateCore(object item) => Pick(item);
-
-    protected override DataTemplate SelectTemplateCore(object item, DependencyObject container)
-        => Pick(item);
-
-    private DataTemplate Pick(object item)
-    {
-        if (item is LogEntry e)
-        {
-            return e.Level switch
-            {
-                LogLevel.Verbose   => Verbose!,
-                LogLevel.Info      => Info!,
-                LogLevel.Success   => Success!,
-                LogLevel.Warning   => Warning!,
-                LogLevel.Error     => Error!,
-                LogLevel.Narrative => Narrative!,
-                _                  => Info!,
-            };
-        }
-        return Info!;
-    }
-}
-
 // ─── Log window ──────────────────────────────────────────────────────────────
 //
 // Custom title bar (ExtendsContentIntoTitleBar) with centered search field.
@@ -65,14 +30,14 @@ public sealed class LogLevelTemplateSelector : DataTemplateSelector
 // Live search via AutoSuggestBox.
 //
 // Model:
-//   _entries : full buffer (cap 5000)
-//   _visible : displayed subset (level filter + search)
+//   _entries : full buffer (cap 5000) — every TelemetryEvent, any kind
+//   _visible : displayed subset (kind/level filter + search)
 // Copy/Save operate on _visible — the user copies what they see.
 
-public sealed partial class LogWindow : Window, ILogSink
+public sealed partial class LogWindow : Window, ITelemetrySink
 {
-    private readonly List<LogEntry> _entries = new();
-    private readonly ObservableCollection<LogEntry> _visible = new();
+    private readonly List<TelemetryEvent> _entries = new();
+    private readonly ObservableCollection<TelemetryEvent> _visible = new();
     private readonly IntPtr _hwnd;
     private bool _isVisible;
 
@@ -174,12 +139,12 @@ public sealed partial class LogWindow : Window, ILogSink
         SizeChanged += OnWindowSizeChanged;
     }
 
-    // ── ILogSink (receives entries from LogService) ────────────────────────────
+    // ── ITelemetrySink (receives events from TelemetryService) ─────────────────
 
-    public void Write(LogEntry entry)
+    public void Write(TelemetryEvent ev)
     {
-        if (DispatcherQueue.HasThreadAccess) AddEntrySafe(entry);
-        else DispatcherQueue.TryEnqueue(() => AddEntrySafe(entry));
+        if (DispatcherQueue.HasThreadAccess) AddEntrySafe(ev);
+        else DispatcherQueue.TryEnqueue(() => AddEntrySafe(ev));
     }
 
     public void Clear()
@@ -221,12 +186,12 @@ public sealed partial class LogWindow : Window, ILogSink
         if (_iconIdlePath is not null)
             _iconIdle = new BitmapImage(new Uri(_iconIdlePath));
         else
-            DebugLog.Write("LOGWIN", "idle icon not found");
+            LogService.Instance.Warning(LogSource.LogWin, "idle icon not found");
 
         if (_iconRecordingPath is not null)
             _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
         else
-            DebugLog.Write("LOGWIN", "recording icon not found");
+            LogService.Instance.Warning(LogSource.LogWin, "recording icon not found");
     }
 
     private void ClearAll()
@@ -258,21 +223,21 @@ public sealed partial class LogWindow : Window, ILogSink
 
     // ── Implementation ─────────────────────────────────────────────────────────
 
-    private void AddEntrySafe(LogEntry entry)
+    private void AddEntrySafe(TelemetryEvent ev)
     {
-        _entries.Add(entry);
+        _entries.Add(ev);
 
         const int MaxEntries = 5000;
         while (_entries.Count > MaxEntries)
         {
             var removed = _entries[0];
             _entries.RemoveAt(0);
-            // Ref equality (LogEntry is a class) → no collision possible
+            // Ref equality (TelemetryEvent is a class) → no collision possible
             // on two entries with the same text.
             _visible.Remove(removed);
         }
 
-        if (Matches(entry)) _visible.Add(entry);
+        if (Matches(ev)) _visible.Add(ev);
 
         if (!_isVisible) return;
         if (AutoScrollToggle?.IsChecked != true) return;
@@ -280,25 +245,28 @@ public sealed partial class LogWindow : Window, ILogSink
         ScrollToBottom();
     }
 
-    private bool Matches(LogEntry e)
+    private bool Matches(TelemetryEvent e)
     {
-        // Level filter:
-        //   Steps    → user-facing narration only (Narrative)
-        //   All      → everything passes (including Verbose and Narrative)
-        //   Activity → technical activity: Info + Success + Warning + Error
-        //              (Verbose AND Narrative hidden)
-        //   Alerts   → Warning + Error only
-        bool levelOk = _filterMode switch
+        // Kind + level filter:
+        //   Steps    → user-facing narration only (log-kind Narrative)
+        //   All      → everything passes (log, latency, corpus)
+        //   Activity → log-kind Info + Success + Warning + Error,
+        //              plus Latency + Corpus rows (hide Verbose + Narrative)
+        //   Alerts   → log-kind Warning + Error only
+        bool modeOk = _filterMode switch
         {
-            LogFilterMode.Steps    => e.Level == LogLevel.Narrative,
+            LogFilterMode.Steps    => e.Kind == TelemetryKind.Log
+                                   && e.Level == LogLevel.Narrative,
             LogFilterMode.All      => true,
-            LogFilterMode.Activity => e.Level != LogLevel.Verbose
-                                   && e.Level != LogLevel.Narrative,
-            LogFilterMode.Alerts   => e.Level == LogLevel.Warning
-                                   || e.Level == LogLevel.Error,
+            LogFilterMode.Activity => e.Kind != TelemetryKind.Log
+                                   || (e.Level != LogLevel.Verbose
+                                    && e.Level != LogLevel.Narrative),
+            LogFilterMode.Alerts   => e.Kind == TelemetryKind.Log
+                                   && (e.Level == LogLevel.Warning
+                                    || e.Level == LogLevel.Error),
             _                      => true,
         };
-        if (!levelOk) return false;
+        if (!modeOk) return false;
 
         if (_currentSearch.Length > 0 &&
             e.Text.IndexOf(_currentSearch, StringComparison.OrdinalIgnoreCase) < 0) return false;
@@ -324,7 +292,7 @@ public sealed partial class LogWindow : Window, ILogSink
         }
         catch (Exception ex)
         {
-            DebugLog.Write("LOGWIN", $"scroll err: {ex.Message}");
+            LogService.Instance.Warning(LogSource.LogWin, $"scroll err: {ex.Message}");
         }
     }
 
@@ -453,8 +421,8 @@ public sealed partial class LogWindow : Window, ILogSink
         _isDragging = true;
         var localY = e.GetCurrentPoint(LogItems).Position.Y;
         var container = FindContainerAtY(localY);
-        _dragStartIndex = container?.Content is LogEntry entry
-            ? _visible.IndexOf(entry)
+        _dragStartIndex = container?.Content is TelemetryEvent ev
+            ? _visible.IndexOf(ev)
             : -1;
     }
 
@@ -485,7 +453,7 @@ public sealed partial class LogWindow : Window, ILogSink
         CopyBadgeTransform.Y = pos.Y + (container.ActualHeight - CopyBadge.ActualHeight) / 2;
         CopyBadge.Visibility = Visibility.Visible;
 
-        if (_isDragging && _dragStartIndex >= 0 && container.Content is LogEntry currentEntry)
+        if (_isDragging && _dragStartIndex >= 0 && container.Content is TelemetryEvent currentEntry)
         {
             int currentIndex = _visible.IndexOf(currentEntry);
             if (currentIndex >= 0)
@@ -518,8 +486,8 @@ public sealed partial class LogWindow : Window, ILogSink
             var sb = new StringBuilder();
             foreach (var item in _visible)
             {
-                if (selected.Contains(item) && item is LogEntry entry)
-                    sb.AppendLine(entry.Text);
+                if (selected.Contains(item))
+                    sb.AppendLine(item.Text);
             }
             CopyToClipboard(sb.ToString());
             ShowCopiedFeedback();
@@ -603,7 +571,7 @@ public sealed partial class LogWindow : Window, ILogSink
         }
         catch (Exception ex)
         {
-            DebugLog.Write("LOGWIN", $"save err: {ex.Message}");
+            LogService.Instance.Warning(LogSource.LogWin, $"save err: {ex.Message}");
         }
     }
 }

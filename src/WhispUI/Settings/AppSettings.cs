@@ -21,7 +21,7 @@ public sealed class AppSettings
     public DecodingSettings Decoding { get; set; } = new();
     public ContextSettings Context { get; set; } = new();
     public LlmSettings Llm { get; set; } = new();
-    public CorpusLoggingSettings CorpusLogging { get; set; } = new();
+    public TelemetrySettings Telemetry { get; set; } = new();
     public PasteSettings Paste { get; set; } = new();
 }
 
@@ -34,23 +34,31 @@ public sealed class PasteSettings
     public bool AutoPasteEnabled { get; set; } = false;
 }
 
-// Corpus logging: opt-in capture of each (raw, rewritten) pair in a per-profile
-// JSONL file, for offline iteration on rewrite prompts. Off by default — the
-// user consents through a ContentDialog before it starts writing.
-// DataDirectory is reserved for a future "custom path" setting; empty = use
-// the default resolver (<repo>/benchmark/data/).
+// Diagnostics / telemetry: two opt-in streams with a shared storage directory.
 //
-// RecordAudioCorpus is a second, nested opt-in that additionally saves the
-// raw 16 kHz mono PCM audio as a .wav per transcription, alongside the
-// text JSONL. Off by default and meaningless unless Enabled is also true.
-// The audio dimension is a stronger privacy posture than text, so it carries
-// its own consent dialog (AudioCorpusConsentDialog) and cannot be flipped on
-// while the master text toggle is off.
-public sealed class CorpusLoggingSettings
+// LatencyEnabled controls the per-transcription latency JSONL (vad/whisper/llm/
+// paste timings, outcome). Lightweight, no user text — safe to keep on. Off by
+// default because the user hasn't opted in yet.
+//
+// CorpusEnabled controls the raw Whisper text capture — one JSONL per profile,
+// with the audio section metadata and the exact raw transcription. This is the
+// stronger privacy posture (the user's words land on disk) and carries a
+// ContentDialog consent before it starts writing.
+//
+// RecordAudioCorpus is a nested opt-in that additionally saves the raw 16 kHz
+// mono PCM audio as a .wav per transcription, alongside the text JSONL. Off by
+// default, meaningless unless CorpusEnabled is also true, and carries its own
+// consent dialog (audio is a stronger posture than text).
+//
+// StorageDirectory is the common root for app.jsonl / latency.jsonl / corpus/.
+// Empty = default resolver (<repo>/benchmark/ when running from the dev tree,
+// %LOCALAPPDATA%/WhispUI/benchmark/ otherwise).
+public sealed class TelemetrySettings
 {
-    public bool   Enabled           { get; set; } = false;
-    public string DataDirectory     { get; set; } = "";
+    public bool   LatencyEnabled    { get; set; } = false;
+    public bool   CorpusEnabled     { get; set; } = false;
     public bool   RecordAudioCorpus { get; set; } = false;
+    public string StorageDirectory  { get; set; } = "";
 }
 
 // Paramètres d'enregistrement audio. AudioInputDeviceId = index du périphérique
@@ -324,10 +332,10 @@ public sealed class LlmSettings
         new() { MinDurationSeconds = 60,  ProfileName = "Nettoyage" }
     };
 
-    // Which metric drives auto-rule selection. Default "Words" — a better
-    // proxy for LLM context load than wall-clock duration. Switch to
-    // "Duration" to keep the legacy behaviour.
-    public string RuleMetric { get; set; } = "Words";
+    // Which metric drives auto-rule selection. Default "Duration" — the
+    // rule thresholds the user reasons about are in minutes (60s / 600s).
+    // Switch to "Words" to index on LLM context load instead.
+    public string RuleMetric { get; set; } = "Duration";
 
     public List<AutoRewriteRuleByWords> AutoRewriteRulesByWords { get; set; } = new()
     {

@@ -1,76 +1,117 @@
-# Benchmark — Optimisation des prompts de réécriture
+# Benchmark — prompt optimization for WhispUI rewriting
 
-Système de test automatisé pour les system prompts utilisés par WhispUI avec Ollama.
+Closed-loop suite that measures the quality of a candidate **rewrite
+system prompt** on Louis' real dictation corpus, and iterates on it
+automatically via an Ollama-hosted designer model.
 
-## Structure
+The corpus and telemetry are produced by WhispUI itself (see the
+JSONL sink under `src/WhispUI/Logging/Sinks/`). Nothing here records
+audio or transcriptions — it only consumes what WhispUI has already
+written.
+
+## Folder layout
 
 ```
 benchmark/
-├── benchmark.py               moteur de scoring
-├── autoresearch.py            boucle d'optimisation autonome
-├── build_corpus.py            construction corpus depuis raw_*.txt
-├── fix_encoding.py            utilitaire encodage
-├── launch.ps1                 launcher console interactif
 ├── config/
-│   └── config.ini             modèle, profil, température, chemins
-├── data/
-│   ├── corpus.json            samples de test
-│   ├── raw_prompts.txt        source pour build_corpus (profil Prompt)
-│   └── raw_restructuration.txt
-├── prompts/
-│   ├── system_prompt.txt      prompt à tester (lu par benchmark, écrit par autoresearch)
-│   └── system_prompt_initial.txt
-├── reports/                   artefacts de run (gitignorés)
-│   ├── last_report.json       détail du dernier run par sample
-│   ├── results.tsv            historique des expériences
-│   └── autoresearch_report.txt
-├── journals/                  journaux de boucle et prompts de cadrage
-│   ├── journal.md                     Nettoyage
-│   ├── journal_restructuration.md     Restructuration
-│   ├── loop_prompt.md                 prompt de boucle Nettoyage
-│   ├── loop_prompt_restructuration.md prompt de boucle Restructuration
-│   └── program.md
-├── logs/                      logs bruts (gitignorés)
-└── archive/                   backups et snapshots (tsv/txt/json)
+│   ├── config.ini                           — knobs (model, endpoint, judge)
+│   └── prompts/
+│       ├── judge_system_prompt.txt          — 6-criteria grid for the judge
+│       └── system_prompt.txt                — prompt under optimization
+├── lib/                                     — shared helpers (imported)
+│   ├── ollama.py                            — HTTP client, sanitize
+│   ├── corpus.py                            — WhispUI JSONL reader
+│   ├── metrics.py                           — rule-based pre-filters
+│   ├── judge.py                             — 6-criteria contract + scoring
+│   ├── judge_claude.py                      — Anthropic SDK backend (default)
+│   └── judge_ollama.py                      — local Ministral fallback
+├── benchmark.py                             — one-shot scorer
+├── autoresearch.py                          — iterative optimizer
+├── launch.ps1                               — interactive PowerShell menu
+├── README.md
+├── data/    (gitignored — runtime artifacts)
+│   ├── corpus/*.jsonl                       — raw transcriptions (WhispUI)
+│   ├── corpus-audio/<slug>/*.wav            — matching WAV captures
+│   ├── telemetry/{app,latency}.jsonl        — WhispUI app + latency streams
+│   ├── reports/                             — benchmark.py + autoresearch.py outputs
+│   └── legacy/                              — archived telemetry.csv
+└── logs/    (gitignored — live benchmark execution traces)
 ```
 
-## Workflow
-
-**Benchmark simple** (tester le prompt actuel) :
+## Quick commands
 
 ```powershell
-cd benchmark
+# One-shot scoring of the current system_prompt.txt, verbose per sample.
 python benchmark.py --verbose
-```
 
-**Autoresearch** (optimisation automatique) :
+# Same, but local-only (Ministral 14B as judge — no Anthropic API needed).
+python benchmark.py --judge ollama
 
-```powershell
-python autoresearch.py
-```
+# Skip the judge entirely: emit only the rule-based median.
+python benchmark.py --skip-judge
 
-Paramètres par défaut dans `config/config.ini`. Override possible en ligne de commande :
+# Filter the corpus by duration or profile.
+python benchmark.py --duration-min 60 --duration-max 600
+python benchmark.py --slug restructuration
 
-```powershell
+# Autoresearch loop — produces data/reports/results.tsv incrementally.
 python autoresearch.py --max-experiments 5 --runs-per-experiment 2
 ```
 
-**Boucle d'optimisation assistée** — voir skill `benchmark-loop` (`.claude/skills/benchmark-loop/SKILL.md`). Invocation : `/benchmark-loop <profil>` avec profil ∈ {nettoyage, restructuration, prompt}.
+Louis' interactive launcher: `.\launch.ps1` (Windows PowerShell menu).
 
-## Configuration
+## Scoring model
 
-`config/config.ini` :
-- `profile` — nom du profil WhispUI testé (nettoyage, restructuration, prompt)
-- `model` — modèle Ollama cible
-- `judge_model` — modèle Ollama juge
-- `temperature`, `num_ctx_k` — paramètres de génération
-- `corpus`, `prompt` — chemins relatifs (par défaut `data/corpus.json`, `prompts/system_prompt.txt`)
-- `designer_model`, `max_experiments`, `runs_per_experiment` — autoresearch
+Each sample: WhispUI's raw Whisper text → candidate prompt applied
+via the target Ollama model → judge scores the output on six
+criteria (1..5 each):
 
-`data/corpus.json` — transcriptions de test, IDs uniques et croissants.
+| Criterion                   | Weight |
+|-----------------------------|--------|
+| Complétude macro            | 25 %   |
+| Préservation des nuances    | 25 %   |
+| Densité préservée           | 15 %   |
+| Non-invention               | 15 %   |
+| Structure thématique        | 10 %   |
+| Clarté et fidélité registre | 10 %   |
 
-`prompts/system_prompt.txt` — prompt à tester. En autoresearch, il est écrasé à chaque expérience ; le meilleur reste à la fin.
+The composite is a penalty in `[0.0, 1.0]` — **lower is better**
+(`0.0` = all criteria at 5/5). `benchmark.py` reports the median
+composite as `SCORE=X.XXXX` on stdout; `autoresearch.py` parses that
+line to drive the loop.
 
-## Ne pas toucher sans raison
+Rule-based signals (`novel_words`, `length_ratio`, `preamble`, `lists`)
+stay wired in as cheap pre-filters: a catastrophic output (mass
+hallucination or runaway length) is flagged before spending a judge
+call.
 
-`benchmark.py`, `autoresearch.py`, `build_corpus.py` : moteur. Changer de profil ou de modèle passe par `config.ini`.
+## Configuration keys
+
+`config/config.ini`:
+
+| Section         | Key                  | Meaning                                           |
+|-----------------|----------------------|---------------------------------------------------|
+| `benchmark`     | `profile`            | Label for report naming.                          |
+| `benchmark`     | `model`              | Target Ollama model under test.                   |
+| `benchmark`     | `temperature`        | Sampling temperature for the target.              |
+| `benchmark`     | `num_ctx_k`          | Context window in thousands of tokens.            |
+| `benchmark`     | `endpoint`           | Ollama HTTP endpoint.                             |
+| `benchmark`     | `corpus_glob`        | Glob for WhispUI JSONL files (relative).          |
+| `benchmark`     | `prompt`             | Path of the prompt under optimization.            |
+| `benchmark`     | `judge_backend`      | `claude` (default) or `ollama`.                   |
+| `benchmark`     | `judge_model`        | Override — empty uses the backend default.        |
+| `autoresearch`  | `designer_model`     | Ollama model that proposes variants.              |
+| `autoresearch`  | `max_experiments`    | Upper bound per run.                              |
+| `autoresearch`  | `runs_per_experiment`| Repeats per variant to dampen variance.           |
+
+## Dependencies
+
+- Python 3.11+
+- `anthropic` (only for `judge_backend = claude`): `pip install anthropic`
+- Ollama running locally with `ministral-3:14b` (or another model of
+  your choosing) loaded — used for the target, the designer, and the
+  local-judge fallback.
+
+The Claude judge reads `ANTHROPIC_API_KEY` from the environment and
+enables ephemeral prompt caching on the judge system block, so the
+grid is paid for once per session instead of once per sample.
