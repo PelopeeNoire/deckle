@@ -28,6 +28,7 @@ public sealed partial class GeneralPage : Page
     // retrigger Toggled in turn.
     private bool _suppressCorpusToggle;
     private bool _suppressAudioCorpusToggle;
+    private bool _suppressApplicationLogToggle;
 
     public GeneralPage()
     {
@@ -225,6 +226,29 @@ public sealed partial class GeneralPage : Page
         }
     }
 
+    // Application log consent — same pattern as corpus / audio-corpus. Same
+    // privacy concern level as corpus text (log lines occasionally include
+    // partial transcription fragments), plus an explicit note that the file
+    // grows fast.
+    private async void ApplicationLogToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_initializing || _suppressApplicationLogToggle) return;
+        if (!ApplicationLogToggle.IsOn) return;
+
+        bool confirmed = await ApplicationLogConsentDialog.ShowAsync(this.XamlRoot);
+        if (confirmed) return;
+
+        _suppressApplicationLogToggle = true;
+        try
+        {
+            ApplicationLogToggle.IsOn = false;
+        }
+        finally
+        {
+            _suppressApplicationLogToggle = false;
+        }
+    }
+
     // FolderPicker is a WinRT API designed for packaged apps — in an
     // unpackaged WinUI 3 host it needs the parent HWND wired via
     // WinRT.Interop or ShowAsync throws E_INVALIDARG (COMException 0x80070057).
@@ -286,9 +310,9 @@ public sealed partial class GeneralPage : Page
         finally { _initializing = false; }
     }
 
-    private void ResetDiagnostics_Click(object sender, RoutedEventArgs e)
+    private void ResetTelemetry_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.ResetDiagnosticsDefaults();
+        ViewModel.ResetTelemetryDefaults();
     }
 
     private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)

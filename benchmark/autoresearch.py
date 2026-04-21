@@ -9,10 +9,10 @@ Usage:
     python autoresearch.py [--max-experiments N] [--runs-per-experiment N]
 
 Paths (all relative to ``benchmark/``):
-    config/prompts/system_prompt.txt      — the prompt being optimized.
-    data/reports/results.tsv              — one row per experiment.
-    data/reports/autoresearch_report.txt  — human-readable narrative.
-    logs/autoresearch-YYYYMMDD-HHMMSS.log — live step log (if logging hook).
+    config/prompts/system_prompt.txt           — the prompt being optimized.
+    telemetry/reports/results.tsv              — one row per experiment.
+    telemetry/reports/autoresearch_report.txt  — human-readable narrative.
+    logs/autoresearch-YYYYMMDD-HHMMSS.log      — live step log (if logging hook).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from lib import ollama as ollama_client                 # noqa: E402
 
 CONFIG_FILE   = BENCHMARK_DIR / "config" / "config.ini"
 PROMPT_FILE   = BENCHMARK_DIR / "config" / "prompts" / "system_prompt.txt"
-REPORTS_DIR   = BENCHMARK_DIR / "data" / "reports"
+REPORTS_DIR   = BENCHMARK_DIR / "telemetry" / "reports"
 REPORT_FILE   = REPORTS_DIR / "autoresearch_report.txt"
 RESULTS_FILE  = REPORTS_DIR / "results.tsv"
 LAST_REPORT   = REPORTS_DIR / "last_report.json"

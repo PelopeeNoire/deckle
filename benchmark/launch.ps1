@@ -31,7 +31,7 @@ function Show-Status {
     }
 
     # Derniers résultats
-    $resultsFile = Join-Path $BenchmarkDir "data/reports/results.tsv"
+    $resultsFile = Join-Path $BenchmarkDir "telemetry/reports/results.tsv"
     if (Test-Path $resultsFile) {
         $lines = Get-Content $resultsFile -Encoding UTF8 | Where-Object { $_ -and $_ -notmatch "^experiment" }
         if ($lines.Count -gt 0) {
@@ -140,10 +140,10 @@ try {
                 Run-Command -Description "Benchmark run 3/3" -Args @("benchmark.py")
             }
             "5" {
-                Show-FileContent -FileName "data/reports/results.tsv" -Label "Résultats (data/reports/results.tsv)"
+                Show-FileContent -FileName "telemetry/reports/results.tsv" -Label "Résultats (telemetry/reports/results.tsv)"
             }
             "6" {
-                Show-FileContent -FileName "data/reports/autoresearch_report.txt" -Label "Rapport Autoresearch"
+                Show-FileContent -FileName "telemetry/reports/autoresearch_report.txt" -Label "Rapport Autoresearch"
             }
             "7" {
                 Show-FileContent -FileName "config/prompts/system_prompt.txt" -Label "Prompt actuel (config/prompts/system_prompt.txt)"
