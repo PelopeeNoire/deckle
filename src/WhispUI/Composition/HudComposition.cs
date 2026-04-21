@@ -11,10 +11,13 @@ using Windows.UI;
 namespace WhispUI.Composition;
 
 // Variant the processing stroke is rendering. HudChrono picks one based
-// on the HUD state (Transcribing / Rewriting); the live stroke animates
-// its own effect properties toward the matching variant values without
-// rebuilding anything.
-internal enum ProcessingVariant { Transcribing, Rewriting }
+// on the HUD state (Recording / Transcribing / Rewriting); the live stroke
+// animates its own effect properties toward the matching variant values
+// without rebuilding anything — except on Recording ↔ (Transcribing /
+// Rewriting) crossings where the rotation-frozen vs spinning pipelines
+// cannot share a SpriteVisual, and HudChrono tears the stroke down and
+// rebuilds a fresh one (see AttachProcessingVisual).
+internal enum ProcessingVariant { Recording, Transcribing, Rewriting }
 
 // HUD Composition pipeline — processing strokes for the chrono surface.
 //
@@ -251,6 +254,21 @@ internal static class HudComposition
 
             switch (variant)
             {
+                case ProcessingVariant.Recording:
+                    // Recording reuses the Transcribing Dark/Light baselines
+                    // (Saturation 0 → greyscale, Exposure tuned per theme).
+                    // Opacity is NOT animated here — UpdateLevel drives it
+                    // from EMA-smoothed mic RMS. See UpdateLevel below.
+                    sat           = isDark
+                        ? _config.TranscribingSaturationDark
+                        : _config.TranscribingSaturationLight;
+                    hueShiftTurns = _config.TranscribingHueShiftTurns;
+                    exposure      = isDark
+                        ? _config.TranscribingExposureDark
+                        : _config.TranscribingExposureLight;
+                    opacity       = 0f;                 // unused, skipped below
+                    blendSeconds  = _config.TranscribingBlendSeconds;
+                    break;
                 case ProcessingVariant.Transcribing:
                     sat           = isDark
                         ? _config.TranscribingSaturationDark
@@ -279,7 +297,38 @@ internal static class HudComposition
             AnimateScalar(_effectProps,  "Saturation", sat,             duration);
             AnimateScalar(_effectProps,  "HueAngle",   hueAngleRadians, duration);
             AnimateScalar(_effectProps,  "Exposure",   exposure,        duration);
-            AnimateScalar(_strokeVisual, "Opacity",    opacity,         duration);
+
+            // Recording's Opacity is RMS-driven via UpdateLevel — leave it
+            // untouched so an ApplyVariant (e.g. live theme change mid-
+            // recording) doesn't knock the outline back to silence.
+            if (variant != ProcessingVariant.Recording)
+                AnimateScalar(_strokeVisual, "Opacity", opacity, duration);
+        }
+
+        // Push a new target opacity in [0, 1]. Called from HudChrono's
+        // UpdateAudioLevel on the recording audio thread — CompositionPropertySet
+        // and StartAnimation are thread-safe per Composition's contract,
+        // no DispatcherQueue marshalling.
+        //
+        // 50 ms linear key-frame from the current value to the target.
+        // InsertExpressionKeyFrame("this.CurrentValue") makes successive
+        // overlapping calls blend naturally from wherever the previous
+        // animation had reached — no reset to 0, no step discontinuity.
+        // The Composition renderthread (vsynced to the monitor refresh —
+        // 60/120/144/240 Hz) interpolates between 20 Hz RMS samples at the
+        // native rate with no C#-side tick.
+        //
+        // Only meaningful on a Recording-variant stroke; calling it on a
+        // Transcribing / Rewriting stroke would fight ApplyVariant's opacity
+        // animation, so HudChrono gates the call on _currentVariant.
+        public void UpdateLevel(float level)
+        {
+            float clamped = Math.Clamp(level, 0f, 1f);
+            var anim = _compositor.CreateScalarKeyFrameAnimation();
+            anim.InsertExpressionKeyFrame(0f, "this.CurrentValue");
+            anim.InsertKeyFrame(1f, clamped);
+            anim.Duration = TimeSpan.FromMilliseconds(50);
+            _strokeVisual.StartAnimation("Opacity", anim);
         }
 
         // "Start from the current value, reach target at the end of
@@ -309,6 +358,55 @@ internal static class HudComposition
         Compositor compositor, Vector2 hostSize)
     {
         return CreateConicArcStroke(compositor, hostSize, new ConicArcStrokeConfig());
+    }
+
+    // Recording stroke — the same double-comet pipeline as the processing
+    // stroke, but with rotation frozen and the arc positioned at visual 12
+    // and 6 o'clock. Greyscale palette via the Transcribing Saturation 0
+    // baseline, so the "colour" knobs (HueShift, Exposure split per theme)
+    // behave exactly like Transcribing — on purpose: Louis validated the
+    // direction "copy the grey values from the Transcribing arc" rather
+    // than paint a dedicated theme-coloured stroke.
+    //
+    // Opacity starts at 0 (invisible outline) and is driven by
+    // ProcessingStroke.UpdateLevel from HudChrono's EMA-smoothed mic RMS.
+    //
+    // ── Arc span + fades ────────────────────────────────────────────────
+    // Span 0.5 with Mirror = full 360° coverage split into two 180° arcs
+    // that meet exactly at the sides (3 and 9 o'clock) with no overlap.
+    // LeadFade/TailFade at 0.5 each get auto-scaled by the drawing code to
+    // spanTurns/total = 0.25 each — pure bell, no solid core, peak opacity
+    // at the lobe centre, smooth fade-out at both sides where the arcs
+    // meet. Matches Louis's "ça doit aller que sur les côtés, on a des
+    // fades puissants qui s'en chargent".
+    //
+    // ── Arc phase math ──────────────────────────────────────────────────
+    // With Span 0.5, the source arc centre is at spanRadians/2 = 0.25·τ
+    // (90° math). In Win2D's Y-down space that's (cos 90°, sin 90°)
+    // = (0, 1) — straight down, 6 o'clock. Mirror at +π lands at 270° math
+    // = (0, -1) = straight up, 12 o'clock.
+    //
+    // Target: lobes at visual 12 and 6 o'clock. Source already has a lobe
+    // at 6 and mirror at 12, so we need a +0.5 turn rotation to realign
+    // (the chirality flip: source 6 → visual 12, source 12 → visual 6).
+    // ArcPhaseTurns = 0.5 → 0.25 + 0.5 = 0.75·τ = 270° math = 12 o'clock,
+    // mirror 0.75 + 0.5 = 1.25 ≡ 0.25·τ = 90° math = 6 o'clock. ✓
+    //
+    // HuePhase doesn't matter (saturation 0 → uniform grey), kept at 0.
+    internal static ProcessingStroke CreateRecordingStroke(
+        Compositor compositor, Vector2 hostSize)
+    {
+        var cfg = new ConicArcStrokeConfig
+        {
+            ConicSpanTurns     = 0.5f,
+            ConicLeadFadeTurns = 0.5f,
+            ConicTailFadeTurns = 0.5f,
+            ArcPhaseTurns      = 0.5f,
+        };
+        return CreateConicArcStroke(
+            compositor, hostSize, cfg,
+            freezeRotation: true,
+            initialOpacity:  0f);
     }
 
     // Implementation of the double-comet pipeline driven by
@@ -383,8 +481,21 @@ internal static class HudComposition
     // around the source centre instead would orbit the oversized square
     // around a point well outside the visual — the "half the stroke
     // missing at most phases" symptom we hit initially.
+    // `freezeRotation = true` pins the conic and arc surfaces at their
+    // HuePhaseTurns / ArcPhaseTurns offsets via a static TransformMatrix
+    // (no KeyFrameAnimation, no Composition-driven angular motion). Used
+    // by Recording, where the two lobes must stay at visual 12 and 6
+    // o'clock while Opacity is the only live channel.
+    //
+    // `initialOpacity ≥ 0` overrides cfg.TranscribingOpacity for the
+    // SpriteVisual's seed opacity. Sentinel value -1 falls back to the
+    // Transcribing-baseline behaviour used by Processing strokes. Recording
+    // passes 0 so the outline spawns invisible — UpdateLevel ramps it up
+    // from there as mic RMS arrives.
     private static ProcessingStroke CreateConicArcStroke(
-        Compositor compositor, Vector2 hostSize, ConicArcStrokeConfig cfg)
+        Compositor compositor, Vector2 hostSize, ConicArcStrokeConfig cfg,
+        bool  freezeRotation = false,
+        float initialOpacity = -1f)
     {
         var container = compositor.CreateContainerVisual();
         container.Size = hostSize;
@@ -569,23 +680,48 @@ internal static class HudComposition
         // pixel space.
         var visualCentre = new Vector2(innerSize.X / 2f, innerSize.Y / 2f);
 
-        StartRotation(
-            compositor, conicBrush, visualCentre,
-            cfg.HuePeriodSeconds,
-            cfg.HueDirection,
-            cfg.HuePhaseTurns,
-            cfg.HueEaseP1X, cfg.HueEaseP1Y,
-            cfg.HueEaseP2X, cfg.HueEaseP2Y,
-            cfg.HueVelocityFloor);
+        if (freezeRotation)
+        {
+            // Static TransformMatrix — pin each brush at its phase offset
+            // with NO KeyFrameAnimation. Same T(-c) · R(θ) · T(+c)
+            // composite that StartRotation builds at t=0, just baked into
+            // a one-shot matrix. System.Numerics.Matrix3x2 uses row-vector
+            // convention, matching Composition's expression-side maths.
+            //
+            // HuePhase is cosmetic on a greyscale variant (Saturation 0),
+            // but we still honour it for consistency with the animated
+            // path — the two factories should diverge only in motion, not
+            // in layout.
+            conicBrush.TransformMatrix =
+                Matrix3x2.CreateTranslation(-visualCentre) *
+                Matrix3x2.CreateRotation(MathF.Tau * cfg.HuePhaseTurns) *
+                Matrix3x2.CreateTranslation( visualCentre);
 
-        StartRotation(
-            compositor, arcMaskBrush, visualCentre,
-            cfg.ArcPeriodSeconds,
-            cfg.ArcDirection,
-            cfg.ArcPhaseTurns,
-            cfg.ArcEaseP1X, cfg.ArcEaseP1Y,
-            cfg.ArcEaseP2X, cfg.ArcEaseP2Y,
-            cfg.ArcVelocityFloor);
+            arcMaskBrush.TransformMatrix =
+                Matrix3x2.CreateTranslation(-visualCentre) *
+                Matrix3x2.CreateRotation(MathF.Tau * cfg.ArcPhaseTurns) *
+                Matrix3x2.CreateTranslation( visualCentre);
+        }
+        else
+        {
+            StartRotation(
+                compositor, conicBrush, visualCentre,
+                cfg.HuePeriodSeconds,
+                cfg.HueDirection,
+                cfg.HuePhaseTurns,
+                cfg.HueEaseP1X, cfg.HueEaseP1Y,
+                cfg.HueEaseP2X, cfg.HueEaseP2Y,
+                cfg.HueVelocityFloor);
+
+            StartRotation(
+                compositor, arcMaskBrush, visualCentre,
+                cfg.ArcPeriodSeconds,
+                cfg.ArcDirection,
+                cfg.ArcPhaseTurns,
+                cfg.ArcEaseP1X, cfg.ArcEaseP1Y,
+                cfg.ArcEaseP2X, cfg.ArcEaseP2Y,
+                cfg.ArcVelocityFloor);
+        }
 
         // ── Effect graph ─────────────────────────────────────────────────
         //   Conic ──► Sat ──► Hue ──► Exp ──► AlphaMask(Arc) ──► AlphaMask(Stroke)
@@ -679,7 +815,10 @@ internal static class HudComposition
         strokeVisual.Size    = innerSize;
         strokeVisual.Offset  = new Vector3(InsetDip, InsetDip, 0f);
         strokeVisual.Brush   = effectBrush;
-        strokeVisual.Opacity = cfg.TranscribingOpacity;
+        // initialOpacity sentinel (-1) falls back to the Transcribing
+        // baseline used by Processing strokes. Recording passes 0 so the
+        // outline spawns invisible — UpdateLevel ramps it with mic RMS.
+        strokeVisual.Opacity = initialOpacity >= 0f ? initialOpacity : cfg.TranscribingOpacity;
 
         container.Children.InsertAtTop(strokeVisual);
         return new ProcessingStroke(container, compositor, effectProps, strokeVisual, cfg);
@@ -833,152 +972,4 @@ internal static class HudComposition
             (byte)MathF.Round((b + m) * 255f));
     }
 
-    // ╔════════════════════════════════════════════════════════════════════╗
-    // ║  Recording outline — single theme-coloured stroke, opacity-driven  ║
-    // ╚════════════════════════════════════════════════════════════════════╝
-    //
-    // Attached to HudChrono.ProcessingSurfaceHost only during the Recording
-    // state. Its single animable channel is SpriteVisual.Opacity, bound to
-    // a PropertySet scalar "Level" via an ExpressionAnimation — the
-    // HudChrono consumer pushes EMA-smoothed mic RMS into Level, and the
-    // Composition renderthread (vsynced to the monitor refresh) interpolates
-    // between 20 Hz samples via short 50 ms KeyFrameAnimations. No C#-side
-    // framerate is fixed: 60 Hz and 240 Hz monitors both get a continuous
-    // ramp without code change.
-    //
-    // Detached before a ProcessingStroke (Transcribing / Rewriting) is
-    // attached on the same surface host — the two strokes never coexist,
-    // so they share the inset / radius / silhouette metrics for pixel
-    // compatibility but their attach is mutually exclusive.
-
-    // Live handle returned by CreateRecordingOutline. Callers hold onto it
-    // to push level updates (thread-safe from the recording thread) and to
-    // recolour the stroke when the UI theme flips at runtime.
-    internal sealed class RecordingOutline : IDisposable
-    {
-        public ContainerVisual Visual { get; }
-
-        private readonly Compositor _compositor;
-        private readonly CompositionPropertySet _props;
-        private readonly CompositionColorBrush _colorBrush;
-
-        internal RecordingOutline(
-            ContainerVisual visual,
-            Compositor compositor,
-            CompositionPropertySet props,
-            CompositionColorBrush colorBrush)
-        {
-            Visual      = visual;
-            _compositor = compositor;
-            _props      = props;
-            _colorBrush = colorBrush;
-        }
-
-        // Push a new target level in [0, 1]. Clamped, then animated with a
-        // 50 ms linear key-frame from the current value to the target.
-        // InsertExpressionKeyFrame("this.CurrentValue") makes successive
-        // overlapping calls blend naturally from wherever the previous
-        // animation had reached — no reset to 0, no step discontinuity.
-        //
-        // Composition contracts CompositionPropertySet + StartAnimation as
-        // thread-safe off the UI thread, so this can be called directly
-        // from the recording audio thread without marshalling. The render
-        // pipeline picks up the new animation at the next frame.
-        public void UpdateLevel(float level)
-        {
-            float clamped = Math.Clamp(level, 0f, 1f);
-            var anim = _compositor.CreateScalarKeyFrameAnimation();
-            anim.InsertExpressionKeyFrame(0f, "this.CurrentValue");
-            anim.InsertKeyFrame(1f, clamped);
-            anim.Duration = TimeSpan.FromMilliseconds(50);
-            _props.StartAnimation("Level", anim);
-        }
-
-        // Swap the stroke colour live. The caller resolves the new Color
-        // from a theme brush (TextFillColorPrimaryBrush in practice) on
-        // ActualThemeChanged and hands it in; the ColorBrush flip propagates
-        // through the AlphaMaskEffect pipeline at the next frame.
-        public void Retheme(Color color) => _colorBrush.Color = color;
-
-        public void Dispose() => Visual.Dispose();
-    }
-
-    // Build a RecordingOutline for the HUD surface. `color` is the resolved
-    // theme colour for the stroke (typically TextFillColorPrimary — white on
-    // dark, black on light). Inset / corner radius / thickness mirror
-    // CreateConicArcStroke so the two strokes paint on the exact same
-    // silhouette.
-    internal static RecordingOutline CreateRecordingOutline(
-        Compositor compositor, Vector2 hostSize, Color color)
-    {
-        var container = compositor.CreateContainerVisual();
-        container.Size = hostSize;
-
-        var innerSize = new Vector2(hostSize.X - 2f * InsetDip, hostSize.Y - 2f * InsetDip);
-        int pxW = Math.Max(1, (int)MathF.Ceiling(innerSize.X));
-        int pxH = Math.Max(1, (int)MathF.Ceiling(innerSize.Y));
-
-        var canvasDevice   = CanvasDevice.GetSharedDevice();
-        var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(compositor, canvasDevice);
-
-        // Stroke silhouette — same geometry as CreateConicArcStroke (the
-        // 15 lines are duplicated rather than factored into a shared helper
-        // to keep the two pipelines decoupled; refactor only if a third
-        // consumer appears).
-        var strokeMaskSurface = graphicsDevice.CreateDrawingSurface(
-            new Windows.Foundation.Size(pxW, pxH),
-            DirectXPixelFormat.B8G8R8A8UIntNormalized,
-            DirectXAlphaMode.Premultiplied);
-
-        using (var ds = CanvasComposition.CreateDrawingSession(strokeMaskSurface))
-        {
-            ds.Clear(Colors.Transparent);
-            var rect = new Windows.Foundation.Rect(
-                StrokeThickness / 2f,
-                StrokeThickness / 2f,
-                pxW - StrokeThickness,
-                pxH - StrokeThickness);
-            ds.DrawRoundedRectangle(rect, CornerRadiusDip, CornerRadiusDip, Colors.White, StrokeThickness);
-        }
-
-        var strokeMaskBrush = compositor.CreateSurfaceBrush(strokeMaskSurface);
-        strokeMaskBrush.Stretch = CompositionStretch.Fill;
-
-        // Plain opaque colour source — Retheme() mutates .Color live.
-        var colorBrush = compositor.CreateColorBrush(color);
-
-        // AlphaMaskEffect: output = (color.RGB, color.A * strokeMask.A).
-        // Non-silhouette pixels go transparent, silhouette pixels take the
-        // theme colour. SpriteVisual.Opacity multiplies in on top.
-        var effectGraph = new AlphaMaskEffect
-        {
-            Source    = new CompositionEffectSourceParameter("Color"),
-            AlphaMask = new CompositionEffectSourceParameter("Stroke"),
-        };
-        var effectFactory = compositor.CreateEffectFactory(effectGraph);
-        var effectBrush   = effectFactory.CreateBrush();
-        effectBrush.SetSourceParameter("Color",  colorBrush);
-        effectBrush.SetSourceParameter("Stroke", strokeMaskBrush);
-
-        var strokeVisual = compositor.CreateSpriteVisual();
-        strokeVisual.Size    = innerSize;
-        strokeVisual.Offset  = new Vector3(InsetDip, InsetDip, 0f);
-        strokeVisual.Brush   = effectBrush;
-        strokeVisual.Opacity = 0f;
-
-        // PropertySet scalar "Level" — the single live channel. Seeded at
-        // 0 so the outline spawns invisible; the first EMA-smoothed RMS
-        // push animates it up from there.
-        var props = compositor.CreatePropertySet();
-        props.InsertScalar("Level", 0f);
-
-        // Bind SpriteVisual.Opacity to props.Level — one ExpressionAnimation
-        // evaluated every Composition frame, no C# tick, no dispatcher.
-        var opacityExpr = compositor.CreateExpressionAnimation("props.Level");
-        opacityExpr.SetReferenceParameter("props", props);
-        strokeVisual.StartAnimation("Opacity", opacityExpr);
-
-        container.Children.InsertAtTop(strokeVisual);
-        return new RecordingOutline(container, compositor, props, colorBrush);
-    }
 }
