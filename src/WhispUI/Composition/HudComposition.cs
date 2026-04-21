@@ -53,8 +53,8 @@ internal static class HudComposition
     // ╚════════════════════════════════════════════════════════════════════╝
     // Fixed across all three variants — stroke metrics are a property of
     // the HUD rect, not of the animation.
-    private const float  StrokeThickness              = 4f;    // dip, stroke width
-    private const float  InsetDip                     = 0f;    // dip, inset from HUD edge
+    private const float  StrokeThickness              = 8f;    // dip, stroke width
+    private const float  InsetDip                     = -2f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -262,8 +262,8 @@ internal static class HudComposition
         public float  RecordingSaturationDark      { get; init; } = 0f;
         public float  RecordingSaturationLight     { get; init; } = 0f;
         public float  RecordingHueShiftTurns       { get; init; } = 0f;
-        public float  RecordingExposureDark        { get; init; } = 2f;
-        public float  RecordingExposureLight       { get; init; } = -2f;
+        public float  RecordingExposureDark        { get; init; } = 1.5f;
+        public float  RecordingExposureLight       { get; init; } = -1.5f;
         public double RecordingBlendSeconds        { get; init; } = 1;
     }
 

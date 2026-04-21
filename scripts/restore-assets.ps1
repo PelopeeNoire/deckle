@@ -95,6 +95,11 @@ Download `
     (Join-Path $ModelsDir 'ggml-silero-v5.1.2.bin') `
     700KB
 
+Download `
+    'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin' `
+    (Join-Path $ModelsDir 'ggml-silero-v6.2.0.bin') `
+    700KB
+
 Step 'done'
 Write-Host "         native/whisper/ : $(Get-ChildItem $WhisperDir | Measure-Object).Count DLL(s)"
 Write-Host "         native/mingw/   : $(Get-ChildItem $MingwDir | Measure-Object).Count DLL(s)"
