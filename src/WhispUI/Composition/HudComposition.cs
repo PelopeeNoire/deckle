@@ -27,14 +27,25 @@ internal enum ProcessingVariant { Recording, Transcribing, Rewriting }
 // card — any external DropShadow would clip at the HWND edge, producing a
 // rectangular artifact. No shadows in this pipeline.
 //
-// Geometry is inset by 1 dip so the 1-dip centered stroke sits between
-// 0.5 dip and 1.5 dip from the outer edge — fully inside the DWM rounded
-// silhouette (which clips at the 8-dip corner), zero risk of partial
-// clipping at the rounded corners. CornerRadius follows the inset, tuned
-// slightly under the geometric ideal (6.5 dip instead of 7) to keep the
-// Win2D-rasterised stroke clear of the DWM corner — Win2D and DWM do not
-// use identical antialiasing at high-curvature corners and a literal
-// match produced a visible bleed.
+// Geometry is flush with the card edge (InsetDip = 0). CornerRadius 7 dip
+// sits just inside the DWM 8-dip rounded silhouette, so the Win2D-rasterised
+// stroke clears the DWM corner clip even though the two AA pipelines don't
+// agree at high-curvature arcs.
+//
+// Pixel-perfect sizing note (CreateConicArcStroke): the stroke silhouette
+// surface is dimensioned with Math.Round of the visual DIP extent, NOT
+// Math.Ceiling. At non-integer DPI (e.g. 125 % gives hostSize.Y = 78.4),
+// ceiling would oversize the surface by up to 1 pixel (pxH = 79 for a
+// 78.4-dip visual). CompositionSurfaceBrush.Stretch = Fill then compresses
+// 79 source rows into 78.4 dip — scale 0.9924 — so the stroke's outer edge
+// drawn at source y = pxH lands at visual y = 77.41 instead of 78.4. That
+// 1-dip gap is the stroke "disappearing" asymmetrically on the bottom/right
+// edges (top/left are pinned at y=0/x=0 by the origin, so they stay flush).
+// Math.Round gets the surface size within ±0.5 dip of innerSize on every
+// side, and Stretch.Fill then stretches (scale ≥ ~1) to land the outer
+// stroke edge flush with the visual extent on all four sides. pxSquare
+// (rotation coverage) is computed from innerSize directly, not from the
+// rounded pxW/pxH, so it always clears the visual diagonal.
 internal static class HudComposition
 {
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -242,7 +253,7 @@ internal static class HudComposition
         //    No RecordingOpacity — UpdateLevel owns that channel from
         //    the mic RMS stream. ApplyVariant(Recording) deliberately
         //    skips the Opacity animation to avoid fighting UpdateLevel.
-        public float  RecordingConicSpanTurns      { get; init; } = 0.4f;
+        public float  RecordingConicSpanTurns      { get; init; } = 0.5f;
         public float  RecordingConicLeadFadeTurns  { get; init; } = 1f;
         public float  RecordingConicTailFadeTurns  { get; init; } = 1f;
         public float  RecordingConicFadeCurve      { get; init; } = 4f;
@@ -577,12 +588,24 @@ internal static class HudComposition
         container.Size = hostSize;
 
         var innerSize = new Vector2(hostSize.X - 2f * InsetDip, hostSize.Y - 2f * InsetDip);
-        int pxW = Math.Max(1, (int)MathF.Ceiling(innerSize.X));
-        int pxH = Math.Max(1, (int)MathF.Ceiling(innerSize.Y));
+        // Math.Round (NOT Ceiling) — cf. the "Pixel-perfect sizing note" in
+        // the file header. At fractional-DIP extents (e.g. hostSize.Y = 78.4
+        // at 125 % DPI), Ceiling oversizes the silhouette surface by up to
+        // 1 px, and Stretch.Fill then compresses it back into the visual —
+        // scale < 1 — so the stroke's outer edge drawn at source y = pxH
+        // lands inside the visual extent, producing a 1-dip gap on the
+        // bottom/right (top/left stay flush because the origin pins y=0
+        // and x=0 on both surface and visual).
+        int pxW = Math.Max(1, (int)MathF.Round(innerSize.X));
+        int pxH = Math.Max(1, (int)MathF.Round(innerSize.Y));
         // Rotating surfaces need side ≥ visual diagonal so the inscribed
         // circle of the source covers all four visual corners at every
-        // rotation angle — cf. header comment.
-        int pxSquare = (int)Math.Ceiling(Math.Sqrt((double)pxW * pxW + (double)pxH * pxH));
+        // rotation angle — cf. header comment. Compute from innerSize
+        // directly (not from the rounded pxW/pxH) so a down-rounded pxW
+        // or pxH at fractional DPI can't clip the diagonal coverage.
+        int pxSquare = (int)Math.Ceiling(Math.Sqrt(
+            (double)innerSize.X * innerSize.X +
+            (double)innerSize.Y * innerSize.Y));
 
         var canvasDevice   = CanvasDevice.GetSharedDevice();
         var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(compositor, canvasDevice);
