@@ -34,31 +34,38 @@ public sealed class PasteSettings
     public bool AutoPasteEnabled { get; set; } = false;
 }
 
-// Diagnostics / telemetry: two opt-in streams with a shared storage directory.
+// Diagnostics / telemetry: four independent opt-in streams, all off by
+// default — confidentiality first. The user explicitly authorizes each
+// data class through its own consent dialog before anything lands on disk.
 //
-// LatencyEnabled controls the per-transcription latency JSONL (vad/whisper/llm/
-// paste timings, outcome). Lightweight, no user text — safe to keep on. Off by
-// default because the user hasn't opted in yet.
+// LatencyEnabled controls the per-transcription latency JSONL (vad/whisper/
+// llm/clipboard/paste timings, outcome). Lightweight, timings only, no user
+// text — the closest equivalent to the legacy telemetry.csv.
 //
-// CorpusEnabled controls the raw Whisper text capture — one JSONL per profile,
-// with the audio section metadata and the exact raw transcription. This is the
-// stronger privacy posture (the user's words land on disk) and carries a
-// ContentDialog consent before it starts writing.
+// CorpusEnabled controls the raw Whisper text capture — one JSONL per
+// rewrite profile, with the audio section metadata and the exact raw
+// transcription. Stronger privacy posture (the user's words land on disk).
 //
-// RecordAudioCorpus is a nested opt-in that additionally saves the raw 16 kHz
-// mono PCM audio as a .wav per transcription, alongside the text JSONL. Off by
-// default, meaningless unless CorpusEnabled is also true, and carries its own
-// consent dialog (audio is a stronger posture than text).
+// RecordAudioCorpus is a nested opt-in that additionally saves the raw
+// 16 kHz mono PCM audio as a .wav per transcription, alongside the text
+// JSONL. Meaningless unless CorpusEnabled is also true. Audio carries the
+// strongest posture (biometric-adjacent).
 //
-// StorageDirectory is the common root for app.jsonl / latency.jsonl / corpus/.
-// Empty = default resolver (<repo>/benchmark/ when running from the dev tree,
-// %LOCALAPPDATA%/WhispUI/benchmark/ otherwise).
+// ApplicationLogToDisk mirrors the in-process LogService stream to a JSONL
+// file on disk. All log levels (Verbose → Error), all subsystems. Useful to
+// diagnose a specific issue across a restart, noisy in steady-state — so
+// opt-in with line-based rotation to cap disk footprint.
+//
+// StorageDirectory is the common root for latency.jsonl / app.jsonl /
+// <profile-slug>/corpus.jsonl. Empty = default resolver (<repo>/benchmark/
+// telemetry/ when running from the dev tree).
 public sealed class TelemetrySettings
 {
-    public bool   LatencyEnabled    { get; set; } = false;
-    public bool   CorpusEnabled     { get; set; } = false;
-    public bool   RecordAudioCorpus { get; set; } = false;
-    public string StorageDirectory  { get; set; } = "";
+    public bool   LatencyEnabled       { get; set; } = false;
+    public bool   CorpusEnabled        { get; set; } = false;
+    public bool   RecordAudioCorpus    { get; set; } = false;
+    public bool   ApplicationLogToDisk { get; set; } = false;
+    public string StorageDirectory     { get; set; } = "";
 }
 
 // Paramètres d'enregistrement audio. AudioInputDeviceId = index du périphérique
