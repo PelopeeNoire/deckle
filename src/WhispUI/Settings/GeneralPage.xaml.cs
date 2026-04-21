@@ -255,6 +255,42 @@ public sealed partial class GeneralPage : Page
         }
     }
 
+    // ── Reset per section ───────────────────────────────────────────────────
+    //
+    // The VM mutates its partial properties; x:Bind TwoWay refreshes the
+    // toggles/textboxes automatically. Non-bindable combos (audio input,
+    // overlay position, theme) need an explicit re-sync after the reset.
+
+    private void ResetRecording_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetRecordingDefaults();
+        _initializing = true;
+        try
+        {
+            AudioInputCombo.SelectedIndex = 0;
+            SyncOverlayPositionCombo();
+        }
+        finally { _initializing = false; }
+    }
+
+    private void ResetStartup_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetStartupDefaults();
+    }
+
+    private void ResetAppearance_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetAppearanceDefaults();
+        _initializing = true;
+        try { SyncThemeCombo(); }
+        finally { _initializing = false; }
+    }
+
+    private void ResetDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetDiagnosticsDefaults();
+    }
+
     private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)
     {
         // GetDirectoryPath() already falls back to the default resolver when

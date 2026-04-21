@@ -69,8 +69,21 @@
                 </controls:SettingsCard>
 
                 <!-- ── Recording ───────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Recording" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Recording" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetRecording_Click" />
+                </Grid>
 
                 <controls:SettingsCard x:Name="AudioInputCard"
                                        Header="Microphone"
@@ -111,8 +124,21 @@
                 </controls:SettingsExpander>
 
                 <!-- ── Startup ─────────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Startup" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Startup" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetStartup_Click" />
+                </Grid>
 
                 <controls:SettingsCard Header="Start with Windows"
                                        Description="Launch WhispUI automatically when you sign in."
@@ -133,8 +159,21 @@
                 </controls:SettingsCard>
 
                 <!-- ── Appearance ──────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Appearance" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Appearance" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetAppearance_Click" />
+                </Grid>
 
                 <controls:SettingsCard Header="App theme"
                                        Description="Light, dark, or follow your Windows theme."
@@ -149,11 +188,24 @@
                 </controls:SettingsCard>
 
                 <!-- ── Diagnostics ─────────────────────────────────────────── -->
-                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                           Text="Diagnostics" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Diagnostics" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetDiagnostics_Click" />
+                </Grid>
 
                 <controls:SettingsCard Header="Latency telemetry"
-                                       Description="One lightweight JSONL entry per transcription (VAD, Whisper, LLM, paste timings). Local only, no text captured."
+                                       Description="Measure how long each step takes — voice detection, transcription, rewriting, paste — and write the numbers to a local JSONL file. Timings only, no transcript text."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
