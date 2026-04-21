@@ -43,7 +43,7 @@ internal static class HudComposition
     // Fixed across all three variants — stroke metrics are a property of
     // the HUD rect, not of the animation.
     private const float  StrokeThickness              = 4f;    // dip, stroke width
-    private const float  InsetDip                     = 4f;    // dip, inset from HUD edge
+    private const float  InsetDip                     = 0f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -242,10 +242,10 @@ internal static class HudComposition
         //    No RecordingOpacity — UpdateLevel owns that channel from
         //    the mic RMS stream. ApplyVariant(Recording) deliberately
         //    skips the Opacity animation to avoid fighting UpdateLevel.
-        public float  RecordingConicSpanTurns      { get; init; } = 0.5f;
+        public float  RecordingConicSpanTurns      { get; init; } = 0.4f;
         public float  RecordingConicLeadFadeTurns  { get; init; } = 1f;
         public float  RecordingConicTailFadeTurns  { get; init; } = 1f;
-        public float  RecordingConicFadeCurve      { get; init; } = 2f;
+        public float  RecordingConicFadeCurve      { get; init; } = 4f;
         public bool   RecordingArcMirror           { get; init; } = true;
         public float  RecordingArcPhaseTurns       { get; init; } = 0f;
         public float  RecordingSaturationDark      { get; init; } = 0f;
