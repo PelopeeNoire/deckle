@@ -395,7 +395,7 @@ internal sealed class WhispEngine : IDisposable
         {
             // whisper_log_set missing from a very old libwhisper: log and
             // continue — the rest of the pipeline doesn't depend on it.
-            DebugLog.Write("ENGINE", $"whisper_log_set unavailable: {ex.Message}");
+            _log.Warning(LogSource.Engine, $"whisper_log_set unavailable: {ex.Message}");
         }
     }
 
@@ -447,7 +447,7 @@ internal sealed class WhispEngine : IDisposable
     {
         RaiseStatus("Loading model");
 
-        DebugLog.Write("ENGINE", "load started, path=" + _modelPath);
+        _log.Verbose(LogSource.Engine, "load started, path=" + _modelPath);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _log.Info(LogSource.Model, $"path: {_modelPath}");
         if (File.Exists(_modelPath))
@@ -475,7 +475,7 @@ internal sealed class WhispEngine : IDisposable
         ctxParams.use_gpu = 1;
 
         _ctx = NativeMethods.whisper_init_from_file_with_params(_modelPath, ctxParams);
-        DebugLog.Write("ENGINE", "whisper_init_from_file returned ctx=" + _ctx);
+        _log.Verbose(LogSource.Engine, "whisper_init_from_file returned ctx=" + _ctx);
         sw.Stop();
 
         if (_ctx == IntPtr.Zero)
@@ -1330,7 +1330,7 @@ internal sealed class WhispEngine : IDisposable
         var outcome = (_shouldPaste && pasteVerified) ? TranscriptionOutcome.Pasted
                                                       : TranscriptionOutcome.ClipboardOnly;
 
-        TelemetryLog.Append(new TelemetrySample(
+        Logging.TelemetryService.Instance.Latency(new Logging.LatencyPayload(
             AudioSec:    audioSec,
             VadMs:       vadMs,
             WhisperMs:   whisperMs,
@@ -1351,33 +1351,40 @@ internal sealed class WhispEngine : IDisposable
         // useful for benchmarking Whisper itself (initial prompt, VAD, model
         // swap). One file per rewrite profile so samples stay sliceable by
         // the workflow they came from, even without the rewrite payload.
-        var corpusSettings = Settings.SettingsService.Instance.Current.CorpusLogging;
-        if (corpusSettings.Enabled && profile is not null)
+        var telemetrySettings = Settings.SettingsService.Instance.Current.Telemetry;
+        if (telemetrySettings.CorpusEnabled && profile is not null)
         {
             var whisperSettings = Settings.SettingsService.Instance.Current.Transcription;
             int rawChars = rawText.Length;
             var timestamp = DateTimeOffset.Now;
 
-            var metrics = new Logging.CorpusMetrics(
-                WordsPerSecond: recDurationSec > 0 ? rawWordCount / recDurationSec : 0);
-
-            var entry = new Logging.CorpusEntry(
-                Timestamp:       timestamp,
-                DurationSeconds: recDurationSec,
-                Whisper:         new Logging.CorpusWhisper(whisperSettings.Model, whisperSettings.Language, whisperMs),
-                Raw:             new Logging.CorpusRaw(rawText, rawWordCount, rawChars),
-                Metrics:         metrics);
-
-            string slug = $"{Logging.CorpusLog.Slugify(profile.Name)}-{profile.Id}";
-            Logging.CorpusLog.Append(slug, entry);
+            string slug = $"{Logging.CorpusPaths.Slugify(profile.Name)}-{profile.Id}";
 
             // Audio capture is a second, nested opt-in gated by the same
             // profile slug — so a replay pairs JSONL rows with their WAV
             // 1:1. Same timestamp as the text entry keeps the pairing
             // unambiguous even if the user triggers a new recording
             // while the file write is still settling.
-            if (corpusSettings.RecordAudioCorpus)
-                Logging.WavCorpusLog.Append(slug, audio, timestamp);
+            string? audioFile = telemetrySettings.RecordAudioCorpus
+                ? Logging.WavCorpusWriter.Write(slug, audio, timestamp)
+                : null;
+
+            var payload = new Logging.CorpusPayload(
+                Profile:         profile.Name,
+                ProfileId:       profile.Id,
+                Slug:            slug,
+                DurationSeconds: recDurationSec,
+                Whisper:         new Logging.WhisperSection(
+                                     whisperSettings.Model,
+                                     whisperSettings.Language,
+                                     whisperMs,
+                                     InitialPrompt: string.IsNullOrEmpty(prompt) ? null : prompt),
+                Raw:             new Logging.RawSection(rawText, rawWordCount, rawChars),
+                Metrics:         new Logging.CorpusMetricsSection(
+                                     WordsPerSecond: recDurationSec > 0 ? rawWordCount / recDurationSec : 0),
+                AudioFile:       audioFile);
+
+            Logging.TelemetryService.Instance.Corpus(payload);
         }
 
         RaiseFinished(outcome);

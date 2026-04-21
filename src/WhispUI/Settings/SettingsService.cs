@@ -102,7 +102,7 @@ public sealed class SettingsService
         }
         catch (Exception ex)
         {
-            DebugLog.Write("SETTINGS", $"load failed ({ex.GetType().Name}: {ex.Message}) — fallback defaults");
+            LogService.Instance.Error(LogSource.Settings, $"load failed ({ex.GetType().Name}: {ex.Message}) — fallback defaults");
             return new AppSettings();
         }
     }
@@ -117,34 +117,57 @@ public sealed class SettingsService
         {
             var root = JsonNode.Parse(json) as JsonObject;
             if (root is null) return (json, false);
-            if (root["llm"] is not JsonObject llm) return (json, false);
 
             bool mutated = false;
 
-            if (llm["manualProfileName"] is JsonNode legacyManual &&
-                llm["slotAProfileName"] is null)
+            if (root["llm"] is JsonObject llm)
             {
-                llm["slotAProfileName"] = legacyManual.DeepClone();
-                llm.Remove("manualProfileName");
-                DebugLog.Write("SETTINGS", "migrated llm.manualProfileName → llm.slotAProfileName");
-                mutated = true;
+                if (llm["manualProfileName"] is JsonNode legacyManual &&
+                    llm["slotAProfileName"] is null)
+                {
+                    llm["slotAProfileName"] = legacyManual.DeepClone();
+                    llm.Remove("manualProfileName");
+                    LogService.Instance.Info(LogSource.Settings, "migrated llm.manualProfileName → llm.slotAProfileName");
+                    mutated = true;
+                }
+
+                if (llm["slotAProfileName"] is JsonNode legacySlotA &&
+                    llm["primaryRewriteProfileName"] is null)
+                {
+                    llm["primaryRewriteProfileName"] = legacySlotA.DeepClone();
+                    llm.Remove("slotAProfileName");
+                    LogService.Instance.Info(LogSource.Settings, "migrated llm.slotAProfileName → llm.primaryRewriteProfileName");
+                    mutated = true;
+                }
+
+                if (llm["slotBProfileName"] is JsonNode legacySlotB &&
+                    llm["secondaryRewriteProfileName"] is null)
+                {
+                    llm["secondaryRewriteProfileName"] = legacySlotB.DeepClone();
+                    llm.Remove("slotBProfileName");
+                    LogService.Instance.Info(LogSource.Settings, "migrated llm.slotBProfileName → llm.secondaryRewriteProfileName");
+                    mutated = true;
+                }
             }
 
-            if (llm["slotAProfileName"] is JsonNode legacySlotA &&
-                llm["primaryRewriteProfileName"] is null)
+            // corpusLogging → telemetry (telemetry unification, 2026-04-21).
+            // `enabled` becomes `corpusEnabled` (the corpus is one of two opt-in
+            // streams now; the other is `latencyEnabled`, which defaults to off
+            // and stays off through this migration). `dataDirectory` becomes
+            // `storageDirectory`, reused as the common root for all three files.
+            if (root["corpusLogging"] is JsonObject legacyCorpus &&
+                root["telemetry"] is null)
             {
-                llm["primaryRewriteProfileName"] = legacySlotA.DeepClone();
-                llm.Remove("slotAProfileName");
-                DebugLog.Write("SETTINGS", "migrated llm.slotAProfileName → llm.primaryRewriteProfileName");
-                mutated = true;
-            }
-
-            if (llm["slotBProfileName"] is JsonNode legacySlotB &&
-                llm["secondaryRewriteProfileName"] is null)
-            {
-                llm["secondaryRewriteProfileName"] = legacySlotB.DeepClone();
-                llm.Remove("slotBProfileName");
-                DebugLog.Write("SETTINGS", "migrated llm.slotBProfileName → llm.secondaryRewriteProfileName");
+                var telemetry = new JsonObject
+                {
+                    ["latencyEnabled"]    = false,
+                    ["corpusEnabled"]     = legacyCorpus["enabled"]?.GetValue<bool>() ?? false,
+                    ["recordAudioCorpus"] = legacyCorpus["recordAudioCorpus"]?.GetValue<bool>() ?? false,
+                    ["storageDirectory"]  = legacyCorpus["dataDirectory"]?.GetValue<string>() ?? "",
+                };
+                root["telemetry"] = telemetry;
+                root.Remove("corpusLogging");
+                LogService.Instance.Info(LogSource.Settings, "migrated corpusLogging → telemetry");
                 mutated = true;
             }
 
@@ -152,7 +175,7 @@ public sealed class SettingsService
         }
         catch (Exception ex)
         {
-            DebugLog.Write("SETTINGS", $"migration skipped: {ex.GetType().Name}: {ex.Message}");
+            LogService.Instance.Warning(LogSource.Settings, $"migration skipped: {ex.GetType().Name}: {ex.Message}");
         }
         return (json, false);
     }
@@ -277,12 +300,12 @@ public sealed class SettingsService
             File.WriteAllText(tmp, json);
             File.Move(tmp, _configPath, overwrite: true);
 
-            DebugLog.Write("SETTINGS", "saved to disk");
+            LogService.Instance.Verbose(LogSource.Settings, "saved to disk");
             Changed?.Invoke();
         }
         catch (Exception ex)
         {
-            DebugLog.Write("SETTINGS", $"save failed: {ex.GetType().Name}: {ex.Message}");
+            LogService.Instance.Error(LogSource.Settings, $"save failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

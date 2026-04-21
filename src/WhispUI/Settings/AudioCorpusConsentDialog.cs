@@ -20,7 +20,7 @@ internal static class AudioCorpusConsentDialog
 {
     public static async Task<bool> ShowAsync(XamlRoot root)
     {
-        string? textRoot = CorpusLog.GetDirectoryPath();
+        string? textRoot = CorpusPaths.GetDirectoryPath();
         string where = string.IsNullOrEmpty(textRoot)
             ? "a \"corpus-audio\" subfolder of the corpus folder (auto-resolved next to the app)"
             : Path.Combine(textRoot, "corpus-audio");

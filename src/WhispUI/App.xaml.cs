@@ -1,5 +1,6 @@
 using WhispUI.Interop;
 using WhispUI.Logging;
+using WhispUI.Logging.Sinks;
 using WhispUI.Shell;
 
 namespace WhispUI;
@@ -23,22 +24,25 @@ public partial class App : Microsoft.UI.Xaml.Application
         InitializeComponent();
 
         // Diagnostic safety net — without this, a crash in a WhispEngine
-        // event disappears silently.
+        // event disappears silently. Any sink registered later in OnLaunched
+        // picks these up (the JsonlFileSink writes them to app.jsonl). Events
+        // raised before OnLaunched have no sinks yet and are dropped — there
+        // are none of those in practice.
         this.UnhandledException += (_, e) =>
         {
-            DebugLog.Write("CRASH", $"{e.Exception.GetType().Name}: {e.Exception.Message}");
-            DebugLog.Write("CRASH", e.Exception.StackTrace ?? "(no stack)");
+            _log.Error(LogSource.Crash, $"{e.Exception.GetType().Name}: {e.Exception.Message}");
+            _log.Error(LogSource.Crash, e.Exception.StackTrace ?? "(no stack)");
             e.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             var ex = e.ExceptionObject as Exception;
-            DebugLog.Write("CRASH-AD", $"{ex?.GetType().Name}: {ex?.Message}");
-            DebugLog.Write("CRASH-AD", ex?.StackTrace ?? "(no stack)");
+            _log.Error(LogSource.Crash, $"[AppDomain] {ex?.GetType().Name}: {ex?.Message}");
+            _log.Error(LogSource.Crash, ex?.StackTrace ?? "(no stack)");
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            DebugLog.Write("CRASH-TS", $"{e.Exception.GetType().Name}: {e.Exception.Message}");
+            _log.Error(LogSource.Crash, $"[TaskScheduler] {e.Exception.GetType().Name}: {e.Exception.Message}");
             e.SetObserved();
         };
     }
@@ -55,13 +59,19 @@ public partial class App : Microsoft.UI.Xaml.Application
         var milestones = new List<string>();
         void Milestone(string name) => milestones.Add($"{name} +{sw.ElapsedMilliseconds}ms");
 
+        // File sink first — captures every event from boot, including the
+        // startup milestones flushed at the end of OnLaunched. Writes under
+        // the telemetry storage directory (benchmark/ in dev layout).
+        TelemetryService.Instance.AddSink(new JsonlFileSink());
+        Milestone("filesink");
+
         _engine = new WhispEngine();
         Milestone("engine");
 
         // LogWindow created once, never destroyed.
         _logWindow = new LogWindow();
 
-        _log.AddSink(_logWindow);
+        TelemetryService.Instance.AddSink(_logWindow);
         Milestone("logwindow");
 
         // SettingsWindow created once, never destroyed. No initial Show:
@@ -81,10 +91,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         _hudWindow = new HudWindow();
 
         // HUD feedback sink: picks up log entries that carry a UserFeedback
-        // payload and surfaces them on the HUD. Log entries without feedback
-        // flow only through DebugLogSink / LogWindow. Added after HudWindow
-        // is constructed so the closure captures a non-null reference.
-        _log.AddSink(new HudFeedbackSink(fb => _hudWindow.ShowUserFeedback(fb)));
+        // payload and surfaces them on the HUD. Events without feedback flow
+        // only through the file sink and LogWindow. Added after HudWindow is
+        // constructed so the closure captures a non-null reference.
+        TelemetryService.Instance.AddSink(new HudFeedbackSink(fb => _hudWindow.ShowUserFeedback(fb)));
         Milestone("hudwindow");
 
         _tray = new TrayIconManager
@@ -247,12 +257,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     //               threads are IsBackground=true, they die with the process.
     private void QuitApp()
     {
-        DebugLog.Write("APP", "Shutdown requested");
-        try { Settings.SettingsService.Instance.Flush(); } catch (Exception ex) { DebugLog.Write("APP", "settings flush: " + ex.Message); }
-        try { _hotkeyManager?.Dispose(); } catch (Exception ex) { DebugLog.Write("APP", "hotkeys dispose: " + ex.Message); }
-        try { _tray?.Dispose();          } catch (Exception ex) { DebugLog.Write("APP", "tray dispose: " + ex.Message); }
-        try { _messageHost?.Dispose();   } catch (Exception ex) { DebugLog.Write("APP", "message host dispose: " + ex.Message); }
-        try { _engine?.Dispose();        } catch (Exception ex) { DebugLog.Write("APP", "engine dispose: " + ex.Message); }
+        _log.Info(LogSource.App, "Shutdown requested");
+        try { Settings.SettingsService.Instance.Flush(); } catch (Exception ex) { _log.Warning(LogSource.App, "settings flush: " + ex.Message); }
+        try { _hotkeyManager?.Dispose(); } catch (Exception ex) { _log.Warning(LogSource.App, "hotkeys dispose: " + ex.Message); }
+        try { _tray?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "tray dispose: " + ex.Message); }
+        try { _messageHost?.Dispose();   } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
+        try { _engine?.Dispose();        } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
         Environment.Exit(0);
     }
 
@@ -263,7 +273,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     // via QuitApp().
     public static void RestartApp(string? pageTag = null)
     {
-        DebugLog.Write("APP", "Restart requested");
+        _log.Info(LogSource.App, "Restart requested");
 
         // Flush settings synchronously BEFORE launching the new process.
         // Without this, the new process could read stale JSON if it starts
@@ -276,7 +286,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             var args = pageTag is not null
                 ? $"--settings {pageTag}"
                 : "--settings";
-            DebugLog.Write("APP", $"Starting new process: {exePath} {args}");
+            _log.Info(LogSource.App, $"Starting new process: {exePath} {args}");
             System.Diagnostics.Process.Start(exePath, args);
         }
 
@@ -290,12 +300,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     // shutdown of the current process.
     private void RestartAppFromTray()
     {
-        DebugLog.Write("APP", "Restart from tray requested");
+        _log.Info(LogSource.App, "Restart from tray requested");
         try { Settings.SettingsService.Instance.Flush(); } catch { }
         var exePath = Environment.ProcessPath;
         if (exePath is not null)
         {
-            DebugLog.Write("APP", $"Starting new process: {exePath}");
+            _log.Info(LogSource.App, $"Starting new process: {exePath}");
             System.Diagnostics.Process.Start(exePath);
         }
         QuitApp();
@@ -343,14 +353,12 @@ public partial class App : Microsoft.UI.Xaml.Application
             string.IsNullOrWhiteSpace(manualProfile) &&
             !_engine.IsRecording)
         {
-            DebugLog.Write("HOTKEY", $"{hotkeyName} pressed but no profile bound — ignoring");
             _log.Warning(LogSource.Hotkey, $"{hotkeyName} pressed — no profile bound, ignoring");
             return;
         }
 
         if (!_engine.IsRecording)
         {
-            DebugLog.Write("HOTKEY", $"start {hotkeyName}");
             _log.Success(LogSource.Hotkey,
                 $"start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
 
@@ -367,7 +375,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         else
         {
-            DebugLog.Write("HOTKEY", $"stop {hotkeyName}");
             _log.Success(LogSource.Hotkey, "stop");
             _engine.StopRecording();
         }
