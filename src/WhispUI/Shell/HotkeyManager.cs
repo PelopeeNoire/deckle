@@ -71,11 +71,11 @@ internal sealed class HotkeyManager : IDisposable
 
         if (vk == 0)
         {
-            DebugLog.Write("HOTKEY", $"MapVirtualKeyExW returned 0 for scancode 0x29 (HKL {hkl.ToInt64():X}) — skipping register");
+            LogService.Instance.Warning(LogSource.Hotkey, $"MapVirtualKeyExW returned 0 for scancode 0x29 (HKL {hkl.ToInt64():X}) — skipping register");
             return;
         }
 
-        DebugLog.Write("HOTKEY", $"register scancode 0x29 → VK 0x{vk:X2} under HKL {hkl.ToInt64():X}");
+        LogService.Instance.Verbose(LogSource.Hotkey, $"register scancode 0x29 → VK 0x{vk:X2} under HKL {hkl.ToInt64():X}");
 
         foreach (var (id, modifiers) in Hotkeys)
         {
@@ -117,9 +117,9 @@ internal sealed class HotkeyManager : IDisposable
         {
             // Keyboard layout changed — re-resolve and re-register. Continue
             // chaining so other subclasses / DefWindowProc still see the message.
-            DebugLog.Write("HOTKEY", "WM_INPUTLANGCHANGE — re-registering hotkeys");
+            LogService.Instance.Verbose(LogSource.Hotkey, "WM_INPUTLANGCHANGE — re-registering hotkeys");
             try { RegisterAll(); }
-            catch (Exception ex) { DebugLog.Write("HOTKEY", $"re-register failed: {ex.Message}"); }
+            catch (Exception ex) { LogService.Instance.Warning(LogSource.Hotkey, $"re-register failed: {ex.Message}"); }
         }
 
         return NativeMethods.DefSubclassProc(hWnd, uMsg, wParam, lParam);

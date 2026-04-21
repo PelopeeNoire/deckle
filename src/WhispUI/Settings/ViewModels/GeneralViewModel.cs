@@ -132,32 +132,42 @@ public partial class GeneralViewModel : ObservableObject
     // ── Diagnostics ──────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    public partial bool CorpusLoggingEnabled { get; set; }
+    public partial bool TelemetryLatencyEnabled { get; set; }
 
     [ObservableProperty]
-    public partial string CorpusDataDirectory { get; set; }
+    public partial bool TelemetryCorpusEnabled { get; set; }
 
     [ObservableProperty]
     public partial bool RecordAudioCorpus { get; set; }
 
-    partial void OnCorpusLoggingEnabledChanged(bool value)
+    [ObservableProperty]
+    public partial string TelemetryStorageDirectory { get; set; }
+
+    partial void OnTelemetryLatencyEnabledChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"CorpusLogging.Enabled ← {value}");
+        _log.Info(LogSource.SetGeneral, $"Telemetry.LatencyEnabled ← {value}");
         PushToSettings();
     }
 
-    partial void OnCorpusDataDirectoryChanged(string value)
+    partial void OnTelemetryCorpusEnabledChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"CorpusLogging.DataDirectory ← \"{value}\"");
+        _log.Info(LogSource.SetGeneral, $"Telemetry.CorpusEnabled ← {value}");
         PushToSettings();
     }
 
     partial void OnRecordAudioCorpusChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"CorpusLogging.RecordAudioCorpus ← {value}");
+        _log.Info(LogSource.SetGeneral, $"Telemetry.RecordAudioCorpus ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnTelemetryStorageDirectoryChanged(string value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Telemetry.StorageDirectory ← \"{value}\"");
         PushToSettings();
     }
 
@@ -179,9 +189,10 @@ public partial class GeneralViewModel : ObservableObject
         StartMinimized = true;
         WarmupOnLaunch = true;
         Theme = "System";
-        CorpusLoggingEnabled = false;
-        CorpusDataDirectory = "";
+        TelemetryLatencyEnabled = false;
+        TelemetryCorpusEnabled = false;
         RecordAudioCorpus = false;
+        TelemetryStorageDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
     }
@@ -201,9 +212,10 @@ public partial class GeneralViewModel : ObservableObject
             StartMinimized = s.Startup.StartMinimized;
             WarmupOnLaunch = s.Startup.WarmupOnLaunch;
             Theme = s.Appearance.Theme;
-            CorpusLoggingEnabled = s.CorpusLogging.Enabled;
-            CorpusDataDirectory = s.CorpusLogging.DataDirectory;
-            RecordAudioCorpus = s.CorpusLogging.RecordAudioCorpus;
+            TelemetryLatencyEnabled = s.Telemetry.LatencyEnabled;
+            TelemetryCorpusEnabled = s.Telemetry.CorpusEnabled;
+            RecordAudioCorpus = s.Telemetry.RecordAudioCorpus;
+            TelemetryStorageDirectory = s.Telemetry.StorageDirectory;
         }
         finally
         {
@@ -222,9 +234,10 @@ public partial class GeneralViewModel : ObservableObject
         s.Startup.StartMinimized = StartMinimized;
         s.Startup.WarmupOnLaunch = WarmupOnLaunch;
         s.Appearance.Theme = Theme;
-        s.CorpusLogging.Enabled = CorpusLoggingEnabled;
-        s.CorpusLogging.DataDirectory = CorpusDataDirectory ?? "";
-        s.CorpusLogging.RecordAudioCorpus = RecordAudioCorpus;
+        s.Telemetry.LatencyEnabled = TelemetryLatencyEnabled;
+        s.Telemetry.CorpusEnabled = TelemetryCorpusEnabled;
+        s.Telemetry.RecordAudioCorpus = RecordAudioCorpus;
+        s.Telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
         SettingsService.Instance.Save();
     }
 }

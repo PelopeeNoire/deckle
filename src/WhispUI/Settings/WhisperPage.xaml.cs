@@ -72,7 +72,6 @@ public sealed partial class WhisperPage : Page
         {
             _log.Error(LogSource.SetWhisper, $"InitializeComponent THREW {ex.GetType().Name}: {ex.Message}");
             _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
-            DebugLog.Write("WHISPERPAGE", $"InitializeComponent THREW: {ex}");
             throw;
         }
 
@@ -126,7 +125,6 @@ public sealed partial class WhisperPage : Page
             {
                 _log.Error(LogSource.SetWhisper, $"Loaded THREW {ex.GetType().Name}: {ex.Message}");
                 _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
-                DebugLog.Write("WHISPERPAGE", $"Loaded THREW: {ex}");
             }
         };
     }
@@ -249,7 +247,7 @@ public sealed partial class WhisperPage : Page
         }
         catch (Exception ex)
         {
-            DebugLog.Write("SETTINGS", $"model scan failed: {ex.Message}");
+            _log.Warning(LogSource.SetWhisper, $"model scan failed: {ex.Message}");
         }
 
         string current = ViewModel.Model;

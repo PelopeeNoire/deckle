@@ -19,7 +19,7 @@ internal static class CorpusConsentDialog
 {
     public static async Task<bool> ShowAsync(XamlRoot root)
     {
-        string? path = CorpusLog.GetDirectoryPath();
+        string? path = CorpusPaths.GetDirectoryPath();
         string where = string.IsNullOrEmpty(path)
             ? "a subfolder named \"benchmark\\data\" next to the application"
             : path;

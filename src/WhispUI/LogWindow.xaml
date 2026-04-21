@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:local="using:WhispUI"
+    xmlns:logging="using:WhispUI.Logging"
     Title="WhispUI Logs">
 
     <Grid x:Name="RootGrid">
@@ -101,20 +102,52 @@
                                TextWrapping="Wrap" />
                 </DataTemplate>
 
-                <local:LogLevelTemplateSelector x:Key="NoWrapSelector"
+                <!-- Telemetry (latency / corpus) rows: rendered in secondary text
+                     color so they read as diagnostic metadata, not as log lines.
+                     Text is pre-formatted by TelemetryEvent.Text (compact form). -->
+                <DataTemplate x:Key="NoWrap_Latency">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" />
+                </DataTemplate>
+                <DataTemplate x:Key="NoWrap_Corpus">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="NoWrap" />
+                </DataTemplate>
+                <DataTemplate x:Key="Wrap_Latency">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" />
+                </DataTemplate>
+                <DataTemplate x:Key="Wrap_Corpus">
+                    <TextBlock Text="{Binding Text}"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               FontFamily="Consolas" FontSize="12"
+                               TextWrapping="Wrap" />
+                </DataTemplate>
+
+                <logging:TelemetryEventTemplateSelector x:Key="NoWrapSelector"
                     Verbose="{StaticResource NoWrap_Verbose}"
                     Info="{StaticResource NoWrap_Info}"
                     Success="{StaticResource NoWrap_Success}"
                     Warning="{StaticResource NoWrap_Warning}"
                     Error="{StaticResource NoWrap_Error}"
-                    Narrative="{StaticResource NoWrap_Narrative}" />
-                <local:LogLevelTemplateSelector x:Key="WrapSelector"
+                    Narrative="{StaticResource NoWrap_Narrative}"
+                    Latency="{StaticResource NoWrap_Latency}"
+                    Corpus="{StaticResource NoWrap_Corpus}" />
+                <logging:TelemetryEventTemplateSelector x:Key="WrapSelector"
                     Verbose="{StaticResource Wrap_Verbose}"
                     Info="{StaticResource Wrap_Info}"
                     Success="{StaticResource Wrap_Success}"
                     Warning="{StaticResource Wrap_Warning}"
                     Error="{StaticResource Wrap_Error}"
-                    Narrative="{StaticResource Wrap_Narrative}" />
+                    Narrative="{StaticResource Wrap_Narrative}"
+                    Latency="{StaticResource Wrap_Latency}"
+                    Corpus="{StaticResource Wrap_Corpus}" />
 
                 <!-- Compact container for dense log rendering: reduced padding,
                      hover highlight preserved (signals click-to-copy). -->
