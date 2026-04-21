@@ -44,12 +44,15 @@ logs/*
 !logs/.gitkeep
 
 # Benchmark — runtime artifacts, never versioned.
-# data/  : everything WhispUI or the benchmark produces (corpus JSONL, WAVs,
-#          telemetry, reports, archived legacy files). Private content.
-# logs/  : live step-by-step log of the benchmark script itself — kept so a
-#          crashed run can be resumed, not meant to persist across runs.
+# telemetry/ : everything WhispUI or the benchmark produces (corpus JSONL,
+#              WAVs, latency, logs, reports, archived legacy files). Private
+#              content — layout is <slug>/corpus.jsonl, <slug>/audio/*.wav,
+#              latency.jsonl, app.jsonl, reports/, legacy/, exemples/.
+# logs/      : live step-by-step log of the benchmark script itself — kept
+#              so a crashed run can be resumed, not meant to persist across
+#              runs.
 benchmark/**/__pycache__/
-benchmark/data/
+benchmark/telemetry/
 benchmark/logs/
 
 # Claude Code runtime state (locks, caches) — keep the tracked agent/skill defs

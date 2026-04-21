@@ -22,8 +22,8 @@ internal static class AudioCorpusConsentDialog
     {
         string? textRoot = CorpusPaths.GetDirectoryPath();
         string where = string.IsNullOrEmpty(textRoot)
-            ? "a \"corpus-audio\" subfolder of the corpus folder (auto-resolved next to the app)"
-            : Path.Combine(textRoot, "corpus-audio");
+            ? "an \"audio\" subfolder inside each per-profile corpus folder (auto-resolved next to the app)"
+            : Path.Combine(textRoot, "<profile>", "audio");
 
         var body = new StackPanel { Spacing = 12 };
 
@@ -32,9 +32,10 @@ internal static class AudioCorpusConsentDialog
             TextWrapping = TextWrapping.Wrap,
             Text =
                 "WhispUI will save the raw microphone audio of every " +
-                "transcription as a 16 kHz mono WAV file, alongside the " +
-                "existing JSONL text corpus. Useful for replaying a past " +
-                "session against a different Whisper model or prompt."
+                "transcription as a 16 kHz mono WAV file, next to the " +
+                "JSONL text corpus under an audio/ subfolder per profile. " +
+                "Useful for replaying a past session against a different " +
+                "Whisper model or prompt."
         });
 
         body.Children.Add(new TextBlock

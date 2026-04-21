@@ -29,11 +29,13 @@ benchmark/
 ├── autoresearch.py                          — iterative optimizer
 ├── launch.ps1                               — interactive PowerShell menu
 ├── README.md
-├── data/    (gitignored — runtime artifacts)
-│   ├── corpus/*.jsonl                       — raw transcriptions (WhispUI)
-│   ├── corpus-audio/<slug>/*.wav            — matching WAV captures
-│   ├── telemetry/{app,latency}.jsonl        — WhispUI app + latency streams
+├── telemetry/  (gitignored — runtime artifacts written by WhispUI)
+│   ├── <slug>/corpus.jsonl                  — raw transcriptions, one folder per profile
+│   ├── <slug>/audio/*.wav                   — matching WAV captures (opt-in)
+│   ├── latency.jsonl                        — per-transcription perf stream (opt-in)
+│   ├── app.jsonl                            — full application log (opt-in, rotates at 5000 lines)
 │   ├── reports/                             — benchmark.py + autoresearch.py outputs
+│   ├── exemples/                            — reference transcripts
 │   └── legacy/                              — archived telemetry.csv
 └── logs/    (gitignored — live benchmark execution traces)
 ```
@@ -54,7 +56,7 @@ python benchmark.py --skip-judge
 python benchmark.py --duration-min 60 --duration-max 600
 python benchmark.py --slug restructuration
 
-# Autoresearch loop — produces data/reports/results.tsv incrementally.
+# Autoresearch loop — produces telemetry/reports/results.tsv incrementally.
 python autoresearch.py --max-experiments 5 --runs-per-experiment 2
 ```
 

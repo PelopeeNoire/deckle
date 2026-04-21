@@ -1,5 +1,7 @@
 using System;
+using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 using WhispUI.Settings;
 
@@ -7,7 +9,7 @@ namespace WhispUI.Logging;
 
 // ── CorpusPaths ─────────────────────────────────────────────────────────────
 //
-// Storage layout helper — resolves the base directory for corpus JSONL
+// Storage layout helper — resolves the base directory for telemetry JSONL
 // and audio WAV files, and normalizes profile names into filesystem-safe
 // slugs. Shared by Settings UI, consent dialogs, the JSONL sink, and the
 // WAV writer so there's a single source of truth for the storage layout.
@@ -16,7 +18,7 @@ namespace WhispUI.Logging;
 //   1. User-configured TelemetrySettings.StorageDirectory (absolute path),
 //      when non-empty.
 //   2. The dev fallback: walk up from the exe directory, looking for a
-//      sibling "benchmark" folder. Returns "<benchmark>/data".
+//      sibling "benchmark" folder. Returns "<benchmark>/telemetry".
 //
 // Returns null when both paths fail — callers skip persistence.
 public static class CorpusPaths
@@ -43,14 +45,28 @@ public static class CorpusPaths
 
     public static string? GetDefaultDirectoryPath() => _defaultBaseDir.Value;
 
-    // Lowercase ASCII, hyphen-separated slug. Non-ASCII characters collapse
-    // into hyphens; empty input returns "unnamed". Stable across the text
-    // corpus JSONL path and the audio WAV subfolder name.
+    // Lowercase ASCII, hyphen-separated slug. Accented characters are
+    // transliterated via Unicode normalization (NFD + non-spacing-mark
+    // strip) so "réécriture" becomes "reecriture" instead of collapsing
+    // the accented bytes to hyphens. Empty input returns "unnamed".
+    // Stable across the text corpus JSONL path and the audio WAV subfolder
+    // name — callers rely on it to join the two sides of the corpus.
     public static string Slugify(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return "unnamed";
+
         string lowered = name.ToLowerInvariant();
-        string replaced = Regex.Replace(lowered, @"[^a-z0-9]+", "-");
+        string decomposed = lowered.Normalize(NormalizationForm.FormD);
+
+        var sb = new StringBuilder(decomposed.Length);
+        foreach (char c in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                sb.Append(c);
+        }
+
+        string stripped = sb.ToString().Normalize(NormalizationForm.FormC);
+        string replaced = Regex.Replace(stripped, @"[^a-z0-9]+", "-");
         string trimmed = replaced.Trim('-');
         return string.IsNullOrEmpty(trimmed) ? "unnamed" : trimmed;
     }
@@ -72,9 +88,9 @@ public static class CorpusPaths
                 string bench = Path.Combine(dir.FullName, "benchmark");
                 if (Directory.Exists(bench))
                 {
-                    string data = Path.Combine(bench, "data");
-                    Directory.CreateDirectory(data);
-                    return data;
+                    string telemetry = Path.Combine(bench, "telemetry");
+                    Directory.CreateDirectory(telemetry);
+                    return telemetry;
                 }
                 dir = dir.Parent;
             }

@@ -7,7 +7,9 @@ namespace WhispUI.Logging;
 //
 // Binary side of corpus capture. Writes the raw 16 kHz mono PCM audio fed
 // to whisper_full as a 16-bit signed WAV, one file per transcription,
-// under <corpus-root>/corpus-audio/<slug>/<timestamp>.wav.
+// under <telemetry-root>/<slug>/audio/<timestamp>.wav. The slug is the
+// profile identity; the audio folder lives inside it, next to the paired
+// corpus.jsonl.
 //
 // Why 16-bit int PCM and not 32-bit float: the engine hands us float
 // [-1, 1] samples (the exact input whisper.cpp consumed). Quantizing to
@@ -16,14 +18,16 @@ namespace WhispUI.Logging;
 //
 // Called as a helper (not a sink) because the output path needs to feed
 // back into the CorpusPayload.AudioFile slot on the paired JSONL event.
-// Returns the written path on success, null on any failure — callers
-// surface "no audio file" in the payload instead of crashing.
+// Returns the relative path (audio/<stamp>.wav) on success so the corpus
+// line stays portable — consumers resolve it against the profile directory
+// that holds corpus.jsonl. Null on any failure — callers surface "no audio
+// file" in the payload instead of crashing.
 internal static class WavCorpusWriter
 {
     private const int    SampleRate    = 16_000;
     private const short  BitsPerSample = 16;
     private const short  NumChannels   = 1;
-    private const string AudioSubfolder = "corpus-audio";
+    private const string AudioSubfolder = "audio";
 
     public static string? Write(string slugPrefix, float[] audio, DateTimeOffset timestamp)
     {
@@ -35,16 +39,21 @@ internal static class WavCorpusWriter
 
         try
         {
-            string profileDir = Path.Combine(root, AudioSubfolder, CorpusPaths.Sanitize(slugPrefix));
+            string profileDir = Path.Combine(root, CorpusPaths.Sanitize(slugPrefix), AudioSubfolder);
             Directory.CreateDirectory(profileDir);
 
             // Millisecond-precision stamp in the filename: back-to-back
             // transcriptions stay ordered unambiguously and the name can
             // be joined directly to the paired CorpusPayload timestamp.
             string stamp = timestamp.ToLocalTime().ToString("yyyyMMdd-HHmmss-fff");
-            string path = Path.Combine(profileDir, stamp + ".wav");
+            string fileName = stamp + ".wav";
+            string path = Path.Combine(profileDir, fileName);
             WritePcm16(path, audio);
-            return path;
+
+            // Relative to <telemetry>/<slug>/ so the corpus.jsonl line
+            // documents its own neighbourhood without leaking absolute
+            // paths that would break when the benchmark root moves.
+            return $"{AudioSubfolder}/{fileName}";
         }
         catch
         {

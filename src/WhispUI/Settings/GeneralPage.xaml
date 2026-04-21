@@ -187,7 +187,7 @@
                     </ComboBox>
                 </controls:SettingsCard>
 
-                <!-- ── Diagnostics ─────────────────────────────────────────── -->
+                <!-- ── Telemetry ───────────────────────────────────────────── -->
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -195,31 +195,31 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0"
                                Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                               Text="Diagnostics" />
+                               Text="Telemetry" />
                     <HyperlinkButton Grid.Column="1"
                                      VerticalAlignment="Bottom"
                                      Margin="0,0,0,2"
                                      Content="Reset"
                                      ToolTipService.ToolTip="Reset this section to defaults"
-                                     Click="ResetDiagnostics_Click" />
+                                     Click="ResetTelemetry_Click" />
                 </Grid>
 
-                <controls:SettingsCard Header="Latency telemetry"
-                                       Description="Measure how long each step takes — voice detection, transcription, rewriting, paste — and write the numbers to a local JSONL file. Timings only, no transcript text."
+                <controls:SettingsCard Header="Latency"
+                                       Description="Record per-step timings of each transcription — voice detection, Whisper, rewrite, clipboard, paste — to latency.jsonl. Timings only, no transcript text."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
-                <controls:SettingsExpander Header="Corpus logging"
-                                           Description="Save every transcription to local JSONL files for personal analysis."
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE81C;}">
+                <controls:SettingsExpander Header="Corpus"
+                                           Description="Save every transcription as a JSONL line under a per-profile subfolder (one corpus.jsonl per rewrite profile). Text only — for offline prompt tuning and analysis."
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xEFA9;}">
                     <ToggleSwitch x:Name="CorpusLoggingToggle"
                                   IsOn="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=TwoWay}"
                                   Toggled="CorpusLoggingToggle_Toggled" />
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard x:Name="AudioCorpusCard"
                                                Header="Also save audio (WAV)"
-                                               Description="Writes the raw 16 kHz mono audio of each transcription next to the JSONL file."
+                                               Description="Keep the raw 16 kHz mono audio of each recording alongside the JSONL, in an audio/ subfolder per profile. Roughly 2 MB per minute of speech."
                                                IsEnabled="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=OneWay}">
                             <ToggleSwitch x:Name="AudioCorpusToggle"
                                           IsOn="{x:Bind ViewModel.RecordAudioCorpus, Mode=TwoWay}"
@@ -228,10 +228,18 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
+                <controls:SettingsCard Header="Application log"
+                                       Description="Mirror every in-app log line to app.jsonl to diagnose a specific issue across restarts. Verbose — around 2 MB per 30 min of active use. Rotates every 5000 lines (app-1.jsonl, app-2.jsonl, …)."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9A4;}">
+                    <ToggleSwitch x:Name="ApplicationLogToggle"
+                                  IsOn="{x:Bind ViewModel.ApplicationLogToDisk, Mode=TwoWay}"
+                                  Toggled="ApplicationLogToggle_Toggled" />
+                </controls:SettingsCard>
+
                 <controls:SettingsCard x:Name="TelemetryFolderCard"
                                        ContentAlignment="Vertical"
                                        Header="Storage folder"
-                                       Description="Shared root for latency and corpus files. Leave empty to use the default location.">
+                                       Description="Shared root for every telemetry stream enabled above. Leave empty to use the default benchmark\telemetry\ folder next to the application.">
                     <!-- Grid + "*" column lets the TextBox shrink when the
                          Settings window is narrow. A StackPanel Horizontal
                          would keep children at their natural width and

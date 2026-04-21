@@ -1,8 +1,8 @@
 """Reader for the WhispUI corpus JSONL files.
 
 WhispUI writes one line per transcription into
-``benchmark/data/corpus/<slug>.jsonl``. Each line is a TelemetryEvent
-envelope:
+``benchmark/telemetry/<profile-slug>/corpus.jsonl``. Each line is a
+TelemetryEvent envelope:
 
     {
       "timestamp": "2026-04-21T14:32:11.482+02:00",
@@ -55,8 +55,15 @@ class Sample:
 
     @property
     def id(self) -> str:
-        """Stable per-sample identifier across runs."""
-        return f"{Path(self.source_file).stem}:{self.line_no}"
+        """Stable per-sample identifier across runs.
+
+        After the telemetry refonte every profile's corpus lives in
+        ``<profile-slug>/corpus.jsonl``, so the file stem alone ("corpus")
+        no longer disambiguates. The slug is the profile identity and is
+        unique across the tree — use it as the per-sample prefix.
+        """
+        prefix = self.slug or Path(self.source_file).parent.name or "corpus"
+        return f"{prefix}:{self.line_no}"
 
 
 def _parse_envelope(envelope: dict, source_file: str, line_no: int) -> Sample | None:

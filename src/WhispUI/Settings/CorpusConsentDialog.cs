@@ -21,7 +21,7 @@ internal static class CorpusConsentDialog
     {
         string? path = CorpusPaths.GetDirectoryPath();
         string where = string.IsNullOrEmpty(path)
-            ? "a subfolder named \"benchmark\\data\" next to the application"
+            ? "a \"benchmark\\telemetry\" subfolder next to the application"
             : path;
 
         var body = new StackPanel { Spacing = 12 };
@@ -31,8 +31,9 @@ internal static class CorpusConsentDialog
             TextWrapping = TextWrapping.Wrap,
             Text =
                 "WhispUI will append every transcription to a local JSONL " +
-                "file — one file per rewrite profile — so you can iterate " +
-                "on your rewrite prompts offline."
+                "file — one folder per rewrite profile, one corpus.jsonl " +
+                "inside each — so you can iterate on your rewrite prompts " +
+                "offline."
         });
 
         var whatHeader = new TextBlock
