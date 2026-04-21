@@ -760,7 +760,15 @@ internal sealed class WhispEngine : IDisposable
         const uint CALLBACK_EVENT = 0x00050000;
         const uint WHDR_DONE      = 0x00000001;
         const int  N_BUFFERS      = 4;
-        const int  BYTES_PER_BUF  = 16000 * 2 * 500 / 1000; // 500ms × 16kHz × 2 octets/sample
+        // 50 ms buffers (1600 bytes) so AudioLevel events fire at a steady
+        // ~20 Hz spread across time, not in bursts of 10 every 500 ms.
+        // 500 ms bursts were the original size — trivial driver workload
+        // back then but catastrophic for a real-time HUD animation because
+        // the outline couldn't react inside a spoken word. 4 circular
+        // buffers give 200 ms of headroom if the drain loop stalls, still
+        // enough on any modern scheduler. 20 waveIn callbacks/s is a
+        // no-op for modern drivers (WASAPI defaults to 10 ms periods).
+        const int  BYTES_PER_BUF  = 16000 * 2 * 50 / 1000; // 50ms × 16kHz × 2 bytes/sample
 
         var wfx = new WAVEFORMATEX
         {

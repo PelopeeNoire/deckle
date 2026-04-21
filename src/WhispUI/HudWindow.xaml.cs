@@ -211,6 +211,14 @@ public sealed partial class HudWindow : Window
 
     public void Hide() => EnqueueUI(() => SetState(HudState.Hidden));
 
+    // Forward mic RMS samples (20 Hz, engine recording thread) to the chrono
+    // control without marshalling. HudChrono.UpdateAudioLevel writes to a
+    // CompositionPropertySet scalar, which is thread-safe by Composition's
+    // contract — going through the dispatcher would add latency for no gain.
+    // Safe to call at any state: UpdateAudioLevel is a no-op when the
+    // recording outline isn't attached.
+    public void OnAudioLevel(float rms) => Chrono.UpdateAudioLevel(rms);
+
     // Blocking variant: explicit rendezvous between the transcribe thread
     // and the UI thread. Called just before PasteFromClipboard so SW_HIDE
     // is effective before SendInput queues the Ctrl+V — otherwise the
