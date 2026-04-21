@@ -171,6 +171,21 @@ public sealed partial class LlmRulesSection : UserControl
         Reload();
     }
 
+    // Scope: both rule lists + the metric pivot. Profile references are left
+    // as-is in the defaults (they point to the default profile names) —
+    // SettingsService.MigrateProfileIds resolves them to current IDs on save.
+    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    {
+        var defaults = new LlmSettings();
+        var s = SettingsService.Instance.Current.Llm;
+        s.AutoRewriteRules         = defaults.AutoRewriteRules;
+        s.AutoRewriteRulesByWords  = defaults.AutoRewriteRulesByWords;
+        s.RuleMetric               = defaults.RuleMetric;
+        SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
+        SettingsService.Instance.Save();
+        Reload();
+    }
+
     // ── Shared combo population ────────────────────────────────────────────
 
     private static void PopulateProfileCombo(ComboBox combo, string currentName)

@@ -240,4 +240,70 @@ public partial class GeneralViewModel : ObservableObject
         s.Telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
         SettingsService.Instance.Save();
     }
+
+    // ── Reset per section ───────────────────────────────────────────────────
+    //
+    // Each reset writes the AppSettings defaults back through the VM so x:Bind
+    // TwoWay refreshes the visual tree. _isSyncing suppresses the per-property
+    // PushToSettings so we issue a single Save() at the end.
+
+    public void ResetRecordingDefaults()
+    {
+        _isSyncing = true;
+        try
+        {
+            AudioInputDeviceId = -1;
+            AutoPasteEnabled = false;
+            OverlayEnabled = true;
+            OverlayFadeOnProximity = true;
+            OverlayPosition = "BottomCenter";
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
+    }
+
+    public void ResetStartupDefaults()
+    {
+        // Autostart lives in the registry — AutostartService handles the write
+        // and returns false when the write is refused (GPO, ACL…). Mirror the
+        // actual registry state back into the VM so the toggle matches reality.
+        AutostartService.Disable();
+
+        _isSyncing = true;
+        try
+        {
+            AutostartEnabled = AutostartService.IsEnabled();
+            StartMinimized = true;
+            WarmupOnLaunch = true;
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Startup section reset to defaults");
+    }
+
+    public void ResetAppearanceDefaults()
+    {
+        _isSyncing = true;
+        try { Theme = "System"; }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        App.ApplyTheme(Theme);
+        _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
+    }
+
+    public void ResetDiagnosticsDefaults()
+    {
+        _isSyncing = true;
+        try
+        {
+            TelemetryLatencyEnabled = false;
+            TelemetryCorpusEnabled = false;
+            RecordAudioCorpus = false;
+            TelemetryStorageDirectory = "";
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Diagnostics section reset to defaults");
+    }
 }
