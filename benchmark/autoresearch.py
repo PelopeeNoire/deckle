@@ -1,14 +1,21 @@
+"""Autoresearch loop — optimize the rewrite system prompt iteratively.
+
+Uses an Ollama-hosted designer model to propose variants of the system
+prompt, runs ``benchmark.py`` to score each variant, and keeps the
+best one. Each experiment is git-committed so the history can be
+replayed or reverted cleanly.
+
+Usage:
+    python autoresearch.py [--max-experiments N] [--runs-per-experiment N]
+
+Paths (all relative to ``benchmark/``):
+    config/prompts/system_prompt.txt      — the prompt being optimized.
+    data/reports/results.tsv              — one row per experiment.
+    data/reports/autoresearch_report.txt  — human-readable narrative.
+    logs/autoresearch-YYYYMMDD-HHMMSS.log — live step log (if logging hook).
 """
-Autoresearch — boucle autonome d'optimisation du prompt de nettoyage.
 
-Utilise le 14B local comme "cerveau" pour proposer des variantes de prompt,
-benchmark.py pour scorer, et garde/jette automatiquement.
-
-Un seul lancement, aucune intervention humaine.
-
-Usage :
-    python autoresearch.py [--max-experiments 10] [--runs-per-experiment 3]
-"""
+from __future__ import annotations
 
 import argparse
 import configparser
@@ -16,456 +23,308 @@ import io
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
-import urllib.request
+from pathlib import Path
 
-# Force UTF-8 stdout/stderr on Windows (sinon CP1252 crash sur les accents en redirection)
 if sys.stdout.encoding != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 if sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config", "config.ini")
+BENCHMARK_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BENCHMARK_DIR))
+
+from lib import ollama as ollama_client                 # noqa: E402
+
+CONFIG_FILE   = BENCHMARK_DIR / "config" / "config.ini"
+PROMPT_FILE   = BENCHMARK_DIR / "config" / "prompts" / "system_prompt.txt"
+REPORTS_DIR   = BENCHMARK_DIR / "data" / "reports"
+REPORT_FILE   = REPORTS_DIR / "autoresearch_report.txt"
+RESULTS_FILE  = REPORTS_DIR / "results.tsv"
+LAST_REPORT   = REPORTS_DIR / "last_report.json"
+
 
 def load_config() -> configparser.ConfigParser:
-    """Charge config.ini avec les défauts."""
     cfg = configparser.ConfigParser()
     cfg["benchmark"] = {
-        "profile": "nettoyage",
-        "model": "ministral:3b-instruct-q8",
-        "judge_model": "ministral-3:14b",
-        "temperature": "0.15",
-        "num_ctx_k": "32",
-        "endpoint": "http://localhost:11434/api/generate",
-        "corpus": "data/corpus.json",
-        "prompt": "prompts/system_prompt.txt",
+        "profile":       "restructuration",
+        "model":         "ministral-3:14b",
+        "temperature":   "0.3",
+        "num_ctx_k":     "32",
+        "endpoint":      "http://localhost:11434/api/generate",
+        "judge_backend": "claude",
     }
     cfg["autoresearch"] = {
-        "designer_model": "ministral-3:14b",
-        "max_experiments": "10",
+        "designer_model":      "ministral-3:14b",
+        "max_experiments":     "10",
         "runs_per_experiment": "3",
     }
-    if os.path.exists(CONFIG_FILE):
+    if CONFIG_FILE.exists():
         cfg.read(CONFIG_FILE, encoding="utf-8")
     return cfg
 
-_CFG = load_config()
 
-PROMPT_FILE = os.path.join(BENCHMARK_DIR, _CFG["benchmark"]["prompt"])
-CORPUS_FILE = os.path.join(BENCHMARK_DIR, _CFG["benchmark"]["corpus"])
-RESULTS_FILE = os.path.join(BENCHMARK_DIR, "reports", "results.tsv")
-REPORT_FILE = os.path.join(BENCHMARK_DIR, "reports", "autoresearch_report.txt")
+# ── Logging ────────────────────────────────────────────────────────────────
 
-OLLAMA_ENDPOINT = _CFG["benchmark"]["endpoint"]
-DESIGNER_MODEL = _CFG["autoresearch"]["designer_model"]
-
-
-# ─── Logging ─────────────────────────────────────────────────────────────────
-
-def sanitize(text: str) -> str:
-    """Supprime les caractères de contrôle et séquences ANSI d'un texte.
-    Empêche un LLM de générer des séquences que le terminal interprète
-    comme des entrées clavier ou des commandes d'échappement."""
-    # Supprimer les séquences ANSI escape (CSI, OSC, etc.)
-    text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)   # CSI sequences
-    text = re.sub(r'\x1b\][^\x07]*\x07', '', text)       # OSC sequences
-    text = re.sub(r'\x1b[^[\]0-9;a-zA-Z]', '', text)     # autres ESC
-    # Supprimer tous les caractères de contrôle sauf \n \r \t
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-    return text
-
-
-def log(level: str, msg: str):
-    """Log avec timestamp et niveau. Flush immédiat pour suivi en temps réel."""
+def _log(level: str, msg: str) -> None:
     ts = time.strftime("%H:%M:%S")
-    print(sanitize(f"[{ts}] [{level}] {msg}"), flush=True)
+    print(ollama_client.sanitize(f"[{ts}] [{level}] {msg}"), flush=True)
 
-def log_info(msg: str):
-    log("INFO", msg)
 
-def log_warn(msg: str):
-    log("WARN", msg)
+def log_info(msg: str)  -> None: _log("INFO",  msg)
+def log_warn(msg: str)  -> None: _log("WARN",  msg)
+def log_error(msg: str) -> None: _log("ERROR", msg)
 
-def log_error(msg: str):
-    log("ERROR", msg)
 
-def log_step(exp_num: int, total: int, step: str):
-    """Log une étape numérotée dans une expérience."""
-    log("INFO", f"[EXP {exp_num}/{total}] {step}")
-
-def log_separator():
+def log_sep() -> None:
     print(f"\n{'='*70}", flush=True)
 
 
-# ─── Health checks ───────────────────────────────────────────────────────────
+# ── Preflight ──────────────────────────────────────────────────────────────
 
-def check_ollama() -> bool:
-    """Vérifie qu'Ollama répond. Retourne True si OK."""
-    try:
-        req = urllib.request.Request(
-            "http://localhost:11434/api/tags",
-            method="GET"
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        models = [m["name"] for m in data.get("models", [])]
-        log_info(f"Ollama OK — {len(models)} modèles chargés")
-        return True
-    except Exception as e:
-        log_error(f"Ollama inaccessible : {e}")
+def preflight(endpoint: str) -> bool:
+    log_sep()
+    log_info("PREFLIGHT")
+    log_sep()
+
+    models = ollama_client.check_endpoint(endpoint)
+    if not models:
+        log_error("Ollama unreachable — start the daemon, then retry.")
         return False
+    log_info(f"Ollama OK — {len(models)} models loaded")
 
-
-def check_files() -> bool:
-    """Vérifie que les fichiers critiques existent et sont lisibles."""
-    ok = True
-    for path, label in [
-        (PROMPT_FILE, "system_prompt.txt"),
-        (CORPUS_FILE, "corpus.json"),
-    ]:
-        if not os.path.exists(path):
-            log_error(f"Fichier manquant : {label} ({path})")
-            ok = False
-        else:
-            size = os.path.getsize(path)
-            if size == 0:
-                log_error(f"Fichier vide : {label}")
-                ok = False
-            else:
-                log_info(f"  {label} : {size} octets")
-    return ok
-
-
-def check_git_clean() -> bool:
-    """Vérifie que system_prompt.txt n'a pas de modifications non committées."""
-    result = subprocess.run(
-        ["git", "diff", "--name-only", "benchmark/prompts/system_prompt.txt"],
-        cwd=BENCHMARK_DIR, capture_output=True, text=True
-    )
-    if result.stdout.strip():
-        log_warn("system_prompt.txt a des modifications non committées")
+    if not PROMPT_FILE.exists():
+        log_error(f"Missing prompt file: {PROMPT_FILE}")
+        log_error("Seed it manually before running autoresearch.")
         return False
+    if PROMPT_FILE.stat().st_size == 0:
+        log_error(f"Empty prompt file: {PROMPT_FILE}")
+        return False
+    log_info(f"  system_prompt.txt: {PROMPT_FILE.stat().st_size} bytes")
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    log_info("PREFLIGHT OK")
     return True
 
 
-def preflight_checks() -> bool:
-    """Tous les checks avant de commencer. Retourne True si tout est OK."""
-    log_separator()
-    log_info("PREFLIGHT CHECKS")
-    log_separator()
+# ── benchmark.py driver ───────────────────────────────────────────────────
 
-    ok = True
-
-    log_info("1/3 — Ollama")
-    if not check_ollama():
-        ok = False
-
-    log_info("2/3 — Fichiers")
-    if not check_files():
-        ok = False
-
-    log_info("3/3 — Git")
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=BENCHMARK_DIR, capture_output=True, text=True
-    )
-    branch = result.stdout.strip()
-    log_info(f"  Branche : {branch}")
-    check_git_clean()
-
-    # Charger et valider le corpus
-    try:
-        with open(CORPUS_FILE, "r", encoding="utf-8") as f:
-            corpus = json.load(f)
-        log_info(f"  Corpus : {len(corpus)} samples")
-    except Exception as e:
-        log_error(f"Corpus invalide : {e}")
-        ok = False
-
-    if ok:
-        log_info("PREFLIGHT OK — prêt à démarrer")
-    else:
-        log_error("PREFLIGHT FAILED — corriger les erreurs ci-dessus")
-
-    return ok
-
-
-# ─── Appel Ollama (pour le designer) ────────────────────────────────────────
-
-def call_ollama_raw(system: str, user: str, model: str, temperature: float = 0.7) -> str:
-    """Appelle Ollama en format Mistral, retourne le texte brut."""
-    merged = f"{system}\n\n{user}" if system.strip() else user
-    prompt = f"[INST] {merged} [/INST]"
-
-    body = json.dumps({
-        "model": model,
-        "prompt": prompt,
-        "raw": True,
-        "stream": False,
-        "keep_alive": "10m",
-        "options": {
-            "temperature": temperature,
-            "num_ctx": 8192,
-            "stop": ["[INST]", "[/INST]", "</s>"]
-        }
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        OLLAMA_ENDPOINT,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-
-    text = data.get("response", "")
-    for stop in ["[INST]", "[/INST]", "</s>", "<s>"]:
-        text = text.replace(stop, "")
-    # Sanitize : virer les caractères de contrôle/ANSI que le LLM pourrait générer
-    return sanitize(text.strip())
-
-
-# ─── Lancer le benchmark ────────────────────────────────────────────────────
-
-def run_benchmark(runs: int = 1) -> tuple[float, str]:
-    """
-    Lance benchmark.py N fois et retourne (score_médiane_des_runs, détails).
-    Plusieurs runs pour réduire la variance du 3B.
-    """
-    scores = []
-    all_output = []
+def run_benchmark(runs: int) -> tuple[float, str]:
+    """Run benchmark.py ``runs`` times and return (avg score, combined log)."""
+    scores: list[float] = []
+    combined:  list[str] = []
 
     for i in range(runs):
-        log_info(f"  Benchmark run {i+1}/{runs}...")
+        log_info(f"  benchmark run {i + 1}/{runs}")
         t0 = time.time()
-
         result = subprocess.run(
-            [sys.executable, os.path.join(BENCHMARK_DIR, "benchmark.py"), "--skip-judge"],
-            cwd=BENCHMARK_DIR,
-            capture_output=True,
-            text=True,
-            timeout=600
+            [sys.executable, str(BENCHMARK_DIR / "benchmark.py")],
+            cwd            = BENCHMARK_DIR,
+            capture_output = True,
+            text           = True,
+            timeout        = 1800,
         )
-
         elapsed = time.time() - t0
-        output = result.stdout + result.stderr
-        all_output.append(f"--- Run {i+1}/{runs} ---\n{output}")
-
-        if result.returncode != 0:
-            log_warn(f"  Run {i+1} exit code {result.returncode}")
-            # Afficher les dernières lignes de stderr pour debug
-            stderr_lines = result.stderr.strip().split("\n")
-            for line in stderr_lines[-3:]:
-                log_warn(f"    {line}")
+        output  = (result.stdout or "") + (result.stderr or "")
+        combined.append(f"--- run {i + 1}/{runs} ---\n{output}")
 
         match = re.search(r"SCORE=(\d+\.\d+)", output)
         if match:
             score = float(match.group(1))
             scores.append(score)
-            log_info(f"  Run {i+1} : SCORE={score:.4f} ({elapsed:.0f}s)")
+            log_info(f"  SCORE={score:.4f} ({elapsed:.0f}s)")
         else:
-            scores.append(1.0)  # échec = pire score
-            log_error(f"  Run {i+1} : pas de SCORE trouvé dans la sortie ({elapsed:.0f}s)")
-            # Afficher les dernières lignes pour debug
-            output_lines = output.strip().split("\n")
-            for line in output_lines[-5:]:
+            scores.append(1.0)
+            log_error(f"  run {i + 1} returned no SCORE ({elapsed:.0f}s)")
+            for line in output.strip().splitlines()[-5:]:
                 log_error(f"    {line}")
 
-    avg = sum(scores) / len(scores)
-    spread = max(scores) - min(scores) if len(scores) > 1 else 0
-    log_info(f"  Résultat : avg={avg:.4f} (spread={spread:.4f}, scores={[round(s,4) for s in scores]})")
-
-    detail = "\n".join(all_output)
-    return round(avg, 4), detail
+    avg    = sum(scores) / len(scores)
+    spread = max(scores) - min(scores) if len(scores) > 1 else 0.0
+    log_info(f"  avg={avg:.4f} spread={spread:.4f} scores={[round(s, 4) for s in scores]}")
+    return round(avg, 4), "\n".join(combined)
 
 
-# ─── Générer une variante de prompt ─────────────────────────────────────────
+# ── Designer ───────────────────────────────────────────────────────────────
 
-DESIGNER_SYSTEM = """Tu es un expert en prompt engineering pour modèles de langue (14B paramètres).
+DESIGNER_SYSTEM = """Tu es un expert en prompt engineering pour modèles instruct 14B.
 
-Tu dois proposer une VARIANTE AMÉLIORÉE d'un system prompt qui sert à RESTRUCTURER des transcriptions vocales françaises longues en texte écrit clair.
+Tu proposes une VARIANTE AMÉLIORÉE d'un system prompt utilisé pour RESTRUCTURER des transcriptions vocales françaises longues en texte écrit clair, sans rien perdre du fond.
 
-Le modèle cible est un Ministral 14B instruct. La tâche :
-- Transformer un discours oral décousu en texte écrit organisé en paragraphes
-- Conserver TOUTES les idées, concepts et détails (zéro perte d'information)
-- Supprimer hésitations, répétitions, faux départs, remplissages oraux
-- Reformuler en français écrit clair
+Contraintes de la tâche :
+- Transformer le discours oral décousu en texte écrit structuré par paragraphes.
+- Conserver TOUTES les idées principales et les nuances (alternatives rejetées, auto-corrections, justifications, exemples).
+- Ne pas inventer de contenu absent de l'entrée.
+- Préserver le registre, le vocabulaire et le niveau d'abstraction du locuteur.
+- Densité préservée : sortie d'au moins 70 % de la longueur de l'entrée, sauf redondance manifeste.
 
-Problèmes à corriger (mesurés par le benchmark) :
-- Mots inventés / hallucinations (score "novel_words")
-- Texte trop court (idées perdues) ou trop long (bruit ajouté) (score "length_ratio")
-- Préambules parasites ("Voici la version", "Bien sûr") (score "preamble")
-- Markdown en sortie (score "markdown")
+Critères évalués par le juge (juge Claude Sonnet ou Ministral 14B, même grille) :
+1. Complétude macro (25 %)
+2. Préservation des nuances (25 %)
+3. Densité préservée (15 %)
+4. Non-invention (15 %)
+5. Structure thématique (10 %)
+6. Clarté et fidélité du registre (10 %)
 
-CONTRAINTES STRICTES pour le prompt que tu proposes :
-- En français
-- MAXIMUM 200 MOTS.
-- Texte brut uniquement : pas de markdown, pas de **, pas de listes numérotées.
-- Le prompt doit être COMPLET et autonome (pas un diff, pas un patch)
-- La COMPLÉTUDE des idées est la contrainte reine : mieux vaut un texte un peu long qu'un texte qui perd des idées.
+Contraintes du prompt que tu proposes :
+- En français, texte brut (pas de markdown, pas de listes).
+- Complet et autonome (pas un diff).
+- MAXIMUM 200 MOTS, plus court si possible.
+- La COMPLÉTUDE des idées et la PRÉSERVATION DES NUANCES dominent : mieux vaut un peu plus long que perdre un détail.
 
-IMPORTANT : Réponds UNIQUEMENT avec le nouveau prompt, rien d'autre. Pas d'explication, pas de commentaire. Juste le texte du prompt directement."""
+IMPORTANT : Réponds UNIQUEMENT avec le nouveau prompt. Rien avant, rien après."""
 
 
-def load_last_report() -> list[dict]:
-    """Charge les détails par sample du dernier benchmark run."""
-    report_path = os.path.join(BENCHMARK_DIR, "reports", "last_report.json")
-    if not os.path.exists(report_path):
+def load_last_details() -> list[dict]:
+    if not LAST_REPORT.exists():
         return []
     try:
-        with open(report_path, "r", encoding="utf-8") as f:
-            report = json.load(f)
-        return report.get("details", [])
+        return json.loads(LAST_REPORT.read_text(encoding="utf-8")).get("details", [])
     except Exception:
         return []
 
 
 def format_sample_feedback(details: list[dict]) -> str:
-    """Résume les échecs et réussites par sample pour guider le designer."""
     if not details:
         return ""
-
     lines = ["\nDIAGNOSTIC PAR SAMPLE (dernier run) :"]
     for d in details:
-        score = d.get("rule_score", d.get("composite", 0.5))
-        status = "OK" if score < 0.15 else "MOYEN" if score < 0.35 else "MAUVAIS"
-        issues = []
-        if d["rule"]["novel_words"] > 0.05:
-            issues.append(f"mots inventés={d['rule']['novel_words']:.0%}")
-        lr = d.get("length_ratio", d["output_len"] / max(1, d["input_len"]))
-        if lr < 0.3:
-            issues.append(f"trop court x{lr:.1f} (idées perdues?)")
-        elif lr > 1.0:
-            issues.append(f"trop long x{lr:.1f} (bruit ajouté?)")
-        if d["rule"]["preamble"] > 0:
-            issues.append("préambule détecté")
-        if d["rule"].get("lists", d["rule"].get("markdown", 0)) > 0:
-            issues.append("listes en sortie")
+        composite = d.get("judge_composite")
+        status    = "N/A" if composite is None else (
+            "OK" if composite < 0.25 else "MOYEN" if composite < 0.50 else "MAUVAIS"
+        )
+        rule = d.get("rule", {})
+        issues: list[str] = []
+        if rule.get("novel_words", 0) > 0.05:
+            issues.append(f"mots inventés={rule['novel_words']:.0%}")
+        lr = d.get("length_ratio", 0)
+        if lr < 0.7:
+            issues.append(f"compression x{lr:.2f}")
+        elif lr > 1.1:
+            issues.append(f"expansion x{lr:.2f}")
+        if rule.get("preamble", 0) > 0:
+            issues.append("préambule")
+        if rule.get("lists", 0) > 0:
+            issues.append("listes")
         if d.get("catastrophe"):
             issues.append("CATASTROPHE")
 
-        issue_str = ", ".join(issues) if issues else "aucun problème"
-        lines.append(f"  Sample #{d['id']} ({d['input_len']} chars): {status} ({score:.3f}) — {issue_str}")
+        scores = d.get("judge_scores") or {}
+        worst  = ""
+        if scores:
+            low = min(scores.items(), key=lambda kv: kv[1])
+            worst = f" worst={low[0]}={low[1]}"
 
+        issue_str = ", ".join(issues) if issues else "aucun problème"
+        score_str = f"{composite:.3f}" if composite is not None else "—"
+        lines.append(
+            f"  {d['id']} ({d.get('input_chars', 0)} chars): {status} "
+            f"({score_str}){worst} — {issue_str}"
+        )
     return "\n".join(lines)
 
 
+STRATEGIES = (
+    "Insiste sur la préservation des nuances : alternatives rejetées, auto-corrections, justifications, exemples doivent rester.",
+    "Ajoute UN court exemple few-shot (3 phrases orales → 2 phrases écrites, zéro idée perdue).",
+    "Formule comme un rédacteur rigoureux : 'Tu es un rédacteur qui transforme des notes orales en texte structuré SANS rien ajouter ni retirer.'",
+    "Sépare les étapes : 1) identifier toutes les idées, 2) regrouper par thème, 3) rédiger.",
+    "Insiste sur la densité : le texte de sortie doit garder au moins 70 % de la longueur de l'entrée, sauf redondance orale flagrante.",
+    "Essaie un prompt ultra-direct : 3-5 phrases impératives, sans rôle, sans explication.",
+    "Mets la non-invention en PREMIÈRE phrase : 'N'ajoute rien qui ne soit dans le texte. Pas d\"'en résumé\"'.",
+    "Rappelle l'organisation thématique : regrouper les idées par sujet plutôt que suivre l'ordre oral.",
+    "Approche 'prise de notes orales → compte-rendu écrit complet', avec rappel explicite que chaque détail compte.",
+    "Combine les deux meilleures approches observées dans l'historique avec un rappel anti-préambule.",
+)
+
+
 def generate_variant(current_prompt: str, experiment_num: int,
-                     history: list[dict]) -> str:
-    """Demande au 14B une variante du prompt basée sur l'historique et le diagnostic."""
-
-    # Construire le contexte historique
-    history_text = ""
+                     history: list[dict], designer_model: str, endpoint: str) -> str:
+    history_block = ""
     if history:
-        history_text = "\nHISTORIQUE DES EXPÉRIENCES :\n"
-        for h in history[-5:]:
-            history_text += (
-                f"- Exp {h['num']}: score={h['score']} ({h['status']}) — {h['description']}\n"
-            )
+        history_block = "\nHISTORIQUE :\n" + "\n".join(
+            f"- Exp {h['num']}: score={h['score']} ({h['status']}) — {h['description']}"
+            for h in history[-5:]
+        )
 
-    # Diagnostic par sample du dernier run
-    details = load_last_report()
-    sample_feedback = format_sample_feedback(details)
+    sample_feedback = format_sample_feedback(load_last_details())
+    strategy        = STRATEGIES[min(experiment_num - 1, len(STRATEGIES) - 1)]
 
-    # Stratégies ciblées pour la restructuration
-    strategies = [
-        "Insiste sur la complétude : chaque idée de l'entrée doit apparaître dans la sortie. Ajoute une vérification explicite.",
-        "Ajoute UN court exemple few-shot (3 phrases orales → 2 phrases écrites restructurées).",
-        "Formule le prompt comme une tâche de rédacteur : 'Tu es un rédacteur qui transforme des notes orales en texte structuré.'",
-        "Sépare clairement les étapes : d'abord identifier les idées, puis les organiser, puis rédiger.",
-        "Insiste sur l'organisation thématique : regrouper les idées par sujet plutôt que suivre l'ordre chronologique.",
-        "Essaie un prompt ultra-direct : 3-5 phrases impératives, sans rôle, sans explication.",
-        "Mets la contrainte anti-perte en PREMIÈRE phrase : 'Ne perds aucune idée. Chaque concept doit être présent.'",
-        "Combine la meilleure approche avec un rappel anti-hallucination : n'invente rien qui n'est pas dans le texte.",
-        "Teste une approche en deux temps : 'Liste d'abord toutes les idées, puis rédige un texte structuré.'",
-        "Reformule entièrement : approche 'prise de notes orales → compte-rendu écrit'.",
-    ]
-    strategy = strategies[min(experiment_num - 1, len(strategies) - 1)]
-
-    user_msg = f"""PROMPT ACTUEL (score={history[-1]['score'] if history else 'baseline'}) :
----
-{current_prompt}
----
-
-STRATÉGIE À EXPLORER : {strategy}
-{history_text}{sample_feedback}
-
-Rappel : le prompt doit faire MAXIMUM 150 mots. Court et direct.
-Propose une variante améliorée. Réponds UNIQUEMENT avec le texte du prompt."""
-
-    return call_ollama_raw(DESIGNER_SYSTEM, user_msg, DESIGNER_MODEL, temperature=0.7)
+    user_msg = (
+        f"PROMPT ACTUEL (score={history[-1]['score'] if history else 'baseline'}):\n"
+        f"---\n{current_prompt}\n---\n\n"
+        f"STRATÉGIE À EXPLORER : {strategy}\n"
+        f"{history_block}{sample_feedback}\n\n"
+        f"Rappel : MAXIMUM 200 mots. Propose une variante améliorée. "
+        f"Réponds UNIQUEMENT avec le texte du prompt."
+    )
+    return ollama_client.call_ollama_text(
+        system      = DESIGNER_SYSTEM,
+        user        = user_msg,
+        model       = designer_model,
+        temperature = 0.7,
+        endpoint    = endpoint,
+    )
 
 
-# ─── Git helpers ─────────────────────────────────────────────────────────────
+# ── Git helpers ────────────────────────────────────────────────────────────
 
-def git_commit(message: str) -> str:
-    """Commit et retourne le hash court."""
-    subprocess.run(["git", "add", PROMPT_FILE], cwd=BENCHMARK_DIR, check=True,
-                   capture_output=True)
-    subprocess.run(["git", "commit", "-m", message], cwd=BENCHMARK_DIR, check=True,
-                   capture_output=True)
-    result = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                           cwd=BENCHMARK_DIR, capture_output=True, text=True, check=True)
+def _git(*args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd            = BENCHMARK_DIR,
+        capture_output = True,
+        text           = True,
+        check          = True,
+    )
     return result.stdout.strip()
 
 
-def git_revert():
-    """Revert le dernier commit."""
-    subprocess.run(["git", "reset", "--hard", "HEAD~1"], cwd=BENCHMARK_DIR,
-                   check=True, capture_output=True)
+def git_commit(message: str) -> str:
+    _git("add", str(PROMPT_FILE))
+    _git("commit", "-m", message)
+    return _git("rev-parse", "--short", "HEAD")
 
 
-def restore_prompt(best_prompt: str):
-    """Restaure le fichier prompt au meilleur connu. Filet de sécurité."""
-    with open(PROMPT_FILE, "w", encoding="utf-8") as f:
-        f.write(best_prompt)
-    log_info("Prompt restauré au meilleur connu")
+def git_revert() -> None:
+    _git("reset", "--hard", "HEAD~1")
 
 
-# ─── Boucle principale ──────────────────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────────────────
 
-def main():
-    ar_cfg = _CFG["autoresearch"]
-    bm_cfg = _CFG["benchmark"]
+def main() -> None:
+    full_cfg = load_config()
+    bm_cfg   = full_cfg["benchmark"]
+    ar_cfg   = full_cfg["autoresearch"]
 
-    parser = argparse.ArgumentParser(description="Autoresearch — prompt optimization loop")
-    parser.add_argument("--max-experiments", type=int,
+    parser = argparse.ArgumentParser(description="Autoresearch — rewrite-prompt optimization loop")
+    parser.add_argument("--max-experiments",     type=int,
                         default=ar_cfg.getint("max_experiments"))
     parser.add_argument("--runs-per-experiment", type=int,
-                        default=ar_cfg.getint("runs_per_experiment"),
-                        help="Nombre de runs par expérience (réduit la variance)")
+                        default=ar_cfg.getint("runs_per_experiment"))
     args = parser.parse_args()
 
     start_time = time.time()
 
-    log_separator()
-    log_info(f"AUTORESEARCH — Profil: {bm_cfg['profile']}")
-    log_info(f"Modèle cible: {bm_cfg['model']} | Designer: {ar_cfg['designer_model']}")
-    log_info(f"Max expériences: {args.max_experiments}")
-    log_info(f"Runs par expérience: {args.runs_per_experiment}")
-    log_separator()
+    log_sep()
+    log_info(f"AUTORESEARCH — profile: {bm_cfg['profile']}")
+    log_info(f"Target: {bm_cfg['model']} | Designer: {ar_cfg['designer_model']} | Judge: {bm_cfg['judge_backend']}")
+    log_info(f"Max experiments: {args.max_experiments} | runs/exp: {args.runs_per_experiment}")
+    log_sep()
 
-    # ── Preflight ──
-    if not preflight_checks():
-        log_error("Abandon — corriger les erreurs ci-dessus puis relancer.")
+    if not preflight(bm_cfg["endpoint"]):
         sys.exit(1)
 
-    # ── Lire le prompt initial ──
-    with open(PROMPT_FILE, "r", encoding="utf-8") as f:
-        current_prompt = f.read().strip()
-    log_info(f"Prompt initial : {len(current_prompt)} chars, {len(current_prompt.split())} mots")
+    current_prompt = PROMPT_FILE.read_text(encoding="utf-8").strip()
+    log_info(f"Initial prompt: {len(current_prompt)} chars, {len(current_prompt.split())} words")
 
-    # ── Baseline ──
-    log_separator()
-    log_info("BASELINE — mesure du score de référence")
-    log_separator()
-
-    best_score, baseline_detail = run_benchmark(args.runs_per_experiment)
+    # Baseline
+    log_sep()
+    log_info("BASELINE")
+    log_sep()
+    best_score, _ = run_benchmark(args.runs_per_experiment)
     log_info(f"BASELINE = {best_score}")
 
     best_prompt = current_prompt
@@ -476,7 +335,7 @@ def main():
         f.write(f"0\tbaseline\t{best_score}\tbaseline\tprompt original ({args.runs_per_experiment} runs)\n")
 
     report_lines = [
-        f"Autoresearch v2 started at {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Autoresearch started at {time.strftime('%Y-%m-%d %H:%M:%S')}",
         f"Baseline score: {best_score} ({args.runs_per_experiment} runs avg)",
         f"Baseline prompt ({len(current_prompt)} chars):",
         current_prompt,
@@ -484,212 +343,81 @@ def main():
         "=" * 60,
     ]
 
-    # ── Boucle d'expériences ──
     for exp_num in range(1, args.max_experiments + 1):
-        exp_start = time.time()
-        log_separator()
-        elapsed_total = time.time() - start_time
-        log_info(f"EXPÉRIENCE {exp_num}/{args.max_experiments} (temps total: {elapsed_total/60:.0f}min)")
-        log_info(f"Meilleur score actuel : {best_score}")
-        log_separator()
+        log_sep()
+        elapsed_min = (time.time() - start_time) / 60
+        log_info(f"EXPÉRIENCE {exp_num}/{args.max_experiments} (total: {elapsed_min:.0f}min)")
+        log_info(f"Best so far: {best_score}")
+        log_sep()
 
-        # ── Étape 1 : Health check rapide ──
-        log_step(exp_num, args.max_experiments, "Health check Ollama")
-        if not check_ollama():
-            log_error("Ollama ne répond plus — attente 30s puis retry")
-            time.sleep(30)
-            if not check_ollama():
-                log_error("Ollama toujours down — abandon de cette expérience")
-                history.append({"num": exp_num, "score": best_score,
-                               "status": "crash", "description": "ollama down"})
-                continue
+        if not ollama_client.check_endpoint(bm_cfg["endpoint"]):
+            log_error("Ollama dropped — aborting")
+            break
 
-        # ── Étape 2 : Générer une variante ──
-        log_step(exp_num, args.max_experiments, "Génération variante via 14B...")
+        log_info(f"Generating variant ({ar_cfg['designer_model']})...")
         try:
-            t0 = time.time()
-            new_prompt = generate_variant(best_prompt, exp_num, history)
-            gen_time = time.time() - t0
-            log_info(f"  Designer a répondu en {gen_time:.0f}s")
-        except Exception as e:
-            log_error(f"Designer crash : {e}")
-            history.append({"num": exp_num, "score": best_score,
-                           "status": "crash", "description": f"designer error: {e}"})
-            continue
-
-        # ── Étape 3 : Validation du prompt ──
-        log_step(exp_num, args.max_experiments, "Validation du prompt généré")
-        word_count = len(new_prompt.split())
-        char_count = len(new_prompt)
-        log_info(f"  {word_count} mots, {char_count} chars")
-
-        if word_count > 250:
-            log_warn(f"  Trop long ({word_count} mots) — tronqué à 250")
-            new_prompt = " ".join(new_prompt.split()[:250])
-            word_count = 250
-
-        if word_count < 10:
-            log_warn(f"  Trop court ({word_count} mots) — skip")
-            history.append({"num": exp_num, "score": best_score,
-                           "status": "crash", "description": "prompt trop court"})
-            continue
-
-        log_info(f"  Aperçu : {new_prompt[:120]}...")
-
-        # ── Étape 4 : Écrire + commit ──
-        log_step(exp_num, args.max_experiments, "Écriture prompt + git commit")
-        with open(PROMPT_FILE, "w", encoding="utf-8") as f:
-            f.write(new_prompt)
-
-        try:
-            commit_hash = git_commit(
-                f"experiment {exp_num}: {new_prompt[:60].replace(chr(10), ' ')}"
+            variant = generate_variant(
+                current_prompt = current_prompt,
+                experiment_num = exp_num,
+                history        = history,
+                designer_model = ar_cfg["designer_model"],
+                endpoint       = bm_cfg["endpoint"],
             )
-            log_info(f"  Commit : {commit_hash}")
         except Exception as e:
-            log_error(f"Git commit failed : {e}")
-            restore_prompt(best_prompt)
-            history.append({"num": exp_num, "score": best_score,
-                           "status": "crash", "description": f"git error: {e}"})
+            log_error(f"Designer failed: {e}")
             continue
 
-        # ── Étape 5 : Benchmark ──
-        log_step(exp_num, args.max_experiments, f"Benchmark ({args.runs_per_experiment} runs)")
+        words = len(variant.split())
+        log_info(f"Variant: {len(variant)} chars, {words} words")
+        if words > 250:
+            log_warn("Variant too long — skipping")
+            continue
+        if not variant.strip():
+            log_warn("Empty variant — skipping")
+            continue
+
+        PROMPT_FILE.write_text(variant, encoding="utf-8")
+
         try:
-            new_score, detail = run_benchmark(args.runs_per_experiment)
+            score, _ = run_benchmark(args.runs_per_experiment)
         except Exception as e:
-            log_error(f"Benchmark crash : {e}")
-            log_info("  Revert git + restauration prompt")
-            git_revert()
-            restore_prompt(best_prompt)
-            history.append({"num": exp_num, "score": 1.0,
-                           "status": "crash", "description": str(e)})
-            with open(RESULTS_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{exp_num}\t{commit_hash}\t1.0000\tcrash\t{str(e)[:80]}\n")
+            log_error(f"Benchmark failed: {e}")
+            PROMPT_FILE.write_text(best_prompt, encoding="utf-8")
             continue
 
-        # ── Étape 6 : Décision ──
-        log_step(exp_num, args.max_experiments, "Décision keep/discard")
-        improved = new_score < best_score
-        status = "keep" if improved else "discard"
-        delta = best_score - new_score
-        desc = f"score={new_score} (delta={delta:+.4f})"
-        exp_elapsed = time.time() - exp_start
-
-        if improved:
-            log_info(f"  AMÉLIORÉ : {best_score} -> {new_score} (delta={delta:+.4f})")
-            best_score = new_score
-            best_prompt = new_prompt
+        description = f"exp {exp_num} ({words}w)"
+        if score < best_score:
+            commit = git_commit(f"benchmark(exp {exp_num}): {score} < {best_score}")
+            best_score  = score
+            best_prompt = variant
+            status      = f"KEEP (commit {commit})"
+            log_info(f"  IMPROVEMENT {score} < prev — kept")
         else:
-            log_info(f"  PAS MIEUX : {new_score} >= {best_score} — revert")
-            git_revert()
-            restore_prompt(best_prompt)
+            status = "REJECT"
+            PROMPT_FILE.write_text(best_prompt, encoding="utf-8")
+            log_info(f"  no improvement ({score} ≥ {best_score}) — reverted")
 
-        # ── Étape 7 : Log résultats ──
-        history.append({"num": exp_num, "score": new_score,
-                       "status": status, "description": desc})
-
+        history.append({"num": exp_num, "score": score, "status": status,
+                        "description": description})
         with open(RESULTS_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{exp_num}\t{commit_hash}\t{new_score}\t{status}\t{desc}\n")
+            f.write(f"{exp_num}\t{variant[:40].replace(chr(10), ' ')}…\t{score}\t{status}\t{description}\n")
 
         report_lines.extend([
-            f"\n[EXP {exp_num}] {status.upper()} — score={new_score} (best={best_score})",
-            f"  Prompt ({len(new_prompt)} chars, {word_count} mots):",
-            f"  {new_prompt[:200]}...",
+            f"\nExperiment {exp_num} — score={score} ({status})",
+            f"Prompt ({len(variant)} chars):",
+            variant,
+            "=" * 60,
         ])
 
-        # ── Résumé de l'expérience ──
-        log_info(f"  Durée expérience : {exp_elapsed/60:.1f}min")
-        kept_so_far = sum(1 for h in history if h["status"] == "keep")
-        log_info(f"  Bilan provisoire : {kept_so_far} gardée(s) sur {exp_num} expérience(s)")
+    # Final restore + report
+    PROMPT_FILE.write_text(best_prompt, encoding="utf-8")
+    REPORT_FILE.write_text("\n".join(report_lines), encoding="utf-8")
 
-        # ── Vérification post-expérience ──
-        with open(PROMPT_FILE, "r", encoding="utf-8") as f:
-            prompt_on_disk = f.read().strip()
-        if prompt_on_disk != best_prompt:
-            log_error("INCOHÉRENCE : le prompt sur disque ne correspond pas au meilleur connu")
-            restore_prompt(best_prompt)
-
-    # ─── Rapport final ───────────────────────────────────────────────────────
-    total_time = time.time() - start_time
-
-    log_separator()
-    log_info("AUTORESEARCH TERMINÉ")
-    log_separator()
-
-    kept = [h for h in history if h["status"] == "keep"]
-    discarded = [h for h in history if h["status"] == "discard"]
-    crashed = [h for h in history if h["status"] == "crash"]
-
-    baseline_score = history[0]["score"]
-    improvement = ((baseline_score - best_score) / baseline_score * 100) if baseline_score > 0 else 0
-
-    log_info(f"Durée totale : {total_time/60:.0f}min")
-    log_info(f"Expériences  : {len(history) - 1} (gardées={len(kept)}, jetées={len(discarded)}, crash={len(crashed)})")
-    log_info(f"Baseline     : {baseline_score}")
-    log_info(f"Final        : {best_score}")
-    log_info(f"Amélioration : {improvement:.1f}%")
-    log_info("")
-    log_info(f"Meilleur prompt ({len(best_prompt)} chars, {len(best_prompt.split())} mots) :")
-    log_info("-" * 40)
-    # Afficher le prompt ligne par ligne pour lisibilité
-    for line in best_prompt.split("\n"):
-        log_info(f"  {line}")
-    log_info("-" * 40)
-
-    log_info("")
-    log_info("Historique complet :")
-    for h in history:
-        marker = "->" if h["status"] == "keep" else "x" if h["status"] == "discard" else "!"
-        log_info(f"  {marker} Exp {h['num']}: {h['score']:.4f} ({h['status']}) — {h['description']}")
-
-    # Sauvegarder le rapport
-    report_lines.extend([
-        "",
-        "=" * 60,
-        "RÉSUMÉ FINAL",
-        f"Durée totale: {total_time/60:.0f}min",
-        f"Baseline: {baseline_score}",
-        f"Final:    {best_score}",
-        f"Amélioration: {improvement:.1f}%",
-        f"Gardées/Jetées/Crashées: {len(kept)}/{len(discarded)}/{len(crashed)}",
-        "",
-        "MEILLEUR PROMPT:",
-        best_prompt,
-    ])
-
-    with open(REPORT_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(report_lines))
-
-    log_info(f"Rapport : {REPORT_FILE}")
-    log_info(f"Résultats TSV : {RESULTS_FILE}")
-
-    # ── Vérification finale ──
-    with open(PROMPT_FILE, "r", encoding="utf-8") as f:
-        final_prompt = f.read().strip()
-    if final_prompt == best_prompt:
-        log_info("CHECK FINAL OK : prompt sur disque = meilleur prompt")
-    else:
-        log_error("CHECK FINAL FAILED : prompt sur disque incohérent — restauration forcée")
-        restore_prompt(best_prompt)
-
-    log_separator()
-    log_info("FIN — le script peut être fermé.")
-    log_separator()
+    total_min = (time.time() - start_time) / 60
+    log_sep()
+    log_info(f"DONE — best={best_score} in {total_min:.0f}min")
+    log_sep()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        log_warn("Interrompu par l'utilisateur (Ctrl+C)")
-        log_info("Le dernier prompt valide est dans system_prompt.txt")
-        log_info("Les résultats partiels sont dans results.tsv")
-        sys.exit(130)
-    except Exception as e:
-        log_error(f"CRASH INATTENDU : {e}")
-        import traceback
-        traceback.print_exc()
-        log_info("Le dernier prompt valide devrait être dans system_prompt.txt")
-        log_info("Vérifier la cohérence avec git log")
-        sys.exit(1)
+    main()
