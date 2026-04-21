@@ -132,32 +132,42 @@ public partial class GeneralViewModel : ObservableObject
     // ── Diagnostics ──────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    public partial bool CorpusLoggingEnabled { get; set; }
+    public partial bool TelemetryLatencyEnabled { get; set; }
 
     [ObservableProperty]
-    public partial string CorpusDataDirectory { get; set; }
+    public partial bool TelemetryCorpusEnabled { get; set; }
 
     [ObservableProperty]
     public partial bool RecordAudioCorpus { get; set; }
 
-    partial void OnCorpusLoggingEnabledChanged(bool value)
+    [ObservableProperty]
+    public partial string TelemetryStorageDirectory { get; set; }
+
+    partial void OnTelemetryLatencyEnabledChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"CorpusLogging.Enabled ← {value}");
+        _log.Info(LogSource.SetGeneral, $"Telemetry.LatencyEnabled ← {value}");
         PushToSettings();
     }
 
-    partial void OnCorpusDataDirectoryChanged(string value)
+    partial void OnTelemetryCorpusEnabledChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"CorpusLogging.DataDirectory ← \"{value}\"");
+        _log.Info(LogSource.SetGeneral, $"Telemetry.CorpusEnabled ← {value}");
         PushToSettings();
     }
 
     partial void OnRecordAudioCorpusChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"CorpusLogging.RecordAudioCorpus ← {value}");
+        _log.Info(LogSource.SetGeneral, $"Telemetry.RecordAudioCorpus ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnTelemetryStorageDirectoryChanged(string value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Telemetry.StorageDirectory ← \"{value}\"");
         PushToSettings();
     }
 
@@ -179,9 +189,10 @@ public partial class GeneralViewModel : ObservableObject
         StartMinimized = true;
         WarmupOnLaunch = true;
         Theme = "System";
-        CorpusLoggingEnabled = false;
-        CorpusDataDirectory = "";
+        TelemetryLatencyEnabled = false;
+        TelemetryCorpusEnabled = false;
         RecordAudioCorpus = false;
+        TelemetryStorageDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
     }
@@ -201,9 +212,10 @@ public partial class GeneralViewModel : ObservableObject
             StartMinimized = s.Startup.StartMinimized;
             WarmupOnLaunch = s.Startup.WarmupOnLaunch;
             Theme = s.Appearance.Theme;
-            CorpusLoggingEnabled = s.CorpusLogging.Enabled;
-            CorpusDataDirectory = s.CorpusLogging.DataDirectory;
-            RecordAudioCorpus = s.CorpusLogging.RecordAudioCorpus;
+            TelemetryLatencyEnabled = s.Telemetry.LatencyEnabled;
+            TelemetryCorpusEnabled = s.Telemetry.CorpusEnabled;
+            RecordAudioCorpus = s.Telemetry.RecordAudioCorpus;
+            TelemetryStorageDirectory = s.Telemetry.StorageDirectory;
         }
         finally
         {
@@ -222,9 +234,76 @@ public partial class GeneralViewModel : ObservableObject
         s.Startup.StartMinimized = StartMinimized;
         s.Startup.WarmupOnLaunch = WarmupOnLaunch;
         s.Appearance.Theme = Theme;
-        s.CorpusLogging.Enabled = CorpusLoggingEnabled;
-        s.CorpusLogging.DataDirectory = CorpusDataDirectory ?? "";
-        s.CorpusLogging.RecordAudioCorpus = RecordAudioCorpus;
+        s.Telemetry.LatencyEnabled = TelemetryLatencyEnabled;
+        s.Telemetry.CorpusEnabled = TelemetryCorpusEnabled;
+        s.Telemetry.RecordAudioCorpus = RecordAudioCorpus;
+        s.Telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
         SettingsService.Instance.Save();
+    }
+
+    // ── Reset per section ───────────────────────────────────────────────────
+    //
+    // Each reset writes the AppSettings defaults back through the VM so x:Bind
+    // TwoWay refreshes the visual tree. _isSyncing suppresses the per-property
+    // PushToSettings so we issue a single Save() at the end.
+
+    public void ResetRecordingDefaults()
+    {
+        _isSyncing = true;
+        try
+        {
+            AudioInputDeviceId = -1;
+            AutoPasteEnabled = false;
+            OverlayEnabled = true;
+            OverlayFadeOnProximity = true;
+            OverlayPosition = "BottomCenter";
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
+    }
+
+    public void ResetStartupDefaults()
+    {
+        // Autostart lives in the registry — AutostartService handles the write
+        // and returns false when the write is refused (GPO, ACL…). Mirror the
+        // actual registry state back into the VM so the toggle matches reality.
+        AutostartService.Disable();
+
+        _isSyncing = true;
+        try
+        {
+            AutostartEnabled = AutostartService.IsEnabled();
+            StartMinimized = true;
+            WarmupOnLaunch = true;
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Startup section reset to defaults");
+    }
+
+    public void ResetAppearanceDefaults()
+    {
+        _isSyncing = true;
+        try { Theme = "System"; }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        App.ApplyTheme(Theme);
+        _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
+    }
+
+    public void ResetDiagnosticsDefaults()
+    {
+        _isSyncing = true;
+        try
+        {
+            TelemetryLatencyEnabled = false;
+            TelemetryCorpusEnabled = false;
+            RecordAudioCorpus = false;
+            TelemetryStorageDirectory = "";
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Diagnostics section reset to defaults");
     }
 }

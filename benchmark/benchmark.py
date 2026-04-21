@@ -1,440 +1,293 @@
+"""Benchmark runner for WhispUI rewrite prompts.
+
+Reads Louis' dictation corpus (produced by WhispUI under
+``benchmark/data/corpus/*.jsonl``), asks the target Ollama model to
+rewrite each raw transcription with the candidate system prompt, then
+scores the output with the chosen judge (Claude Sonnet by default,
+Ollama Ministral as a fully-local fallback).
+
+Usage:
+    python benchmark.py [--model MODEL] [--temperature T] [--num-ctx-k N]
+                        [--prompt-file FILE] [--corpus-glob GLOB]
+                        [--judge {claude,ollama}] [--skip-judge]
+                        [--slug SLUG] [--duration-min SECONDS]
+                        [--duration-max SECONDS] [--verbose]
+
+Emits a single ``SCORE=X.XXXX`` line on stdout so ``autoresearch.py``
+can parse it. ``SCORE`` is the median judge composite across samples
+(0.0 = perfect, 1.0 = terrible). With ``--skip-judge`` the score falls
+back to a rule-based median built from the cheap pre-filters.
 """
-Benchmark de qualité pour le prompt de restructuration de transcription.
 
-Envoie chaque transcription du corpus à Ollama, score le résultat avec
-des métriques rule-based (score brut) + optionnellement un LLM juge
-(score séparé, non mélangé au brut).
-
-Usage :
-    python benchmark.py [--model MODEL] [--judge-model JUDGE] [--temperature T]
-                        [--num-ctx-k N] [--prompt-file FILE] [--corpus FILE]
-                        [--verbose] [--skip-judge]
-
-Sortie : une seule ligne "SCORE=X.XXXX" + détails dans last_report.json.
-Pour la RESTRUCTURATION, SCORE = médiane juge LLM (reformulation autorisée → novel_words
-n'est plus un signal fiable, seul le juge peut évaluer complétude + sobriété).
-Si --skip-judge, SCORE retombe sur la médiane rule-based.
-"""
+from __future__ import annotations
 
 import argparse
 import configparser
 import io
-import json
 import os
-import re
+import json
 import statistics
 import sys
 import time
-import urllib.request
-import unicodedata
+from pathlib import Path
 
-# Force UTF-8 stdout/stderr on Windows (sinon CP1252 crash sur les accents en redirection)
+# Force UTF-8 stdout/stderr on Windows so accented output survives
+# terminal redirection (default cp1252 breaks autoresearch parsing).
 if sys.stdout.encoding != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 if sys.stderr.encoding != "utf-8":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-# ─── Configuration ───────────────────────────────────────────────────────────
+# Make ``lib/`` importable regardless of cwd.
+BENCHMARK_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BENCHMARK_DIR))
 
-BENCHMARK_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BENCHMARK_DIR, "config", "config.ini")
+from lib import metrics, ollama as ollama_client              # noqa: E402
+from lib.corpus import Sample, load_corpus                    # noqa: E402
+from lib.judge import CRITERIA, Judge, JudgeResult            # noqa: E402
+
+
+CONFIG_FILE         = BENCHMARK_DIR / "config" / "config.ini"
+JUDGE_PROMPT_FILE   = BENCHMARK_DIR / "config" / "prompts" / "judge_system_prompt.txt"
+REPORTS_DIR         = BENCHMARK_DIR / "data" / "reports"
+DEFAULT_CORPUS_GLOB = str(BENCHMARK_DIR / "data" / "corpus" / "*.jsonl")
+DEFAULT_PROMPT_FILE = BENCHMARK_DIR / "config" / "prompts" / "system_prompt.txt"
+
 
 def load_config() -> configparser.ConfigParser:
-    """Charge config.ini, retourne le parser avec les défauts."""
     cfg = configparser.ConfigParser()
     cfg["benchmark"] = {
-        "profile": "nettoyage",
-        "model": "ministral:3b-instruct-q8",
-        "judge_model": "ministral-3:14b",
-        "temperature": "0.15",
-        "num_ctx_k": "32",
-        "endpoint": "http://localhost:11434/api/generate",
-        "corpus": "data/corpus.json",
-        "prompt": "prompts/system_prompt.txt",
+        "profile":        "restructuration",
+        "model":          "ministral-3:14b",
+        "temperature":    "0.3",
+        "num_ctx_k":      "32",
+        "endpoint":       "http://localhost:11434/api/generate",
+        "corpus_glob":    DEFAULT_CORPUS_GLOB,
+        "prompt":         str(DEFAULT_PROMPT_FILE),
+        "judge_backend":  "claude",
+        "judge_model":    "",          # empty = backend default
     }
-    if os.path.exists(CONFIG_FILE):
+    if CONFIG_FILE.exists():
         cfg.read(CONFIG_FILE, encoding="utf-8")
     return cfg
 
-# ─── Prompt template (Mistral/Ministral) ──────────────────────────────────────
 
-def format_mistral(system: str, user: str) -> tuple[str, list[str]]:
-    """Format Mistral [INST] et tokens de stop."""
-    merged = f"{system}\n\n{user}" if system.strip() else user
-    return f"[INST] {merged} [/INST]", ["[INST]", "[/INST]", "</s>"]
+def build_judge(backend: str, model_override: str) -> Judge:
+    """Instantiate the judge selected by ``judge_backend``."""
+    system_prompt = JUDGE_PROMPT_FILE.read_text(encoding="utf-8").strip()
 
-def strip_stops(text: str, stops: list[str]) -> str:
-    for s in stops:
-        text = text.replace(s, "")
-    return text.strip()
-
-def sanitize(text: str) -> str:
-    """Supprime les caractères de contrôle et séquences ANSI du texte LLM.
-    Empêche le terminal d'interpréter des escape sequences comme des inputs."""
-    text = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
-    text = re.sub(r'\x1b\][^\x07]*\x07', '', text)
-    text = re.sub(r'\x1b[^[\]0-9;a-zA-Z]', '', text)
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-    return text
-
-# ─── Appel Ollama ─────────────────────────────────────────────────────────────
-
-def call_ollama(prompt: str, stops: list[str], model: str, temperature: float,
-                num_ctx: int, endpoint: str) -> tuple[str, dict]:
-    """Appelle Ollama en raw mode, retourne (texte, métriques)."""
-    body = json.dumps({
-        "model": model,
-        "prompt": prompt,
-        "raw": True,
-        "stream": False,
-        "keep_alive": "5m",
-        "options": {
-            "temperature": temperature,
-            "num_ctx": num_ctx,
-            **({"stop": stops} if stops else {})
-        }
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        endpoint,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-
-    text = sanitize(strip_stops(data.get("response", ""), stops))
-    metrics = {
-        "total_duration_ms": data.get("total_duration", 0) / 1e6,
-        "eval_count": data.get("eval_count", 0),
-        "eval_duration_ms": data.get("eval_duration", 0) / 1e6,
-    }
-    return text, metrics
-
-# ─── Métriques rule-based ─────────────────────────────────────────────────────
-
-def normalize_words(text: str) -> set[str]:
-    """Extrait un set de mots normalisés (minuscule, sans accents gardés)."""
-    words = re.findall(r"[a-zàâäéèêëïîôùûüÿçœæ]+", text.lower())
-    return set(words)
-
-def score_novel_words(input_text: str, output_text: str) -> float:
-    """Ratio de mots dans la sortie absents de l'entrée. 0.0 = parfait."""
-    in_words = normalize_words(input_text)
-    out_words = normalize_words(output_text)
-    if not out_words:
-        return 1.0  # sortie vide = mauvais
-    novel = out_words - in_words
-    return len(novel) / len(out_words)
-
-def score_length_ratio(input_text: str, output_text: str) -> float:
-    """Pénalité de longueur adaptée à la restructuration.
-    La restructuration raccourcit le texte (ratio 0.4-0.8 = normal).
-    On pénalise : trop court (<0.3 = perte d'info probable) ou trop long (>1.0 = bruit ajouté).
-    0.0 = ratio dans la zone idéale, 1.0 = ratio extrême."""
-    if not input_text:
-        return 1.0
-    ratio = len(output_text) / len(input_text)
-    if 0.3 <= ratio <= 1.0:
-        return 0.0  # zone acceptable pour la restructuration
-    elif ratio < 0.3:
-        return (0.3 - ratio) / 0.3  # 0.0→1.0 quand ratio descend de 0.3 à 0.0
-    else:
-        return min(1.0, (ratio - 1.0) / 1.0)  # pénalité croissante au-dessus de 1.0
-
-FORBIDDEN_PREAMBLES = [
-    "voici", "bien sûr", "d'accord", "je vais", "la transcription",
-    "en voici", "certainement", "avec plaisir", "voilà la version",
-    "la version corrigée", "version nettoyée"
-]
-
-def score_preamble(output_text: str) -> float:
-    """1.0 si préambule interdit détecté, 0.0 sinon."""
-    lower = output_text.lower().strip()
-    for phrase in FORBIDDEN_PREAMBLES:
-        if lower.startswith(phrase):
-            return 1.0
-    return 0.0
-
-LIST_PATTERNS = [
-    r"^\s*[-*]\s",     # bullets
-    r"^\s*\d+\.\s",    # numbered lists
-]
-
-def score_lists(output_text: str) -> float:
-    """1.0 si listes (bullet/numérotées) détectées, 0.0 sinon.
-    Bold, italiques, titres sont OK pour la lisibilité."""
-    for pattern in LIST_PATTERNS:
-        if re.search(pattern, output_text, re.MULTILINE):
-            return 1.0
-    return 0.0
-
-# ─── LLM Juge ────────────────────────────────────────────────────────────────
-
-JUDGE_SYSTEM = """Tu es un évaluateur de qualité de restructuration de transcription vocale.
-
-Tu reçois une transcription orale brute (ENTRÉE) et sa version restructurée (SORTIE).
-La restructuration attendue transforme un discours oral décousu en texte écrit clair, organisé en paragraphes, en conservant TOUTES les idées.
-
-Évalue la SORTIE sur 4 critères, chacun noté de 1 (très mauvais) à 5 (parfait) :
-
-1. COMPLÉTUDE : toutes les idées, concepts et détails de l'entrée sont-ils présents dans la sortie ?
-   5 = aucune idée perdue, 1 = idées importantes manquantes
-2. CLARTÉ : le texte est-il bien écrit, fluide, facile à lire ?
-   5 = prose claire et naturelle, 1 = confus ou mal formulé
-3. STRUCTURE : les idées sont-elles bien organisées en paragraphes logiques ?
-   5 = organisation thématique claire, 1 = vrac sans structure
-4. SOBRIÉTÉ : le modèle s'est-il abstenu d'inventer des idées ou d'ajouter du contenu absent de l'entrée ?
-   5 = rien inventé, 1 = contenu ajouté ou hallucinations
-
-Réponds UNIQUEMENT dans ce format exact, rien d'autre :
-COMPLÉTUDE=N
-CLARTÉ=N
-STRUCTURE=N
-SOBRIÉTÉ=N"""
-
-def llm_judge(input_text: str, output_text: str, judge_model: str,
-              endpoint: str) -> dict[str, int]:
-    """Appelle le 14B comme juge, retourne les 4 scores (1-5)."""
-    user_msg = f"ENTRÉE :\n{input_text}\n\nSORTIE :\n{output_text}"
-    prompt, stops = format_mistral(JUDGE_SYSTEM, user_msg)
-
-    try:
-        response, _ = call_ollama(
-            prompt=prompt, stops=stops, model=judge_model,
-            temperature=0.0, num_ctx=4096, endpoint=endpoint
+    if backend == "claude":
+        from lib.judge_claude import ClaudeJudge, DEFAULT_MODEL
+        return ClaudeJudge(
+            system_prompt = system_prompt,
+            model         = model_override or DEFAULT_MODEL,
         )
-    except Exception as e:
-        print(f"  [JUDGE ERROR] {e}", file=sys.stderr)
-        return {"fidelite": 3, "registre": 3, "structure": 3, "minimalite": 3}
 
-    scores = {}
-    for line in response.strip().split("\n"):
-        line = line.strip()
-        for key, field in [("COMPLÉTUDE", "completude"), ("COMPLETUDE", "completude"),
-                           ("CLARTÉ", "clarte"), ("CLARTE", "clarte"),
-                           ("STRUCTURE", "structure"),
-                           ("SOBRIÉTÉ", "sobriete"), ("SOBRIETE", "sobriete")]:
-            if line.upper().startswith(key):
-                match = re.search(r"=\s*(\d)", line)
-                if match:
-                    scores[field] = min(5, max(1, int(match.group(1))))
+    if backend == "ollama":
+        from lib.judge_ollama import OllamaJudge
+        cfg = load_config()["benchmark"]
+        return OllamaJudge(
+            system_prompt = system_prompt,
+            model         = model_override or "ministral-3:14b",
+            endpoint      = cfg["endpoint"],
+        )
 
-    # Defaults pour les scores manquants
-    for field in ["completude", "clarte", "structure", "sobriete"]:
-        if field not in scores:
-            scores[field] = 3
-    return scores
+    raise ValueError(f"Unknown judge backend: {backend!r}")
 
-# ─── Score composite ──────────────────────────────────────────────────────────
 
-def rule_score(rule_scores: dict) -> float:
-    """
-    Score rule-based entre 0.0 (parfait) et 1.0 (terrible).
-    Lower is better.
-
-    Pondérations adaptées à la RESTRUCTURATION :
-    - preamble 35% : signal le plus fiable (préambule = jamais utile)
-    - length_ratio 40% : trop court = idées perdues, trop long = bruit ajouté
-    - novel_words 25% : bruyant pour restructuration (reformulation crée des mots "nouveaux")
-                        mais attrape les hallucinations extrêmes
-    - markdown : ignoré (la mise en forme est bienvenue pour la lisibilité)
-    """
-    return round(
-        rule_scores["preamble"] * 0.35 +
-        rule_scores["length_ratio"] * 0.40 +
-        rule_scores["novel_words"] * 0.25,
-        4
+def rewrite(sample: Sample, system_prompt: str, *, model: str, temperature: float,
+            num_ctx: int, endpoint: str) -> tuple[str, float, int]:
+    """Run the target model on one sample. Returns (text, elapsed_s, tokens)."""
+    t0 = time.time()
+    text, m = ollama_client.call_ollama(
+        system      = system_prompt,
+        user        = sample.raw_text,
+        model       = model,
+        temperature = temperature,
+        num_ctx     = num_ctx,
+        endpoint    = endpoint,
     )
+    return text, time.time() - t0, m.eval_count
 
 
-def judge_score(judge_scores: dict) -> float:
-    """
-    Score juge entre 0.0 (parfait) et 1.0 (terrible).
-    Lower is better. Affiché séparément, NON mélangé au score brut.
+def run(
+    *,
+    samples:       list[Sample],
+    system_prompt: str,
+    model:         str,
+    temperature:   float,
+    num_ctx:       int,
+    endpoint:      str,
+    judge:         Judge | None,
+    verbose:       bool,
+) -> dict:
+    composites: list[float] = []
+    catastrophes            = 0
+    details:     list[dict] = []
 
-    Pondérations (restructuration) :
-    - complétude 35% : toutes les idées présentes
-    - sobriété 25% : rien inventé
-    - clarté 20% : bien écrit
-    - structure 20% : bien organisé
-    """
-    def invert(score_1_5):
-        return (5 - score_1_5) / 4.0
-
-    return round(
-        invert(judge_scores["completude"]) * 0.35 +
-        invert(judge_scores["sobriete"]) * 0.25 +
-        invert(judge_scores["clarte"]) * 0.20 +
-        invert(judge_scores["structure"]) * 0.20,
-        4
-    )
-
-# ─── Main ─────────────────────────────────────────────────────────────────────
-
-def main():
-    cfg = load_config()["benchmark"]
-
-    parser = argparse.ArgumentParser(description="Benchmark prompt nettoyage")
-    parser.add_argument("--model", default=cfg["model"])
-    parser.add_argument("--judge-model", default=cfg["judge_model"])
-    parser.add_argument("--temperature", type=float, default=cfg.getfloat("temperature"))
-    parser.add_argument("--num-ctx-k", type=int, default=cfg.getint("num_ctx_k"))
-    parser.add_argument("--prompt-file", default=cfg["prompt"])
-    parser.add_argument("--corpus", default=cfg["corpus"])
-    parser.add_argument("--endpoint", default=cfg["endpoint"])
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--skip-judge", action="store_true",
-                        help="Skip LLM judge (rule-based score only, faster)")
-    args = parser.parse_args()
-
-    # Résoudre chemins relatifs par rapport à BENCHMARK_DIR
-    corpus_path = args.corpus if os.path.isabs(args.corpus) else os.path.join(BENCHMARK_DIR, args.corpus)
-    prompt_path = args.prompt_file if os.path.isabs(args.prompt_file) else os.path.join(BENCHMARK_DIR, args.prompt_file)
-
-    # Charger le corpus
-    with open(corpus_path, "r", encoding="utf-8") as f:
-        corpus = json.load(f)
-
-    # Charger le system prompt
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        system_prompt = f.read().strip()
-
-    num_ctx = args.num_ctx_k * 1024
-    all_rule_scores = []
-    all_judge_scores = []
-    details = []
-
-    print(f"=== Benchmark: {args.model} | temp={args.temperature} | ctx={args.num_ctx_k}K ===")
-    print(f"=== Prompt: {len(system_prompt)} chars | Corpus: {len(corpus)} samples ===")
+    print(f"=== Benchmark: {model} | temp={temperature} | ctx={num_ctx // 1024}K ===")
+    print(f"=== Prompt: {len(system_prompt)} chars | Corpus: {len(samples)} samples ===")
+    if judge is not None:
+        print(f"=== Judge: {judge.backend} / {judge.model} ===")
     print()
 
-    for sample in corpus:
-        sid = sample["id"]
-        input_text = sample["text"]
-
-        # Formater et envoyer
-        prompt, stops = format_mistral(system_prompt, input_text)
-
-        print(f"[{sid}/{len(corpus)}] Envoi ({len(input_text)} chars)...", end=" ", flush=True)
-        t0 = time.time()
-
+    for i, sample in enumerate(samples, start=1):
+        print(f"[{i}/{len(samples)}] {sample.id} ({len(sample.raw_text)} chars)...", end=" ", flush=True)
         try:
-            output_text, metrics = call_ollama(
-                prompt=prompt, stops=stops, model=args.model,
-                temperature=args.temperature, num_ctx=num_ctx,
-                endpoint=args.endpoint
+            output, elapsed, tokens = rewrite(
+                sample, system_prompt,
+                model       = model,
+                temperature = temperature,
+                num_ctx     = num_ctx,
+                endpoint    = endpoint,
             )
         except Exception as e:
-            print(f"ERREUR: {e}")
-            all_composites.append(1.0)  # pire score
+            print(f"ERROR: {e}")
+            composites.append(1.0)
+            details.append({"id": sample.id, "error": str(e)})
             continue
+        print(f"OK ({elapsed:.1f}s, {tokens} tokens)")
 
-        elapsed = time.time() - t0
-        print(f"OK ({elapsed:.1f}s, {metrics.get('eval_count', '?')} tokens)")
+        rules = metrics.rule_diagnostic(sample.raw_text, output)
+        catastrophe = metrics.is_catastrophe(sample.raw_text, output)
 
-        # Scores rule-based
-        rules = {
-            "novel_words": score_novel_words(input_text, output_text),
-            "length_ratio": score_length_ratio(input_text, output_text),
-            "preamble": score_preamble(output_text),
-            "lists": score_lists(output_text),
-        }
-        r_score = rule_score(rules)
-        all_rule_scores.append(r_score)
+        j: JudgeResult | None = None
+        if judge is not None and not catastrophe:
+            j = judge.score(sample.raw_text, output)
+            composites.append(j.composite())
+        elif catastrophe:
+            catastrophes += 1
+            composites.append(1.0)
+            print(f"  [CATASTROPHE] novel={rules['novel_words']:.2f} len_ratio={rules['length_ratio']:.2f}")
 
-        # Détection catastrophe (seuils adaptés restructuration : reformulation = normal)
-        is_catastrophe = (rules["novel_words"] > 0.85 or rules["length_ratio"] > 0.8)
+        details.append({
+            "id":             sample.id,
+            "duration_sec":   round(sample.duration_seconds, 2),
+            "input_chars":    len(sample.raw_text),
+            "output_chars":   len(output),
+            "length_ratio":   rules["length_ratio"],
+            "rule":           rules,
+            "catastrophe":    catastrophe,
+            "judge_backend":  j.backend if j else None,
+            "judge_model":    j.model if j else None,
+            "judge_scores":   j.scores if j else None,
+            "judge_composite": j.composite() if j else (1.0 if catastrophe else None),
+            "output_text":    output,
+            "elapsed_sec":    round(elapsed, 1),
+        })
 
-        # Score juge (optionnel, séparé)
-        judge = None
-        j_score = None
-        if not args.skip_judge and not is_catastrophe:
-            if args.verbose:
-                print(f"  Appel juge ({args.judge_model})...", end=" ", flush=True)
-            judge = llm_judge(input_text, output_text, args.judge_model, args.endpoint)
-            j_score = judge_score(judge)
-            all_judge_scores.append(j_score)
-            if args.verbose:
-                print("OK")
-        elif is_catastrophe:
-            print(f"  [CATASTROPHE] novel={rules['novel_words']:.2f} length_ratio={rules['length_ratio']:.2f} — juge skip")
-            judge = {"completude": 1, "clarte": 1, "structure": 1, "sobriete": 1}
-            j_score = 1.0
-            all_judge_scores.append(j_score)
-
-        detail = {
-            "id": sid,
-            "rule_score": r_score,
-            "judge_score": j_score,
-            "catastrophe": is_catastrophe,
-            "rule": rules,
-            "judge": judge,
-            "input_len": len(input_text),
-            "output_len": len(output_text),
-            "length_ratio": round(len(output_text) / max(1, len(input_text)), 2),
-            "output_text": output_text,
-            "elapsed_sec": round(elapsed, 1),
-        }
-        details.append(detail)
-
-        if args.verbose:
-            print(f"  Rule:  novel={rules['novel_words']:.3f} length={rules['length_ratio']:.3f} "
-                  f"preamble={rules['preamble']:.0f} lists={rules['lists']:.0f} → {r_score:.4f}")
-            if judge:
-                print(f"  Judge: comp={judge['completude']} clar={judge['clarte']} "
-                      f"str={judge['structure']} sob={judge['sobriete']} → {j_score:.4f}")
-            print(f"  Output: {output_text[:120]}...")
+        if verbose:
+            rules_fmt = (
+                f"  rule: novel={rules['novel_words']:.3f} "
+                f"len={rules['length_ratio']:.3f} "
+                f"preamble={rules['preamble']:.0f} "
+                f"lists={rules['lists']:.0f}"
+            )
+            print(rules_fmt)
+            if j:
+                scored = " ".join(f"{key[:5]}={j.scores[key]}" for key, _ in CRITERIA)
+                print(f"  judge: {scored} → {j.composite():.4f}")
+            print(f"  output: {output[:120]}...")
             print()
 
-    # Score final = médiane des rule scores (robuste aux outliers)
-    rule_median = statistics.median(all_rule_scores) if all_rule_scores else 1.0
-    rule_mean = sum(all_rule_scores) / len(all_rule_scores) if all_rule_scores else 1.0
-    judge_median = statistics.median(all_judge_scores) if all_judge_scores else None
-    judge_mean = (sum(all_judge_scores) / len(all_judge_scores)) if all_judge_scores else None
+    median = statistics.median(composites) if composites else 1.0
+    mean   = sum(composites) / len(composites) if composites else 1.0
 
-    # Détails dans un fichier JSON pour analyse
     report = {
-        "model": args.model,
-        "judge_model": args.judge_model if not args.skip_judge else None,
-        "temperature": args.temperature,
-        "num_ctx_k": args.num_ctx_k,
-        "prompt_chars": len(system_prompt),
-        "samples": len(corpus),
-        "rule_median": round(rule_median, 4),
-        "rule_mean": round(rule_mean, 4),
-        "judge_median": round(judge_median, 4) if judge_median is not None else None,
-        "judge_mean": round(judge_mean, 4) if judge_mean is not None else None,
-        "details": details,
+        "model":              model,
+        "temperature":        temperature,
+        "num_ctx_k":          num_ctx // 1024,
+        "prompt_chars":       len(system_prompt),
+        "samples":            len(samples),
+        "catastrophes":       catastrophes,
+        "judge_backend":      judge.backend if judge else None,
+        "judge_model":        judge.model if judge else None,
+        "composite_median":   round(median, 4),
+        "composite_mean":     round(mean, 4),
+        "details":            details,
     }
-    report_path = os.path.join(BENCHMARK_DIR, "reports", "last_report.json")
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
 
-    catastrophes = sum(1 for d in details if d.get("catastrophe", False))
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    (REPORTS_DIR / "last_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     print(f"\n{'='*60}")
-    print(f"RÉSULTATS: {len(corpus)} samples")
-    print(f"  Rule-based : médiane={rule_median:.4f} moyenne={rule_mean:.4f}")
-    if judge_median is not None:
-        print(f"  Juge (14B)  : médiane={judge_median:.4f} moyenne={judge_mean:.4f}")
+    print(f"RÉSULTATS: {len(samples)} samples")
+    print(f"  Composite (0.0 = parfait, 1.0 = terrible)")
+    print(f"    médiane : {median:.4f}")
+    print(f"    moyenne : {mean:.4f}")
     if catastrophes:
-        print(f"  ({catastrophes} catastrophe(s) détectée(s) — juge skip)")
-    print(f"  (0.0 = parfait, 1.0 = terrible)")
+        print(f"  {catastrophes} catastrophe(s) — judge skip")
     for d in details:
         tag = " [!]" if d.get("catastrophe") else ""
-        j_str = f" juge={d['judge_score']:.2f}" if d.get("judge_score") is not None else ""
-        print(f"  #{d['id']}: rule={d['rule_score']:.4f}{j_str} "
-              f"(novel={d['rule']['novel_words']:.2f} "
-              f"len_ratio={d['length_ratio']:.2f}){tag}")
+        if d.get("judge_composite") is not None:
+            composite = d["judge_composite"]
+            print(f"  {d['id']}: {composite:.4f} (len_ratio={d['length_ratio']:.2f}){tag}")
+        else:
+            print(f"  {d['id']}: skipped{tag}")
     print(f"{'='*60}")
+    print(f"\nSCORE={median:.4f}")
+    return report
 
-    # Ligne unique pour autoresearch.
-    # Restructuration : la reformulation est autorisée → novel_words est bruyant.
-    # Le juge LLM est le seul signal capable de mesurer complétude + sobriété.
-    # Fallback sur rule_median uniquement si --skip-judge (pas de juge dispo).
-    primary = judge_median if judge_median is not None else rule_median
-    print(f"\nSCORE={primary:.4f}")
+
+def main() -> None:
+    cfg = load_config()["benchmark"]
+
+    parser = argparse.ArgumentParser(description="WhispUI rewrite prompt benchmark")
+    parser.add_argument("--model",         default=cfg["model"])
+    parser.add_argument("--temperature",   type=float, default=cfg.getfloat("temperature"))
+    parser.add_argument("--num-ctx-k",     type=int,   default=cfg.getint("num_ctx_k"))
+    parser.add_argument("--prompt-file",   default=cfg["prompt"])
+    parser.add_argument("--corpus-glob",   default=cfg.get("corpus_glob", DEFAULT_CORPUS_GLOB))
+    parser.add_argument("--endpoint",      default=cfg["endpoint"])
+    parser.add_argument("--judge",         choices=["claude", "ollama"], default=cfg.get("judge_backend", "claude"))
+    parser.add_argument("--judge-model",   default=cfg.get("judge_model", "") or "")
+    parser.add_argument("--skip-judge",    action="store_true")
+    parser.add_argument("--slug",          default=None, help="Filter samples by profile slug")
+    parser.add_argument("--duration-min",  type=float, default=None)
+    parser.add_argument("--duration-max",  type=float, default=None)
+    parser.add_argument("--verbose",       action="store_true")
+    args = parser.parse_args()
+
+    prompt_path = Path(args.prompt_file)
+    if not prompt_path.is_absolute():
+        prompt_path = BENCHMARK_DIR / prompt_path
+    if not prompt_path.exists():
+        sys.exit(
+            f"Prompt file not found: {prompt_path}\n"
+            f"Create {prompt_path.name} manually or run autoresearch.py to seed it."
+        )
+    system_prompt = prompt_path.read_text(encoding="utf-8").strip()
+
+    corpus_glob = args.corpus_glob
+    if not os.path.isabs(corpus_glob):
+        corpus_glob = str(BENCHMARK_DIR / corpus_glob)
+
+    samples = load_corpus(
+        corpus_glob,
+        duration_min = args.duration_min,
+        duration_max = args.duration_max,
+        slug         = args.slug,
+    )
+    if not samples:
+        sys.exit(f"No corpus samples found at {corpus_glob}")
+
+    judge: Judge | None = None
+    if not args.skip_judge:
+        judge = build_judge(args.judge, args.judge_model)
+
+    run(
+        samples       = samples,
+        system_prompt = system_prompt,
+        model         = args.model,
+        temperature   = args.temperature,
+        num_ctx       = args.num_ctx_k * 1024,
+        endpoint      = args.endpoint,
+        judge         = judge,
+        verbose       = args.verbose,
+    )
+
 
 if __name__ == "__main__":
     main()

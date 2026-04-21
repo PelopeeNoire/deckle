@@ -43,19 +43,14 @@ modelfile-fastapply
 logs/*
 !logs/.gitkeep
 
-# Benchmark — run artifacts (regenerated on each launch)
-benchmark/__pycache__/
-benchmark/logs/*.log
-benchmark/logs/*.csv
-benchmark/logs/reports/last_report.json
-benchmark/logs/reports/results.tsv
-benchmark/logs/reports/autoresearch_report.txt
-
-# Benchmark — entire data corpus (transcripts, JSONL logs, everything).
-# Local dictation samples + personal corpus, never pushed. Kept as blanket
-# ignore because the contents evolve on every run; no need to enumerate
-# file types as new artifacts get added.
+# Benchmark — runtime artifacts, never versioned.
+# data/  : everything WhispUI or the benchmark produces (corpus JSONL, WAVs,
+#          telemetry, reports, archived legacy files). Private content.
+# logs/  : live step-by-step log of the benchmark script itself — kept so a
+#          crashed run can be resumed, not meant to persist across runs.
+benchmark/**/__pycache__/
 benchmark/data/
+benchmark/logs/
 
 # Claude Code runtime state (locks, caches) — keep the tracked agent/skill defs
 .claude/scheduled_tasks.lock

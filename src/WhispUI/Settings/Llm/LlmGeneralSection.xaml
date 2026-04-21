@@ -6,8 +6,21 @@
     xmlns:ui="using:CommunityToolkit.WinUI">
 
     <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
-        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                   Text="General" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="General" />
+            <HyperlinkButton Grid.Column="1"
+                             VerticalAlignment="Bottom"
+                             Margin="0,0,0,2"
+                             Content="Reset"
+                             ToolTipService.ToolTip="Reset this section to defaults"
+                             Click="ResetSection_Click" />
+        </Grid>
 
         <controls:SettingsCard Header="Enable rewriting"
                                Description="Master switch for all LLM rewriting. When off, transcriptions are never sent to Ollama."

@@ -12,8 +12,21 @@
     </UserControl.Resources>
 
     <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
-        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                   Text="Profiles" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                       Text="Profiles" />
+            <HyperlinkButton Grid.Column="1"
+                             VerticalAlignment="Bottom"
+                             Margin="0,0,0,2"
+                             Content="Reset"
+                             ToolTipService.ToolTip="Reset this section to defaults"
+                             Click="ResetSection_Click" />
+        </Grid>
 
         <TextBlock Style="{StaticResource BodyTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"

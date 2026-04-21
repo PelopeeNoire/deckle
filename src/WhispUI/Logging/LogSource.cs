@@ -1,7 +1,7 @@
 namespace WhispUI.Logging;
 
 // Typed source constants — closed vocabulary. No magic strings in caller code.
-// Brackets are added by LogEntry.Text formatting, so values must NOT include
+// Brackets are added by TelemetryEvent.Text formatting, so values must NOT include
 // their own brackets. Uppercase, ASCII, dot-separated for sub-components.
 // Max ~12 chars for visual alignment in the LogWindow.
 public static class LogSource
@@ -37,4 +37,7 @@ public static class LogSource
     public const string LogWin = "LOGWIN";
     public const string Hud    = "HUD";
     public const string Tray   = "TRAY";
+
+    // ── Shell infrastructure ────────────────────────────────────────────────
+    public const string MsgHost = "MSGHOST";
 }

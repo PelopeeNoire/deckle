@@ -1,61 +1,25 @@
 namespace WhispUI.Logging;
 
-// Sink interface: anything that wants to receive log entries.
-public interface ILogSink
-{
-    void Write(LogEntry entry);
-}
-
-// Central logging service — singleton, thread-safe.
-// Callers use: LogService.Instance.Info(LogSource.Model, "...");
+// ── LogService ──────────────────────────────────────────────────────────────
 //
-// Entry creation happens here (once). All sinks receive the same immutable
-// LogEntry instance. Sinks are dispatched on the caller's thread — each sink
-// is responsible for its own marshaling (e.g. LogWindow uses DispatcherQueue).
+// Thin façade over TelemetryService. Kept for source compatibility — every
+// WhispUI caller already goes through `LogService.Instance.Info(...)` and
+// the like, and rewriting the ~400 call sites to TelemetryService would
+// bloat this chantier without changing behavior. The façade forwards the
+// six levels unchanged.
+//
+// All sinks now live on TelemetryService. Emission still happens on the
+// caller's thread; sinks decide their own marshaling.
 public sealed class LogService
 {
     public static LogService Instance { get; } = new();
 
-    private readonly List<ILogSink> _sinks = new();
-    private readonly object _sinkLock = new();
-
     private LogService() { }
 
-    public void AddSink(ILogSink sink)
-    {
-        lock (_sinkLock) _sinks.Add(sink);
-    }
-
-    public void RemoveSink(ILogSink sink)
-    {
-        lock (_sinkLock) _sinks.Remove(sink);
-    }
-
-    // ── Public API (one method per level) ────────────────────────────────────
-    //
-    // An optional UserFeedback payload can be attached at emission. When
-    // present, sinks routing to the user (HudFeedbackSink) surface it; the
-    // log entry still flows normally through file/LogWindow sinks.
-    public void Verbose(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Verbose, feedback);
-    public void Info(string source, string msg, UserFeedback? feedback = null)      => Emit(source, msg, LogLevel.Info, feedback);
-    public void Success(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Success, feedback);
-    public void Warning(string source, string msg, UserFeedback? feedback = null)   => Emit(source, msg, LogLevel.Warning, feedback);
-    public void Error(string source, string msg, UserFeedback? feedback = null)     => Emit(source, msg, LogLevel.Error, feedback);
-    public void Narrative(string source, string msg, UserFeedback? feedback = null) => Emit(source, msg, LogLevel.Narrative, feedback);
-
-    private void Emit(string source, string message, LogLevel level, UserFeedback? feedback)
-    {
-        var entry = new LogEntry(source, message, level, feedback);
-
-        // Snapshot: no lock held during dispatch — sinks can take time
-        // without blocking other log calls.
-        ILogSink[] snapshot;
-        lock (_sinkLock) snapshot = _sinks.ToArray();
-
-        foreach (var sink in snapshot)
-        {
-            try { sink.Write(entry); }
-            catch { /* A sink must never crash the caller. */ }
-        }
-    }
+    public void Verbose  (string source, string msg, UserFeedback? feedback = null) => TelemetryService.Instance.Log(source, msg, LogLevel.Verbose,   feedback);
+    public void Info     (string source, string msg, UserFeedback? feedback = null) => TelemetryService.Instance.Log(source, msg, LogLevel.Info,      feedback);
+    public void Success  (string source, string msg, UserFeedback? feedback = null) => TelemetryService.Instance.Log(source, msg, LogLevel.Success,   feedback);
+    public void Warning  (string source, string msg, UserFeedback? feedback = null) => TelemetryService.Instance.Log(source, msg, LogLevel.Warning,   feedback);
+    public void Error    (string source, string msg, UserFeedback? feedback = null) => TelemetryService.Instance.Log(source, msg, LogLevel.Error,     feedback);
+    public void Narrative(string source, string msg, UserFeedback? feedback = null) => TelemetryService.Instance.Log(source, msg, LogLevel.Narrative, feedback);
 }

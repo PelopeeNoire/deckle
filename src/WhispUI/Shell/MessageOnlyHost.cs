@@ -85,7 +85,7 @@ internal sealed class MessageOnlyHost : IDisposable
                 $"CreateWindowEx(HWND_MESSAGE) failed (Win32 err {err})");
         }
 
-        DebugLog.Write("MSGHOST", $"message-only window created hwnd={_hwnd}");
+        LogService.Instance.Verbose(LogSource.MsgHost, $"message-only window created hwnd={_hwnd}");
     }
 
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)

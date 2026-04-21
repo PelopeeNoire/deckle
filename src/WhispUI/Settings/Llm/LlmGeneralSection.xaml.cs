@@ -63,4 +63,19 @@ public sealed partial class LlmGeneralSection : UserControl
         SettingsService.Instance.Save();
         EndpointChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // Scope: Enabled + OllamaEndpoint. Source of truth for defaults is a fresh
+    // LlmSettings — no duplication of literal defaults here. Fires
+    // EndpointChanged so LlmPage re-checks Ollama availability against the
+    // restored endpoint.
+    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    {
+        var defaults = new LlmSettings();
+        var s = SettingsService.Instance.Current.Llm;
+        s.Enabled = defaults.Enabled;
+        s.OllamaEndpoint = defaults.OllamaEndpoint;
+        SettingsService.Instance.Save();
+        Reload();
+        EndpointChanged?.Invoke(this, EventArgs.Empty);
+    }
 }
