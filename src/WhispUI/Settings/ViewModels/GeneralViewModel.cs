@@ -129,7 +129,7 @@ public partial class GeneralViewModel : ObservableObject
         App.ApplyTheme(value);
     }
 
-    // ── Diagnostics ──────────────────────────────────────────────────────────
+    // ── Telemetry ────────────────────────────────────────────────────────────
 
     [ObservableProperty]
     public partial bool TelemetryLatencyEnabled { get; set; }
@@ -139,6 +139,9 @@ public partial class GeneralViewModel : ObservableObject
 
     [ObservableProperty]
     public partial bool RecordAudioCorpus { get; set; }
+
+    [ObservableProperty]
+    public partial bool ApplicationLogToDisk { get; set; }
 
     [ObservableProperty]
     public partial string TelemetryStorageDirectory { get; set; }
@@ -161,6 +164,13 @@ public partial class GeneralViewModel : ObservableObject
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.RecordAudioCorpus ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnApplicationLogToDiskChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Telemetry.ApplicationLogToDisk ← {value}");
         PushToSettings();
     }
 
@@ -192,6 +202,7 @@ public partial class GeneralViewModel : ObservableObject
         TelemetryLatencyEnabled = false;
         TelemetryCorpusEnabled = false;
         RecordAudioCorpus = false;
+        ApplicationLogToDisk = false;
         TelemetryStorageDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
@@ -215,6 +226,7 @@ public partial class GeneralViewModel : ObservableObject
             TelemetryLatencyEnabled = s.Telemetry.LatencyEnabled;
             TelemetryCorpusEnabled = s.Telemetry.CorpusEnabled;
             RecordAudioCorpus = s.Telemetry.RecordAudioCorpus;
+            ApplicationLogToDisk = s.Telemetry.ApplicationLogToDisk;
             TelemetryStorageDirectory = s.Telemetry.StorageDirectory;
         }
         finally
@@ -237,6 +249,7 @@ public partial class GeneralViewModel : ObservableObject
         s.Telemetry.LatencyEnabled = TelemetryLatencyEnabled;
         s.Telemetry.CorpusEnabled = TelemetryCorpusEnabled;
         s.Telemetry.RecordAudioCorpus = RecordAudioCorpus;
+        s.Telemetry.ApplicationLogToDisk = ApplicationLogToDisk;
         s.Telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
         SettingsService.Instance.Save();
     }
@@ -292,7 +305,7 @@ public partial class GeneralViewModel : ObservableObject
         _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
     }
 
-    public void ResetDiagnosticsDefaults()
+    public void ResetTelemetryDefaults()
     {
         _isSyncing = true;
         try
@@ -300,10 +313,11 @@ public partial class GeneralViewModel : ObservableObject
             TelemetryLatencyEnabled = false;
             TelemetryCorpusEnabled = false;
             RecordAudioCorpus = false;
+            ApplicationLogToDisk = false;
             TelemetryStorageDirectory = "";
         }
         finally { _isSyncing = false; }
         PushToSettings();
-        _log.Info(LogSource.SetGeneral, "Diagnostics section reset to defaults");
+        _log.Info(LogSource.SetGeneral, "Telemetry section reset to defaults");
     }
 }
