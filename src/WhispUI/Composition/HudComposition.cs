@@ -40,8 +40,8 @@ internal static class HudComposition
     // ╔════════════════════════════════════════════════════════════════════╗
     // ║  Shared geometry                                                   ║
     // ╚════════════════════════════════════════════════════════════════════╝
-    // Fixed for both states — stroke metrics are a property of the HUD
-    // rect, not of the animation.
+    // Fixed across all three variants — stroke metrics are a property of
+    // the HUD rect, not of the animation.
     private const float  StrokeThickness              = 4f;    // dip, stroke width
     private const float  InsetDip                     = 4f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
@@ -49,19 +49,32 @@ internal static class HudComposition
     // ╔════════════════════════════════════════════════════════════════════╗
     // ║  Processing stroke — single visual, live-modulated variants        ║
     // ╚════════════════════════════════════════════════════════════════════╝
-    // One stroke is created on first entry into a processing state and
-    // kept alive across Transcribing ↔ Rewriting. Per-state differentiation
-    // runs LIVE on the same visual via Composition effects (SaturationEffect,
-    // HueRotationEffect, ExposureEffect on the colour pipeline + Opacity on
-    // the visual). ProcessingStroke.ApplyVariant blends toward the target
-    // values over BlendSeconds — no surface rebuild, no GC, no lag.
+    // One stroke is created on HUD state entry and kept alive across
+    // Transcribing ↔ Rewriting. Per-state differentiation runs LIVE on
+    // the same visual via Composition effects (SaturationEffect,
+    // HueRotationEffect, ExposureEffect on the colour pipeline + Opacity
+    // on the visual). ProcessingStroke.ApplyVariant blends toward the
+    // target values over BlendSeconds — no surface rebuild, no GC, no lag.
     //
-    // All knobs live on ConicArcStrokeConfig below, split into three blocks:
+    // Recording uses the same stroke type but with a frozen-rotation
+    // pipeline and paint-time geometry overrides (arc lobes parked at
+    // visual 12/6 o'clock). Because paint-time knobs differ from the
+    // rotating variant, crossing the Recording ↔ (Transcribing /
+    // Rewriting) boundary requires a rebuild — HudChrono tears down and
+    // recreates the stroke at that boundary. Transcribing ↔ Rewriting
+    // stays live-blended on the same visual.
+    //
+    // All knobs live on ConicArcStrokeConfig below, split into blocks:
     //   1. "Baseline palette / rotations" — paint-time config, applies to
-    //      both variants (HsvSaturation, HueRange, ConicSpan, ArcPeriod…).
-    //   2. Runtime variants (Rewriting* / Transcribing*) — the live knobs
-    //      animated by ApplyVariant. Edit these to shape each state's look.
-    //   3. BlendSeconds — per-variant transition duration.
+    //      all variants unless overridden (HsvSaturation, HueRange,
+    //      ConicSpan, ArcPeriod…).
+    //   2. Runtime variants (Rewriting* / Transcribing* / Recording*) —
+    //      the live knobs animated by ApplyVariant. Edit these to shape
+    //      each state's look.
+    //   3. Recording paint-time overrides (RecordingConic* /
+    //      RecordingArcPhaseTurns / RecordingArcMirror) — consumed by
+    //      CreateRecordingStroke to carve the frozen-rotation silhouette.
+    //   4. BlendSeconds — per-variant transition duration.
 
     // ── Lexicon — vocabulary shared across the struct fields below ──────
     //
@@ -202,6 +215,45 @@ internal static class HudComposition
         public float  TranscribingExposureLight   { get; init; } = 0f;
         public float  TranscribingOpacity         { get; init; } = 1f;
         public double TranscribingBlendSeconds    { get; init; } = 1;
+
+        // ── Recording variant — frozen-rotation stroke with RMS-driven
+        //    opacity. Two blocks:
+        //
+        //    PAINT-TIME (baked into Win2D conic/arc surfaces when
+        //    CreateRecordingStroke runs — cannot be animated live; edit
+        //    the defaults and rebuild to iterate):
+        //      - ConicSpan / LeadFade / TailFade / FadeCurve / ArcMirror
+        //        shape the silhouette's arc geometry. Span 0.5 + Mirror
+        //        covers the full perimeter as two 180° lobes. Fades
+        //        auto-scale to bell if Lead+Tail > Span.
+        //      - ArcPhaseTurns rotates the arc mask at paint-time to
+        //        park the lobes at visual 12/6 o'clock (see
+        //        CreateRecordingStroke header for the phase math).
+        //
+        //    RUNTIME (consumed by ApplyVariant — animated via the same
+        //    live effect pipeline as Transcribing/Rewriting, so a theme
+        //    change mid-recording blends smoothly):
+        //      - Saturation Dark/Light, HueShift, Exposure Dark/Light,
+        //        BlendSeconds.
+        //      - Defaults mirror Transcribing so the out-of-box greyscale
+        //        stays theme-consistent; tune independently if Recording
+        //        needs a distinct palette.
+        //
+        //    No RecordingOpacity — UpdateLevel owns that channel from
+        //    the mic RMS stream. ApplyVariant(Recording) deliberately
+        //    skips the Opacity animation to avoid fighting UpdateLevel.
+        public float  RecordingConicSpanTurns      { get; init; } = 0.5f;
+        public float  RecordingConicLeadFadeTurns  { get; init; } = 1f;
+        public float  RecordingConicTailFadeTurns  { get; init; } = 1f;
+        public float  RecordingConicFadeCurve      { get; init; } = 2f;
+        public bool   RecordingArcMirror           { get; init; } = true;
+        public float  RecordingArcPhaseTurns       { get; init; } = 0f;
+        public float  RecordingSaturationDark      { get; init; } = 0f;
+        public float  RecordingSaturationLight     { get; init; } = 0f;
+        public float  RecordingHueShiftTurns       { get; init; } = 0f;
+        public float  RecordingExposureDark        { get; init; } = 2f;
+        public float  RecordingExposureLight       { get; init; } = -2f;
+        public double RecordingBlendSeconds        { get; init; } = 1;
     }
 
     // Live handle to a processing stroke created by CreateProcessingStroke.
@@ -255,19 +307,20 @@ internal static class HudComposition
             switch (variant)
             {
                 case ProcessingVariant.Recording:
-                    // Recording reuses the Transcribing Dark/Light baselines
-                    // (Saturation 0 → greyscale, Exposure tuned per theme).
-                    // Opacity is NOT animated here — UpdateLevel drives it
-                    // from EMA-smoothed mic RMS. See UpdateLevel below.
+                    // Recording has its own Saturation/Hue/Exposure slots
+                    // in the config; defaults mirror Transcribing but
+                    // tune independently. Opacity is NOT animated here —
+                    // UpdateLevel drives it from EMA-smoothed mic RMS.
+                    // See UpdateLevel below.
                     sat           = isDark
-                        ? _config.TranscribingSaturationDark
-                        : _config.TranscribingSaturationLight;
-                    hueShiftTurns = _config.TranscribingHueShiftTurns;
+                        ? _config.RecordingSaturationDark
+                        : _config.RecordingSaturationLight;
+                    hueShiftTurns = _config.RecordingHueShiftTurns;
                     exposure      = isDark
-                        ? _config.TranscribingExposureDark
-                        : _config.TranscribingExposureLight;
+                        ? _config.RecordingExposureDark
+                        : _config.RecordingExposureLight;
                     opacity       = 0f;                 // unused, skipped below
-                    blendSeconds  = _config.TranscribingBlendSeconds;
+                    blendSeconds  = _config.RecordingBlendSeconds;
                     break;
                 case ProcessingVariant.Transcribing:
                     sat           = isDark
@@ -362,16 +415,18 @@ internal static class HudComposition
 
     // Recording stroke — the same double-comet pipeline as the processing
     // stroke, but with rotation frozen and the arc positioned at visual 12
-    // and 6 o'clock. Greyscale palette via the Transcribing Saturation 0
-    // baseline, so the "colour" knobs (HueShift, Exposure split per theme)
-    // behave exactly like Transcribing — on purpose: Louis validated the
-    // direction "copy the grey values from the Transcribing arc" rather
-    // than paint a dedicated theme-coloured stroke.
+    // and 6 o'clock. Opacity starts at 0 (invisible outline) and is driven
+    // by ProcessingStroke.UpdateLevel from HudChrono's EMA-smoothed mic
+    // RMS.
     //
-    // Opacity starts at 0 (invisible outline) and is driven by
-    // ProcessingStroke.UpdateLevel from HudChrono's EMA-smoothed mic RMS.
+    // All Recording-specific knobs live on the Recording* fields of
+    // ConicArcStrokeConfig (see the struct section above). This factory
+    // reads a default-constructed config and maps the Recording* paint-
+    // time fields into the generic paint-time slots that
+    // CreateConicArcStroke consumes — tweak the defaults on the struct
+    // itself to iterate, just like the Transcribing*/Rewriting* knobs.
     //
-    // ── Arc span + fades ────────────────────────────────────────────────
+    // ── Arc span + fades (from RecordingConic* defaults) ────────────────
     // Span 0.5 with Mirror = full 360° coverage split into two 180° arcs
     // that meet exactly at the sides (3 and 9 o'clock) with no overlap.
     // LeadFade/TailFade at 0.5 each get auto-scaled by the drawing code to
@@ -380,7 +435,7 @@ internal static class HudComposition
     // meet. Matches Louis's "ça doit aller que sur les côtés, on a des
     // fades puissants qui s'en chargent".
     //
-    // ── Arc phase math ──────────────────────────────────────────────────
+    // ── Arc phase math (from RecordingArcPhaseTurns default) ────────────
     // With Span 0.5, the source arc centre is at spanRadians/2 = 0.25·τ
     // (90° math). In Win2D's Y-down space that's (cos 90°, sin 90°)
     // = (0, 1) — straight down, 6 o'clock. Mirror at +π lands at 270° math
@@ -389,24 +444,35 @@ internal static class HudComposition
     // Target: lobes at visual 12 and 6 o'clock. Source already has a lobe
     // at 6 and mirror at 12, so we need a +0.5 turn rotation to realign
     // (the chirality flip: source 6 → visual 12, source 12 → visual 6).
-    // ArcPhaseTurns = 0.5 → 0.25 + 0.5 = 0.75·τ = 270° math = 12 o'clock,
-    // mirror 0.75 + 0.5 = 1.25 ≡ 0.25·τ = 90° math = 6 o'clock. ✓
+    // RecordingArcPhaseTurns = 0.5 → 0.25 + 0.5 = 0.75·τ = 270° math =
+    // 12 o'clock, mirror 0.75 + 0.5 = 1.25 ≡ 0.25·τ = 90° math =
+    // 6 o'clock. ✓
     //
-    // HuePhase doesn't matter (saturation 0 → uniform grey), kept at 0.
+    // HuePhase doesn't matter (Saturation 0 → uniform grey), kept at 0.
     internal static ProcessingStroke CreateRecordingStroke(
         Compositor compositor, Vector2 hostSize)
     {
-        var cfg = new ConicArcStrokeConfig
+        // `with` copies the caller's (default) config and overrides the
+        // generic paint-time slots consumed by CreateConicArcStroke with
+        // the Recording* paint-time values. All other fields inherit
+        // their defaults — the Recording* runtime fields come through
+        // unchanged and are read by ApplyVariant and by the initialVariant
+        // seed path below.
+        var defaults = new ConicArcStrokeConfig();
+        var cfg = defaults with
         {
-            ConicSpanTurns     = 0.5f,
-            ConicLeadFadeTurns = 0.5f,
-            ConicTailFadeTurns = 0.5f,
-            ArcPhaseTurns      = 0.5f,
+            ConicSpanTurns     = defaults.RecordingConicSpanTurns,
+            ConicLeadFadeTurns = defaults.RecordingConicLeadFadeTurns,
+            ConicTailFadeTurns = defaults.RecordingConicTailFadeTurns,
+            ConicFadeCurve     = defaults.RecordingConicFadeCurve,
+            ArcMirror          = defaults.RecordingArcMirror,
+            ArcPhaseTurns      = defaults.RecordingArcPhaseTurns,
         };
         return CreateConicArcStroke(
             compositor, hostSize, cfg,
             freezeRotation: true,
-            initialOpacity:  0f);
+            initialOpacity:  0f,
+            initialVariant:  ProcessingVariant.Recording);
     }
 
     // Implementation of the double-comet pipeline driven by
@@ -492,10 +558,20 @@ internal static class HudComposition
     // Transcribing-baseline behaviour used by Processing strokes. Recording
     // passes 0 so the outline spawns invisible — UpdateLevel ramps it up
     // from there as mic RMS arrives.
+    //
+    // `initialVariant` picks which runtime-variant baseline seeds the
+    // initial Saturation / Hue / Exposure values (and the effectProps
+    // scalars that drive them). Transcribing is the default because a
+    // processing stroke always enters the graph in that state; Recording
+    // passes its own variant so cold-start paints with Recording*
+    // values from frame 1, avoiding a Transcribing-to-Recording flash
+    // before ApplyVariant runs. Rewriting is never seeded from cold —
+    // it only ever follows a prior Transcribing via ApplyVariant blend.
     private static ProcessingStroke CreateConicArcStroke(
         Compositor compositor, Vector2 hostSize, ConicArcStrokeConfig cfg,
-        bool  freezeRotation = false,
-        float initialOpacity = -1f)
+        bool              freezeRotation = false,
+        float             initialOpacity = -1f,
+        ProcessingVariant initialVariant = ProcessingVariant.Transcribing)
     {
         var container = compositor.CreateContainerVisual();
         container.Size = hostSize;
@@ -752,30 +828,49 @@ internal static class HudComposition
         // Both masks compound; the final pixel RGB is the (effect-modified)
         // conic colour, alpha = conic.A · arc.A · stroke.A.
         //
-        // Initial effect values use the Transcribing (Dark) baseline. The
-        // stroke is only ever created on the first enter into a processing
-        // state, and that state is always Transcribing (Rewriting can only
-        // follow a prior Transcribing). Seeding Rewriting values here caused
-        // a visible rainbow flash on cold start before the first ApplyVariant
-        // blend reached greyscale. Using Transcribing Dark saturation=0 keeps
-        // the first paint frame already greyscale; any theme/exposure mismatch
-        // is corrected instantly by the ApplyVariant call that follows attach.
+        // Initial effect values follow initialVariant's (Dark) baseline.
+        // Processing strokes pass Transcribing (first processing state;
+        // Rewriting can only follow a prior Transcribing via ApplyVariant
+        // blend — seeding Rewriting values cold caused a visible rainbow
+        // flash we fixed by defaulting to Transcribing). Recording strokes
+        // pass their own variant so cold-start paints with Recording*
+        // values from frame 1, skipping any Transcribing-to-Recording
+        // flash before ApplyVariant runs.
+        float seedSaturation = initialVariant switch
+        {
+            ProcessingVariant.Recording    => cfg.RecordingSaturationDark,
+            ProcessingVariant.Rewriting    => cfg.RewritingSaturation,
+            _                              => cfg.TranscribingSaturationDark,
+        };
+        float seedHueShiftTurns = initialVariant switch
+        {
+            ProcessingVariant.Recording    => cfg.RecordingHueShiftTurns,
+            ProcessingVariant.Rewriting    => cfg.RewritingHueShiftTurns,
+            _                              => cfg.TranscribingHueShiftTurns,
+        };
+        float seedExposure = initialVariant switch
+        {
+            ProcessingVariant.Recording    => cfg.RecordingExposureDark,
+            ProcessingVariant.Rewriting    => cfg.RewritingExposure,
+            _                              => cfg.TranscribingExposureDark,
+        };
+
         var saturationEffect = new SaturationEffect
         {
             Name       = "Sat",
-            Saturation = cfg.TranscribingSaturationDark,
+            Saturation = seedSaturation,
             Source     = new CompositionEffectSourceParameter("Conic"),
         };
         var hueEffect = new HueRotationEffect
         {
             Name   = "Hue",
-            Angle  = cfg.TranscribingHueShiftTurns * MathF.Tau,
+            Angle  = seedHueShiftTurns * MathF.Tau,
             Source = saturationEffect,
         };
         var exposureEffect = new ExposureEffect
         {
             Name     = "Exp",
-            Exposure = cfg.TranscribingExposureDark,
+            Exposure = seedExposure,
             Source   = hueEffect,
         };
         var effectGraph = new AlphaMaskEffect
@@ -803,9 +898,9 @@ internal static class HudComposition
         // animates these; the ExpressionAnimations below propagate their
         // values to the effect-brush properties every frame.
         var effectProps = compositor.CreatePropertySet();
-        effectProps.InsertScalar("Saturation", cfg.TranscribingSaturationDark);
-        effectProps.InsertScalar("HueAngle",   cfg.TranscribingHueShiftTurns * MathF.Tau);
-        effectProps.InsertScalar("Exposure",   cfg.TranscribingExposureDark);
+        effectProps.InsertScalar("Saturation", seedSaturation);
+        effectProps.InsertScalar("HueAngle",   seedHueShiftTurns * MathF.Tau);
+        effectProps.InsertScalar("Exposure",   seedExposure);
 
         BindEffectProperty(compositor, effectBrush, "Sat.Saturation", effectProps, "Saturation");
         BindEffectProperty(compositor, effectBrush, "Hue.Angle",      effectProps, "HueAngle");
