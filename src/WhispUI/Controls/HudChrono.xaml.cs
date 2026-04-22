@@ -271,7 +271,12 @@ public sealed partial class HudChrono : UserControl
     // The 50 ms Composition-side keyframes interpolate between samples at
     // the monitor refresh rate, so perceived motion is smooth regardless.
     private float _smoothedLevel;
-    private const float EmaAlpha = 0.72f;
+
+    // `public static` (not const / readonly) so HudPlayground can override
+    // the audio-mapping tunables live. Shipping code still resolves them
+    // as if they were constants — the field reads are inlined by the JIT
+    // when nothing mutates them in a given process. Defaults preserved.
+    public static float EmaAlpha = 0.72f;
 
     // Linear RMS mapped through a dBFS window before EMA smoothing. The
     // window [MinDbfs, MaxDbfs] compresses real-world voice dynamics into
@@ -300,8 +305,10 @@ public sealed partial class HudChrono : UserControl
     // After: gate opens at opacity ~0.56 (midway), then climbs — so soft
     // voice is visible immediately when speech starts, instead of
     // crawling up from zero.
-    private const float MinDbfs = -50f;
-    private const float MaxDbfs = -32f;
+    // `public static` (not const) — HudPlayground mutates these live to
+    // explore the dBFS window. Defaults preserved.
+    public static float MinDbfs = -50f;
+    public static float MaxDbfs = -32f;
 
     private static float RmsToPerceptualLevel(float rms)
     {
@@ -394,6 +401,43 @@ public sealed partial class HudChrono : UserControl
     private static bool IsRecording(ProcessingVariant? v)
         => v == ProcessingVariant.Recording;
 
+    // HudPlayground-only: rebuild the stroke with a caller-supplied config
+    // so baked-geometry knobs (StrokeThickness, WedgeCount, ConicSpan*,
+    // ArcMirror, ArcPhaseTurns, etc.) can be explored interactively. The
+    // stroke is rebuilt, not mutated — paint-time fields are baked into
+    // Win2D surfaces and cannot be animated live.
+    //
+    // No-op when no variant is active (Hidden / Charging have no stroke).
+    // The current variant determines which factory is called; the caller
+    // must pass a config that matches (Recording* fields honoured when
+    // variant == Recording, generic fields otherwise).
+    internal void RebuildStroke(HudComposition.ConicArcStrokeConfig config)
+    {
+        if (_currentVariant is not { } variant) return;
+
+        ElementCompositionPreview.SetElementChildVisual(ProcessingSurfaceHost, null);
+        _processingStroke?.Dispose();
+        _processingStroke = null;
+
+        var compositor = ElementCompositionPreview
+            .GetElementVisual(ProcessingSurfaceHost).Compositor;
+
+        float w = (float)ProcessingSurfaceHost.ActualWidth;
+        float h = (float)ProcessingSurfaceHost.ActualHeight;
+        if (w == 0f || h == 0f) { w = 272f; h = 78f; }
+        var size = new Vector2(w, h);
+
+        _processingStroke = variant == ProcessingVariant.Recording
+            ? HudComposition.CreateRecordingStroke(compositor, size, config)
+            : HudComposition.CreateProcessingStroke(compositor, size, config);
+
+        ElementCompositionPreview.SetElementChildVisual(
+            ProcessingSurfaceHost, _processingStroke.Visual);
+
+        bool isDark = ChronoRoot.ActualTheme == ElementTheme.Dark;
+        _processingStroke.ApplyVariant(variant, isDark);
+    }
+
     private void HookRendering()
     {
         if (_renderingHooked) return;
@@ -482,10 +526,14 @@ public sealed partial class HudChrono : UserControl
     //                     ArcEase (0.5, 0) → (0.2, 1) for a sharp ease-out.
     // SwipeElementCount   character count (6 digits + 2 dots) — threshold
     //                     per element = index / SwipeElementCount.
-    private const float SwipeCycleSeconds = 1.6f;
-    private static readonly Vector2 SwipeEaseP1 = new(0.5f, 0f);
-    private static readonly Vector2 SwipeEaseP2 = new(0.2f, 1f);
-    private const int   SwipeElementCount = 8;
+    // `public static` (not const / readonly) so HudPlayground can tune the
+    // swipe cadence and easing live. SwipeElementCount stays `const` —
+    // structural (mirror of the 8 TextBlocks declared in XAML), not a
+    // tunable.
+    public  static float   SwipeCycleSeconds = 1.6f;
+    public  static Vector2 SwipeEaseP1       = new(0.5f, 0f);
+    public  static Vector2 SwipeEaseP2       = new(0.2f, 1f);
+    private const  int     SwipeElementCount = 8;
 
     private readonly System.Diagnostics.Stopwatch _swipeStopwatch = new();
     private TextBlock[]? _swipeElements;
