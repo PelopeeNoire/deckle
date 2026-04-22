@@ -1,0 +1,10 @@
+{
+  "$comment": "VS / VSCodium launch profile. Not strictly required — the playground runs fine by launching the built .exe directly — but lets Louis F5 into it from the IDE when Build+Debug is the right workflow.",
+  "profiles": {
+    "HudPlayground": {
+      "commandName": "Project",
+      "nativeDebugging": false,
+      "workingDirectory": "$(OutputPath)"
+    }
+  }
+}

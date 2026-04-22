@@ -1,0 +1,87 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    HudPlayground — dev tool, not shipped.
+
+    Standalone WinUI 3 WinExe that hosts the four HudChrono states side
+    by side with sliders for every tunable. Sources are LINKED from
+    ..\..\src\WhispUI\ rather than copied: edits to HudChrono /
+    HudComposition / HudState propagate to the playground on next build
+    without a sync step. The WhispUI main app stays untouched by the
+    playground — there is no project reference, no shared output, and
+    the playground's stub SettingsService sits under Stubs\ so it only
+    compiles into this project.
+
+    Build (from repo root, PowerShell):
+      & "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe" `
+          dev\HudPlayground\HudPlayground.csproj `
+          -t:Restore,Build -p:Configuration=Release -p:Platform=x64
+
+    Run:
+      dev\HudPlayground\bin\x64\Release\net10.0-windows10.0.19041.0\HudPlayground.exe
+
+    dotnet build is still broken on WinUI 3 (MSB3073 XamlCompiler.exe);
+    see root CLAUDE.md. Use MSBuild from VS 2026 as above.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>HudPlayground</RootNamespace>
+    <AssemblyName>HudPlayground</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Platforms>x64</Platforms>
+    <!-- HudChrono.xaml.cs uses LibraryImport-related attribute paths
+         inherited from WhispUI conventions; keep this on for parity. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Same .pri fix as WhispUI — unpackaged + WinAppSDK 1.8 needs
+         MsixTooling to land the compiled XAML .xbf in bin\. Cf.
+         microsoft/WindowsAppSDK#3451. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Versions pinned to match WhispUI.csproj so linked sources compile
+         against the exact same Windows App SDK surface. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <!-- HudComposition uses Win2D (CanvasDevice, CanvasBitmap, angular
+         gradient ring surface). Same version as WhispUI. -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Linked sources from src/WhispUI. Edits in WhispUI propagate here
+         on next build. Namespaces are preserved as-is (WhispUI.Controls,
+         WhispUI.Composition) — the stub SettingsService below lives
+         under WhispUI.Settings so HudChrono's fully-qualified access
+         still resolves.
+         DependentUpon on the .xaml.cs is required to pair it with its
+         .xaml for the XAML compiler (InitializeComponent generation). -->
+    <Page Include="..\..\src\WhispUI\Controls\HudChrono.xaml"
+          Link="Controls\HudChrono.xaml" />
+    <Compile Include="..\..\src\WhispUI\Controls\HudChrono.xaml.cs"
+             Link="Controls\HudChrono.xaml.cs"
+             DependentUpon="HudChrono.xaml" />
+    <Compile Include="..\..\src\WhispUI\Controls\HudState.cs"
+             Link="Controls\HudState.cs" />
+    <Compile Include="..\..\src\WhispUI\Composition\HudComposition.cs"
+             Link="Composition\HudComposition.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bitcount Single font asset — linked rather than copied so Louis
+         can't accidentally fork the typeface file. HudChrono.xaml
+         resolves it via `ms-appx:///Assets/Fonts/BitcountSingle.ttf`,
+         which maps to the project's output root Assets\Fonts\, so the
+         Link path must keep that subfolder layout. -->
+    <Content Include="..\..\src\WhispUI\Assets\Fonts\BitcountSingle.ttf"
+             Link="Assets\Fonts\BitcountSingle.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

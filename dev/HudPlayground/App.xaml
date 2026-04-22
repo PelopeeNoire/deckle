@@ -1,0 +1,18 @@
+<Application
+    x:Class="HudPlayground.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- XamlControlsResources makes every WinUI 3 control style
+                     available (Slider, Expander, ScrollViewer, NumberBox...).
+                     Theme-resource brushes like LayerFillColorDefaultBrush,
+                     CardStrokeColorDefaultBrush and TextFillColor* referenced
+                     by the linked HudChrono.xaml resolve through this
+                     dictionary. -->
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
