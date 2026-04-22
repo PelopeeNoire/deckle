@@ -429,9 +429,14 @@ internal static class HudComposition
     // Struct defaults on ConicArcStrokeConfig ARE the whole config.
     // Tweak the defaults to iterate on the visual.
     internal static ProcessingStroke CreateProcessingStroke(
-        Compositor compositor, Vector2 hostSize)
+        Compositor compositor, Vector2 hostSize,
+        ConicArcStrokeConfig? configOverride = null)
     {
-        return CreateConicArcStroke(compositor, hostSize, new ConicArcStrokeConfig());
+        // Optional override used by HudChrono.RebuildStroke (HudPlayground
+        // slider wiring). Null keeps the shipping defaults.
+        return CreateConicArcStroke(
+            compositor, hostSize,
+            configOverride ?? new ConicArcStrokeConfig());
     }
 
     // Recording stroke — the same double-comet pipeline as the processing
@@ -474,7 +479,8 @@ internal static class HudComposition
     // HuePeriodSeconds to let the hue drift slowly under the frozen arc
     // lobes — requires RecordingSaturation > 0 to be visible.
     internal static ProcessingStroke CreateRecordingStroke(
-        Compositor compositor, Vector2 hostSize)
+        Compositor compositor, Vector2 hostSize,
+        ConicArcStrokeConfig? configOverride = null)
     {
         // `with` copies the caller's (default) config and overrides the
         // generic paint-time slots consumed by CreateConicArcStroke with
@@ -482,7 +488,11 @@ internal static class HudComposition
         // their defaults — the Recording* runtime fields come through
         // unchanged and are read by ApplyVariant and by the initialVariant
         // seed path below.
-        var defaults = new ConicArcStrokeConfig();
+        //
+        // HudPlayground passes a pre-customized config via configOverride
+        // so its Recording* sliders land on the live struct before the
+        // `with` copy bakes them into the generic slots.
+        var defaults = configOverride ?? new ConicArcStrokeConfig();
         bool hueRotates = defaults.RecordingHuePeriodSeconds > 0;
         var cfg = defaults with
         {
