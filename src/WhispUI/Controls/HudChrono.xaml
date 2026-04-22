@@ -12,6 +12,26 @@
          hidden for Recording, visible for Charging/Transcribing/Rewriting.
          Rounded silhouette produced by this Border alone. -->
     <Grid x:Name="ChronoRoot">
+        <Grid.Resources>
+            <!-- Shared style for the 8 clock TextBlocks. A shared style is
+                 necessary because the 8 characters are now separate UIElements
+                 (not Runs inside a single TextBlock) — each needs its own
+                 Composition.Visual for the swipe reveal animation. The Runs
+                 shared their TextBlock's font metrics through inheritance;
+                 the 8 TextBlocks get them here via x:Key to keep them aligned
+                 and avoid prop repetition. Foreground is a ThemeResource
+                 default — code-behind overrides per TextBlock during the
+                 swipe (disabled → primary / critical). -->
+            <Style x:Key="ChronoDigitStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single" />
+                <Setter Property="FontWeight" Value="ExtraLight" />
+                <Setter Property="FontSize" Value="48" />
+                <Setter Property="TextLineBounds" Value="Tight" />
+                <Setter Property="CharacterSpacing" Value="-600" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+            </Style>
+        </Grid.Resources>
+
         <!-- Opaque card fill only — no XAML stroke. The system frame
              stroke is drawn by DWM at the HWND level (DWMWA_BORDER_COLOR =
              DWMWA_COLOR_DEFAULT in HudWindow.xaml.cs) and is always on for
@@ -28,23 +48,24 @@
         <Border x:Name="ProcessingSurfaceHost"
                 IsHitTestVisible="False" />
 
-        <TextBlock x:Name="ClockText"
-                   FontFamily="ms-appx:///Assets/Fonts/BitcountSingle.ttf#Bitcount Single"
-                   FontWeight="ExtraLight"
-                   FontSize="48"
-                   TextLineBounds="Tight"
-                   CharacterSpacing="-325"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   Foreground="{ThemeResource TextFillColorPrimaryBrush}">
-            <Run x:Name="Min1" Text="0" />
-            <Run x:Name="Min2" Text="0" />
-            <Run Text="." />
-            <Run x:Name="Sec1" Text="0" />
-            <Run x:Name="Sec2" Text="0" />
-            <Run Text="." />
-            <Run x:Name="Cs1"  Text="0" />
-            <Run x:Name="Cs2"  Text="0" />
-        </TextBlock>
+        <!-- 8 individual TextBlocks (6 digits + 2 dots) inside a StackPanel.
+             Per-element TextBlock so each can be targeted by the swipe reveal
+             animation via ElementCompositionPreview.GetElementVisual (Runs
+             are Inlines, not UIElements, and share their parent TextBlock's
+             Composition.Visual). ClockText is preserved as the panel name
+             so HudChrono.xaml.cs references still resolve. -->
+        <StackPanel x:Name="ClockText"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+            <TextBlock x:Name="Min1" Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="Min2" Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="DotA" Text="." Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="Sec1" Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="Sec2" Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="DotB" Text="." Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="Cs1"  Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <TextBlock x:Name="Cs2"  Text="0" Style="{StaticResource ChronoDigitStyle}" />
+        </StackPanel>
     </Grid>
 </UserControl>

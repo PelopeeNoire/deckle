@@ -265,6 +265,16 @@ internal static class HudComposition
         public float  RecordingExposureDark        { get; init; } = 1.5f;
         public float  RecordingExposureLight       { get; init; } = -1.5f;
         public double RecordingBlendSeconds        { get; init; } = 1;
+
+        // Recording hue rotation — independent from arc rotation (which is
+        // always frozen in Recording). 0 = hue frozen on HuePhaseTurns
+        // (uniform grey at RecordingSaturation = 0, static tint at > 0).
+        // > 0 = slow hue drift across the silhouette; pair with
+        // RecordingSaturation Dark/Light > 0 for the chromatic effect to be
+        // visible — at Saturation = 0 strict, RGB = (V, V, V) irrespective
+        // of hue, so the hue rotates mathematically but reads identical.
+        // Typical drift period for a calm "chatoiement" effect: 20–30 s.
+        public double RecordingHuePeriodSeconds    { get; init; } = 0;
     }
 
     // Live handle to a processing stroke created by CreateProcessingStroke.
@@ -459,7 +469,10 @@ internal static class HudComposition
     // 12 o'clock, mirror 0.75 + 0.5 = 1.25 ≡ 0.25·τ = 90° math =
     // 6 o'clock. ✓
     //
-    // HuePhase doesn't matter (Saturation 0 → uniform grey), kept at 0.
+    // HuePhase doesn't matter at RecordingSaturation = 0 (uniform grey),
+    // kept at 0. RecordingHuePeriodSeconds > 0 overrides the generic
+    // HuePeriodSeconds to let the hue drift slowly under the frozen arc
+    // lobes — requires RecordingSaturation > 0 to be visible.
     internal static ProcessingStroke CreateRecordingStroke(
         Compositor compositor, Vector2 hostSize)
     {
@@ -470,6 +483,7 @@ internal static class HudComposition
         // unchanged and are read by ApplyVariant and by the initialVariant
         // seed path below.
         var defaults = new ConicArcStrokeConfig();
+        bool hueRotates = defaults.RecordingHuePeriodSeconds > 0;
         var cfg = defaults with
         {
             ConicSpanTurns     = defaults.RecordingConicSpanTurns,
@@ -478,12 +492,19 @@ internal static class HudComposition
             ConicFadeCurve     = defaults.RecordingConicFadeCurve,
             ArcMirror          = defaults.RecordingArcMirror,
             ArcPhaseTurns      = defaults.RecordingArcPhaseTurns,
+            // Only override the generic hue period when Recording wants
+            // live hue motion. Otherwise the value is ignored anyway
+            // (freezeHueRotation = true below).
+            HuePeriodSeconds   = hueRotates
+                ? defaults.RecordingHuePeriodSeconds
+                : defaults.HuePeriodSeconds,
         };
         return CreateConicArcStroke(
             compositor, hostSize, cfg,
-            freezeRotation: true,
-            initialOpacity:  0f,
-            initialVariant:  ProcessingVariant.Recording);
+            freezeHueRotation: !hueRotates,
+            freezeArcRotation: true,
+            initialOpacity:    0f,
+            initialVariant:    ProcessingVariant.Recording);
     }
 
     // Implementation of the double-comet pipeline driven by
@@ -558,11 +579,14 @@ internal static class HudComposition
     // around the source centre instead would orbit the oversized square
     // around a point well outside the visual — the "half the stroke
     // missing at most phases" symptom we hit initially.
-    // `freezeRotation = true` pins the conic and arc surfaces at their
-    // HuePhaseTurns / ArcPhaseTurns offsets via a static TransformMatrix
-    // (no KeyFrameAnimation, no Composition-driven angular motion). Used
-    // by Recording, where the two lobes must stay at visual 12 and 6
-    // o'clock while Opacity is the only live channel.
+    // `freezeHueRotation` / `freezeArcRotation` pin the conic and arc
+    // surfaces at their HuePhaseTurns / ArcPhaseTurns offsets via a static
+    // TransformMatrix (no KeyFrameAnimation, no Composition-driven angular
+    // motion). The two flags are independent so a variant can spin one
+    // brush while freezing the other. Recording uses
+    // freezeArcRotation=true (lobes parked at visual 12/6 o'clock) while
+    // freezeHueRotation toggles on RecordingHuePeriodSeconds: 0 = frozen
+    // grey, >0 = slow hue drift across the silhouette.
     //
     // `initialOpacity ≥ 0` overrides cfg.TranscribingOpacity for the
     // SpriteVisual's seed opacity. Sentinel value -1 falls back to the
@@ -580,7 +604,8 @@ internal static class HudComposition
     // it only ever follows a prior Transcribing via ApplyVariant blend.
     private static ProcessingStroke CreateConicArcStroke(
         Compositor compositor, Vector2 hostSize, ConicArcStrokeConfig cfg,
-        bool              freezeRotation = false,
+        bool              freezeHueRotation = false,
+        bool              freezeArcRotation = false,
         float             initialOpacity = -1f,
         ProcessingVariant initialVariant = ProcessingVariant.Transcribing)
     {
@@ -779,26 +804,17 @@ internal static class HudComposition
         // pixel space.
         var visualCentre = new Vector2(innerSize.X / 2f, innerSize.Y / 2f);
 
-        if (freezeRotation)
+        // Hue rotation — spin or freeze independently of the arc rotation.
+        // Static TransformMatrix pins the brush at its HuePhaseTurns offset
+        // with NO KeyFrameAnimation: same T(-c) · R(θ) · T(+c) composite
+        // that StartRotation builds at t=0, baked into a one-shot matrix.
+        // System.Numerics.Matrix3x2 uses row-vector convention, matching
+        // Composition's expression-side maths.
+        if (freezeHueRotation)
         {
-            // Static TransformMatrix — pin each brush at its phase offset
-            // with NO KeyFrameAnimation. Same T(-c) · R(θ) · T(+c)
-            // composite that StartRotation builds at t=0, just baked into
-            // a one-shot matrix. System.Numerics.Matrix3x2 uses row-vector
-            // convention, matching Composition's expression-side maths.
-            //
-            // HuePhase is cosmetic on a greyscale variant (Saturation 0),
-            // but we still honour it for consistency with the animated
-            // path — the two factories should diverge only in motion, not
-            // in layout.
             conicBrush.TransformMatrix =
                 Matrix3x2.CreateTranslation(-visualCentre) *
                 Matrix3x2.CreateRotation(MathF.Tau * cfg.HuePhaseTurns) *
-                Matrix3x2.CreateTranslation( visualCentre);
-
-            arcMaskBrush.TransformMatrix =
-                Matrix3x2.CreateTranslation(-visualCentre) *
-                Matrix3x2.CreateRotation(MathF.Tau * cfg.ArcPhaseTurns) *
                 Matrix3x2.CreateTranslation( visualCentre);
         }
         else
@@ -811,7 +827,21 @@ internal static class HudComposition
                 cfg.HueEaseP1X, cfg.HueEaseP1Y,
                 cfg.HueEaseP2X, cfg.HueEaseP2Y,
                 cfg.HueVelocityFloor);
+        }
 
+        // Arc rotation — spin or freeze independently of the hue rotation.
+        // Recording always freezes the arc (lobes parked at visual 12/6
+        // o'clock via RecordingArcPhaseTurns); Transcribing / Rewriting
+        // always spin.
+        if (freezeArcRotation)
+        {
+            arcMaskBrush.TransformMatrix =
+                Matrix3x2.CreateTranslation(-visualCentre) *
+                Matrix3x2.CreateRotation(MathF.Tau * cfg.ArcPhaseTurns) *
+                Matrix3x2.CreateTranslation( visualCentre);
+        }
+        else
+        {
             StartRotation(
                 compositor, arcMaskBrush, visualCentre,
                 cfg.ArcPeriodSeconds,

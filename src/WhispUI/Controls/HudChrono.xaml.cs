@@ -2,7 +2,6 @@ using System.Numerics;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using WhispUI.Composition;
@@ -39,6 +38,8 @@ public sealed partial class HudChrono : UserControl
     // follow the live theme. Re-resolved on ActualThemeChanged (a Foreground
     // assigned in code does not track ThemeResource bindings).
     private Brush _digitAccentBrush = null!;
+    private Brush _disabledBrush    = null!;
+    private Brush _primaryBrush     = null!;
     private bool _tMin1, _tMin2, _tSec1, _tSec2, _tCs1, _tCs2;
 
     private HudState _state = HudState.Hidden;
@@ -48,9 +49,14 @@ public sealed partial class HudChrono : UserControl
         InitializeComponent();
 
         _digitAccentBrush = ResolveCriticalBrush();
+        _disabledBrush    = ResolveDisabledBrush();
+        _primaryBrush     = ResolvePrimaryBrush();
+
         ChronoRoot.ActualThemeChanged += (_, _) =>
         {
             _digitAccentBrush = ResolveCriticalBrush();
+            _disabledBrush    = ResolveDisabledBrush();
+            _primaryBrush     = ResolvePrimaryBrush();
             if (_tMin1) Min1.Foreground = _digitAccentBrush;
             if (_tMin2) Min2.Foreground = _digitAccentBrush;
             if (_tSec1) Sec1.Foreground = _digitAccentBrush;
@@ -82,6 +88,14 @@ public sealed partial class HudChrono : UserControl
         (Application.Current.Resources["TextFillColorTertiaryBrush"] as Brush)
         ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
 
+    private static Brush ResolveDisabledBrush() =>
+        (Application.Current.Resources["TextFillColorDisabledBrush"] as Brush)
+        ?? new SolidColorBrush(Microsoft.UI.Colors.DarkGray);
+
+    private static Brush ResolvePrimaryBrush() =>
+        (Application.Current.Resources["TextFillColorPrimaryBrush"] as Brush)
+        ?? new SolidColorBrush(Microsoft.UI.Colors.Black);
+
     // Single state-driven entry point. Called by HudWindow.SetState.
     internal void ApplyState(HudState next)
     {
@@ -111,17 +125,20 @@ public sealed partial class HudChrono : UserControl
     {
         _stopwatch.Reset();
         UnhookRendering();
+        StopSwipe();
 
         _lastMin = _lastSec = _lastCs = -1;
         _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
         Min1.Text = Min2.Text = "0";
         Sec1.Text = Sec2.Text = "0";
         Cs1.Text  = Cs2.Text  = "0";
+        DotA.Text = DotB.Text = ".";
 
         var neutral = ResolveNeutralBrush();
         Min1.Foreground = neutral; Min2.Foreground = neutral;
         Sec1.Foreground = neutral; Sec2.Foreground = neutral;
         Cs1.Foreground  = neutral; Cs2.Foreground  = neutral;
+        DotA.Foreground = neutral; DotB.Foreground = neutral;
 
         DetachProcessingVisual();
     }
@@ -129,6 +146,7 @@ public sealed partial class HudChrono : UserControl
     private void ApplyRecording()
     {
         _stopwatch.Restart();
+        StopSwipe();
 
         AttachProcessingVisual(ProcessingVariant.Recording);
 
@@ -137,16 +155,12 @@ public sealed partial class HudChrono : UserControl
         Min1.Text = Min2.Text = "0";
         Sec1.Text = Sec2.Text = "0";
         Cs1.Text  = Cs2.Text  = "0";
+        DotA.Text = DotB.Text = ".";
 
-        // Clear local Foreground so each Run inherits ClockText.Foreground
-        // (theme-resource-bound) until UpdateClock relocks the changed
-        // digits to the accent.
-        Min1.ClearValue(TextElement.ForegroundProperty);
-        Min2.ClearValue(TextElement.ForegroundProperty);
-        Sec1.ClearValue(TextElement.ForegroundProperty);
-        Sec2.ClearValue(TextElement.ForegroundProperty);
-        Cs1.ClearValue(TextElement.ForegroundProperty);
-        Cs2.ClearValue(TextElement.ForegroundProperty);
+        // Clear local Foreground so each TextBlock inherits its Style
+        // default (TextFillColorPrimaryBrush, theme-resource-bound) until
+        // UpdateClock relocks the changed digits to the accent.
+        ClearDigitForegrounds();
 
         UpdateClock();
         HookRendering();
@@ -156,51 +170,70 @@ public sealed partial class HudChrono : UserControl
     {
         // Freeze the clock at its last value.
         _stopwatch.Stop();
-        UnhookRendering();
 
         // Order matters: UpdateClock first to write the final elapsed value
         // (which may relock the last-changed digit to the red accent because
         // the stopwatch advanced between the last vsync tick and the Stop),
-        // then ResetDigitAccent to clear that accent. Reversed, we'd reset
-        // first and UpdateClock would immediately repaint the freshly-changed
-        // centisecond digit in red — exactly the "stuck red digit" symptom.
+        // then ClearDigitForegrounds so each TextBlock's Foreground is free
+        // for the swipe to paint disabled / primary / critical. Reversed,
+        // UpdateClock would immediately repaint the freshly-changed
+        // centisecond digit in red and the swipe would inherit that wrong
+        // state on the first tick. We KEEP the _tXxx flags so the swipe
+        // can restore the critical brush on digits that were modified
+        // during Recording.
         UpdateClock();
-        ResetDigitAccent();
+        ClearDigitForegrounds();
 
         AttachProcessingVisual(ProcessingVariant.Transcribing);
+        StartSwipe();
+        // HookRendering drives OnRendering → UpdateSwipe (stopwatch is
+        // stopped so UpdateClock is a no-op on the digit values).
+        HookRendering();
     }
 
     private void ApplyRewriting()
     {
         _stopwatch.Stop();
-        UnhookRendering();
 
         UpdateClock();
-        ResetDigitAccent();
+        ClearDigitForegrounds();
 
         AttachProcessingVisual(ProcessingVariant.Rewriting);
+        StartSwipe();
+        HookRendering();
     }
 
     // Drops the per-digit "ever-changed" accent flags and clears the local
-    // Foreground on each Run so they fall back to ClockText.Foreground
-    // (TextFillColorPrimaryBrush, theme-tracked). Called when the chrono
-    // freezes (Transcribing/Rewriting) so the red accent accumulated during
-    // Recording disappears on stop.
+    // Foreground on each TextBlock. Called on full resets (ApplyCharging is
+    // implicit via StopSwipe + direct assignment). Transcribing/Rewriting
+    // preserve the flags so the swipe reveal can restore the critical brush
+    // on modified digits — they only call ClearDigitForegrounds.
     private void ResetDigitAccent()
     {
         _tMin1 = _tMin2 = _tSec1 = _tSec2 = _tCs1 = _tCs2 = false;
-        Min1.ClearValue(TextElement.ForegroundProperty);
-        Min2.ClearValue(TextElement.ForegroundProperty);
-        Sec1.ClearValue(TextElement.ForegroundProperty);
-        Sec2.ClearValue(TextElement.ForegroundProperty);
-        Cs1.ClearValue(TextElement.ForegroundProperty);
-        Cs2.ClearValue(TextElement.ForegroundProperty);
+        ClearDigitForegrounds();
+    }
+
+    // Clears the local Foreground on all 8 TextBlocks. Flags preserved.
+    // Each TextBlock falls back to its Style default
+    // (TextFillColorPrimaryBrush) until the swipe repaints it.
+    private void ClearDigitForegrounds()
+    {
+        Min1.ClearValue(TextBlock.ForegroundProperty);
+        Min2.ClearValue(TextBlock.ForegroundProperty);
+        DotA.ClearValue(TextBlock.ForegroundProperty);
+        Sec1.ClearValue(TextBlock.ForegroundProperty);
+        Sec2.ClearValue(TextBlock.ForegroundProperty);
+        DotB.ClearValue(TextBlock.ForegroundProperty);
+        Cs1.ClearValue(TextBlock.ForegroundProperty);
+        Cs2.ClearValue(TextBlock.ForegroundProperty);
     }
 
     private void ApplyHidden()
     {
         _stopwatch.Stop();
         UnhookRendering();
+        StopSwipe();
 
         DetachProcessingVisual();
     }
@@ -375,7 +408,14 @@ public sealed partial class HudChrono : UserControl
         _renderingHooked = false;
     }
 
-    private void OnRendering(object? sender, object e) => UpdateClock();
+    // Single vsync dispatcher for both the clock ticker (Recording) and the
+    // swipe reveal (Transcribing / Rewriting). UpdateClock early-outs via
+    // the stopwatch state when not Recording, so calling both is cheap.
+    private void OnRendering(object? sender, object e)
+    {
+        UpdateClock();
+        UpdateSwipe();
+    }
 
     private void UpdateClock()
     {
@@ -409,5 +449,152 @@ public sealed partial class HudChrono : UserControl
             if (Cs2.Text != d2.ToString()) { Cs2.Text = d2.ToString(); if (!_tCs2) { _tCs2 = true; Cs2.Foreground = _digitAccentBrush; } }
             _lastCs = cs;
         }
+    }
+
+    // ── Swipe reveal animation ───────────────────────────────────────────
+    //
+    // During Transcribing and Rewriting, a "one-hot" wave travels left→right
+    // across the 8 characters (6 digits + 2 dots) in a loop. Exactly one
+    // element is lit at a time: the wave head. Every other element is
+    // TextFillColorDisabledBrush. When the progress crosses i/8, the head
+    // jumps from element i-1 to element i — i-1 drops back to disabled, i
+    // lights up in its target colour:
+    //   - Digits that were modified during Recording (_tXxx == true) →
+    //     SystemFillColorCriticalBrush (the "critical" red accent).
+    //   - Other digits and both dots → TextFillColorPrimaryBrush.
+    //
+    // The head-jumps are hard transitions on purpose: Louis layers a per-
+    // element "pop" scale animation on top separately, which absorbs the
+    // brush discontinuity.
+    //
+    // Why managed driving instead of CompositionPropertySet + animation:
+    // a scalar animated via StartAnimation on a PropertySet lives in the
+    // DWM compositor process, and TryGetScalar only returns the last value
+    // *inserted* in-proc, not the animated value. Round-tripping through
+    // an ExpressionAnimation would work but is overkill — at 8 elements we
+    // just evaluate the cubic-bezier ease in managed code each vsync.
+
+    // Swipe reveal animation — tunables.
+    // SwipeCycleSeconds   full loop duration (seconds).
+    //                     Lower = faster wave, higher = contemplative.
+    // SwipeEaseP1/P2      cubic-bezier control points for the progress
+    //                     curve. Defaults mirror HudComposition's
+    //                     ArcEase (0.5, 0) → (0.2, 1) for a sharp ease-out.
+    // SwipeElementCount   character count (6 digits + 2 dots) — threshold
+    //                     per element = index / SwipeElementCount.
+    private const float SwipeCycleSeconds = 1.6f;
+    private static readonly Vector2 SwipeEaseP1 = new(0.5f, 0f);
+    private static readonly Vector2 SwipeEaseP2 = new(0.2f, 1f);
+    private const int   SwipeElementCount = 8;
+
+    private readonly System.Diagnostics.Stopwatch _swipeStopwatch = new();
+    private TextBlock[]? _swipeElements;
+    private bool         _swipeRunning;
+
+    private void EnsureSwipeInfra()
+    {
+        _swipeElements ??= new[] { Min1, Min2, DotA, Sec1, Sec2, DotB, Cs1, Cs2 };
+    }
+
+    private void StartSwipe()
+    {
+        EnsureSwipeInfra();
+        if (_swipeRunning) return;
+        _swipeStopwatch.Restart();
+        _swipeRunning = true;
+    }
+
+    private void StopSwipe()
+    {
+        if (!_swipeRunning) return;
+        _swipeStopwatch.Stop();
+        _swipeRunning = false;
+        // Drop per-element overrides so the next state paints from a clean
+        // Style default. Apply* methods that follow (ApplyRecording /
+        // ApplyHidden / ApplyCharging) take over from there.
+        ClearDigitForegrounds();
+    }
+
+    private void UpdateSwipe()
+    {
+        if (!_swipeRunning || _swipeElements == null) return;
+
+        // Fraction of the cycle that has elapsed, wrapped into [0, 1). The
+        // modulo gives us the looping behaviour for free — no keyframe
+        // roll-over to worry about.
+        double elapsed = _swipeStopwatch.Elapsed.TotalSeconds;
+        float t = (float)((elapsed / SwipeCycleSeconds) % 1.0);
+        float progress = CubicBezierEase(t, SwipeEaseP1, SwipeEaseP2);
+
+        // One-hot head position. progress is eased so the head lingers near
+        // the extremes (cubic-bezier ease-out) — that's the perceived
+        // "accelerate and slow down" cadence. Clamp defends against the
+        // rare case progress == 1 exactly (modulo in the caller hands us
+        // [0, 1)) but CubicBezierEase clamps t to [0, 1] so headIndex
+        // could reach SwipeElementCount.
+        int headIndex = (int)MathF.Floor(progress * SwipeElementCount);
+        if (headIndex >= SwipeElementCount) headIndex = SwipeElementCount - 1;
+        if (headIndex < 0)                  headIndex = 0;
+
+        for (int i = 0; i < _swipeElements.Length; i++)
+        {
+            Brush target;
+            if (i == headIndex)
+            {
+                // Index map: 0 Min1, 1 Min2, 2 DotA, 3 Sec1, 4 Sec2,
+                // 5 DotB, 6 Cs1, 7 Cs2. Dots (2, 5) always primary.
+                bool isChangedDigit = i switch
+                {
+                    0 => _tMin1,
+                    1 => _tMin2,
+                    3 => _tSec1,
+                    4 => _tSec2,
+                    6 => _tCs1,
+                    7 => _tCs2,
+                    _ => false,
+                };
+                target = isChangedDigit ? _digitAccentBrush : _primaryBrush;
+            }
+            else
+            {
+                target = _disabledBrush;
+            }
+
+            // Only assign when the brush actually changes — TextBlock's
+            // Foreground DP setter triggers a layout/render pass even if
+            // the value is the same reference. At 60-240 Hz × 8 elements
+            // the redundant invalidation adds up fast; this guard keeps
+            // the swipe cheap.
+            if (!ReferenceEquals(_swipeElements[i].Foreground, target))
+                _swipeElements[i].Foreground = target;
+        }
+    }
+
+    // Cubic-bezier ease with anchor points P0=(0,0), P3=(1,1) and free
+    // control points p1, p2. Given input x on [0, 1], solves Bx(u) = x via
+    // Newton-Raphson, then returns By(u). WebKit's UnitBezier formulation —
+    // the polynomial coefficients collapse to 3 fused-multiply-adds per
+    // sample, and 8 Newton iterations get us well below sub-pixel accuracy
+    // for any reasonable control-point layout.
+    private static float CubicBezierEase(float x, Vector2 p1, Vector2 p2)
+    {
+        float cx = 3f * p1.X;
+        float bx = 3f * (p2.X - p1.X) - cx;
+        float ax = 1f - cx - bx;
+        float cy = 3f * p1.Y;
+        float by = 3f * (p2.Y - p1.Y) - cy;
+        float ay = 1f - cy - by;
+
+        float u = x;
+        for (int i = 0; i < 8; i++)
+        {
+            float sampleX = ((ax * u + bx) * u + cx) * u - x;
+            if (MathF.Abs(sampleX) < 1e-4f) break;
+            float dx = (3f * ax * u + 2f * bx) * u + cx;
+            if (MathF.Abs(dx) < 1e-6f) break;
+            u -= sampleX / dx;
+        }
+        u = Math.Clamp(u, 0f, 1f);
+        return ((ay * u + by) * u + cy) * u;
     }
 }
