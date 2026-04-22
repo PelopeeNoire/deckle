@@ -497,18 +497,24 @@ public sealed partial class HudChrono : UserControl
 
     // ── Swipe reveal animation ───────────────────────────────────────────
     //
-    // During Transcribing and Rewriting, a "one-hot" wave travels left→right
-    // across the 8 characters (6 digits + 2 dots) in a loop. Exactly one
-    // element is lit at a time: the wave head. Every other element is
-    // TextFillColorDisabledBrush. When the progress crosses i/8, the head
-    // jumps from element i-1 to element i — i-1 drops back to disabled, i
-    // lights up in its target colour:
-    //   - Digits that were modified during Recording (_tXxx == true) →
-    //     SystemFillColorCriticalBrush (the "critical" red accent).
-    //   - Other digits and both dots → TextFillColorPrimaryBrush.
+    // During Transcribing and Rewriting, a wave travels left→right across
+    // the 8 characters (6 digits + 2 dots). The wave is *invisible on
+    // unchanged elements*: a digit that was not modified during the
+    // previous Recording session keeps TextFillColorPrimaryBrush the
+    // whole cycle and looks static. A digit that was modified
+    // (_tXxx == true) flashes SystemFillColorCriticalBrush *only* while
+    // the head is on it, and returns to primary as the head moves on.
+    // Both dots are always primary.
     //
-    // The head-jumps are hard transitions on purpose: Louis layers a per-
-    // element "pop" scale animation on top separately, which absorbs the
+    // Visual:  primary primary [RED] primary primary primary primary primary
+    //                           ^ head here, Sec1 was modified during Recording
+    //
+    // This is intentionally not a swipe *reveal* (no disabled → primary
+    // progression): when the chrono stops, the clock reads as it was,
+    // and only the touched digits re-announce themselves briefly.
+    //
+    // The head-jumps are hard transitions on purpose — Louis layers a
+    // per-element pop scale animation separately, which absorbs the
     // brush discontinuity.
     //
     // Why managed driving instead of CompositionPropertySet + animation:
@@ -586,27 +592,24 @@ public sealed partial class HudChrono : UserControl
 
         for (int i = 0; i < _swipeElements.Length; i++)
         {
-            Brush target;
-            if (i == headIndex)
+            // Default: primary everywhere. Only the head-on-a-changed-digit
+            // cell flips to the critical red; everything else (including
+            // the head on an unchanged digit, and dots) stays primary.
+            // Index map: 0 Min1, 1 Min2, 2 DotA, 3 Sec1, 4 Sec2,
+            //            5 DotB, 6 Cs1, 7 Cs2. Dots (2, 5) never flash.
+            bool isChangedDigit = i switch
             {
-                // Index map: 0 Min1, 1 Min2, 2 DotA, 3 Sec1, 4 Sec2,
-                // 5 DotB, 6 Cs1, 7 Cs2. Dots (2, 5) always primary.
-                bool isChangedDigit = i switch
-                {
-                    0 => _tMin1,
-                    1 => _tMin2,
-                    3 => _tSec1,
-                    4 => _tSec2,
-                    6 => _tCs1,
-                    7 => _tCs2,
-                    _ => false,
-                };
-                target = isChangedDigit ? _digitAccentBrush : _primaryBrush;
-            }
-            else
-            {
-                target = _disabledBrush;
-            }
+                0 => _tMin1,
+                1 => _tMin2,
+                3 => _tSec1,
+                4 => _tSec2,
+                6 => _tCs1,
+                7 => _tCs2,
+                _ => false,
+            };
+            Brush target = (i == headIndex && isChangedDigit)
+                ? _digitAccentBrush
+                : _primaryBrush;
 
             // Only assign when the brush actually changes — TextBlock's
             // Foreground DP setter triggers a layout/render pass even if
