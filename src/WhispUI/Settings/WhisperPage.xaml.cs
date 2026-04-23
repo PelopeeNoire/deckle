@@ -46,11 +46,11 @@ public sealed partial class WhisperPage : Page
 
     public WhisperPage()
     {
-        _log.Info(LogSource.SetWhisper, "ctor start");
+        _log.Verbose(LogSource.SetWhisper, "ctor start");
         try
         {
             InitializeComponent();
-            _log.Verbose(LogSource.SetWhisper, "InitializeComponent OK");
+            _log.Verbose(LogSource.SetWhisper, "init component complete");
 
             // WinUI 3 release bug: cannot set Minimum > defaultValue in XAML
             // without a parser crash under trimming. We set Minimum (and
@@ -66,11 +66,11 @@ public sealed partial class WhisperPage : Page
             LogprobSlider.Maximum = -0.4;
             NoSpeechSlider.Minimum = 0.05;
 
-            _log.Verbose(LogSource.SetWhisper, "Bugged slider Minimum/Maximum set in code-behind");
+            _log.Verbose(LogSource.SetWhisper, "bugged slider min/max set in code-behind");
         }
         catch (Exception ex)
         {
-            _log.Error(LogSource.SetWhisper, $"InitializeComponent THREW {ex.GetType().Name}: {ex.Message}");
+            _log.Error(LogSource.SetWhisper, $"init component threw | error={ex.GetType().Name}: {ex.Message}");
             _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
             throw;
         }
@@ -84,7 +84,7 @@ public sealed partial class WhisperPage : Page
 
         Loaded += (_, _) =>
         {
-            _log.Verbose(LogSource.SetWhisper, "Loaded fired");
+            _log.Verbose(LogSource.SetWhisper, "loaded fired");
             try
             {
                 // Hover reveal for reset buttons — one-time setup.
@@ -119,11 +119,12 @@ public sealed partial class WhisperPage : Page
                 // state, model folder re-scan).
                 ViewModel.PropertyChanged += OnViewModelPropertyChanged;
 
-                _log.Success(LogSource.SetWhisper, "Loaded complete — page ready");
+                _log.Success(LogSource.SetWhisper, "Whisper page ready");
+                _log.Verbose(LogSource.SetWhisper, "loaded complete | state=page-ready");
             }
             catch (Exception ex)
             {
-                _log.Error(LogSource.SetWhisper, $"Loaded THREW {ex.GetType().Name}: {ex.Message}");
+                _log.Error(LogSource.SetWhisper, $"loaded threw | error={ex.GetType().Name}: {ex.Message}");
                 _log.Error(LogSource.SetWhisper, ex.StackTrace ?? "(no stack)");
             }
         };
@@ -501,7 +502,7 @@ public sealed partial class WhisperPage : Page
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
 
-        _log.Info(LogSource.SetWhisper, "Reset ALL to defaults");
+        _log.Info(LogSource.SetWhisper, "Reset all Whisper settings to defaults");
 
         var s = SettingsService.Instance.Current;
         s.Transcription = new TranscriptionSettings();
