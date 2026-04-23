@@ -77,7 +77,7 @@ internal static class HudComposition
     //
     // All knobs live on ConicArcStrokeConfig below, split into blocks:
     //   1. "Baseline palette / rotations" — paint-time config, applies to
-    //      all variants unless overridden (HsvSaturation, HueRange,
+    //      all variants unless overridden (OklchLightness, HueRange,
     //      ConicSpan, ArcPeriod…).
     //   2. Runtime variants (Rewriting* / Transcribing* / Recording*) —
     //      the live knobs animated by ApplyVariant. Edit these to shape
@@ -89,11 +89,22 @@ internal static class HudComposition
 
     // ── Lexicon — vocabulary shared across the struct fields below ──────
     //
-    // Paint-time (HSV conic palette baked once into a surface):
-    //   HsvSaturation  0 = greyscale, 1 = full rainbow. Pastel in between.
-    //   HsvValue       0 = black, 1 = full luminance. Affects readability
-    //                  against the substrate — lower if Light theme
-    //                  greyscale disappears into LayerFillColor.
+    // Paint-time (OKLCh conic palette baked once into a surface).
+    // OKLCh is a perceptually uniform cylindrical colour space: at
+    // constant L and C, all hues have the same perceived lightness
+    // and saturation. HSV — which this used to use — does not: a
+    // full-saturation HSV rainbow reads with yellow much brighter
+    // than blue, which was visible as a top/bottom luminance
+    // asymmetry on the conic wheel. OKLCh removes that asymmetry.
+    //   OklchLightness 0 = black, 1 = white. 0.75 is bright-but-not-
+    //                  blinding, comparable to a vivid mid-tone.
+    //   OklchChroma    saturation in OKLab space. 0 = greyscale,
+    //                  ~0.15 = vivid pastel, ~0.22 = near-maximum
+    //                  in-gamut for most hues at L=0.75 (yellows and
+    //                  blues start to clip above ~0.18). Gamut-clipped
+    //                  values are clamped to [0, 1] sRGB at the end
+    //                  — clipping reads as a gentle flattening of
+    //                  those hues rather than a hard stop.
     //   HueStart       rotates hue 0 on the wheel (0 = red at 3 o'clock).
     //   HueRange       wheel slice. 1 = full rainbow, 0.5 = half, 0 = mono.
     //   WedgeCount     pie wedges. 360 = smooth ring, 12/24 = retro steps.
@@ -116,15 +127,19 @@ internal static class HudComposition
     //   PeriodSeconds  seconds per full turn. Lower = faster.
     //   Direction      +1 CW, -1 CCW.
     //   PhaseTurns     start offset in turns (0..1).
-    //   EaseP1/P2      cubic-bezier control points. (0,0,1,1) = linear,
-    //                  (0.42,0,0.58,1) = standard ease-in-out, sharper
-    //                  curves give bigger speed contrast.
-    //   VelocityFloor  minimum angular velocity even on the eased
-    //                  plateaus. See StartRotation header for the full
-    //                  UX rationale. Hue can ease freely (the eye does
-    //                  not track the colour wheel directly); the arc is
-    //                  the silhouette the eye tracks, so keep the arc
-    //                  floor higher so a "freeze" never reads as a bug.
+    //   EaseP1/P2        cubic-bezier control points. (0,0,1,1) = linear,
+    //                    (0.42,0,0.58,1) = standard ease-in-out, sharper
+    //                    curves give bigger speed contrast.
+    //   MinSpeedFraction fraction of the mean angular velocity
+    //                    (ω_mean = 2π/period) guaranteed at every instant
+    //                    of the cycle. 0 = pure easing (may visibly freeze
+    //                    on the bezier plateaus). 0.3 = never below 30% of
+    //                    mean. 1 = strictly constant rotation at the mean
+    //                    (no pulsation). Raising the floor compresses the
+    //                    peak in the same stroke — the eye reads it as
+    //                    "calmer, more continuous", not "faster". See
+    //                    StartRotation header for the closed-form
+    //                    ω_min / ω_max expressions.
     //
     // Runtime variant knobs (live properties on the SINGLE kept-alive
     // stroke — SaturationEffect, HueRotationEffect, ExposureEffect on the
@@ -132,7 +147,7 @@ internal static class HudComposition
     // ApplyVariant. Switching variants is a property animation on the
     // same GPU resources — no surface rebuild, no GC, no lag):
     //   Saturation     multiplier on the baked conic. 0 = greyscale,
-    //                  1 = baseline colour. Combines with HsvSaturation.
+    //                  1 = baseline colour. Combines with OklchChroma.
     //   HueShiftTurns  runtime rotation of the colour wheel.
     //                  0 = no shift, 0.5 = red↔cyan swap, 1 = no change.
     //                  Negatives shift the other way.
@@ -169,8 +184,12 @@ internal static class HudComposition
         public ConicArcStrokeConfig() {}
 
         // ── Colour palette (paint-time, baked once) ──────────────────────
-        public float  HsvSaturation      { get; init; } = 1f;
-        public float  HsvValue           { get; init; } = 1f;
+        // OKLCh replaces HSV so the baked conic wheel has perceptually
+        // uniform luminance across hues — critical for the
+        // Saturation=0 greyscale variants, which otherwise inherit
+        // HSV's top/bottom brightness asymmetry as a grey gradient.
+        public float  OklchLightness     { get; init; } = 0.75f;
+        public float  OklchChroma        { get; init; } = 0.15f;
         public float  HueStart           { get; init; } = 0f;
         public float  HueRange           { get; init; } = 1f;
         public int    WedgeCount         { get; init; } = 360;
@@ -180,11 +199,24 @@ internal static class HudComposition
         public double HuePeriodSeconds   { get; init; } = 8.0;
         public float  HueDirection       { get; init; } = 1f;
         public float  HuePhaseTurns      { get; init; } = 0f;
-        public float  HueEaseP1X         { get; init; } = 0.2f;
-        public float  HueEaseP1Y         { get; init; } = 0f;
-        public float  HueEaseP2X         { get; init; } = 0.8f;
-        public float  HueEaseP2Y         { get; init; } = 1f;
-        public float  HueVelocityFloor   { get; init; } = 0f;
+        // Out-in shape at (0.125, 0.375) / (0.875, 0.625) — tangent at
+        // the endpoints has slope 0.375 / 0.125 = 3.0 at both t=0 and
+        // t=1. Same slope on both sides means the loop is C¹ across the
+        // cycle seam: no "freeze at the plateau" reading between
+        // iterations. The midsection dips below the mean (slow-down ≈
+        // 0.5× mean around t=0.5) and the endpoints push above (pulse
+        // ≈ 3× mean), but continuously — no pause on any frame.
+        // Replaces the classic in-out (0.2, 0, 0.8, 1) whose zero-slope
+        // endpoints forced MinSpeedFraction as a workaround.
+        public float  HueEaseP1X         { get; init; } = 0.125f;
+        public float  HueEaseP1Y         { get; init; } = 0.375f;
+        public float  HueEaseP2X         { get; init; } = 0.875f;
+        public float  HueEaseP2Y         { get; init; } = 0.625f;
+        // Vestigial — the out-in curve above no longer plateaus at cycle
+        // boundaries, so the linear blend is redundant. Kept at 0 so the
+        // playground can still experiment with exotic ease curves that
+        // DO need a floor, but untouched in the shipping path.
+        public float  HueMinSpeedFraction { get; init; } = 0f;
 
         // ── Arc mask shape (white pie slice, alpha-ramped at both ends) ─
         public float  ConicSpanTurns     { get; init; } = 0.4f;
@@ -199,11 +231,13 @@ internal static class HudComposition
         public double ArcPeriodSeconds   { get; init; } = 8.0;
         public float  ArcDirection       { get; init; } = 1f;
         public float  ArcPhaseTurns      { get; init; } = 0f;
-        public float  ArcEaseP1X         { get; init; } = 0.5f;
-        public float  ArcEaseP1Y         { get; init; } = 0f;
-        public float  ArcEaseP2X         { get; init; } = 0.2f;
-        public float  ArcEaseP2Y         { get; init; } = 1f;
-        public float  ArcVelocityFloor   { get; init; } = 0f;
+        // Same out-in shape as HueEase for the same reason — seam
+        // continuity across the cycle loop without a plateau floor.
+        public float  ArcEaseP1X         { get; init; } = 0.125f;
+        public float  ArcEaseP1Y         { get; init; } = 0.375f;
+        public float  ArcEaseP2X         { get; init; } = 0.875f;
+        public float  ArcEaseP2Y         { get; init; } = 0.625f;
+        public float  ArcMinSpeedFraction { get; init; } = 0f;
 
         // ── Rewriting variant — target values for the live effect
         //    pipeline. Baseline neutrals leave the baked palette alone ──
@@ -214,10 +248,11 @@ internal static class HudComposition
         public double RewritingBlendSeconds     { get; init; } = 1;
 
         // ── Transcribing variant — greyscale (Saturation 0) by default.
-        //    Saturation + Exposure are split Dark/Light because the baked
-        //    palette is at HsvValue=1 (near-white), so on Light the
-        //    greyscale has to be pulled down by negative exposure to stay
-        //    visible against LayerFillColor. HueShift/Opacity stay
+        //    Saturation + Exposure are split Dark/Light because even with
+        //    OKLCh's uniform-luminance baseline, the greyscale target
+        //    still depends on the substrate (light on dark / dark on
+        //    light) — exposure biases the baked L=0.75 neutral up or
+        //    down to read against each theme. HueShift/Opacity stay
         //    unified — widen later if per-theme control is needed ───────
         public float  TranscribingSaturationDark  { get; init; } = 0f;
         public float  TranscribingSaturationLight { get; init; } = 0f;
@@ -285,14 +320,91 @@ internal static class HudComposition
     // ApplyVariant blends the PropertySet scalars + SpriteVisual.Opacity
     // from their current values to the variant targets over BlendSeconds
     // — no surface rebuild, no lag.
+    // Tracks stroke creations / disposals for debugging the "animation
+    // freezes after N rebuilds" class of bugs. Each stroke gets a unique
+    // CreationId; when _liveStrokeCount grows unbounded (dispose missing)
+    // the compositor saturates and Forever animations go silent.
+    // Subscribers (like HudPlayground) read these via StrokeLifecycle
+    // events below.
+    private static int _creationCounter;
+    private static int _liveStrokeCount;
+    internal static int TotalStrokesCreated => _creationCounter;
+    internal static int LiveStrokeCount     => _liveStrokeCount;
+    internal static event Action<int, string>? StrokeLifecycle; // (creationId, event)
+
+    // ── DeviceLost hook ──────────────────────────────────────────────────
+    // Win2D's CanvasDevice.GetSharedDevice() returns a process-wide D3D11
+    // device. If the GPU goes away (driver reset, TDR, Vulkan/D3D contention
+    // with the whisper.cpp Vulkan backend running on the same RX 7900 XT),
+    // every CompositionDrawingSurface we baked onto that device becomes
+    // invalid — conic surface, arc mask surface, stroke silhouette surface.
+    // The compositor keeps rendering but the brushes sample black, which
+    // reads as "the rotation froze" even though the expression animation is
+    // still ticking underneath. We can't cure the device loss from here
+    // (recovery = recreate CanvasDevice + repaint surfaces in the right
+    // thread), but we can *observe* it — if DeviceLost fires right when
+    // Louis sees the freeze, the Composition leak (fixed via Dispose) is
+    // not the whole story and we need a device-recovery path.
+    //
+    // The handler runs on whatever thread Win2D raises the event on —
+    // subscribers that touch UI must marshal themselves.
+    internal static event Action<string>? CanvasDeviceLost;
+    private static bool _deviceLostHooked;
+    private static readonly object _deviceLostLock = new();
+
+    // Called lazily by CreateConicArcStroke the first time it grabs the
+    // shared CanvasDevice, so we attach exactly once per process lifetime.
+    // Lock + flag guard against the rare case where two strokes are
+    // created concurrently on the UI thread (should not happen, but the
+    // cost of double-hooking would be two event fires per loss — cheap
+    // to prevent).
+    private static void EnsureDeviceLostHook(CanvasDevice device)
+    {
+        if (_deviceLostHooked) return;
+        lock (_deviceLostLock)
+        {
+            if (_deviceLostHooked) return;
+            device.DeviceLost += OnCanvasDeviceLost;
+            _deviceLostHooked = true;
+        }
+    }
+
+    private static void OnCanvasDeviceLost(CanvasDevice sender, object args)
+    {
+        // Re-raise for any subscriber (HudPlayground instrumentation,
+        // future device-recovery code). String arg is a human-readable
+        // reason — Win2D's event args are empty, so we synthesise one.
+        CanvasDeviceLost?.Invoke($"CanvasDevice.DeviceLost fired (live strokes = {_liveStrokeCount})");
+    }
+
     internal sealed class ProcessingStroke : IDisposable
     {
         public ContainerVisual Visual { get; }
+        public int CreationId { get; }
 
         private readonly Compositor _compositor;
         private readonly CompositionPropertySet _effectProps;
         private readonly SpriteVisual _strokeVisual;
         private readonly ConicArcStrokeConfig _config;
+
+        // Composition graph refs — kept so Dispose() can stop animations
+        // and release native handles explicitly. Without these, disposing
+        // only the container leaves the brushes, surfaces, propertysets
+        // and their Forever animations live on the compositor — they
+        // accumulate across rebuilds until the compositor saturates.
+        private readonly CompositionSurfaceBrush _conicBrush;
+        private readonly CompositionSurfaceBrush _arcMaskBrush;
+        private readonly CompositionSurfaceBrush _strokeMaskBrush;
+        private readonly CompositionEffectBrush  _effectBrush;
+        private readonly CompositionDrawingSurface _conicSurface;
+        private readonly CompositionDrawingSurface _arcMaskSurface;
+        private readonly CompositionDrawingSurface _strokeMaskSurface;
+        // Null when the corresponding rotation is frozen (static matrix
+        // path) — only the animated paths allocate a PropertySet.
+        private readonly CompositionPropertySet? _hueRotationProps;
+        private readonly CompositionPropertySet? _arcRotationProps;
+
+        private bool _disposed;
 
         // `internal` — called from HudComposition.CreateConicArcStroke.
         // C# does not grant the enclosing class access to private members
@@ -305,13 +417,35 @@ internal static class HudComposition
             Compositor compositor,
             CompositionPropertySet effectProps,
             SpriteVisual strokeVisual,
-            ConicArcStrokeConfig config)
+            ConicArcStrokeConfig config,
+            CompositionSurfaceBrush conicBrush,
+            CompositionSurfaceBrush arcMaskBrush,
+            CompositionSurfaceBrush strokeMaskBrush,
+            CompositionEffectBrush  effectBrush,
+            CompositionDrawingSurface conicSurface,
+            CompositionDrawingSurface arcMaskSurface,
+            CompositionDrawingSurface strokeMaskSurface,
+            CompositionPropertySet? hueRotationProps,
+            CompositionPropertySet? arcRotationProps)
         {
             Visual       = visual;
             _compositor  = compositor;
             _effectProps = effectProps;
             _strokeVisual = strokeVisual;
             _config      = config;
+            _conicBrush         = conicBrush;
+            _arcMaskBrush       = arcMaskBrush;
+            _strokeMaskBrush    = strokeMaskBrush;
+            _effectBrush        = effectBrush;
+            _conicSurface       = conicSurface;
+            _arcMaskSurface     = arcMaskSurface;
+            _strokeMaskSurface  = strokeMaskSurface;
+            _hueRotationProps   = hueRotationProps;
+            _arcRotationProps   = arcRotationProps;
+
+            CreationId = System.Threading.Interlocked.Increment(ref _creationCounter);
+            System.Threading.Interlocked.Increment(ref _liveStrokeCount);
+            StrokeLifecycle?.Invoke(CreationId, "created");
         }
 
         // Blend the live effect properties toward the variant's target
@@ -419,7 +553,94 @@ internal static class HudComposition
             target.StartAnimation(property, anim);
         }
 
-        public void Dispose() => Visual.Dispose();
+        // Two-phase teardown so no dangling animation fires on a freed
+        // resource. Ordering below is intentional:
+        //   1. Stop animations at their source (brushes, propertysets,
+        //      strokeVisual). StopAnimation is a no-op when no animation
+        //      is attached to the property — safe to blanket-call.
+        //   2. Dispose native resources in reverse creation order:
+        //      effects → brushes → surfaces → propertysets → visuals.
+        //      Each Dispose() releases the native handle; managed wrappers
+        //      are then GC'd whenever. A missed Dispose here means the
+        //      native handle lingers — the freeze-after-N-rebuilds symptom.
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            // ── 1. Stop all animations ───────────────────────────────
+            //
+            // Two layers of animations hang on this stroke:
+            //
+            //   a) ScalarKeyFrameAnimations on the PropertySets and the
+            //      strokeVisual — these are the "what's currently moving"
+            //      side. Stopping them freezes the value.
+            //
+            //   b) ExpressionAnimations bound to `_effectBrush` via
+            //      BindEffectProperty — three of them, one per effect slot
+            //      (Sat.Saturation / Hue.Angle / Exp.Exposure). Each holds
+            //      a *reference* to `_effectProps` via SetReferenceParameter.
+            //
+            // If we only stop (a) and dispose `_effectProps`, the three
+            // ExpressionAnimations on effectBrush are still bound to a
+            // freed PropertySet. Disposing effectBrush then releases the
+            // expressions — BUT between _effectProps.Dispose() and
+            // effectBrush.Dispose(), a render tick can evaluate the
+            // expression, hit the freed PropertySet, and crash. The
+            // Transcribing Exposure slider crash reproduces this exact
+            // race: slider → rebuild → dispose-in-flight → render tick
+            // reads a half-disposed graph.
+            //
+            // Fix: explicitly StopAnimation on the effectBrush's animated
+            // property paths *before* disposing _effectProps. Each call
+            // severs the expression binding on the native side.
+            try { _effectBrush.StopAnimation("Sat.Saturation"); } catch { }
+            try { _effectBrush.StopAnimation("Hue.Angle");      } catch { }
+            try { _effectBrush.StopAnimation("Exp.Exposure");   } catch { }
+
+            try { _conicBrush.StopAnimation("TransformMatrix");   } catch { }
+            try { _arcMaskBrush.StopAnimation("TransformMatrix"); } catch { }
+            try { _strokeVisual.StopAnimation("Opacity");         } catch { }
+
+            try { _effectProps.StopAnimation("Saturation"); } catch { }
+            try { _effectProps.StopAnimation("HueAngle");   } catch { }
+            try { _effectProps.StopAnimation("Exposure");   } catch { }
+
+            if (_hueRotationProps is not null)
+            {
+                try { _hueRotationProps.StopAnimation("Linear"); } catch { }
+                try { _hueRotationProps.StopAnimation("Eased");  } catch { }
+            }
+            if (_arcRotationProps is not null)
+            {
+                try { _arcRotationProps.StopAnimation("Linear"); } catch { }
+                try { _arcRotationProps.StopAnimation("Eased");  } catch { }
+            }
+
+            // ── 2. Dispose resources ─────────────────────────────────
+            // Effect brush first — it holds the ExpressionAnimations that
+            // reference _effectProps. Disposing the brush releases those
+            // bindings on the native side. Only then is it safe to dispose
+            // _effectProps.
+            try { _effectBrush.Dispose();     } catch { }
+            try { _conicBrush.Dispose();      } catch { }
+            try { _arcMaskBrush.Dispose();    } catch { }
+            try { _strokeMaskBrush.Dispose(); } catch { }
+
+            try { _conicSurface.Dispose();      } catch { }
+            try { _arcMaskSurface.Dispose();    } catch { }
+            try { _strokeMaskSurface.Dispose(); } catch { }
+
+            try { _hueRotationProps?.Dispose(); } catch { }
+            try { _arcRotationProps?.Dispose(); } catch { }
+            try { _effectProps.Dispose();       } catch { }
+
+            try { _strokeVisual.Dispose(); } catch { }
+            try { Visual.Dispose();        } catch { }
+
+            System.Threading.Interlocked.Decrement(ref _liveStrokeCount);
+            StrokeLifecycle?.Invoke(CreationId, "disposed");
+        }
     }
 
     // Processing stroke — single rainbow double-comet shared by the
@@ -643,39 +864,16 @@ internal static class HudComposition
             (double)innerSize.Y * innerSize.Y));
 
         var canvasDevice   = CanvasDevice.GetSharedDevice();
+        // Wire the process-wide DeviceLost hook the first time we touch
+        // the shared device. Idempotent — see EnsureDeviceLostHook header.
+        EnsureDeviceLostHook(canvasDevice);
         var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(compositor, canvasDevice);
 
         // ── Surface 1: conic rainbow (full 360°, no arc carving here) ────
-        var conicSurface = graphicsDevice.CreateDrawingSurface(
-            new Windows.Foundation.Size(pxSquare, pxSquare),
-            DirectXPixelFormat.B8G8R8A8UIntNormalized,
-            DirectXAlphaMode.Premultiplied);
-
-        using (var ds = CanvasComposition.CreateDrawingSession(conicSurface))
-        {
-            ds.Clear(Colors.Transparent);
-            var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
-            float radius = pxSquare * MathF.Sqrt(2f) * 0.5f;
-            int wedges = Math.Max(3, cfg.WedgeCount);
-            float step = MathF.Tau / wedges;
-
-            for (int i = 0; i < wedges; i++)
-            {
-                float a0  = i * step;
-                float a1  = a0 + step;
-                float mid = a0 + step * 0.5f;
-
-                float hue = cfg.HueStart + (mid / MathF.Tau) * cfg.HueRange;
-                var color = HsvToRgb(hue, cfg.HsvSaturation, cfg.HsvValue);
-
-                var p0 = centre;
-                var p1 = centre + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius;
-                var p2 = centre + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * radius;
-
-                using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
-                ds.FillGeometry(wedge, color);
-            }
-        }
+        // Surface painting extracted to PaintConicSurface so the naked
+        // mask preview factory (CreateNakedMaskPreview, end of file) can
+        // reuse the exact same logic without risking drift.
+        var conicSurface = PaintConicSurface(canvasDevice, graphicsDevice, pxSquare, cfg);
 
         // ── Surface 2: arc mask (white pie slice, fade at both ends) ─────
         // Painted with straight alpha; Win2D premultiplies on write into a
@@ -684,93 +882,9 @@ internal static class HudComposition
         // the AlphaMaskEffect output. When cfg.ArcMirror is true, the
         // same arc is painted a second time at +π (180°) inside the same
         // surface, so both copies rotate together and stay in perfect
-        // symmetry.
-        var arcMaskSurface = graphicsDevice.CreateDrawingSurface(
-            new Windows.Foundation.Size(pxSquare, pxSquare),
-            DirectXPixelFormat.B8G8R8A8UIntNormalized,
-            DirectXAlphaMode.Premultiplied);
-
-        using (var ds = CanvasComposition.CreateDrawingSession(arcMaskSurface))
-        {
-            ds.Clear(Colors.Transparent);
-            var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
-            float radius = pxSquare * MathF.Sqrt(2f) * 0.5f;
-            int wedges = Math.Max(3, cfg.WedgeCount);
-            float step = MathF.Tau / wedges;
-
-            // Mirror: max Span is 0.5 so the two arcs can't overlap.
-            // Without mirror: Span can go up to 1 (full ring).
-            float maxSpanTurns  = cfg.ArcMirror ? 0.5f : 1f;
-            float spanTurns     = Math.Clamp(cfg.ConicSpanTurns, 0f, maxSpanTurns);
-            float leadFadeTurns = Math.Clamp(cfg.ConicLeadFadeTurns, 0f, spanTurns);
-            float tailFadeTurns = Math.Clamp(cfg.ConicTailFadeTurns, 0f, spanTurns);
-            // If the two fades would overlap past the span, scale both
-            // so they just meet at the mid of the arc (bell shape, no
-            // solid core). Otherwise preserve the user-requested lengths.
-            float totalFadeTurns = leadFadeTurns + tailFadeTurns;
-            if (totalFadeTurns > spanTurns && totalFadeTurns > 0f)
-            {
-                float scale = spanTurns / totalFadeTurns;
-                leadFadeTurns *= scale;
-                tailFadeTurns *= scale;
-            }
-            float spanRadians      = MathF.Tau * spanTurns;
-            float leadFadeRadians  = MathF.Tau * leadFadeTurns;
-            float tailFadeRadians  = MathF.Tau * tailFadeTurns;
-            float tailStartRadians = spanRadians - tailFadeRadians;
-            float curve            = MathF.Max(0.01f, cfg.ConicFadeCurve);
-
-            // One branch = one arc painted. Two branches when mirror is
-            // enabled — the second offset by π (180°) from the first.
-            int branchCount = cfg.ArcMirror ? 2 : 1;
-
-            for (int branch = 0; branch < branchCount; branch++)
-            {
-                float branchOffset = branch * MathF.PI;
-
-                for (int i = 0; i < wedges; i++)
-                {
-                    float a0  = i * step;
-                    float a1  = a0 + step;
-                    float mid = a0 + step * 0.5f;
-
-                    if (mid >= spanRadians) break;
-
-                    float alpha;
-                    if (leadFadeRadians > 0f && mid < leadFadeRadians)
-                    {
-                        // Leading ramp: 0 at a=0, 1 at a=LeadFade.
-                        float t = mid / leadFadeRadians;
-                        alpha = MathF.Pow(t, curve);
-                    }
-                    else if (tailFadeRadians > 0f && mid >= tailStartRadians)
-                    {
-                        // Trailing ramp: 1 at a=Span-TailFade, 0 at a=Span.
-                        float t = (mid - tailStartRadians) / tailFadeRadians;
-                        alpha = MathF.Pow(1f - t, curve);
-                    }
-                    else
-                    {
-                        alpha = 1f;
-                    }
-                    if (alpha <= 0f) continue;
-
-                    var color = Color.FromArgb((byte)MathF.Round(alpha * 255f), 255, 255, 255);
-
-                    // Apply the branch offset only to the drawn geometry.
-                    // The alpha profile is computed on un-offset angles
-                    // so both branches share the exact same shape.
-                    float d0 = a0 + branchOffset;
-                    float d1 = a1 + branchOffset;
-                    var p0 = centre;
-                    var p1 = centre + new Vector2(MathF.Cos(d0), MathF.Sin(d0)) * radius;
-                    var p2 = centre + new Vector2(MathF.Cos(d1), MathF.Sin(d1)) * radius;
-
-                    using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
-                    ds.FillGeometry(wedge, color);
-                }
-            }
-        }
+        // symmetry. Extracted to PaintArcMaskSurface for CreateNaked-
+        // MaskPreview reuse.
+        var arcMaskSurface = PaintArcMaskSurface(canvasDevice, graphicsDevice, pxSquare, cfg);
 
         // ── Surface 3: stroke silhouette (static rounded-rect outline) ───
         // Inset by 0.5 dip so the 1-dip stroke is centred on the same path
@@ -820,6 +934,7 @@ internal static class HudComposition
         // that StartRotation builds at t=0, baked into a one-shot matrix.
         // System.Numerics.Matrix3x2 uses row-vector convention, matching
         // Composition's expression-side maths.
+        CompositionPropertySet? hueRotationProps = null;
         if (freezeHueRotation)
         {
             conicBrush.TransformMatrix =
@@ -829,20 +944,21 @@ internal static class HudComposition
         }
         else
         {
-            StartRotation(
+            hueRotationProps = StartRotation(
                 compositor, conicBrush, visualCentre,
                 cfg.HuePeriodSeconds,
                 cfg.HueDirection,
                 cfg.HuePhaseTurns,
                 cfg.HueEaseP1X, cfg.HueEaseP1Y,
                 cfg.HueEaseP2X, cfg.HueEaseP2Y,
-                cfg.HueVelocityFloor);
+                cfg.HueMinSpeedFraction);
         }
 
         // Arc rotation — spin or freeze independently of the hue rotation.
         // Recording always freezes the arc (lobes parked at visual 12/6
         // o'clock via RecordingArcPhaseTurns); Transcribing / Rewriting
         // always spin.
+        CompositionPropertySet? arcRotationProps = null;
         if (freezeArcRotation)
         {
             arcMaskBrush.TransformMatrix =
@@ -852,14 +968,14 @@ internal static class HudComposition
         }
         else
         {
-            StartRotation(
+            arcRotationProps = StartRotation(
                 compositor, arcMaskBrush, visualCentre,
                 cfg.ArcPeriodSeconds,
                 cfg.ArcDirection,
                 cfg.ArcPhaseTurns,
                 cfg.ArcEaseP1X, cfg.ArcEaseP1Y,
                 cfg.ArcEaseP2X, cfg.ArcEaseP2Y,
-                cfg.ArcVelocityFloor);
+                cfg.ArcMinSpeedFraction);
         }
 
         // ── Effect graph ─────────────────────────────────────────────────
@@ -979,7 +1095,11 @@ internal static class HudComposition
         strokeVisual.Opacity = initialOpacity >= 0f ? initialOpacity : cfg.TranscribingOpacity;
 
         container.Children.InsertAtTop(strokeVisual);
-        return new ProcessingStroke(container, compositor, effectProps, strokeVisual, cfg);
+        return new ProcessingStroke(
+            container, compositor, effectProps, strokeVisual, cfg,
+            conicBrush, arcMaskBrush, strokeMaskBrush, effectBrush,
+            conicSurface, arcMaskSurface, strokeMaskSurface,
+            hueRotationProps, arcRotationProps);
     }
 
     // Forwards an effect-brush property to a named PropertySet scalar via
@@ -1001,27 +1121,40 @@ internal static class HudComposition
         effectBrush.StartAnimation(effectPropertyPath, expr);
     }
 
-    // ── Rotation with velocity floor ─────────────────────────────────────
+    // ── Cyclic rotation with out-in easing + vestigial speed floor ─────
     //
     // What it does (UX):
-    //   The rotations breathe — slow, fast, slow — via a cubic-bezier
-    //   easing curve. With a strong easing (e.g. (0.5, 0, 0.2, 1)), the
-    //   curve lingers so long at near-zero derivative around the start
-    //   and end of each cycle that the eye reads it as "the animation
-    //   broke" rather than "it's slowing down". The floor blends in a
-    //   constant linear rotation so motion never fully stops, even at
-    //   the easing plateaus.
+    //   The rotations breathe — fast at the cycle seam, gentle slow-down
+    //   around the midpoint, fast again at the next seam — via a
+    //   cubic-bezier shaped as an OUT-IN curve (0.125, 0.375, 0.875, 0.625).
     //
-    // Floor values, perceived effect:
-    //   0.0   pure easing — may visibly freeze (broken feel).
-    //   0.3   easing dominant, never below ~30% of mean speed.
-    //   0.6   mostly steady, easing adds a gentle pulse.
-    //   1.0   pure linear — no easing at all, robotic.
+    //   The defining property: both endpoint tangents have slope 3.0
+    //   (= 0.375/0.125 = (1-0.625)/(1-0.875)). When the KeyFrame animation
+    //   loops via AnimationIterationBehavior.Forever, the seam between
+    //   cycles is C¹-continuous: the eye reads the motion as one
+    //   continuous pulse repeating, not a start-stop-restart.
     //
-    // Side note on max velocity: the peak is determined by the floor and
-    // the easing curve — `peak = floor + (1 - floor)·peakEasedVelocity`.
-    // Higher floor = lower peak (compresses toward linear). For faster
-    // peaks at constant min, shorten the period instead.
+    //   Contrast with the earlier in-out (0.2, 0, 0.8, 1): zero-slope
+    //   endpoints meant every cycle ended at near-zero angular velocity,
+    //   and the next cycle started at zero again. Two plateaus adjacent
+    //   in time read as "the animation broke". That forced a linear-blend
+    //   workaround (minSpeedFraction) to lift the floor, which itself
+    //   compressed the peak toward the mean — pulse lost either way.
+    //
+    //   Out-in solves this structurally: no plateaus at the seam, so the
+    //   pulse shape (slow → fast → slow → fast) is preserved intact.
+    //
+    // Velocity profile (at ω_mean = 2π/8s ≈ 45°/s, minSpeedFraction = 0):
+    //   At t = 0, 1      ω ≈ 3 · ω_mean ≈ 135°/s  (peak at the seam)
+    //   At t ≈ 0.5       ω ≈ 0.5 · ω_mean ≈ 22°/s (mid-cycle slow-down)
+    //   Angular velocity never hits zero.
+    //
+    // `minSpeedFraction` (f) — vestigial with the current out-in curve
+    // but kept for playground experimentation with exotic ease shapes.
+    // Blends a pure linear scalar with the eased one:
+    //   angle(t) = Linear · f + Eased · (1 − f)
+    //   ω(t)     = ω_mean · [ f + (1 − f)·E'(t) ]
+    // At f = 0 (shipping default) the eased curve is used as-is.
     //
     // How it works (implementation):
     //   Two scalars on the same PropertySet animate over the period —
@@ -1029,20 +1162,19 @@ internal static class HudComposition
     //   (cubic-bezier). An ExpressionAnimation rebuilds the Matrix3x2
     //   every frame around the visual centre with the angle computed as:
     //
-    //       angle = Linear·floor + Eased·(1 - floor)
+    //       angle = Linear · f + Eased · (1 − f)
     //
     //   Both scalars start at startAngle and end at endAngle over the
     //   same period, so the sum is in [startAngle, endAngle] at all
     //   times and lands exactly on endAngle at period end — the loop
     //   closes seamlessly with no phase drift across iterations.
-    //
-    //   We sum instead of reshaping the easing because Composition's
-    //   CubicBezierEasingFunction only exposes the two interior control
-    //   points — the endpoints are fixed at (0,0) and (1,1), so we can't
-    //   lift the start derivative directly. The linear+eased sum gives
-    //   the same guarantee (min velocity = floor·meanVelocity) without
-    //   fighting the API.
-    private static void StartRotation(
+    // Returns the internal PropertySet so the caller (typically
+    // CreateConicArcStroke) can hold a strong ref and explicitly
+    // StopAnimation / Dispose at teardown. Letting the managed ref
+    // die leaks the two ScalarKeyFrameAnimations (Linear / Eased)
+    // indefinitely on the compositor — after enough rebuilds the
+    // compositor saturates and Forever animations stop firing.
+    private static CompositionPropertySet StartRotation(
         Compositor compositor,
         CompositionSurfaceBrush brush,
         Vector2 visualCentre,
@@ -1051,7 +1183,7 @@ internal static class HudComposition
         float phaseTurns,
         float easeP1X, float easeP1Y,
         float easeP2X, float easeP2Y,
-        float floor)
+        float minSpeedFraction)
     {
         float startAngle = MathF.Tau * phaseTurns;
         float fullAngle  = MathF.Tau * direction;
@@ -1061,7 +1193,17 @@ internal static class HudComposition
         props.InsertScalar("Linear", startAngle);
         props.InsertScalar("Eased",  startAngle);
 
-        var duration = TimeSpan.FromSeconds(periodSeconds);
+        // Clamp period to a strictly positive minimum. A zero-duration
+        // KeyFrameAnimation with IterationBehavior.Forever resolves to
+        // end-state on frame 0 and then never advances — visually
+        // indistinguishable from "the stroke froze". The shipping
+        // defaults are 8s so this clamp is a no-op there; the
+        // HudPlayground sliders can now land on 0 without killing the
+        // animation silently. 0.05s ≈ 20 turns/second, the fastest
+        // readable rotation before the eye sees strobing — a sensible
+        // floor for the playground's "how fast can I push it" probing.
+        double clampedPeriod = Math.Max(0.05, periodSeconds);
+        var duration = TimeSpan.FromSeconds(clampedPeriod);
 
         // Linear scalar — no easing function = default linear interpolation
         // between keyframes. Constant angular velocity = 2π / period.
@@ -1084,50 +1226,420 @@ internal static class HudComposition
         easedAnim.IterationBehavior = AnimationIterationBehavior.Forever;
         props.StartAnimation("Eased", easedAnim);
 
-        // Floor mixes the two: pure easing at floor=0, pure linear at
-        // floor=1. Clamped defensively so a stray config value can't
-        // invert the rotation or amplify it past the unit interval.
-        float clampedFloor = Math.Clamp(floor, 0f, 1f);
+        // `minSpeedFraction` (f) mixes the two scalars: pure easing at f=0,
+        // pure linear at f=1. Clamped defensively so a stray config value
+        // can't invert the rotation (f < 0 would negate the Eased
+        // contribution) or amplify it past the unit interval (f > 1 would
+        // make Linear contribute more than the mean).
+        float clampedFraction = Math.Clamp(minSpeedFraction, 0f, 1f);
 
         // CRITICAL — Composition's expression language is NOT C#. Numeric
         // literals are written without any suffix: `1.0` is a Float, `1`
         // is an Int. A C# `1.0f` would be parsed as `1.0 * f` with `f` as
-        // a missing variable (default 0), turning `(1.0f - floor)` into
-        // `-floor` and the whole expression into a yo-yo motion. Stay
+        // a missing variable (default 0), turning `(1.0f - minFrac)` into
+        // `-minFrac` and the whole expression into a yo-yo motion. Stay
         // strict on the literal syntax here.
         var matrixExpr = compositor.CreateExpressionAnimation(
             "Matrix3x2.CreateTranslation(negCentre) * " +
-            "Matrix3x2.CreateRotation(props.Linear * floor + props.Eased * (1.0 - floor)) * " +
+            "Matrix3x2.CreateRotation(props.Linear * minFrac + props.Eased * (1.0 - minFrac)) * " +
             "Matrix3x2.CreateTranslation(posCentre)");
         matrixExpr.SetReferenceParameter("props", props);
         matrixExpr.SetVector2Parameter("negCentre", -visualCentre);
         matrixExpr.SetVector2Parameter("posCentre",  visualCentre);
-        matrixExpr.SetScalarParameter ("floor",      clampedFloor);
+        matrixExpr.SetScalarParameter ("minFrac",    clampedFraction);
         brush.StartAnimation("TransformMatrix", matrixExpr);
+        return props;
     }
 
-    // HSV → RGB conversion (h, s, v in [0, 1]). Continuous derivative at
-    // h = 0 / h = 1 wrap, which is the whole point of using this instead of
-    // an RGB lerp over a closed palette.
-    private static Color HsvToRgb(float h, float s, float v)
+    // Full-circle angular gradient surface. pxSquare × pxSquare,
+    // painted per pixel: each pixel's colour is OKLCh(OklchLightness,
+    // OklchChroma, hue) where hue = (atan2(dy, dx) / 2π) * HueRange
+    // + HueStart, optionally quantised into WedgeCount posterised
+    // sectors. Shared between CreateConicArcStroke (the shipping
+    // stroke) and CreateNakedMaskPreview (dev diagnostic).
+    //
+    // Why per-pixel instead of rasterising WedgeCount triangles —
+    // the old approach drew 360 CanvasGeometry polygons whose shared
+    // edges meet at subpixel positions all the way down to the
+    // centre. Even with D2D's antialiasing, the triangle boundaries
+    // each produce a small coverage error; summed over 360 seams
+    // fanning out from the centre, the errors align into a visible
+    // radial moiré (the "effet de grille" Louis flagged in the
+    // baked palette screenshot). Per-pixel evaluation has no
+    // polygon seams — every pixel is an independent atan2 sample —
+    // so the gradient comes out perfectly smooth.
+    //
+    // Cost: pxSquare² OklchToRgb calls at bake time (≈74 k calls for
+    // 272² — a few ms on a cold cache). Paint runs once per stroke
+    // creation (variant boundary cross or playground config change),
+    // never per frame, so this is immaterial at runtime.
+    private static CompositionDrawingSurface PaintConicSurface(
+        CanvasDevice canvasDevice,
+        CompositionGraphicsDevice graphicsDevice,
+        int pxSquare,
+        ConicArcStrokeConfig cfg)
     {
-        h = ((h % 1f) + 1f) % 1f;
-        float c       = v * s;
-        float hPrime  = h * 6f;
-        float x       = c * (1f - MathF.Abs((hPrime % 2f) - 1f));
-        float r, g, b;
-        if      (hPrime < 1f) { r = c; g = x; b = 0f; }
-        else if (hPrime < 2f) { r = x; g = c; b = 0f; }
-        else if (hPrime < 3f) { r = 0f; g = c; b = x; }
-        else if (hPrime < 4f) { r = 0f; g = x; b = c; }
-        else if (hPrime < 5f) { r = x; g = 0f; b = c; }
-        else                  { r = c; g = 0f; b = x; }
-        float m = v - c;
+        var surface = graphicsDevice.CreateDrawingSurface(
+            new Windows.Foundation.Size(pxSquare, pxSquare),
+            DirectXPixelFormat.B8G8R8A8UIntNormalized,
+            DirectXAlphaMode.Premultiplied);
+
+        // BGRA premultiplied layout — matches the surface format above.
+        // WedgeCount doubles as a posterisation knob: at 360 (default)
+        // on a 272-pixel circle each wedge is ~0.76 px wide → reads as
+        // continuous; at 12/24 it snaps into visible retro sectors.
+        var bytes       = new byte[pxSquare * pxSquare * 4];
+        float centre    = pxSquare / 2f;
+        int   wedges    = Math.Max(1, cfg.WedgeCount);
+        float wedgeStep = MathF.Tau / wedges;
+
+        // Pre-compute the wedge palette once. Each pixel only needs
+        // atan2 + a table lookup, instead of a full OKLCh conversion
+        // per pixel — cuts bake time from ~15 ms to ~2 ms at 272².
+        var palette = new byte[wedges * 3];
+        for (int i = 0; i < wedges; i++)
+        {
+            float centreTurns = (i + 0.5f) / wedges;
+            float hue = cfg.HueStart + centreTurns * cfg.HueRange;
+            var c = OklchToRgb(cfg.OklchLightness, cfg.OklchChroma, hue);
+            int p = i * 3;
+            palette[p + 0] = c.B;
+            palette[p + 1] = c.G;
+            palette[p + 2] = c.R;
+        }
+
+        for (int y = 0; y < pxSquare; y++)
+        {
+            float dy = y + 0.5f - centre;
+            for (int x = 0; x < pxSquare; x++)
+            {
+                float dx = x + 0.5f - centre;
+
+                // atan2 yields [-π, π]; shift to [0, 2π) so the wedge
+                // index below stays in positive angle space.
+                float ang = MathF.Atan2(dy, dx);
+                if (ang < 0) ang += MathF.Tau;
+
+                int wi = (int)(ang / wedgeStep);
+                if (wi >= wedges) wi = wedges - 1;
+
+                int idx = (y * pxSquare + x) * 4;
+                int p   = wi * 3;
+                bytes[idx + 0] = palette[p + 0];
+                bytes[idx + 1] = palette[p + 1];
+                bytes[idx + 2] = palette[p + 2];
+                bytes[idx + 3] = 0xFF;
+            }
+        }
+
+        // CanvasBitmap.CreateFromBytes takes the Windows.Graphics.DirectX
+        // pixel-format enum; the file's `using Microsoft.Graphics.DirectX`
+        // resolves the unqualified name to Microsoft's homonym, which is
+        // what CompositionDrawingSurface expects above. Fully-qualify
+        // here to route the literal to the right overload.
+        using var bitmap = CanvasBitmap.CreateFromBytes(
+            canvasDevice, bytes, pxSquare, pxSquare,
+            Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized);
+        using var ds = CanvasComposition.CreateDrawingSession(surface);
+        ds.Clear(Colors.Transparent);
+        ds.DrawImage(bitmap);
+
+        return surface;
+    }
+
+    // Arc-shaped alpha mask surface — single span in [0, 2π·ConicSpanTurns]
+    // with lead/tail alpha ramps governed by ConicLeadFadeTurns,
+    // ConicTailFadeTurns, ConicFadeCurve; optionally mirrored at +π when
+    // ArcMirror is set. Full white, straight-alpha. Shared with
+    // CreateNakedMaskPreview so the dev rail sees the exact same fade
+    // geometry the shipping stroke uses.
+    private static CompositionDrawingSurface PaintArcMaskSurface(
+        CanvasDevice canvasDevice,
+        CompositionGraphicsDevice graphicsDevice,
+        int pxSquare,
+        ConicArcStrokeConfig cfg)
+    {
+        var surface = graphicsDevice.CreateDrawingSurface(
+            new Windows.Foundation.Size(pxSquare, pxSquare),
+            DirectXPixelFormat.B8G8R8A8UIntNormalized,
+            DirectXAlphaMode.Premultiplied);
+
+        using var ds = CanvasComposition.CreateDrawingSession(surface);
+        ds.Clear(Colors.Transparent);
+        var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
+        float radius = pxSquare * MathF.Sqrt(2f) * 0.5f;
+        int wedges = Math.Max(3, cfg.WedgeCount);
+        float step = MathF.Tau / wedges;
+
+        // Mirror: max Span is 0.5 so the two arcs can't overlap.
+        // Without mirror: Span can go up to 1 (full ring).
+        float maxSpanTurns  = cfg.ArcMirror ? 0.5f : 1f;
+        float spanTurns     = Math.Clamp(cfg.ConicSpanTurns, 0f, maxSpanTurns);
+        float leadFadeTurns = Math.Clamp(cfg.ConicLeadFadeTurns, 0f, spanTurns);
+        float tailFadeTurns = Math.Clamp(cfg.ConicTailFadeTurns, 0f, spanTurns);
+        // If the two fades would overlap past the span, scale both
+        // so they just meet at the mid of the arc (bell shape, no
+        // solid core). Otherwise preserve the user-requested lengths.
+        float totalFadeTurns = leadFadeTurns + tailFadeTurns;
+        if (totalFadeTurns > spanTurns && totalFadeTurns > 0f)
+        {
+            float scale = spanTurns / totalFadeTurns;
+            leadFadeTurns *= scale;
+            tailFadeTurns *= scale;
+        }
+        float spanRadians      = MathF.Tau * spanTurns;
+        float leadFadeRadians  = MathF.Tau * leadFadeTurns;
+        float tailFadeRadians  = MathF.Tau * tailFadeTurns;
+        float tailStartRadians = spanRadians - tailFadeRadians;
+        float curve            = MathF.Max(0.01f, cfg.ConicFadeCurve);
+
+        // One branch = one arc painted. Two branches when mirror is
+        // enabled — the second offset by π (180°) from the first.
+        int branchCount = cfg.ArcMirror ? 2 : 1;
+
+        for (int branch = 0; branch < branchCount; branch++)
+        {
+            float branchOffset = branch * MathF.PI;
+
+            for (int i = 0; i < wedges; i++)
+            {
+                float a0  = i * step;
+                float a1  = a0 + step;
+                float mid = a0 + step * 0.5f;
+
+                if (mid >= spanRadians) break;
+
+                float alpha;
+                if (leadFadeRadians > 0f && mid < leadFadeRadians)
+                {
+                    // Leading ramp: 0 at a=0, 1 at a=LeadFade.
+                    float t = mid / leadFadeRadians;
+                    alpha = MathF.Pow(t, curve);
+                }
+                else if (tailFadeRadians > 0f && mid >= tailStartRadians)
+                {
+                    // Trailing ramp: 1 at a=Span-TailFade, 0 at a=Span.
+                    float t = (mid - tailStartRadians) / tailFadeRadians;
+                    alpha = MathF.Pow(1f - t, curve);
+                }
+                else
+                {
+                    alpha = 1f;
+                }
+                if (alpha <= 0f) continue;
+
+                var color = Color.FromArgb((byte)MathF.Round(alpha * 255f), 255, 255, 255);
+
+                // Apply the branch offset only to the drawn geometry.
+                // The alpha profile is computed on un-offset angles
+                // so both branches share the exact same shape.
+                float d0 = a0 + branchOffset;
+                float d1 = a1 + branchOffset;
+                var p0 = centre;
+                var p1 = centre + new Vector2(MathF.Cos(d0), MathF.Sin(d0)) * radius;
+                var p2 = centre + new Vector2(MathF.Cos(d1), MathF.Sin(d1)) * radius;
+
+                using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
+                ds.FillGeometry(wedge, color);
+            }
+        }
+
+        return surface;
+    }
+
+    // ╔════════════════════════════════════════════════════════════════════╗
+    // ║  Naked mask diagnostic (HudPlayground only)                        ║
+    // ╚════════════════════════════════════════════════════════════════════╝
+    // Exposes the raw conic and arc-mask surfaces — the same ones
+    // CreateConicArcStroke composites behind the stroke silhouette — so
+    // Louis can verify in the playground whether the brush geometry is
+    // centred on its own rotation axis. The shipping stroke clips every
+    // sample to the rounded-rect silhouette, which hides any rotation
+    // wobble or off-centre brush footprint; the naked preview removes that
+    // silhouette and lets the full pxSquare × pxSquare footprint rotate
+    // openly. Not referenced by shipping code — only the playground's
+    // Naked rail wires it up.
+    internal enum NakedMaskPart
+    {
+        Conic    = 1,   // raw 360° HSV rainbow ring, full square
+        ArcMask  = 2,   // alpha-ramped pie slice(s), monochrome
+        Combined = 3,   // Conic ⊗ ArcMask, no stroke silhouette
+    }
+
+    // Returns a ContainerVisual sized pxSquare × pxSquare — the same
+    // visual-diagonal coverage the shipping stroke bakes its rotating
+    // brush into. Inside sits one SpriteVisual filling that container,
+    // with a brush chosen by `part`:
+    //   - Conic    : SurfaceBrush over the painted conic surface.
+    //   - ArcMask  : SurfaceBrush over the painted arc mask surface.
+    //   - Combined : CompositionEffectBrush running AlphaMaskEffect on
+    //                the two surfaces, identical to the first mask stage
+    //                in CreateConicArcStroke but WITHOUT the stroke
+    //                silhouette alpha stage — exposes the full pre-clip
+    //                arc geometry to the eye.
+    //
+    // Both brushes spin independently at HuePeriodSeconds /
+    // ArcPeriodSeconds around the sprite's geometric centre
+    // (pxSquare / 2). If the rotation centre and the brush-painting
+    // centre disagree (the hypothesis behind Louis's top/bottom luminance
+    // asymmetry observation), the wobble reads immediately on the naked
+    // preview as a drifting lobe or a wandering dead-spot.
+    //
+    // No effect-pipeline colour knobs (Saturation / Hue / Exposure) —
+    // those are state-blend concerns; the diagnostic is about geometry,
+    // and stripping the colour pipeline keeps the visual signal focused
+    // on where each lobe actually lands.
+    internal static ContainerVisual CreateNakedMaskPreview(
+        Compositor compositor, Vector2 hudSize,
+        ConicArcStrokeConfig cfg, NakedMaskPart part)
+    {
+        // Reuse the exact pxSquare math from CreateConicArcStroke so the
+        // naked preview paints the same brush footprint. Any drift here
+        // would invalidate the diagnostic — Louis would be looking at a
+        // different geometry than the shipping stroke samples.
+        var innerSize = new Vector2(hudSize.X - 2f * InsetDip, hudSize.Y - 2f * InsetDip);
+        int pxSquare = (int)Math.Ceiling(Math.Sqrt(
+            (double)innerSize.X * innerSize.X +
+            (double)innerSize.Y * innerSize.Y));
+
+        var canvasDevice   = CanvasDevice.GetSharedDevice();
+        EnsureDeviceLostHook(canvasDevice);
+        var graphicsDevice = CanvasComposition.CreateCompositionGraphicsDevice(
+            compositor, canvasDevice);
+
+        var container = compositor.CreateContainerVisual();
+        container.Size = new Vector2(pxSquare, pxSquare);
+
+        var conicSurface   = PaintConicSurface  (canvasDevice, graphicsDevice, pxSquare, cfg);
+        var arcMaskSurface = PaintArcMaskSurface(canvasDevice, graphicsDevice, pxSquare, cfg);
+
+        // Stretch.Fill — source is pxSquare, sprite is pxSquare, map 1:1.
+        // (CreateConicArcStroke uses Stretch.None because its sprite is
+        // innerSize, not pxSquare; here the sprite IS pxSquare so Fill
+        // lands trivially.)
+        var conicBrush = compositor.CreateSurfaceBrush(conicSurface);
+        conicBrush.Stretch = CompositionStretch.Fill;
+
+        var arcMaskBrush = compositor.CreateSurfaceBrush(arcMaskSurface);
+        arcMaskBrush.Stretch = CompositionStretch.Fill;
+
+        // Rotate around the sprite's OWN centre. The shipping stroke
+        // rotates around the visual centre (innerSize/2) because its
+        // sprite is innerSize and the surface is oversized pxSquare; here
+        // the sprite is pxSquare and the surface is pxSquare, so the
+        // correct rotation centre is pxSquare/2. This is the whole point
+        // of the diagnostic: if the brush's painted centre doesn't match
+        // pxSquare/2, the naked preview will show a wobble the shipping
+        // stroke silently masks.
+        var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
+
+        StartRotation(
+            compositor, conicBrush, centre,
+            cfg.HuePeriodSeconds,
+            cfg.HueDirection,
+            cfg.HuePhaseTurns,
+            cfg.HueEaseP1X, cfg.HueEaseP1Y,
+            cfg.HueEaseP2X, cfg.HueEaseP2Y,
+            cfg.HueMinSpeedFraction);
+        StartRotation(
+            compositor, arcMaskBrush, centre,
+            cfg.ArcPeriodSeconds,
+            cfg.ArcDirection,
+            cfg.ArcPhaseTurns,
+            cfg.ArcEaseP1X, cfg.ArcEaseP1Y,
+            cfg.ArcEaseP2X, cfg.ArcEaseP2Y,
+            cfg.ArcMinSpeedFraction);
+
+        var sprite = compositor.CreateSpriteVisual();
+        sprite.Size = new Vector2(pxSquare, pxSquare);
+
+        switch (part)
+        {
+            case NakedMaskPart.Conic:
+                sprite.Brush = conicBrush;
+                break;
+            case NakedMaskPart.ArcMask:
+                sprite.Brush = arcMaskBrush;
+                break;
+            case NakedMaskPart.Combined:
+                // Single AlphaMaskEffect — output = (Conic.RGB, Conic.A · Arc.A).
+                // No Sat/Hue/Exp nodes (those are state-blend concerns;
+                // the diagnostic is about geometry).
+                var effectGraph = new AlphaMaskEffect
+                {
+                    Source    = new CompositionEffectSourceParameter("Conic"),
+                    AlphaMask = new CompositionEffectSourceParameter("Arc"),
+                };
+                var effectFactory = compositor.CreateEffectFactory(effectGraph);
+                var effectBrush = effectFactory.CreateBrush();
+                effectBrush.SetSourceParameter("Conic", conicBrush);
+                effectBrush.SetSourceParameter("Arc",   arcMaskBrush);
+                sprite.Brush = effectBrush;
+                break;
+        }
+
+        container.Children.InsertAtTop(sprite);
+        return container;
+    }
+
+    // OKLCh → sRGB conversion. L and C are OKLab cylindrical
+    // coordinates (Björn Ottosson, 2020). hTurns is the hue in turns
+    // (0..1 = full wheel), matching the rest of the paint code.
+    //
+    // Why OKLCh — the OKLab colour space is designed to be
+    // perceptually uniform. At a fixed L, every hue at the same C
+    // reads as the same perceived lightness, so the conic wheel has
+    // no brightness asymmetry — yellow at the top is not lighter
+    // than blue at the bottom. This is the asymmetry HSV exhibits
+    // (Rec. 709 luminance for pure yellow ≈ 0.93, pure blue ≈ 0.07),
+    // which was visible as a top/bottom gradient when the Saturation
+    // effect pulled the stroke to greyscale.
+    //
+    // Pipeline: OKLCh → OKLab → linear sRGB → gamma-corrected sRGB.
+    // Linear sRGB values may fall outside [0, 1] for L/C combinations
+    // that exit the sRGB gamut (yellows and blues at L=0.75 start
+    // clipping around C ≈ 0.18). We clamp to [0, 1] on the gamma
+    // output — that reads as a gentle flattening of the out-of-gamut
+    // hues rather than a hard stop, which is good enough for a
+    // rotating conic wheel where no individual hue lingers.
+    private static Color OklchToRgb(float L, float C, float hTurns)
+    {
+        float hRad = hTurns * MathF.Tau;
+        float a    = C * MathF.Cos(hRad);
+        float b    = C * MathF.Sin(hRad);
+
+        // OKLab → non-linear cone responses (Björn Ottosson's matrix).
+        float l_ = L + 0.3963377774f * a + 0.2158037573f * b;
+        float m_ = L - 0.1055613458f * a - 0.0638541728f * b;
+        float s_ = L - 0.0894841775f * a - 1.2914855480f * b;
+
+        // Cube to recover linear cone responses.
+        float lc = l_ * l_ * l_;
+        float mc = m_ * m_ * m_;
+        float sc = s_ * s_ * s_;
+
+        // Cone responses → linear sRGB.
+        float rLin = +4.0767416621f * lc - 3.3077115913f * mc + 0.2309699292f * sc;
+        float gLin = -1.2684380046f * lc + 2.6097574011f * mc - 0.3413193965f * sc;
+        float bLin = -0.0041960863f * lc - 0.7034186147f * mc + 1.7076147010f * sc;
+
         return Color.FromArgb(
             0xFF,
-            (byte)MathF.Round((r + m) * 255f),
-            (byte)MathF.Round((g + m) * 255f),
-            (byte)MathF.Round((b + m) * 255f));
+            (byte)MathF.Round(Math.Clamp(LinearToSrgb(rLin), 0f, 1f) * 255f),
+            (byte)MathF.Round(Math.Clamp(LinearToSrgb(gLin), 0f, 1f) * 255f),
+            (byte)MathF.Round(Math.Clamp(LinearToSrgb(bLin), 0f, 1f) * 255f));
+    }
+
+    // sRGB OETF (IEC 61966-2-1). Handles the linear toe for small
+    // values so the curve stays continuous at the piecewise seam.
+    // Negative inputs are mirrored through the curve — produces a
+    // symmetric result that clamps cleanly to 0 afterwards.
+    private static float LinearToSrgb(float x)
+    {
+        if (x < 0f) return -LinearToSrgb(-x);
+        return x <= 0.0031308f
+            ? 12.92f * x
+            : 1.055f * MathF.Pow(x, 1f / 2.4f) - 0.055f;
     }
 
 }

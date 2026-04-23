@@ -23,22 +23,25 @@ namespace HudPlayground;
 // so the reader can scan both files side by side.
 internal sealed class TuningModel
 {
-    // ── Colour palette (paint-time) ─────────────────────────────────────
-    public float HsvSaturation = 1f;
-    public float HsvValue      = 1f;
-    public float HueStart      = 0f;
-    public float HueRange      = 1f;
-    public int   WedgeCount    = 360;
+    // ── Colour palette (paint-time, OKLCh) ──────────────────────────────
+    public float OklchLightness = 0.75f;
+    public float OklchChroma    = 0.15f;
+    public float HueStart       = 0f;
+    public float HueRange       = 1f;
+    public int   WedgeCount     = 360;
 
     // ── Hue rotation ────────────────────────────────────────────────────
     public double HuePeriodSeconds = 8.0;
     public float  HueDirection     = 1f;
     public float  HuePhaseTurns    = 0f;
-    public float  HueEaseP1X       = 0.2f;
-    public float  HueEaseP1Y       = 0f;
-    public float  HueEaseP2X       = 0.8f;
-    public float  HueEaseP2Y       = 1f;
-    public float  HueVelocityFloor = 0f;
+    // Out-in (0.125, 0.375, 0.875, 0.625) — endpoint tangent slope 3.0
+    // on both sides → C¹-continuous seam when the keyframe loops. See
+    // HudComposition.StartRotation header for details.
+    public float  HueEaseP1X       = 0.125f;
+    public float  HueEaseP1Y       = 0.375f;
+    public float  HueEaseP2X       = 0.875f;
+    public float  HueEaseP2Y       = 0.625f;
+    public float  HueMinSpeedFraction = 0f;
 
     // ── Arc mask shape ──────────────────────────────────────────────────
     public float ConicSpanTurns     = 0.4f;
@@ -51,11 +54,11 @@ internal sealed class TuningModel
     public double ArcPeriodSeconds = 8.0;
     public float  ArcDirection     = 1f;
     public float  ArcPhaseTurns    = 0f;
-    public float  ArcEaseP1X       = 0.5f;
-    public float  ArcEaseP1Y       = 0f;
-    public float  ArcEaseP2X       = 0.2f;
-    public float  ArcEaseP2Y       = 1f;
-    public float  ArcVelocityFloor = 0f;
+    public float  ArcEaseP1X       = 0.125f;
+    public float  ArcEaseP1Y       = 0.375f;
+    public float  ArcEaseP2X       = 0.875f;
+    public float  ArcEaseP2Y       = 0.625f;
+    public float  ArcMinSpeedFraction = 0f;
 
     // ── Rewriting variant ───────────────────────────────────────────────
     public float  RewritingSaturation    = 1f;
@@ -97,8 +100,8 @@ internal sealed class TuningModel
     // errors flag any drift between this file and the shipping struct.
     public ConicArcStrokeConfig ToConfig() => new()
     {
-        HsvSaturation     = HsvSaturation,
-        HsvValue          = HsvValue,
+        OklchLightness    = OklchLightness,
+        OklchChroma       = OklchChroma,
         HueStart          = HueStart,
         HueRange          = HueRange,
         WedgeCount        = WedgeCount,
@@ -110,7 +113,7 @@ internal sealed class TuningModel
         HueEaseP1Y        = HueEaseP1Y,
         HueEaseP2X        = HueEaseP2X,
         HueEaseP2Y        = HueEaseP2Y,
-        HueVelocityFloor  = HueVelocityFloor,
+        HueMinSpeedFraction = HueMinSpeedFraction,
 
         ConicSpanTurns     = ConicSpanTurns,
         ConicLeadFadeTurns = ConicLeadFadeTurns,
@@ -125,7 +128,7 @@ internal sealed class TuningModel
         ArcEaseP1Y        = ArcEaseP1Y,
         ArcEaseP2X        = ArcEaseP2X,
         ArcEaseP2Y        = ArcEaseP2Y,
-        ArcVelocityFloor  = ArcVelocityFloor,
+        ArcMinSpeedFraction = ArcMinSpeedFraction,
 
         RewritingSaturation    = RewritingSaturation,
         RewritingHueShiftTurns = RewritingHueShiftTurns,
