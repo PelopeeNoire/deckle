@@ -4,7 +4,7 @@
 // types — C# nested-type resolution stops at the containing class.
 using static WhispUI.Composition.HudComposition;
 
-namespace HudPlayground;
+namespace WhispUI.Playground;
 
 // Mutable shadow of HudComposition.ConicArcStrokeConfig.
 //
@@ -15,12 +15,13 @@ namespace HudPlayground;
 // into a fresh ConicArcStrokeConfig on every rebuild.
 //
 // Field defaults mirror the shipping struct defaults one-to-one — if
-// Louis diverges the shipping defaults, this mirror must follow (or
-// the out-of-box playground would render with different numbers than
-// WhispUI.exe, which would defeat the point).
+// those defaults diverge, this mirror must follow (or the playground
+// would render with different numbers than the shipping HUD, which
+// would defeat the point).
 //
-// Layout grouping matches the expander grouping in MainWindow.xaml.cs
-// so the reader can scan both files side by side.
+// Field grouping matches the NavigationView section order in
+// PlaygroundWindow.xaml.cs so the reader can scan both files side by
+// side.
 internal sealed class TuningModel
 {
     // ── Colour palette (paint-time, OKLCh) ──────────────────────────────
