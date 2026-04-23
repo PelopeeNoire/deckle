@@ -3,89 +3,188 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:WhispUI.Controls"
+    xmlns:local="using:HudPlayground"
     Title="HudPlayground — dev">
 
-    <!-- Native Microsoft.UI.Xaml.Controls.TitleBar auto-extended:
-         WinUI 3 picks up the standard caption layout automatically
-         when the root is a Grid with a matching top row reserved. We
-         keep the default caption for now (no branding icon, no search
-         field) — the playground is dev-only and the stock TitleBar
-         gives us the theme-aware buttons and subtitle slot for free. -->
+    <!-- Native Microsoft.UI.Xaml.Controls.TitleBar auto-extended. We
+         keep the stock caption — dev-only tool, no branding. -->
     <Grid>
         <Grid.ColumnDefinitions>
-            <!-- Left rail: 4 HudChrono previews centered and stacked. -->
+            <!-- Left rail: dev log. Fixed-width so entries wrap
+                 predictably; the middle column absorbs window resize. -->
             <ColumnDefinition Width="360" />
-            <!-- Right rail: scrollable settings-style tuning column.
-                 Sliders land in Objectif 4; for now a placeholder. -->
-            <ColumnDefinition Width="*" />
+            <!-- Middle rail: single preview (selector + play/pause +
+                 the chosen HudChrono state OR naked mask). -->
+            <ColumnDefinition Width="*" MinWidth="420" />
+            <!-- Right rail: tunables scroll. -->
+            <ColumnDefinition Width="460" />
         </Grid.ColumnDefinitions>
 
-        <!-- Left column — preview rail. LayerFillColorDefaultBrush
-             picks up the same background the HUD card uses, so the
-             cards here read against a visually identical substrate to
-             the shipping window. -->
+        <!-- ── Column 0 — dev log ─────────────────────────────────────
+             Minimalist by design (Louis brief): no selection, no search,
+             no filter, no copy. A ListView is enough because
+             DevLog.Entries is an ObservableCollection — UI refreshes
+             automatically on each Write. SelectionMode=None +
+             IsItemClickEnabled=False suppresses the click affordance;
+             the list reads as flat text. -->
         <Border Grid.Column="0"
-                Background="{ThemeResource LayerFillColorDefaultBrush}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled"
-                          Padding="16,24">
-                <StackPanel x:Name="PreviewStack"
-                            Orientation="Vertical"
-                            HorizontalAlignment="Center"
-                            Spacing="28">
-                    <!-- Four HudChrono instances, one per state. Each
-                         is wrapped in a titled section so Louis can see
-                         which preview he's looking at; the HudChrono
-                         itself sizes to its implicit 272×78 shipping
-                         dimensions. -->
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Charging"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" />
-                        <controls:HudChrono x:Name="ChargingPreview"
-                                            Width="272" Height="78" />
-                    </StackPanel>
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Recording"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" />
-                        <controls:HudChrono x:Name="RecordingPreview"
-                                            Width="272" Height="78" />
-                    </StackPanel>
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Transcribing"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" />
-                        <controls:HudChrono x:Name="TranscribingPreview"
-                                            Width="272" Height="78" />
-                    </StackPanel>
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Rewriting"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" />
-                        <controls:HudChrono x:Name="RewritingPreview"
-                                            Width="272" Height="78" />
-                    </StackPanel>
-                </StackPanel>
-            </ScrollViewer>
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0"
+                           Text="Log"
+                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                           Margin="16,16,16,8" />
+                <ListView Grid.Row="1"
+                          x:Name="LogListView"
+                          SelectionMode="None"
+                          IsItemClickEnabled="False"
+                          ShowsScrollingPlaceholders="False"
+                          Padding="8,0,8,8">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <!-- Kill default padding so each row is as
+                                 dense as the DataTemplate allows. -->
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:DevLogEntry">
+                            <!-- Two-column layout: 72-dip timestamp
+                                 column + 60-dip category + * message.
+                                 Monospace (Consolas) so columns visually
+                                 align across rows. -->
+                            <Grid ColumnSpacing="10"
+                                  Margin="0,2,0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="{x:Bind TimestampText}"
+                                           FontFamily="Consolas"
+                                           FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           VerticalAlignment="Top" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{x:Bind Category}"
+                                           FontFamily="Consolas"
+                                           FontSize="11"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           VerticalAlignment="Top" />
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind Message}"
+                                           FontFamily="Consolas"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Top" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
         </Border>
 
-        <!-- Right column — tunables (placeholder until Objectif 4). -->
+        <!-- ── Column 1 — single preview ──────────────────────────────
+             SelectorBar picks one of 7 targets (4 HUD states + 3 naked
+             masks). Only the chosen preview runs; everything else is
+             torn down. Play/Pause toggles the whole preview on/off so
+             Louis can freeze the current frame for inspection. -->
         <Border Grid.Column="1"
                 Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Spacing="24"
+                        Padding="24,32,24,24">
+
+                <SelectorBar x:Name="TargetSelector"
+                             HorizontalAlignment="Center"
+                             SelectionChanged="OnTargetSelectionChanged">
+                    <SelectorBarItem x:Name="TabCharging"     Text="Charging" />
+                    <SelectorBarItem x:Name="TabRecording"    Text="Recording" />
+                    <SelectorBarItem x:Name="TabTranscribing" Text="Transcribing" IsSelected="True" />
+                    <SelectorBarItem x:Name="TabRewriting"    Text="Rewriting" />
+                    <SelectorBarItem x:Name="TabConic"        Text="Conic" />
+                    <SelectorBarItem x:Name="TabArcMask"      Text="ArcMask" />
+                    <SelectorBarItem x:Name="TabCombined"     Text="Combined" />
+                </SelectorBar>
+
+                <!-- Play/Pause toggle. Checked = preview runs, unchecked =
+                     torn down so the last frame is whatever Composition
+                     left on screen at Dispose. -->
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Spacing="12">
+                    <ToggleButton x:Name="PlayToggle"
+                                  IsChecked="True"
+                                  Click="OnPlayToggleClicked"
+                                  Width="120"
+                                  HorizontalContentAlignment="Center">
+                        <TextBlock x:Name="PlayToggleLabel"
+                                   Text="Playing" />
+                    </ToggleButton>
+                </StackPanel>
+
+                <!-- Preview surface. Stacked: the HudChrono sits on top
+                     of an invisible 300×300 host that carries the naked
+                     previews when the target is a naked mask. Only one
+                     is visible at a time; the other is Collapsed. The
+                     outer Border gives both a shared background so the
+                     substrate matches the shipping HUD card. -->
+                <Border Padding="40"
+                        HorizontalAlignment="Center"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="{ThemeResource ControlCornerRadius}">
+                    <Grid HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                        <controls:HudChrono x:Name="ChronoPreview"
+                                            Width="272"
+                                            Height="78"
+                                            Visibility="Visible" />
+                        <Grid x:Name="NakedPreviewHost"
+                              Width="300"
+                              Height="300"
+                              Visibility="Collapsed">
+                            <!-- Inner Border 272×78 traces where the HUD
+                                 silhouette would fall, so Louis can read
+                                 the naked brush against the HUD aperture
+                                 the shipping stroke would otherwise
+                                 clip. -->
+                            <Border Width="272" Height="78"
+                                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Column 2 — tunables ────────────────────────────────────
+             Scrollable StackPanel of Expanders. BuildTuningPanel in the
+             code-behind populates it at Loaded. Expanders group the 60+
+             tunables by concern; the last one ("Variant transitions —
+             parked") is collapsed by default because its fields only
+             have a visible effect on variant transitions, which the
+             playground doesn't exercise (one target at a time). -->
+        <Border Grid.Column="2"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="1,0,0,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto"
                           Padding="24">
                 <StackPanel x:Name="TuningStack" Spacing="12">
                     <TextBlock Text="Tunables"
                                Style="{ThemeResource TitleTextBlockStyle}" />
-                    <TextBlock Text="Sliders coming in next pass (Objectif 4)."
-                               Style="{ThemeResource BodyTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>
         </Border>
