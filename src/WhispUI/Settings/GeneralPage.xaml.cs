@@ -323,7 +323,7 @@ public sealed partial class GeneralPage : Page
 
         if (string.IsNullOrEmpty(path))
         {
-            _log.Warning(LogSource.SetGeneral, "Telemetry folder unresolved — cannot open");
+            _log.Warning(LogSource.SetGeneral, "telemetry folder unresolved | action=cannot-open");
             return;
         }
 

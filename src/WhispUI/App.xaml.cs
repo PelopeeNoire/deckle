@@ -202,13 +202,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             string? pageTag = settingsIdx + 1 < cliArgs.Length
                 ? cliArgs[settingsIdx + 1]
                 : null;
-            _log.Info(LogSource.App, $"--settings flag detected, page={pageTag ?? "(default)"}");
+            _log.Verbose(LogSource.App, $"--settings flag detected | page={pageTag ?? "(default)"}");
             _settingsWindow?.ShowAndActivate(pageTag);
         }
 
         sw.Stop();
         milestones.Add($"total {sw.ElapsedMilliseconds}ms");
-        _log.Info(LogSource.App, "startup milestones: " + string.Join(" | ", milestones));
+        _log.Verbose(LogSource.App, "startup milestones | " + string.Join(" | ", milestones));
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             var args = pageTag is not null
                 ? $"--settings {pageTag}"
                 : "--settings";
-            _log.Info(LogSource.App, $"Starting new process: {exePath} {args}");
+            _log.Verbose(LogSource.App, $"spawn new process | exe={exePath} | args={args}");
             System.Diagnostics.Process.Start(exePath, args);
         }
 
@@ -313,7 +313,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         var exePath = Environment.ProcessPath;
         if (exePath is not null)
         {
-            _log.Info(LogSource.App, $"Starting new process: {exePath}");
+            _log.Verbose(LogSource.App, $"spawn new process | exe={exePath}");
             System.Diagnostics.Process.Start(exePath);
         }
         QuitApp();
@@ -368,7 +368,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (!_engine.IsRecording)
         {
             _log.Success(LogSource.Hotkey,
-                $"start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
+                $"Start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
 
             // Show the HUD immediately in its "Preparing" state so the user
             // gets visual feedback from the very first millisecond after the
@@ -383,7 +383,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         else
         {
-            _log.Success(LogSource.Hotkey, "stop");
+            _log.Success(LogSource.Hotkey, "Stop");
             _engine.StopRecording();
         }
     }

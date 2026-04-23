@@ -82,6 +82,8 @@ public sealed class SettingsService
                 var defaults = new AppSettings();
                 MigrateProfileIds(defaults);
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(defaults, _jsonOptions));
+                LogService.Instance.Info(LogSource.Settings,
+                    $"load complete | source=defaults | path={_configPath} | reason=file_missing");
                 return defaults;
             }
 
@@ -98,11 +100,17 @@ public sealed class SettingsService
 
             var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
             if (MigrateProfileIds(parsed)) migrated = true;
+            LogService.Instance.Info(LogSource.Settings,
+                $"load complete | source=disk | path={_configPath} | bytes={json.Length} | migrated={migrated}");
             return parsed;
         }
         catch (Exception ex)
         {
-            LogService.Instance.Error(LogSource.Settings, $"load failed ({ex.GetType().Name}: {ex.Message}) — fallback defaults");
+            // Parse failure falls back to defaults — the app still runs, so
+            // this is a Warning rather than an Error. Includes the path +
+            // exception type so the broken file is easy to locate.
+            LogService.Instance.Warning(LogSource.Settings,
+                $"parse failed, fallback to defaults | path={_configPath} | error={ex.GetType().Name}: {ex.Message}");
             return new AppSettings();
         }
     }

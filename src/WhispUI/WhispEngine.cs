@@ -208,6 +208,30 @@ internal sealed class WhispEngine : IDisposable
         @"mapping table with\s+(\d+)\s+points",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    // Effective compute backend, parsed from the first whisper.cpp log lines
+    // emitted during model init (ggml_vulkan: / ggml_cuda_init: / ggml_metal_init:).
+    // Defaults to "CPU" when no GPU prefix is seen before LoadModel finishes —
+    // which matches the runtime behaviour of ggml when no GPU backend is
+    // initialised. Read by LoadModel to include the backend in the Success log
+    // (so the user sees "backend=Vulkan" in the tray tooltip source without
+    // having to enable Verbose to see the raw init line).
+    private volatile string _detectedBackend = "CPU";
+
+    // Warmup result flags — silent at warmup, consumed at the first hotkey press
+    // so problems detected upfront surface before the recording pipeline starts.
+    // All three default to true so a missing Warmup() run never reports a false
+    // negative. Written from the warmup thread, read from the hotkey thread:
+    // int-backed volatile fields (0 = false, 1 = true) because bool isn't a
+    // valid volatile type in C#.
+    private volatile int _micWarmupOk    = 1;
+    private volatile int _modelWarmupOk  = 1;
+    private volatile int _ollamaWarmupOk = 1;
+    private volatile int _warmupFlagsConsumed = 0;
+
+    public bool MicrophoneWarmupOk => _micWarmupOk    == 1;
+    public bool ModelWarmupOk      => _modelWarmupOk  == 1;
+    public bool OllamaWarmupOk     => _ollamaWarmupOk == 1;
+
     private bool _disposed;
 
     // ── Observable properties ──────────────────────────────────────────────────
@@ -245,6 +269,23 @@ internal sealed class WhispEngine : IDisposable
             {
                 string msg = Marshal.PtrToStringUTF8(textPtr)?.TrimEnd('\r', '\n', ' ') ?? "";
                 if (string.IsNullOrEmpty(msg)) return;
+
+                // Backend detection — ggml prints a stable prefix on init for
+                // each GPU backend. First hit wins and sticks (volatile field
+                // read by LoadModel). No match = CPU by default. Matching the
+                // prefix rather than a full sentence keeps this robust across
+                // whisper.cpp version bumps.
+                if (_detectedBackend == "CPU")
+                {
+                    if (msg.StartsWith("ggml_vulkan:", StringComparison.Ordinal))
+                        _detectedBackend = "Vulkan";
+                    else if (msg.StartsWith("ggml_cuda_init:", StringComparison.Ordinal) ||
+                             msg.StartsWith("ggml_cuda:", StringComparison.Ordinal))
+                        _detectedBackend = "CUDA";
+                    else if (msg.StartsWith("ggml_metal_init:", StringComparison.Ordinal) ||
+                             msg.StartsWith("ggml_metal:", StringComparison.Ordinal))
+                        _detectedBackend = "Metal";
+                }
 
                 // Whisper.cpp's VAD module emits per-segment chatter (one line per
                 // detected segment plus several summary lines) — on long recordings
@@ -447,19 +488,11 @@ internal sealed class WhispEngine : IDisposable
     {
         RaiseStatus("Loading model");
 
-        _log.Verbose(LogSource.Engine, "load started, path=" + _modelPath);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        _log.Info(LogSource.Model, $"path: {_modelPath}");
-        if (File.Exists(_modelPath))
-        {
-            double mb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
-            _log.Info(LogSource.Model, $"file: {mb:F1} MB");
-        }
-        else
+        if (!File.Exists(_modelPath))
         {
             _log.Warning(
                 LogSource.Model,
-                $"file not found on disk ({_modelPath})",
+                $"load aborted | reason=file_not_found | path={_modelPath}",
                 new UserFeedback(
                     "Whisper model not found",
                     $"File missing: {_modelPath}. Check settings.",
@@ -467,22 +500,34 @@ internal sealed class WhispEngine : IDisposable
             RaiseStatus("Ready");
             return false;
         }
-        _log.Info(LogSource.Model, "init whisper_init_from_file_with_params (use_gpu=1)");
 
+        double fileMb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
+        string basename = Path.GetFileName(_modelPath);
+        _log.Info(LogSource.Model, "Loading model");
+        _log.Narrative(LogSource.Model, $"Loading the Whisper model into GPU memory — a {fileMb:F0} MB speech recognizer is being prepared so transcription can run locally.");
+        _log.Verbose(LogSource.Model, $"load start | file={basename} | file_mb={fileMb:F1} | use_gpu=1");
+
+        // Reset the backend before init so a re-load after an idle unload
+        // picks up the current backend rather than the one detected at the
+        // first startup. The log hook fires synchronously during init and
+        // overwrites this field as soon as it sees a ggml_vulkan:/cuda/metal
+        // line; if none appear, CPU is the correct fallback.
+        _detectedBackend = "CPU";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         IntPtr ctxParamsPtr = NativeMethods.whisper_context_default_params_by_ref();
         WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
         NativeMethods.whisper_free_context_params(ctxParamsPtr);
         ctxParams.use_gpu = 1;
 
         _ctx = NativeMethods.whisper_init_from_file_with_params(_modelPath, ctxParams);
-        _log.Verbose(LogSource.Engine, "whisper_init_from_file returned ctx=" + _ctx);
         sw.Stop();
+        _log.Verbose(LogSource.Engine, $"whisper_init_from_file returned ctx={_ctx}");
 
         if (_ctx == IntPtr.Zero)
         {
             _log.Error(
                 LogSource.Init,
-                $"Failed to load model: {_modelPath}",
+                $"load failed | path={_modelPath}",
                 new UserFeedback(
                     "Failed to load model",
                     "Low GPU memory or corrupt file.",
@@ -491,7 +536,8 @@ internal sealed class WhispEngine : IDisposable
             return false;
         }
 
-        _log.Success(LogSource.Model, $"Model loaded ({sw.ElapsedMilliseconds} ms)");
+        _log.Success(LogSource.Model, $"Model loaded ({_detectedBackend})");
+        _log.Verbose(LogSource.Model, $"load complete | load_ms={sw.ElapsedMilliseconds} | backend={_detectedBackend}");
         return true;
     }
 
@@ -504,7 +550,7 @@ internal sealed class WhispEngine : IDisposable
         lock (_modelLock)
         {
             if (_ctx != IntPtr.Zero) return true; // double-check after acquiring lock
-            _log.Info(LogSource.Model, "on-demand load (first use or after idle unload)");
+            _log.Verbose(LogSource.Model, "on-demand load | reason=first_use_or_after_idle_unload");
             return LoadModel();
         }
     }
@@ -526,7 +572,8 @@ internal sealed class WhispEngine : IDisposable
 
             NativeMethods.whisper_free(_ctx);
             _ctx = IntPtr.Zero;
-            _log.Success(LogSource.Model, $"Model unloaded after {MODEL_IDLE_TIMEOUT_MS / 1000}s idle (VRAM freed)");
+            _log.Success(LogSource.Model, "Model unloaded");
+            _log.Verbose(LogSource.Model, $"model unloaded | idle_s={MODEL_IDLE_TIMEOUT_MS / 1000} | state=vram-freed");
             RaiseStatus("Ready");
         }
     }
@@ -570,19 +617,32 @@ internal sealed class WhispEngine : IDisposable
             try
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                _log.Info(LogSource.Init, "Warmup start");
 
+                // 1) Mic probe — same code path StartRecording uses, just the
+                //    probe result is stored instead of blocking the recording.
+                _micWarmupOk = TryProbeMicrophone(out _) ? 1 : 0;
+
+                // 2) Model load. On failure we stop here — nothing else can
+                //    be tested without the model — and flag model+ollama as
+                //    failing so the first hotkey surfaces the right message.
                 if (!EnsureModelLoaded())
                 {
-                    _log.Warning(LogSource.Engine, "warmup aborted — model load failed");
+                    _modelWarmupOk  = 0;
+                    _ollamaWarmupOk = 0;
+                    _log.Warning(LogSource.Init,
+                        $"warmup aborted | reason=model_load_failed | total_ms={sw.ElapsedMilliseconds} | mic_ok={MicrophoneWarmupOk} | model_ok=false | ollama_ok=skipped");
                     return;
                 }
+                _modelWarmupOk = 1;
 
-                // 1.6 s at 16 kHz = 25 600 samples. Any buffer ≥ one VAD
+                // Silent Transcribe through the full pipeline (VAD + whisper_full)
+                // to pay the first-inference cost before the user presses any
+                // hotkey. 1.6 s at 16 kHz = 25 600 samples. Any buffer ≥ one VAD
                 // window works; 1.6 s keeps it well above the min-speech /
-                // min-silence thresholds exposed in Settings so the
-                // short-circuit triggers reliably whatever the user tuned.
+                // min-silence thresholds exposed in Settings so the short-circuit
+                // triggers reliably whatever the user tuned.
                 float[] silentBuffer = new float[25_600];
-
                 _isWarmup = true;
                 try
                 {
@@ -593,13 +653,35 @@ internal sealed class WhispEngine : IDisposable
                     _isWarmup = false;
                 }
 
+                // 3) Ollama health-check. Skipped (and left as OK) when the LLM
+                //    feature is disabled — no rewriter needed, no warning to
+                //    surface. 3 s timeout inside IsAvailableAsync keeps the
+                //    warmup bounded even if the endpoint is a dead address.
+                var llmSettings = Settings.SettingsService.Instance.Current.Llm;
+                if (llmSettings.Enabled)
+                {
+                    try
+                    {
+                        var ollama = new Llm.OllamaService(
+                            () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
+                        bool reachable = ollama.IsAvailableAsync().GetAwaiter().GetResult();
+                        _ollamaWarmupOk = reachable ? 1 : 0;
+                    }
+                    catch
+                    {
+                        _ollamaWarmupOk = 0;
+                    }
+                }
+
                 sw.Stop();
-                _log.Verbose(LogSource.Engine, $"warmup complete in {sw.ElapsedMilliseconds} ms");
+                _log.Success(LogSource.Init, "Warmup complete");
+                _log.Verbose(LogSource.Init,
+                    $"warmup complete | total_ms={sw.ElapsedMilliseconds} | mic_ok={MicrophoneWarmupOk} | model_ok={ModelWarmupOk} | ollama_ok={OllamaWarmupOk}");
             }
             catch (Exception ex)
             {
                 _isWarmup = false;
-                _log.Error(LogSource.Engine, $"warmup failed: {ex.GetType().Name}: {ex.Message}");
+                _log.Error(LogSource.Init, $"Warmup failed | error={ex.GetType().Name}: {ex.Message}");
             }
         });
         thread.IsBackground = true;
@@ -614,6 +696,48 @@ internal sealed class WhispEngine : IDisposable
     public void StartRecording(string? manualProfileName, bool shouldPaste)
     {
         if (_isRecording) return;
+
+        // Consume the warmup flags on the first StartRecording call — surface
+        // any problems detected silently at startup before the recording begins.
+        // Interlocked.Exchange makes the consumption race-free even if two
+        // hotkeys land back-to-back (second caller reads 1 and skips the block).
+        // Subsequent hotkeys rely on the live probes below and on the LLM
+        // rewrite error paths — the warmup flags are an early-warning, not a
+        // permanent gate.
+        if (System.Threading.Interlocked.Exchange(ref _warmupFlagsConsumed, 1) == 0)
+        {
+            if (!ModelWarmupOk)
+            {
+                _log.Error(
+                    LogSource.Init,
+                    "warmup flag | model_ok=false",
+                    new UserFeedback(
+                        "Model not ready",
+                        "The Whisper model failed to load at startup. Check the Whisper settings.",
+                        UserFeedbackSeverity.Error));
+                return;
+            }
+            if (!OllamaWarmupOk)
+            {
+                _log.Warning(
+                    LogSource.Init,
+                    "warmup flag | ollama_ok=false",
+                    new UserFeedback(
+                        "Rewriter unavailable",
+                        "Ollama is not reachable. Recording still works — no rewrite this session.",
+                        UserFeedbackSeverity.Warning));
+                // Proceed with recording — rewrite is optional, transcription
+                // and clipboard copy still deliver the raw text.
+            }
+            // Mic: the live probe below emits its own UserFeedback, so a
+            // false mic_ok flag only needs a diagnostic line here. If the user
+            // plugged the mic in between warmup and hotkey, the live probe
+            // passes and we proceed normally.
+            if (!MicrophoneWarmupOk)
+            {
+                _log.Warning(LogSource.Init, "warmup flag | mic_ok=false (live probe below)");
+            }
+        }
 
         // Probe the audio device BEFORE firing StatusChanged("Recording").
         // If the mic is absent/busy, short-circuit the entire pipeline:
@@ -816,13 +940,14 @@ internal sealed class WhispEngine : IDisposable
         // Single buffer, grows throughout the recording.
         // 1 sample = 2 bytes PCM16. At 16 kHz, 1 minute = 1.92M bytes.
         var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
-        _log.Info(LogSource.Record, "Recording started (16kHz mono PCM16)");
+        _log.Info(LogSource.Record, "Recording start");
+        _log.Verbose(LogSource.Record, "capture start | sample_rate=16 kHz | channels=mono");
 
-        double nextHeartbeatSec = 60.0;
         // Snapshot the cap at recording start so a mid-recording Settings
         // change doesn't shorten or extend a session already in progress.
         int maxDurationSec = Settings.SettingsService.Instance.Current.Recording.MaxRecordingDurationSeconds;
         bool capHit = false;
+        int buffersReceived = 0;
 
         while (!_stopRecording)
         {
@@ -837,7 +962,7 @@ internal sealed class WhispEngine : IDisposable
                     bufferDoneCount++;
                     if (hdr.dwBytesRecorded == 0)
                     {
-                        _log.Warning(LogSource.Record, $"empty buffer[{i}] received");
+                        _log.Warning(LogSource.Record, $"empty buffer | index={i}");
                     }
                     else
                     {
@@ -845,6 +970,7 @@ internal sealed class WhispEngine : IDisposable
                         Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
                         allBytes.AddRange(data);
                         EmitAudioLevels(data);
+                        buffersReceived++;
                     }
 
                     hdr.dwFlags &= ~(uint)0x00000001;
@@ -854,25 +980,18 @@ internal sealed class WhispEngine : IDisposable
             }
 
             if (bufferDoneCount > 1)
-                _log.Warning(LogSource.Record, $"lag, {bufferDoneCount} buffers ready simultaneously");
-
-            // Heartbeat ~60s, Verbose → visible in All filter only
-            double curSec = allBytes.Count / 32000.0;
-            if (curSec >= nextHeartbeatSec)
-            {
-                _log.Verbose(LogSource.Record, $"+{curSec:F1}s captured");
-                nextHeartbeatSec += 60.0;
-            }
+                _log.Warning(LogSource.Record, $"capture lag | buffers_ready={bufferDoneCount}");
 
             // Duration cap — forces a stop as if the user had pressed the
             // hotkey. Audio captured so far still flows through the full
             // pipeline. Only triggers once per session.
+            double curSec = allBytes.Count / 32000.0;
             if (!capHit && maxDurationSec > 0 && curSec >= maxDurationSec)
             {
                 capHit = true;
                 int minutes = maxDurationSec / 60;
                 _log.Warning(LogSource.Record,
-                    $"recording duration cap reached ({curSec:F1}s ≥ {maxDurationSec}s) — auto-stopping");
+                    $"duration cap reached | audio_sec={curSec:F1} | cap_sec={maxDurationSec}");
                 _log.Narrative(LogSource.Record,
                     $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
                 _stopRecording = true;
@@ -900,18 +1019,56 @@ internal sealed class WhispEngine : IDisposable
         NativeMethods.CloseHandle(hEvent);
 
         double totalSec = allBytes.Count / 32000.0;
-        _log.Info(LogSource.Record, $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
+
+        // Full-buffer aggregate: mean RMS + peak amplitude over the entire
+        // recording. Single pass over allBytes, cost is negligible vs the
+        // upcoming whisper_full call (~1 ms for a minute of audio at 16 kHz).
+        // dbfs_avg = 20*log10(rms_avg), floored at -120 dBFS when the buffer
+        // is pure zero to avoid −∞ in the log.
+        double aggSumSq = 0;
+        double aggPeak  = 0;
+        int nAggSamples = allBytes.Count / 2;
+        for (int i = 0; i < nAggSamples; i++)
+        {
+            short s = (short)(allBytes[i * 2] | (allBytes[i * 2 + 1] << 8));
+            double v = s / 32768.0;
+            aggSumSq += v * v;
+            double av = v < 0 ? -v : v;
+            if (av > aggPeak) aggPeak = av;
+        }
+        double rmsAvg  = nAggSamples > 0 ? Math.Sqrt(aggSumSq / nAggSamples) : 0;
+        double dbfsAvg = rmsAvg > 0 ? 20.0 * Math.Log10(rmsAvg) : -120.0;
+
+        _log.Info(LogSource.Record, $"Recording complete ({totalSec:F1} s)");
+        _log.Verbose(LogSource.Record,
+            $"capture complete | audio_sec={totalSec:F1} | buffers={buffersReceived} | bytes={allBytes.Count} | rms_avg={rmsAvg:F4} | rms_peak={aggPeak:F4} | dbfs_avg={dbfsAvg:F1}");
         _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
 
-        // Tail RMS: measures the energy of the final 600ms to see if we're
+        // Low-audio detection. Threshold -50 dBFS on the buffer average is
+        // below any normal dictation range (typical speech lands at -15 to
+        // -30 dBFS average). Gated by a 2 s minimum to avoid false-alarming
+        // on accidental double-tap Stop. Distinct from the tail analysis
+        // below, which only checks the final 600 ms to spot a sharp cut.
+        if (totalSec >= 2.0 && dbfsAvg < -50.0)
+        {
+            _log.Warning(
+                LogSource.Record,
+                $"low audio detected | dbfs_avg={dbfsAvg:F1} | rms_peak={aggPeak:F4}",
+                new UserFeedback(
+                    "Low audio detected",
+                    "The microphone signal was very quiet. Check the mic, input level, or audio input selected in the transcription settings.",
+                    UserFeedbackSeverity.Warning));
+        }
+
+        // Tail RMS: measures the energy of the final 600 ms to see if we're
         // cutting during a syllable (lost punctuation) or in a clean silence.
         // Purely diagnostic — doesn't change the buffer sent to whisper.cpp.
-        // 600ms = typical breathing/inter-phrase pause duration, enough to
+        // 600 ms = typical breathing/inter-phrase pause duration, enough to
         // check if the last word was fully spoken before Stop.
         {
             const int TailMs = 600;
             int tailBytes = Math.Min(allBytes.Count, 16000 * 2 * TailMs / 1000);
-            if (tailBytes >= 400) // au moins ~12ms
+            if (tailBytes >= 400) // at least ~12ms
             {
                 int start = allBytes.Count - tailBytes;
                 double sumSq = 0;
@@ -925,7 +1082,9 @@ internal sealed class WhispEngine : IDisposable
                 double rms = Math.Sqrt(sumSq / nSamples);
                 double dbfs = rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
                 double tailSec = tailBytes / 32000.0;
-                _log.Info(LogSource.Record, $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "active" : "silent")} at Stop");
+                string tailState = dbfs > -50 ? "active" : "silent";
+                _log.Verbose(LogSource.Record,
+                    $"tail | tail_ms={tailSec * 1000:F0} | rms={rms:F4} | dbfs={dbfs:F1} | state={tailState}");
             }
         }
 
@@ -1042,12 +1201,20 @@ internal sealed class WhispEngine : IDisposable
                 double gap = _lastSegmentT1 < 0 ? 0.0 : (t0 - _lastSegmentT1) / 100.0;
                 _lastSegmentT1 = t1;
 
-                // no_speech: probability that the segment is silence/noise (0 = confident speech, 1 = confident silence).
-                // p̄ / min: average and minimum confidence over text tokens in the segment.
-                // t0/t1 are in centiseconds (1 unit = 10 ms) on the whisper.cpp side.
-                // elapsed: wall-clock time since whisper_full started (cumulative).
+                // Per-segment signal is Verbose only — one line, never two.
+                // Callback fires several times per transcription, so this detail
+                // does NOT belong in Activity (which is for step-level events:
+                // transcribe start / transcribe complete / recap). All segment
+                // data — text, timings, confidence — stays in the same Verbose
+                // line so a grep on `seg #N` returns exactly one row.
+                //   nsp: probability that the segment is silence/noise (0 = confident speech, 1 = confident silence).
+                //   p̄ / min: average and minimum confidence over text tokens.
+                //   t0/t1 are in centiseconds (1 unit = 10 ms) on the whisper.cpp side.
+                //   elapsed: wall-clock time since whisper_full started (cumulative).
                 double elapsedSec = _transcribeSw?.Elapsed.TotalSeconds ?? 0;
-                _log.Verbose(LogSource.Transcribe, $"seg #{i + 1} [{t0 / 100.0:F1}s→{t1 / 100.0:F1}s dur={dur:F1}s gap={(gap >= 0 ? "+" : "")}{gap:F1}s, nsp={nsp:P0}, p̄={avgP:F2} min={minP:F2}, {textTok}/{nTok} tok, elapsed={elapsedSec:F1}s] {segText.Trim()}");
+                string trimmed = segText.Trim();
+                _log.Verbose(LogSource.Callback,
+                    $"seg #{i + 1} | t0={t0 / 100.0:F1}s | t1={t1 / 100.0:F1}s | dur={dur:F1}s | gap={(gap >= 0 ? "+" : "")}{gap:F1}s | nsp={nsp:P0} | p̄={avgP:F2} | min={minP:F2} | tok={textTok}/{nTok} | elapsed={elapsedSec:F1}s | text=\"{trimmed}\"");
             }
         }
         catch (Exception ex)
@@ -1109,15 +1276,16 @@ internal sealed class WhispEngine : IDisposable
         wparams.abort_callback_user_data = IntPtr.Zero;
 
         float audioSec = (float)audio.Length / 16_000f;
-        _log.Info(LogSource.Transcribe, $"Audio reçu ({audioSec:F1}s, {audio.Length} samples) → whisper_full");
+        _strategyLabel = wparams.strategy == 1 ? $"beam{wparams.beam_search_beam_size}" : "greedy";
+        _log.Info(LogSource.Transcribe, "Transcribing");
+        _log.Verbose(LogSource.Transcribe, $"start | audio_sec={audioSec:F1} | samples={audio.Length} | strategy={_strategyLabel}");
         // Workflow narration: VAD_END handles the "now transcribing" intro in
         // its own line (it sits between VAD completion and transcription start),
         // so a separate TRANSCRIBE_START narrative would be redundant — and
         // would even fire out of order, before VAD_START which runs inside
         // whisper_full's hook.
-        _strategyLabel = wparams.strategy == 1 ? $"beam{wparams.beam_search_beam_size}" : "greedy";
         string strategyLabelVerbose = wparams.strategy == 1 ? $"beam(size={wparams.beam_search_beam_size})" : "greedy";
-        _log.Verbose(LogSource.Transcribe, $"params: {strategyLabelVerbose} | temp={wparams.temperature:F2} +{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
+        _log.Verbose(LogSource.Transcribe, $"params | strategy={strategyLabelVerbose} | temp={wparams.temperature:F2}+{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
 
         // Log the initial prompt sent to Whisper — conditions decoding style.
         string prompt = settings.Transcription.InitialPrompt;
@@ -1125,7 +1293,7 @@ internal sealed class WhispEngine : IDisposable
         if (!string.IsNullOrEmpty(prompt))
         {
             string truncated = prompt.Length > 60 ? prompt[..60] + "…" : prompt;
-            _log.Info(LogSource.Transcribe, $"prompt: \"{truncated}\" ({prompt.Length} chars, carry={carry})");
+            _log.Verbose(LogSource.Transcribe, $"prompt | len={prompt.Length} | carry={carry} | text=\"{truncated}\"");
         }
 
         _vadSw = null;
@@ -1171,8 +1339,14 @@ internal sealed class WhispEngine : IDisposable
         // is a real failure — surface it as before.
         if (result != 0 && !_abortRequested)
         {
-            _log.Error(LogSource.Transcribe, $"whisper_full returned code {result}");
-            RaiseStatus("Erreur transcription");
+            _log.Error(
+                LogSource.Transcribe,
+                $"whisper_full failed | result={result}",
+                new UserFeedback(
+                    "Transcription failed",
+                    "Whisper could not decode this audio. Check the log for details.",
+                    UserFeedbackSeverity.Error));
+            RaiseStatus("Transcription failed");
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
@@ -1189,7 +1363,9 @@ internal sealed class WhispEngine : IDisposable
             fullText = string.Join(" ", _segments.Select(s => s.Text)).Trim();
         }
 
-        _log.Info(LogSource.Transcribe, $"whisper_full OK ({transcribeMsTotal} ms, {nSeg} segments, {fullText.Length} chars)");
+        _log.Success(LogSource.Transcribe, $"Transcription complete ({nSeg} seg)");
+        _log.Verbose(LogSource.Transcribe,
+            $"complete | whisper_ms={transcribeMsTotal} | n_seg={nSeg} | chars={fullText.Length}");
 
         // Suppress the post-transcription Narrative when nothing was transcribed
         // — the "No speech detected in the recording." Narrative emitted by the
@@ -1207,10 +1383,20 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        // Always copy raw text first — safety net even if LLM fails
+        // Always copy raw text first — safety net even if LLM fails. If the
+        // copy fails (all three CopyToClipboard error paths already emit a
+        // Critical UserFeedback), short-circuit: paste would send Ctrl+V into
+        // an empty clipboard, which in most apps pastes whatever was there
+        // before the transcription — confusing at best. Better to stop here.
         var swClip = System.Diagnostics.Stopwatch.StartNew();
-        CopyToClipboard(fullText);
+        bool rawCopyOk = CopyToClipboard(fullText);
         swClip.Stop();
+        if (!rawCopyOk)
+        {
+            RaiseStatus("Ready");
+            RaiseFinished(TranscriptionOutcome.None);
+            return;
+        }
 
         long llmMs = 0;
         var llmSettings = Settings.SettingsService.Instance.Current.Llm;
@@ -1278,7 +1464,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (profile is not null)
         {
-            RaiseStatus($"Réécriture ({profile.Name})...");
+            RaiseStatus($"Rewriting ({profile.Name})…");
             // Narrative only after the call settles — on success we know it
             // landed, on failure we say so explicitly. The previous pre-call
             // "is now rewriting" line lied on failure by implying completion
@@ -1291,6 +1477,10 @@ internal sealed class WhispEngine : IDisposable
             if (!string.IsNullOrWhiteSpace(rewritten))
             {
                 fullText = rewritten;
+                // If the post-rewrite copy fails, the raw transcript from the
+                // first copy is still on the clipboard — degrade silently to
+                // the raw text instead of making a loud noise about a failure
+                // that doesn't hurt the user.
                 CopyToClipboard(fullText);
                 _log.Narrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s with the {profile.Name} profile — the polished text is ready to paste.");
             }
@@ -1322,21 +1512,27 @@ internal sealed class WhispEngine : IDisposable
             _log.Narrative(LogSource.Paste, $"Final text pasted into {exeName}.");
         }
 
-        // Technical recap stays available for tuning sessions but drops out of
-        // the user-facing Activity / Steps views — visible only under "All".
-        string recap = $"total {recDurationSec:F1}s ({_strategyLabel} trans {transcribeMsTotal}/llm {llmMs}/clip {swClip.ElapsedMilliseconds}/paste {pasteMs} ms)";
-        _log.Verbose(LogSource.Done, recap);
+        // Split recap into two Info lines (timings / outputs) that land under
+        // Activity, plus the existing Narrative for the user-facing closing line.
+        // The monolithic 200-char Verbose is gone — each line reads cleanly
+        // in LogWindow and stays grep-friendly through the standard `k=v` format.
+        // Outcome : Pasted on a verified paste delivery, ClipboardOnly when
+        // the text made it to the clipboard but paste was disabled or refused
+        // (target lost, WhispUI itself, SendInput partial) — the HUD uses
+        // this to flash "Copied" or the Ctrl+V reminder before hiding.
+        var outcome = (_shouldPaste && pasteVerified) ? TranscriptionOutcome.Pasted
+                                                      : TranscriptionOutcome.ClipboardOnly;
+        int finalWordCount = Logging.TextMetrics.CountWords(fullText);
+
+        _log.Success(LogSource.Done, $"Done ({outcome})");
+        _log.Verbose(LogSource.Done,
+            $"timings | audio_sec={recDurationSec:F1} | vad_ms={vadMs} | whisper_ms={whisperMs} | llm_ms={llmMs} | clipboard_ms={swClip.ElapsedMilliseconds} | paste_ms={pasteMs}");
+        _log.Verbose(LogSource.Done,
+            $"outputs | n_seg={nSeg} | chars={fullText.Length} | words={finalWordCount} | strategy={_strategyLabel} | profile={profile?.Name ?? "(none)"} | outcome={outcome}");
         _log.Narrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
 
         RaiseStatus("Ready");
         _recordingSw?.Stop();
-
-        // Outcome : Pasted on a verified paste delivery, ClipboardOnly when
-        // the text made it to the clipboard but paste was disabled or refused
-        // (target lost, WhispUI itself, SendInput partial) — the HUD uses
-        // this to flash "Copié" or the Ctrl+V reminder before hiding.
-        var outcome = (_shouldPaste && pasteVerified) ? TranscriptionOutcome.Pasted
-                                                      : TranscriptionOutcome.ClipboardOnly;
 
         Logging.TelemetryService.Instance.Latency(new Logging.LatencyPayload(
             AudioSec:    audioSec,
@@ -1348,7 +1544,7 @@ internal sealed class WhispEngine : IDisposable
             Strategy:    _strategyLabel,
             NSegments:   nSeg,
             TextChars:   fullText.Length,
-            TextWords:   Logging.TextMetrics.CountWords(fullText),
+            TextWords:   finalWordCount,
             Profile:     profile?.Name ?? "",
             Pasted:      pasteVerified,
             Outcome:     outcome.ToString()));
@@ -1400,7 +1596,12 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Presse-papier ─────────────────────────────────────────────────────────
 
-    private void CopyToClipboard(string text)
+    // Returns true on a successful copy + verified read-back. False on any of
+    // the three fatal branches (GlobalAlloc, OpenClipboard, SetClipboardData) —
+    // each surfaces a Critical UserFeedback. Verify-length mismatch only emits
+    // a Warning since the bytes reached the clipboard; the length check is a
+    // safety net against clipboard-format mangling by a third-party watcher.
+    private bool CopyToClipboard(string text)
     {
         const uint GMEM_MOVEABLE  = 0x0002;
         const uint CF_UNICODETEXT = 13;
@@ -1408,8 +1609,18 @@ internal sealed class WhispEngine : IDisposable
         int byteCount = (text.Length + 1) * 2;
 
         IntPtr hMem = NativeMethods.GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)byteCount);
-        _log.Verbose(LogSource.Clipboard, $"GlobalAlloc {byteCount}b → hMem={hMem}");
-        if (hMem == IntPtr.Zero) { _log.Warning(LogSource.Clipboard, "GlobalAlloc failed"); return; }
+        _log.Verbose(LogSource.Clipboard, $"GlobalAlloc | bytes={byteCount} | hMem={hMem}");
+        if (hMem == IntPtr.Zero)
+        {
+            _log.Error(
+                LogSource.Clipboard,
+                $"GlobalAlloc failed | bytes={byteCount}",
+                new UserFeedback(
+                    "Clipboard copy failed",
+                    "Windows could not allocate memory for the clipboard. Try again.",
+                    UserFeedbackSeverity.Error));
+            return false;
+        }
 
         IntPtr ptr = NativeMethods.GlobalLock(hMem);
         Marshal.Copy(text.ToCharArray(), 0, ptr, text.Length);
@@ -1417,21 +1628,50 @@ internal sealed class WhispEngine : IDisposable
         NativeMethods.GlobalUnlock(hMem);
 
         bool opened = NativeMethods.OpenClipboard(IntPtr.Zero);
-        _log.Verbose(LogSource.Clipboard, $"OpenClipboard → {opened}");
-        if (!opened) { _log.Warning(LogSource.Clipboard, "OpenClipboard failed"); return; }
+        _log.Verbose(LogSource.Clipboard, $"OpenClipboard | ok={opened}");
+        if (!opened)
+        {
+            _log.Error(
+                LogSource.Clipboard,
+                "OpenClipboard failed",
+                new UserFeedback(
+                    "Clipboard unavailable",
+                    "Another application is holding the clipboard. Close it and try again.",
+                    UserFeedbackSeverity.Error));
+            return false;
+        }
 
         NativeMethods.EmptyClipboard();
         IntPtr setHandle = NativeMethods.SetClipboardData(CF_UNICODETEXT, hMem);
-        if (setHandle == IntPtr.Zero) _log.Warning(LogSource.Clipboard, "SetClipboardData failed (handle 0)");
         NativeMethods.CloseClipboard();
+        if (setHandle == IntPtr.Zero)
+        {
+            _log.Error(
+                LogSource.Clipboard,
+                "SetClipboardData failed | handle=0",
+                new UserFeedback(
+                    "Clipboard copy failed",
+                    "Windows refused the clipboard write. Try again.",
+                    UserFeedbackSeverity.Error));
+            return false;
+        }
 
-        // Immediate read-back to verify the clipboard was set correctly
+        // Immediate read-back to verify the clipboard was set correctly.
+        // Mismatch is a Warning — the copy reached the OS, a third-party
+        // clipboard watcher may have re-encoded or trimmed the payload
+        // between SetClipboardData and our read.
         if (NativeMethods.OpenClipboard(IntPtr.Zero))
         {
             IntPtr h = NativeMethods.GetClipboardData(CF_UNICODETEXT);
             if (h == IntPtr.Zero)
             {
-                _log.Warning(LogSource.Clipboard, "post-copy verify → no Unicode data");
+                _log.Warning(
+                    LogSource.Clipboard,
+                    "verify failed | reason=no_unicode_data",
+                    new UserFeedback(
+                        "Clipboard copy may be incomplete",
+                        "The text is on the clipboard but could not be verified.",
+                        UserFeedbackSeverity.Warning));
             }
             else
             {
@@ -1439,12 +1679,23 @@ internal sealed class WhispEngine : IDisposable
                 string? back = p != IntPtr.Zero ? Marshal.PtrToStringUni(p) : null;
                 NativeMethods.GlobalUnlock(h);
                 if (back is null || back.Length != text.Length)
-                    _log.Warning(LogSource.Clipboard, $"post-copy verify → length {back?.Length ?? -1} != {text.Length}");
+                {
+                    _log.Warning(
+                        LogSource.Clipboard,
+                        $"verify failed | expected_chars={text.Length} | actual_chars={back?.Length ?? -1}",
+                        new UserFeedback(
+                            "Clipboard copy may be incomplete",
+                            "The text length on the clipboard does not match what was sent.",
+                            UserFeedbackSeverity.Warning));
+                }
             }
             NativeMethods.CloseClipboard();
         }
 
-        _log.Info(LogSource.Clipboard, $"Text copied ({text.Length} chars)");
+        _log.Info(LogSource.Clipboard, "Copied to clipboard");
+        _log.Narrative(LogSource.Clipboard, $"The transcription is now on the clipboard — {text.Length} characters ready to paste anywhere.");
+        _log.Verbose(LogSource.Clipboard, $"copy complete | chars={text.Length} | bytes={byteCount}");
+        return true;
     }
 
     // Sends Ctrl+V to whatever window currently has the foreground at Stop
@@ -1512,7 +1763,8 @@ internal sealed class WhispEngine : IDisposable
             return false;
         }
 
-        _log.Info(LogSource.Paste, $"Ctrl+V sent to {Win32Util.DescribeHwnd(fg)}");
+        _log.Info(LogSource.Paste, "Pasted");
+        _log.Verbose(LogSource.Paste, $"Ctrl+V sent to {Win32Util.DescribeHwnd(fg)}");
         return true;
     }
 

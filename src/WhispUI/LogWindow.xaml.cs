@@ -19,7 +19,7 @@ using WhispUI.Shell;
 namespace WhispUI;
 
 // SelectorBar mode — single active at a time (native exclusive selection).
-internal enum LogFilterMode { Steps, All, Activity, Alerts }
+internal enum LogFilterMode { Narrative, All, Activity, Alerts }
 
 // ─── Log window ──────────────────────────────────────────────────────────────
 //
@@ -51,7 +51,7 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     private ScrollViewer? _listScrollViewer;
     private ItemsStackPanel? _itemsPanel;
 
-    private LogFilterMode _filterMode = LogFilterMode.Steps;
+    private LogFilterMode _filterMode = LogFilterMode.Narrative;
     private string _currentSearch = "";
     private bool _isRecording;
 
@@ -107,9 +107,9 @@ public sealed partial class LogWindow : Window, ITelemetrySink
         // Win11 required (OK here); falls back to transparent otherwise.
         SystemBackdrop = new MicaBackdrop();
 
-        // Initial SelectorBar selection: Steps view, the user-facing pipeline
+        // Initial SelectorBar selection: Narrative view, the user-facing pipeline
         // narration. All / Activity / Alerts remain one click away.
-        LevelSelector.SelectedItem = LevelSteps;
+        LevelSelector.SelectedItem = LevelNarrative;
 
         Title = "WhispUI Logs";
         // ~1:2 aspect ratio (vertical) — two stacked squares. Fits on a 4K display.
@@ -247,20 +247,20 @@ public sealed partial class LogWindow : Window, ITelemetrySink
 
     private bool Matches(TelemetryEvent e)
     {
-        // Kind + level filter:
-        //   Steps    → user-facing narration only (log-kind Narrative)
-        //   All      → everything passes (log, latency, corpus)
-        //   Activity → log-kind Info + Success + Warning + Error,
-        //              plus Latency + Corpus rows (hide Verbose + Narrative)
-        //   Alerts   → log-kind Warning + Error only
+        // Progressive kind + level filter (All > Activity > Alerts):
+        //   Narrative → user-facing narration only (log-kind Narrative)
+        //   All       → everything passes (log, latency, corpus, narrative)
+        //   Activity  → log-kind Info + Success + Warning + Error only
+        //               (hide Verbose, Narrative, Latency, Corpus)
+        //   Alerts    → log-kind Warning + Error only
         bool modeOk = _filterMode switch
         {
-            LogFilterMode.Steps    => e.Kind == TelemetryKind.Log
-                                   && e.Level == LogLevel.Narrative,
+            LogFilterMode.Narrative => e.Kind == TelemetryKind.Log
+                                    && e.Level == LogLevel.Narrative,
             LogFilterMode.All      => true,
-            LogFilterMode.Activity => e.Kind != TelemetryKind.Log
-                                   || (e.Level != LogLevel.Verbose
-                                    && e.Level != LogLevel.Narrative),
+            LogFilterMode.Activity => e.Kind == TelemetryKind.Log
+                                   && e.Level != LogLevel.Verbose
+                                   && e.Level != LogLevel.Narrative,
             LogFilterMode.Alerts   => e.Kind == TelemetryKind.Log
                                    && (e.Level == LogLevel.Warning
                                     || e.Level == LogLevel.Error),
@@ -338,9 +338,9 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     private void OnLevelSelectorChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         var sel = sender.SelectedItem;
-        _filterMode = sel == LevelSteps    ? LogFilterMode.Steps
-                    : sel == LevelFiltered ? LogFilterMode.Activity
-                    : sel == LevelCritical ? LogFilterMode.Alerts
+        _filterMode = sel == LevelNarrative ? LogFilterMode.Narrative
+                    : sel == LevelFiltered  ? LogFilterMode.Activity
+                    : sel == LevelCritical  ? LogFilterMode.Alerts
                     : LogFilterMode.All;
         ApplyFilter();
     }
