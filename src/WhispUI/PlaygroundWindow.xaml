@@ -11,23 +11,8 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid.Resources>
-            <!-- Pattern canonique Microsoft Learn (SettingsExpander sample
-                 "Settings page example"): same spacing + section header style
-                 as GeneralPage so the playground scans like a Settings page. -->
-            <x:Double x:Key="SettingsCardSpacing">4</x:Double>
-            <Style x:Key="SettingsSectionHeaderTextBlockStyle"
-                   BasedOn="{StaticResource BodyStrongTextBlockStyle}"
-                   TargetType="TextBlock">
-                <Style.Setters>
-                    <Setter Property="Margin" Value="1,30,0,6" />
-                </Style.Setters>
-            </Style>
-        </Grid.Resources>
-
         <!-- Native TitleBar: icon + title. Matches SettingsWindow / LogWindow.
-             ImageIconSource rebuilt wholesale on recording state change (in-
-             place ImageSource mutation doesn't propagate visually). -->
+             ImageIconSource rebuilt wholesale on recording state change. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
                   Title="WhispUI Playground">
@@ -36,140 +21,128 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Main content: 2-column split.
-               Col 0: NavigationView + tuning panel for the selected concept.
-               Col 1: sticky preview (target selector + play/pause + HUD).
+        <!-- Main content: two panels + draggable sash.
+               Col 0 (PreviewCol): sticky preview — target SelectorBar + Play/
+                                   Pause + HudChrono / naked host.
+               Col 1:              sash (6 dp Thumb with divider-colour fill).
+               Col 2 (TuningCol):  single scrollable column of Expanders, one
+                                   per concept. Everything fixed and always
+                                   visible — no concept-level tabs.
 
-             Sticky preview is always visible so sliders on any concept page
-             can be tuned against a live brush. 440 dip accommodates the 300×
-             300 naked preview host + breathing room. -->
+             Both outer columns are pixel-width (not star) so the sash drag
+             can mutate PreviewCol.Width directly. The tuning column absorbs
+             the remainder (min 360 dip so the slider label + NumberBox
+             column survive a narrow window). -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="460" />
-                <ColumnDefinition Width="440" />
+                <ColumnDefinition x:Name="PreviewCol" Width="520" MinWidth="400" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition x:Name="TuningCol"  Width="*"   MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <!-- ── Left: NavigationView + concept panel ─────────────────── -->
-            <NavigationView Grid.Column="0"
-                            x:Name="Nav"
-                            IsBackButtonVisible="Collapsed"
-                            IsSettingsVisible="False"
-                            PaneDisplayMode="Left"
-                            IsPaneToggleButtonVisible="False"
-                            SelectionChanged="OnNavSelectionChanged">
-                <NavigationView.MenuItems>
-                    <NavigationViewItem Content="Palette"           Tag="palette" />
-                    <NavigationViewItem Content="Hue rotation"      Tag="hue" />
-                    <NavigationViewItem Content="Arc rotation"      Tag="arc" />
-                    <NavigationViewItem Content="Swipe"             Tag="swipe" />
-                    <NavigationViewItem Content="Recording"         Tag="recording" />
-                    <NavigationViewItem Content="Transcribing"      Tag="transcribing" />
-                    <NavigationViewItem Content="Rewriting"         Tag="rewriting" />
-                    <NavigationViewItem Content="Audio mapping"     Tag="audio" />
-                    <NavigationViewItem Content="Simulated RMS"     Tag="rms" />
-                    <NavigationViewItem Content="Parked"            Tag="parked" />
-                </NavigationView.MenuItems>
+            <!-- ── Col 0 — sticky preview ───────────────────────────────── -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-                <!-- Each concept panel is built once in code-behind and swapped
-                     into this presenter on nav selection (no Page files — the
-                     panels are pure StackPanels of Slider/NumberBox rows). -->
-                <ScrollViewer x:Name="ConceptScroller"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled"
-                              Padding="32,24,32,24">
-                    <ContentPresenter x:Name="ConceptHost"
-                                      HorizontalAlignment="Stretch" />
+                <!-- 7 targets: 4 HUD states + 3 naked diagnostic masks.
+                     Horizontal scroll when the column is narrowed below the
+                     natural SelectorBar width. -->
+                <ScrollViewer Grid.Row="0"
+                              HorizontalScrollMode="Auto"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollMode="Disabled"
+                              VerticalScrollBarVisibility="Disabled"
+                              Padding="16,24,16,8">
+                    <SelectorBar x:Name="TargetSelector"
+                                 HorizontalAlignment="Center"
+                                 SelectionChanged="OnTargetSelectionChanged">
+                        <SelectorBarItem x:Name="TabCharging"     Text="Charging" />
+                        <SelectorBarItem x:Name="TabRecording"    Text="Recording" />
+                        <SelectorBarItem x:Name="TabTranscribing" Text="Transcribing" IsSelected="True" />
+                        <SelectorBarItem x:Name="TabRewriting"    Text="Rewriting" />
+                        <SelectorBarItem x:Name="TabConic"        Text="Conic" />
+                        <SelectorBarItem x:Name="TabArcMask"      Text="ArcMask" />
+                        <SelectorBarItem x:Name="TabCombined"     Text="Combined" />
+                    </SelectorBar>
                 </ScrollViewer>
-            </NavigationView>
 
-            <!-- ── Right: sticky preview ────────────────────────────────── -->
-            <Border Grid.Column="1"
-                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                    BorderThickness="1,0,0,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                <!-- Play / Pause = two mutually-exclusive RadioButton. Button
+                     labels name the action triggered, not the current state —
+                     a label-swap ToggleButton (Playing / Paused) is a UX
+                     trap Louis wants to avoid. -->
+                <RadioButtons Grid.Row="1"
+                              x:Name="PlayPauseGroup"
+                              SelectedIndex="0"
+                              SelectionChanged="OnPlayPauseSelectionChanged"
+                              MaxColumns="2"
+                              HorizontalAlignment="Center"
+                              Margin="0,8,0,12">
+                    <RadioButton Content="Play" />
+                    <RadioButton Content="Pause" />
+                </RadioButtons>
 
-                    <!-- Target selector: 7 preview targets (4 HUD states + 3
-                         naked diagnostic masks). Centered so the chrono
-                         visual below reads on-axis. Scroll-enabled
-                         horizontally because 7 items overflow 440 dip at
-                         standard DPI. -->
-                    <ScrollViewer Grid.Row="0"
-                                  HorizontalScrollMode="Auto"
-                                  HorizontalScrollBarVisibility="Auto"
-                                  VerticalScrollMode="Disabled"
-                                  VerticalScrollBarVisibility="Disabled"
-                                  Padding="16,24,16,8">
-                        <SelectorBar x:Name="TargetSelector"
-                                     HorizontalAlignment="Center"
-                                     SelectionChanged="OnTargetSelectionChanged">
-                            <SelectorBarItem x:Name="TabCharging"     Text="Charging" />
-                            <SelectorBarItem x:Name="TabRecording"    Text="Recording" />
-                            <SelectorBarItem x:Name="TabTranscribing" Text="Transcribing" IsSelected="True" />
-                            <SelectorBarItem x:Name="TabRewriting"    Text="Rewriting" />
-                            <SelectorBarItem x:Name="TabConic"        Text="Conic" />
-                            <SelectorBarItem x:Name="TabArcMask"      Text="ArcMask" />
-                            <SelectorBarItem x:Name="TabCombined"     Text="Combined" />
-                        </SelectorBar>
-                    </ScrollViewer>
-
-                    <!-- Play/Pause as two mutually-exclusive RadioButton via
-                         RadioButtons compound. A label-swap ToggleButton
-                         reads its own state ("Playing" / "Paused") which is
-                         a UX trap — Louis's rule: a button label names the
-                         action it triggers, not the current state. Two
-                         buttons, two actions, one selected at a time. -->
-                    <RadioButtons Grid.Row="1"
-                                  x:Name="PlayPauseGroup"
-                                  SelectedIndex="0"
-                                  SelectionChanged="OnPlayPauseSelectionChanged"
-                                  MaxColumns="2"
-                                  HorizontalAlignment="Center"
-                                  Margin="0,8,0,12">
-                        <RadioButton Content="Play" />
-                        <RadioButton Content="Pause" />
-                    </RadioButtons>
-
-                    <!-- Preview surface. HudChrono 272×78 layered over an
-                         invisible 300×300 naked host; exactly one is visible
-                         at a time (see ApplyTarget). Border gives both a
-                         shared Layer substrate so the naked masks read
-                         against the same neutral as the HUD card. -->
-                    <Border Grid.Row="2"
-                            Padding="40"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Background="{ThemeResource LayerFillColorDefaultBrush}"
-                            CornerRadius="{ThemeResource ControlCornerRadius}"
-                            Margin="24">
-                        <Grid HorizontalAlignment="Center"
-                              VerticalAlignment="Center">
-                            <controls:HudChrono x:Name="ChronoPreview"
-                                                Width="272"
-                                                Height="78" />
-                            <Grid x:Name="NakedPreviewHost"
-                                  Width="300"
-                                  Height="300"
-                                  Visibility="Collapsed">
-                                <!-- 272×78 reference outline shows where the
-                                     HUD silhouette would fall, so naked masks
-                                     can be read against the HUD aperture
-                                     the shipping stroke would otherwise
-                                     clip. -->
-                                <Border Width="272" Height="78"
-                                        BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                                        BorderThickness="1"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center" />
-                            </Grid>
+                <!-- Preview surface. HudChrono 272×78 and the naked 300×300
+                     host share the same substrate Border so all targets
+                     read against identical Layer fill. On Pause BOTH are
+                     collapsed so the preview area goes empty — no residual
+                     Charging silhouette. -->
+                <Border Grid.Row="2"
+                        Padding="40"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Margin="24">
+                    <Grid HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                        <controls:HudChrono x:Name="ChronoPreview"
+                                            Width="272"
+                                            Height="78" />
+                        <Grid x:Name="NakedPreviewHost"
+                              Width="300"
+                              Height="300"
+                              Visibility="Collapsed">
+                            <Border Width="272" Height="78"
+                                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
                         </Grid>
-                    </Border>
-                </Grid>
-            </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ── Col 1 — resize sash ──────────────────────────────────── -->
+            <!-- Thumb with a plain divider-coloured template. DragDelta in
+                 the code-behind adjusts PreviewCol.Width within the clamp
+                 imposed by PreviewCol.MinWidth and TuningCol.MinWidth. -->
+            <Thumb Grid.Column="1"
+                   x:Name="Sash"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch"
+                   DragDelta="OnSashDragDelta">
+                <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    </ControlTemplate>
+                </Thumb.Template>
+            </Thumb>
+
+            <!-- ── Col 2 — tuning Expanders ─────────────────────────────── -->
+            <ScrollViewer Grid.Column="2"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24">
+                <StackPanel x:Name="TuningStack" Spacing="6">
+                    <TextBlock Text="Tunables"
+                               Style="{ThemeResource TitleTextBlockStyle}"
+                               Margin="0,0,0,8" />
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </Window>

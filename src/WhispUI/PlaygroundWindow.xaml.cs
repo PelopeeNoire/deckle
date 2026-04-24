@@ -1,10 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -28,16 +28,11 @@ namespace WhispUI;
 //     the whole app UI reflects engine state.
 //   - Singleton: Closing → Cancel + Hide. Destroyed only at QuitApp.
 //
-// Layout: 2-column split.
-//   Col 0: NavigationView + per-concept tuning panel (Palette, Hue rotation,
-//          Arc rotation, Swipe, Recording, Transcribing, Rewriting, Audio
-//          mapping, Simulated RMS, Parked). ContentPresenter host instead of
-//          a Frame because panels are code-built StackPanels rather than Page
-//          types — switch by reassigning ConceptHost.Content.
-//   Col 1: sticky preview (target SelectorBar + Play/Pause RadioButtons +
-//          HudChrono 272×78 OR naked mask preview 300×300). The preview
-//          stays visible across concept pages so sliders on any page can be
-//          observed against a live brush.
+// Layout is deliberately flat and always-visible: a sticky preview column
+// on the left (target SelectorBar + Play/Pause + HudChrono / naked host)
+// and a single scrollable column of Expanders on the right — everything
+// fixed, no concept-level tabs. A draggable sash between the two lets Louis
+// trade preview footprint for tuning width when a slider block gets tight.
 //
 // Tuning is driven by TuningModel (mutable shadow of ConicArcStrokeConfig).
 // Paint-time slider changes flag _rebuildPending and the debounced timer
@@ -93,12 +88,10 @@ public sealed partial class PlaygroundWindow : Window
 
     // ── Rebuild debounce ────────────────────────────────────────────────
     //
-    // Paint-time slider changes rebuild the Win2D surfaces from scratch
-    // (Canvas drawing session + oversized pxSquare × pxSquare bitmap
-    // allocation + GPU upload). On a drag that's one rebuild per
-    // DispatcherQueue tick — 50-100/s — and the CanvasDevice chokes.
-    // A single DispatcherTimer accumulates pending and fires the actual
-    // rebuild 300 ms after the last slider movement.
+    // Paint-time slider changes rebuild the Win2D surfaces from scratch —
+    // one rebuild per DispatcherQueue tick during a drag overloads the
+    // CanvasDevice. The debounce fires the actual rebuild 300 ms after
+    // the last slider movement.
     private readonly DispatcherTimer _rebuildDebounce = new()
         { Interval = TimeSpan.FromMilliseconds(300) };
     private bool _rebuildPending;
@@ -113,16 +106,9 @@ public sealed partial class PlaygroundWindow : Window
     // A two-way composite (Slider + NumberBox sharing a value source) has
     // to guard against feedback loops: setting Slider.Value fires
     // ValueChanged which pushes into NumberBox.Value which fires its own
-    // ValueChanged which writes back to Slider. The flag is set around
-    // every programmatic write so the paired ValueChanged is a no-op.
+    // ValueChanged which writes back to Slider. The flag short-circuits
+    // the paired event during every programmatic write.
     private bool _syncing;
-
-    // ── Concept panels ──────────────────────────────────────────────────
-    //
-    // Built once at Loaded, swapped into ConceptHost on nav selection.
-    // Dictionary key = NavigationViewItem.Tag (nav tag, not type name,
-    // because panels aren't Page types).
-    private readonly Dictionary<string, StackPanel> _panels = new();
 
     public PlaygroundWindow()
     {
@@ -148,9 +134,10 @@ public sealed partial class PlaygroundWindow : Window
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min width 720 lets NavigationView sit in Left mode next to the
-        // 440 dip sticky preview column without squeezing the tuning rows.
-        presenter.PreferredMinimumWidth  = 720;
+        // Min width 800: preview column min (400) + sash (6) + tuning
+        // column min (360) + a little breathing room. Below this the sash
+        // clamp runs out of room.
+        presenter.PreferredMinimumWidth  = 800;
         presenter.PreferredMinimumHeight = 480;
         AppWindow.SetPresenter(presenter);
 
@@ -162,10 +149,6 @@ public sealed partial class PlaygroundWindow : Window
             AppWindow.Hide();
         };
 
-        // Debounced rebuild tick — fires 300 ms after the last slider
-        // movement. Drag-to-release feels instant; mid-drag the slider
-        // value/text updates live but the preview keeps animating off
-        // its previous surfaces.
         _rebuildDebounce.Tick += (_, _) =>
         {
             _rebuildDebounce.Stop();
@@ -178,10 +161,7 @@ public sealed partial class PlaygroundWindow : Window
         {
             root.Loaded += (_, _) =>
             {
-                BuildAllPanels();
-                // Default landing page — Palette is the broadest set of
-                // knobs, good first impression.
-                Nav.SelectedItem = Nav.MenuItems[0];
+                BuildTuningPanel();
                 ApplyTarget();
             };
         }
@@ -209,9 +189,6 @@ public sealed partial class PlaygroundWindow : Window
         NativeMethods.SetForegroundWindow(_hwnd);
     }
 
-    // Beacon app icon (red = recording / grey = idle). Called from
-    // WhispEngine.StatusChanged via App.xaml.cs — same pattern as
-    // LogWindow.SetRecordingState.
     public void SetRecordingState(bool isRecording)
     {
         if (DispatcherQueue.HasThreadAccess) ApplyRecordingState(isRecording);
@@ -220,14 +197,12 @@ public sealed partial class PlaygroundWindow : Window
 
     private void ApplyRecordingState(bool isRecording)
     {
-        // Rebuild the ImageIconSource wholesale — mutating ImageSource in
-        // place on the existing instance doesn't propagate to the
-        // TitleBar visual (no routed PropertyChanged).
+        // Rebuild the ImageIconSource wholesale — in-place ImageSource
+        // mutation doesn't propagate to the TitleBar visual.
         AppTitleBar.IconSource = new ImageIconSource
         {
             ImageSource = isRecording ? _iconRecording : _iconIdle,
         };
-
         var path = isRecording ? _iconRecordingPath : _iconIdlePath;
         if (path is not null) AppWindow.SetIcon(path);
     }
@@ -243,18 +218,26 @@ public sealed partial class PlaygroundWindow : Window
             _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
     }
 
-    // ── Navigation ──────────────────────────────────────────────────────
-
-    private void OnNavSelectionChanged(
-        NavigationView sender,
-        NavigationViewSelectionChangedEventArgs args)
+    // ── Sash (column resize) ────────────────────────────────────────────
+    //
+    // Clamp the new PreviewCol width between its declared MinWidth and the
+    // total available width minus the sash and TuningCol.MinWidth. This
+    // mirrors how a GridSplitter would clamp — keeping both columns above
+    // their minimums regardless of window size.
+    private void OnSashDragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (args.SelectedItem is not NavigationViewItem item) return;
-        if (item.Tag is not string tag) return;
-        if (_panels.TryGetValue(tag, out var panel))
-        {
-            ConceptHost.Content = panel;
-        }
+        double total = RootGrid.ActualWidth;
+        if (total <= 0) return;
+
+        double sashWidth = 6;
+        double previewMin = PreviewCol.MinWidth;
+        double tuningMin  = TuningCol.MinWidth;
+        double max = Math.Max(previewMin, total - sashWidth - tuningMin);
+
+        double current = PreviewCol.ActualWidth;
+        double target  = Math.Clamp(current + e.HorizontalChange, previewMin, max);
+
+        PreviewCol.Width = new GridLength(target);
     }
 
     // ── Target selector + Play/Pause ────────────────────────────────────
@@ -285,21 +268,21 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     // ── Core: apply target + play state to the preview ──────────────────
-    //
-    // Tears down the current preview unconditionally, then (if playing)
-    // brings up whichever preview matches _currentTarget. Full reset on
-    // every call — the composition graph geometry is baked at creation
-    // and the only in-place tweaks are the four live PropertySet scalars
-    // (Saturation, Hue, Exposure, Opacity); everything else rebuilds.
+
     private void ApplyTarget()
     {
+        // Tear down everything first.
         ChronoPreview.ApplyState(HudState.Hidden);
         ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
         StopRmsPump();
 
         if (!_isPlaying)
         {
-            ChronoPreview.Visibility    = Visibility.Visible;
+            // Pause = truly empty preview. Neither the chrono silhouette
+            // nor the naked host should remain — no residual Charging-like
+            // card. The outer Border (substrate) stays so the user sees
+            // where the preview will reappear on Play.
+            ChronoPreview.Visibility    = Visibility.Collapsed;
             NakedPreviewHost.Visibility = Visibility.Collapsed;
             return;
         }
@@ -349,8 +332,6 @@ public sealed partial class PlaygroundWindow : Window
             StartRmsPump();
     }
 
-    // ── Naked preview attach ────────────────────────────────────────────
-
     private void AttachNakedPreview(HudComposition.NakedMaskPart part)
     {
         ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
@@ -359,9 +340,6 @@ public sealed partial class PlaygroundWindow : Window
         var naked = HudComposition.CreateNakedMaskPreview(
             compositor, NakedHudSize, _tuning.ToConfig(), part);
 
-        // Factory returns a ContainerVisual sized pxSquare × pxSquare
-        // (≈288 for a 272×78 HUD). The host Grid is 300×300 — centre
-        // the visual inside so it lands over the reference Border.
         float inset = (NakedHostDim - naked.Size.X) / 2f;
         naked.Offset = new Vector3(inset, inset, 0f);
 
@@ -415,110 +393,120 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     // ────────────────────────────────────────────────────────────────────
-    // Concept panels
+    // Tuning panel — flat list of Expanders
     // ────────────────────────────────────────────────────────────────────
+    //
+    // Step frequencies are deliberately coarse so user-driven slider values
+    // land on round numbers instead of artefacts like 0.2676 or 0.6783 —
+    // the original playground used (max-min)/1000 which gave those. The
+    // default map:
+    //   fractional [0..1, ease Y ranges, saturation/opacity/hue]   → 0.05
+    //   period seconds [0..60, 0.5..30]                            → 0.5
+    //   short period (Swipe / fade curve)                          → 0.1
+    //   exposure [-2..2]                                           → 0.1
+    //   blend seconds [0..5]                                       → 0.1
+    //   dBFS (MinDbfs / MaxDbfs)                                   → 1
+    //   sim RMS values [0..0.3]                                    → 0.01
+    //   WedgeCount (int)                                           → 1
+    //
+    // Pre-existing defaults may not align with these grids (e.g.
+    // SwipeRiseAlpha=0.22, SwipeDecayAlpha=0.06); the initial Value is
+    // displayed verbatim and only snaps to the grid on the first user
+    // interaction. Direct keyboard input via the NumberBox still accepts
+    // any value within range.
 
-    private void BuildAllPanels()
+    private void BuildTuningPanel()
     {
-        _panels.Clear();
-        _panels["palette"]      = NewConceptPanel(PopulatePalettePanel);
-        _panels["hue"]          = NewConceptPanel(PopulateHuePanel);
-        _panels["arc"]          = NewConceptPanel(PopulateArcPanel);
-        _panels["swipe"]        = NewConceptPanel(PopulateSwipePanel);
-        _panels["recording"]    = NewConceptPanel(PopulateRecordingPanel);
-        _panels["transcribing"] = NewConceptPanel(PopulateTranscribingPanel);
-        _panels["rewriting"]    = NewConceptPanel(PopulateRewritingPanel);
-        _panels["audio"]        = NewConceptPanel(PopulateAudioPanel);
-        _panels["rms"]          = NewConceptPanel(PopulateRmsPanel);
-        _panels["parked"]       = NewConceptPanel(PopulateParkedPanel);
+        // Keep the "Tunables" title from the XAML, clear anything below it
+        // (in case this is ever invoked twice), then append the expanders.
+        while (TuningStack.Children.Count > 1)
+            TuningStack.Children.RemoveAt(TuningStack.Children.Count - 1);
+
+        AddPaletteExpander();
+        AddConicFadeExpander();
+        AddHueRotationExpander();
+        AddArcRotationExpander();
+        AddSwipeExpander();
+        AddRecordingExpander();
+        AddTranscribingExpander();
+        AddRewritingExpander();
+        AddAudioMappingExpander();
+        AddSimulatedRmsExpander();
+        AddParkedExpander();
     }
 
-    private static StackPanel NewConceptPanel(Action<StackPanel> populate)
+    // ── Expander groups ─────────────────────────────────────────────────
+
+    private void AddPaletteExpander()
     {
-        var stack = new StackPanel
-        {
-            MaxWidth = 1000,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Spacing = 4, // matches SettingsCardSpacing
-        };
-        populate(stack);
-        return stack;
-    }
-
-    // ── Palette (baked OKLCh + conic fade + arc mirror) ─────────────────
-
-    private void PopulatePalettePanel(StackPanel stack)
-    {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Palette",
-            "Baked OKLCh palette, conic span and fade, arc mirror.");
-
-        AddSectionHeader(stack, "OKLCh palette", ResetPalette);
-        AddFloatRow(stack, "OklchLightness", 0, 1, 0.001, _tuning.OklchLightness,
+        var stack = NewExpander("Palette (OKLCh)", ResetPalette);
+        AddFloatRow(stack, "OklchLightness", 0, 1, 0.05, _tuning.OklchLightness,
             v => _tuning.OklchLightness = (float)v, rebuild: true);
-        AddFloatRow(stack, "OklchChroma", 0, 0.4, 0.001, _tuning.OklchChroma,
+        AddFloatRow(stack, "OklchChroma", 0, 0.4, 0.05, _tuning.OklchChroma,
             v => _tuning.OklchChroma = (float)v, rebuild: true);
-        AddFloatRow(stack, "HueStart", 0, 1, 0.001, _tuning.HueStart,
+        AddFloatRow(stack, "HueStart", 0, 1, 0.05, _tuning.HueStart,
             v => _tuning.HueStart = (float)v, rebuild: true);
-        AddFloatRow(stack, "HueRange", 0, 1, 0.001, _tuning.HueRange,
+        AddFloatRow(stack, "HueRange", 0, 1, 0.05, _tuning.HueRange,
             v => _tuning.HueRange = (float)v, rebuild: true);
         AddIntRow(stack, "WedgeCount", 16, 720, _tuning.WedgeCount,
             v => _tuning.WedgeCount = v, rebuild: true);
-
-        AddSectionHeader(stack, "Conic fade & span", ResetPalette);
-        AddFloatRow(stack, "ConicSpanTurns", 0.05, 1.0, 0.001, _tuning.ConicSpanTurns,
-            v => _tuning.ConicSpanTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "ConicLeadFadeTurns", 0, 1, 0.001, _tuning.ConicLeadFadeTurns,
-            v => _tuning.ConicLeadFadeTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "ConicTailFadeTurns", 0, 1, 0.001, _tuning.ConicTailFadeTurns,
-            v => _tuning.ConicTailFadeTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "ConicFadeCurve", 0.5, 10, 0.01, _tuning.ConicFadeCurve,
-            v => _tuning.ConicFadeCurve = (float)v, rebuild: true);
-        AddToggleRow(stack, "ArcMirror", _tuning.ArcMirror,
-            v => _tuning.ArcMirror = v, rebuild: true);
     }
 
     private void ResetPalette()
     {
         var d = new TuningModel();
-        _tuning.OklchLightness     = d.OklchLightness;
-        _tuning.OklchChroma        = d.OklchChroma;
-        _tuning.HueStart           = d.HueStart;
-        _tuning.HueRange           = d.HueRange;
-        _tuning.WedgeCount         = d.WedgeCount;
+        _tuning.OklchLightness = d.OklchLightness;
+        _tuning.OklchChroma    = d.OklchChroma;
+        _tuning.HueStart       = d.HueStart;
+        _tuning.HueRange       = d.HueRange;
+        _tuning.WedgeCount     = d.WedgeCount;
+        RebuildTuningPanel();
+    }
+
+    private void AddConicFadeExpander()
+    {
+        var stack = NewExpander("Conic fade & span", ResetConicFade);
+        AddFloatRow(stack, "ConicSpanTurns", 0.05, 1.0, 0.05, _tuning.ConicSpanTurns,
+            v => _tuning.ConicSpanTurns = (float)v, rebuild: true);
+        AddFloatRow(stack, "ConicLeadFadeTurns", 0, 1, 0.05, _tuning.ConicLeadFadeTurns,
+            v => _tuning.ConicLeadFadeTurns = (float)v, rebuild: true);
+        AddFloatRow(stack, "ConicTailFadeTurns", 0, 1, 0.05, _tuning.ConicTailFadeTurns,
+            v => _tuning.ConicTailFadeTurns = (float)v, rebuild: true);
+        AddFloatRow(stack, "ConicFadeCurve", 0.5, 10, 0.1, _tuning.ConicFadeCurve,
+            v => _tuning.ConicFadeCurve = (float)v, rebuild: true);
+        AddToggleRow(stack, "ArcMirror", _tuning.ArcMirror,
+            v => _tuning.ArcMirror = v, rebuild: true);
+    }
+
+    private void ResetConicFade()
+    {
+        var d = new TuningModel();
         _tuning.ConicSpanTurns     = d.ConicSpanTurns;
         _tuning.ConicLeadFadeTurns = d.ConicLeadFadeTurns;
         _tuning.ConicTailFadeTurns = d.ConicTailFadeTurns;
         _tuning.ConicFadeCurve     = d.ConicFadeCurve;
         _tuning.ArcMirror          = d.ArcMirror;
-        PopulatePalettePanel(_panels["palette"]);
-        RequestRebuild();
+        RebuildTuningPanel();
     }
 
-    // ── Hue rotation ────────────────────────────────────────────────────
-
-    private void PopulateHuePanel(StackPanel stack)
+    private void AddHueRotationExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Hue rotation",
-            "Period, direction and ease curve of the rotating hue phase.");
-
-        AddSectionHeader(stack, "Hue rotation", ResetHue);
-        AddFloatRow(stack, "HuePeriodSeconds", 0, 60, 0.1, _tuning.HuePeriodSeconds,
+        var stack = NewExpander("Hue rotation", ResetHueRotation);
+        AddFloatRow(stack, "HuePeriodSeconds", 0, 60, 0.5, _tuning.HuePeriodSeconds,
             v => _tuning.HuePeriodSeconds = v, rebuild: true);
         AddDirectionRow(stack, "HueDirection", _tuning.HueDirection,
             v => _tuning.HueDirection = v);
-        AddFloatRow(stack, "HueEaseP1.X", 0, 1, 0.001, _tuning.HueEaseP1X,
+        AddFloatRow(stack, "HueEaseP1.X", 0, 1, 0.05, _tuning.HueEaseP1X,
             v => _tuning.HueEaseP1X = (float)v, rebuild: true);
-        AddFloatRow(stack, "HueEaseP1.Y", -0.5, 1.5, 0.001, _tuning.HueEaseP1Y,
+        AddFloatRow(stack, "HueEaseP1.Y", -0.5, 1.5, 0.05, _tuning.HueEaseP1Y,
             v => _tuning.HueEaseP1Y = (float)v, rebuild: true);
-        AddFloatRow(stack, "HueEaseP2.X", 0, 1, 0.001, _tuning.HueEaseP2X,
+        AddFloatRow(stack, "HueEaseP2.X", 0, 1, 0.05, _tuning.HueEaseP2X,
             v => _tuning.HueEaseP2X = (float)v, rebuild: true);
-        AddFloatRow(stack, "HueEaseP2.Y", -0.5, 1.5, 0.001, _tuning.HueEaseP2Y,
+        AddFloatRow(stack, "HueEaseP2.Y", -0.5, 1.5, 0.05, _tuning.HueEaseP2Y,
             v => _tuning.HueEaseP2Y = (float)v, rebuild: true);
     }
 
-    private void ResetHue()
+    private void ResetHueRotation()
     {
         var d = new TuningModel();
         _tuning.HuePeriodSeconds = d.HuePeriodSeconds;
@@ -527,34 +515,27 @@ public sealed partial class PlaygroundWindow : Window
         _tuning.HueEaseP1Y       = d.HueEaseP1Y;
         _tuning.HueEaseP2X       = d.HueEaseP2X;
         _tuning.HueEaseP2Y       = d.HueEaseP2Y;
-        PopulateHuePanel(_panels["hue"]);
-        RequestRebuild();
+        RebuildTuningPanel();
     }
 
-    // ── Arc rotation ────────────────────────────────────────────────────
-
-    private void PopulateArcPanel(StackPanel stack)
+    private void AddArcRotationExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Arc rotation",
-            "Period, direction and ease curve of the rotating arc mask.");
-
-        AddSectionHeader(stack, "Arc rotation", ResetArc);
-        AddFloatRow(stack, "ArcPeriodSeconds", 0.5, 30, 0.1, _tuning.ArcPeriodSeconds,
+        var stack = NewExpander("Arc rotation", ResetArcRotation);
+        AddFloatRow(stack, "ArcPeriodSeconds", 0.5, 30, 0.5, _tuning.ArcPeriodSeconds,
             v => _tuning.ArcPeriodSeconds = v, rebuild: true);
         AddDirectionRow(stack, "ArcDirection", _tuning.ArcDirection,
             v => _tuning.ArcDirection = v);
-        AddFloatRow(stack, "ArcEaseP1.X", 0, 1, 0.001, _tuning.ArcEaseP1X,
+        AddFloatRow(stack, "ArcEaseP1.X", 0, 1, 0.05, _tuning.ArcEaseP1X,
             v => _tuning.ArcEaseP1X = (float)v, rebuild: true);
-        AddFloatRow(stack, "ArcEaseP1.Y", -0.5, 1.5, 0.001, _tuning.ArcEaseP1Y,
+        AddFloatRow(stack, "ArcEaseP1.Y", -0.5, 1.5, 0.05, _tuning.ArcEaseP1Y,
             v => _tuning.ArcEaseP1Y = (float)v, rebuild: true);
-        AddFloatRow(stack, "ArcEaseP2.X", 0, 1, 0.001, _tuning.ArcEaseP2X,
+        AddFloatRow(stack, "ArcEaseP2.X", 0, 1, 0.05, _tuning.ArcEaseP2X,
             v => _tuning.ArcEaseP2X = (float)v, rebuild: true);
-        AddFloatRow(stack, "ArcEaseP2.Y", -0.5, 1.5, 0.001, _tuning.ArcEaseP2Y,
+        AddFloatRow(stack, "ArcEaseP2.Y", -0.5, 1.5, 0.05, _tuning.ArcEaseP2Y,
             v => _tuning.ArcEaseP2Y = (float)v, rebuild: true);
     }
 
-    private void ResetArc()
+    private void ResetArcRotation()
     {
         var d = new TuningModel();
         _tuning.ArcPeriodSeconds = d.ArcPeriodSeconds;
@@ -563,33 +544,27 @@ public sealed partial class PlaygroundWindow : Window
         _tuning.ArcEaseP1Y       = d.ArcEaseP1Y;
         _tuning.ArcEaseP2X       = d.ArcEaseP2X;
         _tuning.ArcEaseP2Y       = d.ArcEaseP2Y;
-        PopulateArcPanel(_panels["arc"]);
-        RequestRebuild();
+        RebuildTuningPanel();
     }
 
-    // ── Swipe (Transcribing / Rewriting) ────────────────────────────────
-
-    private void PopulateSwipePanel(StackPanel stack)
+    private void AddSwipeExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Swipe",
-            "Per-digit heat wave that reveals which digits changed during Recording. Applies to Transcribing and Rewriting.");
-
-        AddSectionHeader(stack, "Swipe", ResetSwipe);
-        AddFloatRow(stack, "SwipeCycleSeconds", 0.1, 6.0, 0.01,
+        var stack = NewExpander("Swipe (Transcribing / Rewriting)", ResetSwipe);
+        // Static mutables on HudChrono — read live each vsync, no rebuild.
+        AddFloatRow(stack, "SwipeCycleSeconds", 0.1, 6.0, 0.1,
             HudChrono.SwipeCycleSeconds,
             v => HudChrono.SwipeCycleSeconds = (float)v);
-        AddFloatRow(stack, "SwipeEaseP1.X", 0, 1, 0.001, HudChrono.SwipeEaseP1.X,
+        AddFloatRow(stack, "SwipeEaseP1.X", 0, 1, 0.05, HudChrono.SwipeEaseP1.X,
             v => HudChrono.SwipeEaseP1 = new Vector2((float)v, HudChrono.SwipeEaseP1.Y));
-        AddFloatRow(stack, "SwipeEaseP1.Y", -0.5, 1.5, 0.001, HudChrono.SwipeEaseP1.Y,
+        AddFloatRow(stack, "SwipeEaseP1.Y", -0.5, 1.5, 0.05, HudChrono.SwipeEaseP1.Y,
             v => HudChrono.SwipeEaseP1 = new Vector2(HudChrono.SwipeEaseP1.X, (float)v));
-        AddFloatRow(stack, "SwipeEaseP2.X", 0, 1, 0.001, HudChrono.SwipeEaseP2.X,
+        AddFloatRow(stack, "SwipeEaseP2.X", 0, 1, 0.05, HudChrono.SwipeEaseP2.X,
             v => HudChrono.SwipeEaseP2 = new Vector2((float)v, HudChrono.SwipeEaseP2.Y));
-        AddFloatRow(stack, "SwipeEaseP2.Y", -0.5, 1.5, 0.001, HudChrono.SwipeEaseP2.Y,
+        AddFloatRow(stack, "SwipeEaseP2.Y", -0.5, 1.5, 0.05, HudChrono.SwipeEaseP2.Y,
             v => HudChrono.SwipeEaseP2 = new Vector2(HudChrono.SwipeEaseP2.X, (float)v));
-        AddFloatRow(stack, "SwipeRiseAlpha", 0.02, 1.0, 0.001, HudChrono.SwipeRiseAlpha,
+        AddFloatRow(stack, "SwipeRiseAlpha", 0.05, 1.0, 0.05, HudChrono.SwipeRiseAlpha,
             v => HudChrono.SwipeRiseAlpha = (float)v);
-        AddFloatRow(stack, "SwipeDecayAlpha", 0.01, 0.5, 0.001, HudChrono.SwipeDecayAlpha,
+        AddFloatRow(stack, "SwipeDecayAlpha", 0.05, 0.5, 0.05, HudChrono.SwipeDecayAlpha,
             v => HudChrono.SwipeDecayAlpha = (float)v);
         AddToggleRow(stack, "Simulate changed digits",
             _simulateChangedDigits,
@@ -604,40 +579,33 @@ public sealed partial class PlaygroundWindow : Window
         HudChrono.SwipeRiseAlpha    = 0.22f;
         HudChrono.SwipeDecayAlpha   = 0.06f;
         _simulateChangedDigits      = true;
-        PopulateSwipePanel(_panels["swipe"]);
+        RebuildTuningPanel();
         ApplyTarget();
     }
 
-    // ── Recording variant ───────────────────────────────────────────────
-
-    private void PopulateRecordingPanel(StackPanel stack)
+    private void AddRecordingExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Recording",
-            "Variant-specific knobs for the Recording state: paint-time mask shape and runtime colour-pipeline deltas.");
-
-        AddSectionHeader(stack, "Recording", ResetRecording);
-        AddFloatRow(stack, "RecordingConicSpanTurns", 0.05, 1, 0.001, _tuning.RecordingConicSpanTurns,
+        var stack = NewExpander("Recording", ResetRecording);
+        AddFloatRow(stack, "RecordingConicSpanTurns", 0.05, 1, 0.05, _tuning.RecordingConicSpanTurns,
             v => _tuning.RecordingConicSpanTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingConicLeadFadeTurns", 0, 1, 0.001, _tuning.RecordingConicLeadFadeTurns,
+        AddFloatRow(stack, "RecordingConicLeadFadeTurns", 0, 1, 0.05, _tuning.RecordingConicLeadFadeTurns,
             v => _tuning.RecordingConicLeadFadeTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingConicTailFadeTurns", 0, 1, 0.001, _tuning.RecordingConicTailFadeTurns,
+        AddFloatRow(stack, "RecordingConicTailFadeTurns", 0, 1, 0.05, _tuning.RecordingConicTailFadeTurns,
             v => _tuning.RecordingConicTailFadeTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingConicFadeCurve", 0.5, 10, 0.01, _tuning.RecordingConicFadeCurve,
+        AddFloatRow(stack, "RecordingConicFadeCurve", 0.5, 10, 0.1, _tuning.RecordingConicFadeCurve,
             v => _tuning.RecordingConicFadeCurve = (float)v, rebuild: true);
         AddToggleRow(stack, "RecordingArcMirror", _tuning.RecordingArcMirror,
             v => _tuning.RecordingArcMirror = v, rebuild: true);
-        AddFloatRow(stack, "RecordingSaturationDark", 0, 1, 0.001, _tuning.RecordingSaturationDark,
+        AddFloatRow(stack, "RecordingSaturationDark", 0, 1, 0.05, _tuning.RecordingSaturationDark,
             v => _tuning.RecordingSaturationDark = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingSaturationLight", 0, 1, 0.001, _tuning.RecordingSaturationLight,
+        AddFloatRow(stack, "RecordingSaturationLight", 0, 1, 0.05, _tuning.RecordingSaturationLight,
             v => _tuning.RecordingSaturationLight = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingHueShiftTurns", 0, 1, 0.001, _tuning.RecordingHueShiftTurns,
+        AddFloatRow(stack, "RecordingHueShiftTurns", 0, 1, 0.05, _tuning.RecordingHueShiftTurns,
             v => _tuning.RecordingHueShiftTurns = (float)v, rebuild: true);
-        // Exposure clamped to D2D1_EXPOSURE spec [-2, +2]. Values outside
-        // produce driver-level assertions on rebuild.
-        AddFloatRow(stack, "RecordingExposureDark", -2, 2, 0.01, _tuning.RecordingExposureDark,
+        // Exposure clamped to D2D1_EXPOSURE spec [-2, +2].
+        AddFloatRow(stack, "RecordingExposureDark", -2, 2, 0.1, _tuning.RecordingExposureDark,
             v => _tuning.RecordingExposureDark = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingExposureLight", -2, 2, 0.01, _tuning.RecordingExposureLight,
+        AddFloatRow(stack, "RecordingExposureLight", -2, 2, 0.1, _tuning.RecordingExposureLight,
             v => _tuning.RecordingExposureLight = (float)v, rebuild: true);
     }
 
@@ -654,28 +622,21 @@ public sealed partial class PlaygroundWindow : Window
         _tuning.RecordingHueShiftTurns      = d.RecordingHueShiftTurns;
         _tuning.RecordingExposureDark       = d.RecordingExposureDark;
         _tuning.RecordingExposureLight      = d.RecordingExposureLight;
-        PopulateRecordingPanel(_panels["recording"]);
-        RequestRebuild();
+        RebuildTuningPanel();
     }
 
-    // ── Transcribing variant ────────────────────────────────────────────
-
-    private void PopulateTranscribingPanel(StackPanel stack)
+    private void AddTranscribingExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Transcribing",
-            "Runtime colour-pipeline deltas for the Transcribing state.");
-
-        AddSectionHeader(stack, "Transcribing", ResetTranscribing);
-        AddFloatRow(stack, "TranscribingSaturationDark", 0, 1, 0.001, _tuning.TranscribingSaturationDark,
+        var stack = NewExpander("Transcribing", ResetTranscribing);
+        AddFloatRow(stack, "TranscribingSaturationDark", 0, 1, 0.05, _tuning.TranscribingSaturationDark,
             v => _tuning.TranscribingSaturationDark = (float)v, rebuild: true);
-        AddFloatRow(stack, "TranscribingSaturationLight", 0, 1, 0.001, _tuning.TranscribingSaturationLight,
+        AddFloatRow(stack, "TranscribingSaturationLight", 0, 1, 0.05, _tuning.TranscribingSaturationLight,
             v => _tuning.TranscribingSaturationLight = (float)v, rebuild: true);
-        AddFloatRow(stack, "TranscribingHueShiftTurns", 0, 1, 0.001, _tuning.TranscribingHueShiftTurns,
+        AddFloatRow(stack, "TranscribingHueShiftTurns", 0, 1, 0.05, _tuning.TranscribingHueShiftTurns,
             v => _tuning.TranscribingHueShiftTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "TranscribingExposureDark", -2, 2, 0.01, _tuning.TranscribingExposureDark,
+        AddFloatRow(stack, "TranscribingExposureDark", -2, 2, 0.1, _tuning.TranscribingExposureDark,
             v => _tuning.TranscribingExposureDark = (float)v, rebuild: true);
-        AddFloatRow(stack, "TranscribingExposureLight", -2, 2, 0.01, _tuning.TranscribingExposureLight,
+        AddFloatRow(stack, "TranscribingExposureLight", -2, 2, 0.1, _tuning.TranscribingExposureLight,
             v => _tuning.TranscribingExposureLight = (float)v, rebuild: true);
     }
 
@@ -687,24 +648,17 @@ public sealed partial class PlaygroundWindow : Window
         _tuning.TranscribingHueShiftTurns   = d.TranscribingHueShiftTurns;
         _tuning.TranscribingExposureDark    = d.TranscribingExposureDark;
         _tuning.TranscribingExposureLight   = d.TranscribingExposureLight;
-        PopulateTranscribingPanel(_panels["transcribing"]);
-        RequestRebuild();
+        RebuildTuningPanel();
     }
 
-    // ── Rewriting variant ───────────────────────────────────────────────
-
-    private void PopulateRewritingPanel(StackPanel stack)
+    private void AddRewritingExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Rewriting",
-            "Runtime colour-pipeline deltas for the Rewriting state.");
-
-        AddSectionHeader(stack, "Rewriting", ResetRewriting);
-        AddFloatRow(stack, "RewritingSaturation", 0, 1, 0.001, _tuning.RewritingSaturation,
+        var stack = NewExpander("Rewriting", ResetRewriting);
+        AddFloatRow(stack, "RewritingSaturation", 0, 1, 0.05, _tuning.RewritingSaturation,
             v => _tuning.RewritingSaturation = (float)v, rebuild: true);
-        AddFloatRow(stack, "RewritingHueShiftTurns", 0, 1, 0.001, _tuning.RewritingHueShiftTurns,
+        AddFloatRow(stack, "RewritingHueShiftTurns", 0, 1, 0.05, _tuning.RewritingHueShiftTurns,
             v => _tuning.RewritingHueShiftTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "RewritingExposure", -2, 2, 0.01, _tuning.RewritingExposure,
+        AddFloatRow(stack, "RewritingExposure", -2, 2, 0.1, _tuning.RewritingExposure,
             v => _tuning.RewritingExposure = (float)v, rebuild: true);
     }
 
@@ -714,99 +668,85 @@ public sealed partial class PlaygroundWindow : Window
         _tuning.RewritingSaturation    = d.RewritingSaturation;
         _tuning.RewritingHueShiftTurns = d.RewritingHueShiftTurns;
         _tuning.RewritingExposure      = d.RewritingExposure;
-        PopulateRewritingPanel(_panels["rewriting"]);
-        RequestRebuild();
+        RebuildTuningPanel();
     }
 
-    // ── Audio mapping (dBFS → opacity) ──────────────────────────────────
-
-    private void PopulateAudioPanel(StackPanel stack)
+    private void AddAudioMappingExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Audio mapping",
-            "EMA smoothing, dBFS window and curve for the Recording audio-to-opacity mapping.");
-
-        AddSectionHeader(stack, "Audio mapping", ResetAudio);
-        AddFloatRow(stack, "EmaAlpha", 0, 1, 0.001, HudChrono.EmaAlpha,
+        var stack = NewExpander("Audio mapping (Recording)", ResetAudioMapping);
+        // Static mutables on HudChrono — no rebuild, read live each sample.
+        AddFloatRow(stack, "EmaAlpha", 0, 1, 0.05, HudChrono.EmaAlpha,
             v => HudChrono.EmaAlpha = (float)v);
-        AddFloatRow(stack, "MinDbfs", -80, 0, 0.1, HudChrono.MinDbfs,
+        AddFloatRow(stack, "MinDbfs", -80, 0, 1, HudChrono.MinDbfs,
             v => HudChrono.MinDbfs = (float)v);
-        AddFloatRow(stack, "MaxDbfs", -60, 0, 0.1, HudChrono.MaxDbfs,
+        AddFloatRow(stack, "MaxDbfs", -60, 0, 1, HudChrono.MaxDbfs,
             v => HudChrono.MaxDbfs = (float)v);
-        AddFloatRow(stack, "DbfsCurveExponent", 0.5, 4, 0.01, HudChrono.DbfsCurveExponent,
+        AddFloatRow(stack, "DbfsCurveExponent", 0.5, 4, 0.05, HudChrono.DbfsCurveExponent,
             v => HudChrono.DbfsCurveExponent = (float)v);
     }
 
-    private void ResetAudio()
+    private void ResetAudioMapping()
     {
         HudChrono.EmaAlpha          = 0.72f;
         HudChrono.MinDbfs           = -40f;
         HudChrono.MaxDbfs           = -22f;
         HudChrono.DbfsCurveExponent = 2.0f;
-        PopulateAudioPanel(_panels["audio"]);
+        RebuildTuningPanel();
     }
 
-    // ── Simulated RMS ───────────────────────────────────────────────────
-
-    private void PopulateRmsPanel(StackPanel stack)
+    private void AddSimulatedRmsExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Simulated RMS",
-            "Audio level pump driving Recording. Sine sweep by default, manual override for static inspection.");
-
-        AddSectionHeader(stack, "Simulated RMS", ResetRms);
-        AddFloatRow(stack, "SimRmsMin", 0, 0.3, 0.001, _simRmsMin,
+        var stack = NewExpander("Simulated RMS (Recording only)", ResetSimulatedRms);
+        AddFloatRow(stack, "SimRmsMin", 0, 0.3, 0.01, _simRmsMin,
             v => _simRmsMin = (float)v);
-        AddFloatRow(stack, "SimRmsMax", 0, 0.3, 0.001, _simRmsMax,
+        AddFloatRow(stack, "SimRmsMax", 0, 0.3, 0.01, _simRmsMax,
             v => _simRmsMax = (float)v);
-        AddFloatRow(stack, "SimRmsPeriodSeconds", 0.2, 10, 0.01, _simRmsPeriodSeconds,
+        AddFloatRow(stack, "SimRmsPeriodSeconds", 0.2, 10, 0.1, _simRmsPeriodSeconds,
             v => _simRmsPeriodSeconds = (float)v);
         AddToggleRow(stack, "Manual override", _simManualOverride,
             v => _simManualOverride = v);
-        AddFloatRow(stack, "SimRmsManualValue", 0, 0.3, 0.001, _simManualValue,
+        AddFloatRow(stack, "SimRmsManualValue", 0, 0.3, 0.01, _simManualValue,
             v => _simManualValue = (float)v);
     }
 
-    private void ResetRms()
+    private void ResetSimulatedRms()
     {
         _simRmsMin           = 0.013f;
         _simRmsMax           = 0.100f;
         _simRmsPeriodSeconds = 2.0f;
         _simManualOverride   = false;
         _simManualValue      = 0.012f;
-        PopulateRmsPanel(_panels["rms"]);
+        RebuildTuningPanel();
     }
 
-    // ── Parked (variant transition knobs, muted in single-target mode) ──
-
-    private void PopulateParkedPanel(StackPanel stack)
+    // Parked expander — fields only observable during a variant transition
+    // or at stroke creation. Muted by construction in the single-target
+    // playground; collapsed by default so they don't drown the active
+    // knobs, but kept visible for default-tweaking.
+    private void AddParkedExpander()
     {
-        stack.Children.Clear();
-        AddPageTitle(stack, "Parked",
-            "Fields whose effect is only visible during a variant transition. Muted by construction in the playground (single target at a time); kept for default-tweaking.");
-
-        AddSectionHeader(stack, "Parked", ResetParked);
-        AddFloatRow(stack, "HuePhaseTurns", 0, 1, 0.001, _tuning.HuePhaseTurns,
+        var stack = NewExpander("Variant transitions — parked", ResetParked, expanded: false);
+        AddFloatRow(stack, "HuePhaseTurns", 0, 1, 0.05, _tuning.HuePhaseTurns,
             v => _tuning.HuePhaseTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "ArcPhaseTurns", 0, 1, 0.001, _tuning.ArcPhaseTurns,
+        AddFloatRow(stack, "ArcPhaseTurns", 0, 1, 0.05, _tuning.ArcPhaseTurns,
             v => _tuning.ArcPhaseTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingArcPhaseTurns", 0, 1, 0.001, _tuning.RecordingArcPhaseTurns,
+        AddFloatRow(stack, "RecordingArcPhaseTurns", 0, 1, 0.05, _tuning.RecordingArcPhaseTurns,
             v => _tuning.RecordingArcPhaseTurns = (float)v, rebuild: true);
-        AddFloatRow(stack, "HueMinSpeedFraction", 0, 1, 0.001, _tuning.HueMinSpeedFraction,
+        AddFloatRow(stack, "HueMinSpeedFraction", 0, 1, 0.05, _tuning.HueMinSpeedFraction,
             v => _tuning.HueMinSpeedFraction = (float)v, rebuild: true);
-        AddFloatRow(stack, "ArcMinSpeedFraction", 0, 1, 0.001, _tuning.ArcMinSpeedFraction,
+        AddFloatRow(stack, "ArcMinSpeedFraction", 0, 1, 0.05, _tuning.ArcMinSpeedFraction,
             v => _tuning.ArcMinSpeedFraction = (float)v, rebuild: true);
-        AddFloatRow(stack, "RecordingBlendSeconds", 0, 5, 0.01, _tuning.RecordingBlendSeconds,
+        AddFloatRow(stack, "RecordingBlendSeconds", 0, 5, 0.1, _tuning.RecordingBlendSeconds,
             v => _tuning.RecordingBlendSeconds = v, rebuild: true);
-        AddFloatRow(stack, "RecordingHuePeriodSeconds", 0, 60, 0.1, _tuning.RecordingHuePeriodSeconds,
+        AddFloatRow(stack, "RecordingHuePeriodSeconds", 0, 60, 0.5, _tuning.RecordingHuePeriodSeconds,
             v => _tuning.RecordingHuePeriodSeconds = v, rebuild: true);
-        AddFloatRow(stack, "TranscribingOpacity", 0, 1, 0.001, _tuning.TranscribingOpacity,
+        AddFloatRow(stack, "TranscribingOpacity", 0, 1, 0.05, _tuning.TranscribingOpacity,
             v => _tuning.TranscribingOpacity = (float)v, rebuild: true);
-        AddFloatRow(stack, "TranscribingBlendSeconds", 0, 5, 0.01, _tuning.TranscribingBlendSeconds,
+        AddFloatRow(stack, "TranscribingBlendSeconds", 0, 5, 0.1, _tuning.TranscribingBlendSeconds,
             v => _tuning.TranscribingBlendSeconds = v, rebuild: true);
-        AddFloatRow(stack, "RewritingOpacity", 0, 1, 0.001, _tuning.RewritingOpacity,
+        AddFloatRow(stack, "RewritingOpacity", 0, 1, 0.05, _tuning.RewritingOpacity,
             v => _tuning.RewritingOpacity = (float)v, rebuild: true);
-        AddFloatRow(stack, "RewritingBlendSeconds", 0, 5, 0.01, _tuning.RewritingBlendSeconds,
+        AddFloatRow(stack, "RewritingBlendSeconds", 0, 5, 0.1, _tuning.RewritingBlendSeconds,
             v => _tuning.RewritingBlendSeconds = v, rebuild: true);
     }
 
@@ -824,71 +764,86 @@ public sealed partial class PlaygroundWindow : Window
         _tuning.TranscribingBlendSeconds  = d.TranscribingBlendSeconds;
         _tuning.RewritingOpacity          = d.RewritingOpacity;
         _tuning.RewritingBlendSeconds     = d.RewritingBlendSeconds;
-        PopulateParkedPanel(_panels["parked"]);
+        RebuildTuningPanel();
+    }
+
+    // Rebuild the whole tuning panel from the current _tuning state. Used
+    // by every Reset*() — the alternative (tracking per-row controls in
+    // a dictionary) would be more code for the same effect. The whole
+    // panel is only dozens of rows of UI, so a wholesale reconstruction
+    // is cheap and keeps the row factories tight.
+    private void RebuildTuningPanel()
+    {
+        BuildTuningPanel();
         RequestRebuild();
     }
 
-    // ────────────────────────────────────────────────────────────────────
-    // Row + section factories
-    // ────────────────────────────────────────────────────────────────────
+    // ── Expander factory ────────────────────────────────────────────────
+    //
+    // Expander header hosts the section title and an aligned-right "Reset"
+    // HyperlinkButton. The HyperlinkButton short-circuits the click
+    // (e.Handled = true in its own handler) so tapping Reset doesn't
+    // collapse the expander.
 
-    private static void AddPageTitle(StackPanel stack, string title, string description)
+    private StackPanel NewExpander(string title, Action resetAction, bool expanded = true)
     {
-        stack.Children.Add(new TextBlock
+        var content = new StackPanel
         {
-            Text = title,
-            Style = (Style)Application.Current.Resources["TitleTextBlockStyle"],
-            Margin = new Thickness(0, 0, 0, 8),
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = description,
-            Style = (Style)Application.Current.Resources["BodyTextBlockStyle"],
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 12),
-        });
-    }
+            Spacing = 4,
+            Margin = new Thickness(0, 4, 0, 4),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
 
-    // Section header — pattern from GeneralPage.xaml:72-86. Title on the
-    // left, Reset HyperlinkButton aligned bottom-right. Invoking Reset
-    // repopulates the section fields and rebuilds the preview.
-    private void AddSectionHeader(StackPanel stack, string title, Action resetAction)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var headerGrid = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var titleTb = new TextBlock
         {
             Text = title,
-            Style = (Style)(RootGrid.Resources["SettingsSectionHeaderTextBlockStyle"]
-                     ?? Application.Current.Resources["BodyStrongTextBlockStyle"]),
+            VerticalAlignment = VerticalAlignment.Center,
         };
         Grid.SetColumn(titleTb, 0);
-        grid.Children.Add(titleTb);
+        headerGrid.Children.Add(titleTb);
 
         var resetBtn = new HyperlinkButton
         {
             Content = "Reset",
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            // Tight padding so the Reset label doesn't bloat the header.
+            Padding = new Thickness(8, 2, 8, 2),
+            Margin = new Thickness(0, -4, 8, -4),
         };
         ToolTipService.SetToolTip(resetBtn, "Reset this section to defaults");
         resetBtn.Click += (_, _) => resetAction();
         Grid.SetColumn(resetBtn, 1);
-        grid.Children.Add(resetBtn);
+        headerGrid.Children.Add(resetBtn);
 
-        stack.Children.Add(grid);
+        var expander = new Expander
+        {
+            Header = headerGrid,
+            Content = content,
+            IsExpanded = expanded,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 4, 0, 4),
+        };
+        TuningStack.Children.Add(expander);
+        return content;
     }
 
-    // ── Slider + NumberBox composite ────────────────────────────────────
+    // ── Row factories ───────────────────────────────────────────────────
     //
-    // Two-way sync: slider move → NumberBox.Value updates; NumberBox typed
-    // value → Slider.Value updates. The `_syncing` guard prevents the
-    // feedback loop. Both controls call the setter on every commit;
-    // rebuild-triggering rows go through RequestRebuild so CanvasDevice
+    // Slider + NumberBox composite. Both share the same value source; the
+    // `_syncing` guard prevents the ValueChanged feedback loop. Rebuild-
+    // triggering rows push through RequestRebuild so the CanvasDevice
     // doesn't thrash mid-drag.
+    //
+    // Layout: 3-column Grid [label 160 | slider * | NumberBox 120].
+    // NumberBox MinWidth 120 dip fits "-99.99" + spin buttons without
+    // clipping; the label column is narrower than before because the
+    // tuning column is resizable now — if Louis wants more label room
+    // he drags the sash.
 
     private void AddFloatRow(
         StackPanel stack, string label,
@@ -900,6 +855,8 @@ public sealed partial class PlaygroundWindow : Window
         {
             Minimum = min, Maximum = max, Value = value,
             StepFrequency = step,
+            SmallChange = step,
+            LargeChange = step * 10,
             VerticalAlignment = VerticalAlignment.Center,
             IsThumbToolTipEnabled = false,
         };
@@ -912,7 +869,7 @@ public sealed partial class PlaygroundWindow : Window
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
             ValidationMode = NumberBoxValidationMode.InvalidInputOverwritten,
             VerticalAlignment = VerticalAlignment.Center,
-            MinWidth = 128,
+            MinWidth = 120,
         };
 
         slider.ValueChanged += (_, e) =>
@@ -967,7 +924,7 @@ public sealed partial class PlaygroundWindow : Window
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
             ValidationMode = NumberBoxValidationMode.InvalidInputOverwritten,
             VerticalAlignment = VerticalAlignment.Center,
-            MinWidth = 128,
+            MinWidth = 120,
         };
 
         slider.ValueChanged += (_, e) =>
@@ -1019,12 +976,13 @@ public sealed partial class PlaygroundWindow : Window
         };
 
         var grid = new Grid { ColumnSpacing = 8, Margin = new Thickness(0, 4, 0, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var labelTb = new TextBlock
         {
             Text = label,
             VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
         };
         Grid.SetColumn(labelTb, 0);
         Grid.SetColumn(toggle, 1);
@@ -1053,12 +1011,13 @@ public sealed partial class PlaygroundWindow : Window
         };
 
         var grid = new Grid { ColumnSpacing = 8, Margin = new Thickness(0, 4, 0, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var labelTb = new TextBlock
         {
             Text = label,
             VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
         };
         Grid.SetColumn(labelTb, 0);
         Grid.SetColumn(toggle, 1);
@@ -1070,7 +1029,7 @@ public sealed partial class PlaygroundWindow : Window
     private static Grid WrapRow(string label, Slider slider, NumberBox numberBox)
     {
         var grid = new Grid { ColumnSpacing = 12, Margin = new Thickness(0, 4, 0, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
