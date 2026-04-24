@@ -65,7 +65,11 @@ public sealed partial class PlaygroundWindow : Window
         Combined,
     }
 
-    private readonly TuningModel _tuning = new();
+    // Not readonly: hydrate-from-disk swaps the whole instance wholesale
+    // (see TryHydrateFromDisk). Every row-factory lambda captures `_tuning`
+    // by closure over `this`, so the lambdas see the swapped instance on
+    // the next edit — no need to rebuild the panel purely for the swap.
+    private TuningModel _tuning = new();
 
     // Sim RMS defaults chosen to mimic the RMS distribution of normal
     // conversational speech (50 ms window average):
@@ -84,6 +88,25 @@ public sealed partial class PlaygroundWindow : Window
 
     private Target _currentTarget = Target.Transcribing;
     private bool   _isPlaying     = true;
+
+    // Three-state header UX driven by two booleans:
+    //
+    //   _isDirty         _hasSavedState   header state
+    //   ────────────    ──────────────   ────────────────────────────
+    //   false            false            pristine (label hidden,
+    //                                     Revert disabled, Save disabled)
+    //   true             any              "Unsaved changes" italic
+    //                                     (Revert + Save enabled)
+    //   false            true             "Modified parameters" regular
+    //                                     (Revert enabled, Save disabled)
+    //
+    // _isDirty: live state diverges from the file (or from pristine if no
+    // file). Flipped by row-factory handlers + RebuildTuningPanel.
+    // _hasSavedState: a JSON file exists on disk. Set by TryHydrateFromDisk
+    // on success + by OnSaveClick on write. Cleared by OnResetAllClick
+    // which also deletes the file.
+    private bool _isDirty;
+    private bool _hasSavedState;
 
     // ── Rebuild debounce ────────────────────────────────────────────────
     //
@@ -144,10 +167,13 @@ public sealed partial class PlaygroundWindow : Window
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min width 800: preview column min (400) + sash (6) + tuning
-        // column min (360) + a little breathing room. Below this the sash
-        // clamp runs out of room.
-        presenter.PreferredMinimumWidth  = 800;
+        // Min width 1200: preview column fixed at 720 + tuning column
+        // MinWidth 480. Preview sized to fit all seven SelectorBar tabs
+        // horizontally (Charging … Combined) without invoking the
+        // ScrollViewer's horizontal scroll. Below 1200 total the tuning
+        // slider/NumberBox composite loses readable space. No sash to
+        // drag — the fixed contract IS the responsive contract.
+        presenter.PreferredMinimumWidth  = 1200;
         presenter.PreferredMinimumHeight = 480;
         AppWindow.SetPresenter(presenter);
 
@@ -171,7 +197,13 @@ public sealed partial class PlaygroundWindow : Window
         {
             root.Loaded += (_, _) =>
             {
+                // Hydrate BEFORE BuildTuningPanel — the row factories read
+                // _tuning/sim* as initial values, so the panel must reflect
+                // persisted state from frame one. Missing/corrupt file ⇒
+                // falls through with compiled-in defaults untouched.
+                TryHydrateFromDisk();
                 BuildTuningPanel();
+                MarkClean(); // Hydrated state == saved state by definition.
                 ApplyTarget();
             };
         }
@@ -242,28 +274,6 @@ public sealed partial class PlaygroundWindow : Window
             _iconIdle = new BitmapImage(new Uri(_iconIdlePath));
         if (_iconRecordingPath is not null)
             _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
-    }
-
-    // ── Sash (column resize) ────────────────────────────────────────────
-    //
-    // Clamp the new PreviewCol width between its declared MinWidth and the
-    // total available width minus the sash and TuningCol.MinWidth. This
-    // mirrors how a GridSplitter would clamp — keeping both columns above
-    // their minimums regardless of window size.
-    private void OnSashDragDelta(SashThumb sender, double dx)
-    {
-        double total = RootGrid.ActualWidth;
-        if (total <= 0) return;
-
-        double sashWidth = 6;
-        double previewMin = PreviewCol.MinWidth;
-        double tuningMin  = TuningCol.MinWidth;
-        double max = Math.Max(previewMin, total - sashWidth - tuningMin);
-
-        double current = PreviewCol.ActualWidth;
-        double target  = Math.Clamp(current + dx, previewMin, max);
-
-        PreviewCol.Width = new GridLength(target);
     }
 
     // ── Target selector + Play/Pause ────────────────────────────────────
@@ -433,6 +443,165 @@ public sealed partial class PlaygroundWindow : Window
             rms = _simRmsMin + sweep * (_simRmsMax - _simRmsMin);
         }
         ChronoPreview.UpdateAudioLevel(rms);
+    }
+
+    // ── Persistence (auto-hydrate + explicit Save + Reset all) ──────────
+    //
+    // Single-profile model. Three observable states (see _isDirty /
+    // _hasSavedState comment above): pristine, dirty (unsaved changes
+    // on top of defaults OR on top of a saved state), modified-and-saved
+    // (A == file, file != shipping defaults).
+    //
+    // The saved file is the user's single persisted profile; Reset all
+    // deletes it so the next launch starts pristine. Multi-profile is
+    // deferred — see PlaygroundPersistence comment for the extension
+    // sketch.
+
+    // Central UI updater. Every state change calls this once; individual
+    // MarkDirty / MarkClean / OnResetAllClick just mutate the flags and
+    // dispatch here. Keeps the three-state truth table in one place.
+    //
+    // StateLabel is declared FontStyle=Italic in XAML and stays italic in
+    // both "Unsaved changes" and "Modified parameters" states — the italic
+    // is the visual cue that separates a secondary info string from the
+    // Reset all / Save button labels to its right.
+    private void UpdateHeaderUi()
+    {
+        if (_isDirty)
+        {
+            StateLabel.Text       = "Unsaved changes";
+            StateLabel.Visibility = Visibility.Visible;
+        }
+        else if (_hasSavedState)
+        {
+            StateLabel.Text       = "Modified parameters";
+            StateLabel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            StateLabel.Visibility = Visibility.Collapsed;
+        }
+
+        SaveButton.IsEnabled     = _isDirty;
+        ResetAllButton.IsEnabled = _isDirty || _hasSavedState;
+    }
+
+    // Flipped by every row-factory ValueChanged / Toggled handler and by
+    // RebuildTuningPanel. Early-return when already dirty so we don't
+    // thrash the UI setters on every slider tick mid-drag.
+    private void MarkDirty()
+    {
+        if (_isDirty) return;
+        _isDirty = true;
+        UpdateHeaderUi();
+    }
+
+    // "Clean" only describes _isDirty; _hasSavedState is independent
+    // and carried through. Called after a successful Save, after a
+    // Revert, and after the initial Loaded-time hydrate.
+    private void MarkClean()
+    {
+        _isDirty = false;
+        UpdateHeaderUi();
+    }
+
+    // Called once from Loaded, before BuildTuningPanel so the panel reads
+    // persisted values as its initial state. File missing OR malformed ⇒
+    // returns silently, _tuning / sim* keep their compiled-in defaults
+    // and _hasSavedState stays false (pristine).
+    private void TryHydrateFromDisk()
+    {
+        var profile = PlaygroundPersistence.TryLoad();
+        if (profile is null) return;
+
+        // Replace the whole _tuning instance — existing row-factory lambdas
+        // closure over `this` so they read the new instance next edit. No
+        // need to copy field-by-field unless we also want to preserve
+        // object identity (we don't — nothing outside this window holds
+        // a ref to _tuning).
+        _tuning = profile.Tuning;
+
+        // Sim fields live directly on this window, copy them individually.
+        _simRmsMin             = profile.SimRmsMin;
+        _simRmsMax             = profile.SimRmsMax;
+        _simRmsPeriodSeconds   = profile.SimRmsPeriodSeconds;
+        _simManualOverride     = profile.SimManualOverride;
+        _simManualValue        = profile.SimManualValue;
+        _simulateChangedDigits = profile.SimulateChangedDigits;
+
+        _hasSavedState = true;
+    }
+
+    private void OnSaveClick(object sender, RoutedEventArgs e)
+    {
+        var profile = new PlaygroundPersistence.Profile
+        {
+            Tuning                = _tuning,
+            SimRmsMin             = _simRmsMin,
+            SimRmsMax             = _simRmsMax,
+            SimRmsPeriodSeconds   = _simRmsPeriodSeconds,
+            SimManualOverride     = _simManualOverride,
+            SimManualValue        = _simManualValue,
+            SimulateChangedDigits = _simulateChangedDigits,
+        };
+        if (PlaygroundPersistence.TrySave(profile))
+        {
+            _hasSavedState = true;
+            MarkClean(); // A == file → label falls through to "Modified parameters".
+        }
+        // On failure we leave dirty set + Save enabled so the user can
+        // retry. Silent — the failure paths are rare enough (disk/perms/
+        // AV) that a toast would be noise in the common case.
+    }
+
+    // Reset everything (TuningModel fields, sim fields, HudChrono static
+    // mutables) to shipping defaults, delete the saved file, rebuild the
+    // panel, and re-apply the preview. End state: pristine.
+    //
+    // We go through the shipping-default objects directly instead of
+    // calling each Reset*() method: the per-section resets would chain
+    // multiple RebuildTuningPanel calls (each marking dirty) and we want
+    // a single atomic "back to pristine" transition.
+    private void OnResetAllClick(object sender, RoutedEventArgs e)
+    {
+        // TuningModel: swap for a fresh instance — its field initialisers
+        // ARE the shipping defaults.
+        _tuning = new TuningModel();
+
+        // Sim fields: keep aligned with the defaults documented at the
+        // field declarations above. Source of truth duplicated once here
+        // and in the field initialisers — acceptable for this playground
+        // scope.
+        _simRmsMin             = 0.013f;
+        _simRmsMax             = 0.100f;
+        _simRmsPeriodSeconds   = 2.0f;
+        _simManualOverride     = false;
+        _simManualValue        = 0.012f;
+        _simulateChangedDigits = true;
+
+        // HudChrono static mutables tuned via the Swipe + Audio mapping
+        // expanders — the same values the individual Reset* methods use.
+        HudChrono.SwipeCycleSeconds = 1.6f;
+        HudChrono.SwipeEaseP1       = new Vector2(0.5f, 0f);
+        HudChrono.SwipeEaseP2       = new Vector2(0.2f, 1f);
+        HudChrono.SwipeRiseAlpha    = 0.22f;
+        HudChrono.SwipeDecayAlpha   = 0.06f;
+        HudChrono.EmaAlpha          = 0.72f;
+        HudChrono.MinDbfs           = -40f;
+        HudChrono.MaxDbfs           = -22f;
+        HudChrono.DbfsCurveExponent = 2.0f;
+
+        // Drop the on-disk file so the next launch genuinely starts
+        // pristine (not "defaults-valued file present"). Success OR
+        // failure we flip _hasSavedState to false — if the delete failed
+        // we'd rather drift out-of-sync once than pretend the file is
+        // still the source of truth.
+        PlaygroundPersistence.TryDelete();
+        _hasSavedState = false;
+
+        BuildTuningPanel();
+        MarkClean();
+        ApplyTarget();
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -819,9 +988,15 @@ public sealed partial class PlaygroundWindow : Window
     // a dictionary) would be more code for the same effect. The whole
     // panel is only dozens of rows of UI, so a wholesale reconstruction
     // is cheap and keeps the row factories tight.
+    //
+    // Marks dirty: every caller is a Reset* action that mutates _tuning
+    // (or sim fields / HudChrono statics). The initial panel construction
+    // goes through BuildTuningPanel directly and is NOT covered here,
+    // which is correct — the Loaded path hydrates + builds + MarkCleans.
     private void RebuildTuningPanel()
     {
         BuildTuningPanel();
+        MarkDirty();
         RequestRebuild();
     }
 
@@ -936,6 +1111,7 @@ public sealed partial class PlaygroundWindow : Window
             {
                 numberBox.Value = e.NewValue;
                 setter(e.NewValue);
+                MarkDirty();
                 if (rebuild) RequestRebuild();
             }
             finally { _syncing = false; }
@@ -950,6 +1126,7 @@ public sealed partial class PlaygroundWindow : Window
                 double clamped = Math.Clamp(e.NewValue, min, max);
                 slider.Value = clamped;
                 setter(clamped);
+                MarkDirty();
                 if (rebuild) RequestRebuild();
             }
             finally { _syncing = false; }
@@ -992,6 +1169,7 @@ public sealed partial class PlaygroundWindow : Window
                 int iv = (int)Math.Round(e.NewValue);
                 numberBox.Value = iv;
                 setter(iv);
+                MarkDirty();
                 if (rebuild) RequestRebuild();
             }
             finally { _syncing = false; }
@@ -1006,6 +1184,7 @@ public sealed partial class PlaygroundWindow : Window
                 int iv = Math.Clamp((int)Math.Round(e.NewValue), min, max);
                 slider.Value = iv;
                 setter(iv);
+                MarkDirty();
                 if (rebuild) RequestRebuild();
             }
             finally { _syncing = false; }
@@ -1028,6 +1207,7 @@ public sealed partial class PlaygroundWindow : Window
         toggle.Toggled += (_, _) =>
         {
             setter(toggle.IsOn);
+            MarkDirty();
             if (rebuild) RequestRebuild();
         };
 
@@ -1063,6 +1243,7 @@ public sealed partial class PlaygroundWindow : Window
         toggle.Toggled += (_, _) =>
         {
             setter(toggle.IsOn ? 1f : -1f);
+            MarkDirty();
             RequestRebuild();
         };
 

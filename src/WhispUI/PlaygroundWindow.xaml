@@ -3,7 +3,6 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:WhispUI.Controls"
-    xmlns:playground="using:WhispUI.Playground"
     Title="WhispUI Playground">
 
     <!-- RootGrid is hit-testable (Background="Transparent") + focusable
@@ -29,23 +28,25 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Main content: two panels + draggable sash.
-               Col 0 (PreviewCol): sticky preview — target SelectorBar + Play/
-                                   Pause + HudChrono / naked host.
-               Col 1:              sash (6 dp Thumb with divider-colour fill).
-               Col 2 (TuningCol):  single scrollable column of Expanders, one
-                                   per concept. Everything fixed and always
-                                   visible — no concept-level tabs.
+        <!-- Main content: two panels, responsive, no sash.
+               Col 0 (preview): pixel-fixed at a width that fits the HudChrono
+                                272×78 with a comfortable Border padding —
+                                enough for the SelectorBar to display its
+                                full 7 tabs without horizontal scroll.
+               Col 1 (tuning):  takes the remainder via Width="*". Shrinks
+                                with the window; the window's
+                                PreferredMinimumWidth guarantees both panels
+                                stay usable at the smallest allowed size.
 
-             Both outer columns are pixel-width (not star) so the sash drag
-             can mutate PreviewCol.Width directly. The tuning column absorbs
-             the remainder (min 360 dip so the slider label + NumberBox
-             column survive a narrow window). -->
+             The earlier draggable sash was removed: a user-set PreviewCol
+             width survived window shrinks, leaving the tuning panel clipped
+             off-screen with no way back short of re-enlarging the window.
+             Fixed columns make the responsive contract explicit and avoid
+             the stuck-state regression. -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="PreviewCol" Width="520" MinWidth="400" />
-                <ColumnDefinition Width="6" />
-                <ColumnDefinition x:Name="TuningCol"  Width="*"   MinWidth="360" />
+                <ColumnDefinition Width="720" />
+                <ColumnDefinition Width="*" MinWidth="480" />
             </Grid.ColumnDefinitions>
 
             <!-- ── Col 0 — sticky preview ───────────────────────────────── -->
@@ -124,34 +125,98 @@
                 </Border>
             </Grid>
 
-            <!-- ── Col 1 — resize sash ──────────────────────────────────── -->
-            <!-- SashThumb: Thumb subclass that sets ProtectedCursor to
-                 SizeWestEast so hovering the 6 dp divider shows the
-                 horizontal-resize cursor (universal "drag me" affordance).
-                 DragDelta in the code-behind adjusts PreviewCol.Width
-                 within the clamp imposed by PreviewCol.MinWidth and
-                 TuningCol.MinWidth. -->
-            <playground:SashThumb Grid.Column="1"
-                                  x:Name="Sash"
-                                  HorizontalAlignment="Stretch"
-                                  VerticalAlignment="Stretch"
-                                  HorizontalDragDelta="OnSashDragDelta">
-                <playground:SashThumb.Template>
-                    <ControlTemplate TargetType="ContentControl">
-                        <Border Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                    </ControlTemplate>
-                </playground:SashThumb.Template>
-            </playground:SashThumb>
+            <!-- ── Col 1 — tuning Expanders ─────────────────────────────── -->
+            <!--
+                Header row above the Expanders: "Tunables" title + status
+                label + Reset all + Save.
 
-            <!-- ── Col 2 — tuning Expanders ─────────────────────────────── -->
-            <ScrollViewer Grid.Column="2"
+                Three-state persistence UX:
+                  - Pristine (no file on disk, A == defaults): label hidden,
+                    Save disabled, Reset all disabled.
+                  - Dirty (A != file, or edits on top of defaults): label
+                    shows "Unsaved changes" in italic, Save enabled, Revert
+                    enabled.
+                  - Modified-and-saved (A == file, but the file itself holds
+                    non-default values): label shows "Modified parameters"
+                    in regular weight, Save disabled (nothing to write),
+                    Revert enabled.
+
+                Reset all resets every section to the shipping defaults
+                AND deletes the on-disk file — so the next launch genuinely
+                starts pristine. See PlaygroundPersistence comment for the
+                file layout rationale.
+
+                Multi-profile (named presets + dropdown) is deferred; the
+                natural extension if Louis wants it later.
+            -->
+            <ScrollViewer Grid.Column="1"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           Padding="24">
                 <StackPanel x:Name="TuningStack" Spacing="6">
-                    <TextBlock Text="Tunables"
-                               Style="{ThemeResource TitleTextBlockStyle}"
-                               Margin="0,0,0,8" />
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="Tunables"
+                                   Style="{ThemeResource TitleTextBlockStyle}"
+                                   VerticalAlignment="Center" />
+
+                        <!-- Status label. Always italic regardless of
+                             state so it reads as a secondary info string
+                             even when sitting next to the Reset all /
+                             Save button labels. Text + Visibility driven
+                             from code-behind by UpdateHeaderUi():
+                               _isDirty         → "Unsaved changes"
+                               !dirty & saved   → "Modified parameters"
+                               pristine         → Collapsed. -->
+                        <TextBlock Grid.Column="1"
+                                   x:Name="StateLabel"
+                                   FontStyle="Italic"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,12,0"
+                                   Visibility="Collapsed" />
+
+                        <!-- Reset all: mirrors the "Reset all" pattern
+                             in Settings › Whisper — SubtleButtonStyle +
+                             FontIcon E777 (refresh / circular arrow) +
+                             label. Disabled in pristine state. Resets
+                             every field to defaults AND deletes the
+                             persisted file. -->
+                        <Button Grid.Column="2"
+                                x:Name="ResetAllButton"
+                                Style="{ThemeResource SubtleButtonStyle}"
+                                IsEnabled="False"
+                                VerticalAlignment="Center"
+                                Margin="0,0,8,0"
+                                ToolTipService.ToolTip="Reset every section to the shipping defaults and delete the saved file"
+                                Click="OnResetAllClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                <TextBlock Text="Reset all" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Save button. Disabled unless _isDirty — once
+                             saved, nothing more to write until the next
+                             edit. Grays per the Fluent disabled state. -->
+                        <Button Grid.Column="3"
+                                x:Name="SaveButton"
+                                VerticalAlignment="Center"
+                                IsEnabled="False"
+                                Click="OnSaveClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Save" />
+                                <TextBlock Text="Save" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
                 </StackPanel>
             </ScrollViewer>
         </Grid>
