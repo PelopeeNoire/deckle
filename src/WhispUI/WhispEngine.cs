@@ -165,14 +165,6 @@ internal sealed class WhispEngine : IDisposable
     // Stopwatch started at the beginning of each recording (used for logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
 
-    // Record() stashes its full-buffer audio stats here so Transcribe() can
-    // emit Low audio detected only once it knows segments were actually
-    // produced. Surfacing the warning inside Record() would fire even when
-    // the user didn't intend to speak and the pipeline exits silently on
-    // "nothing to transcribe" — noise over information.
-    private double _lastRecordingTotalSec;
-    private double _lastRecordingDbfsAvg;
-
     // VAD timing — whisper.cpp's Silero VAD runs inside whisper_full() natively,
     // so we can't bracket it with a C# stopwatch. Instead we watch the native
     // log hook for "whisper_vad" lines: the first one starts the stopwatch,
@@ -963,6 +955,17 @@ internal sealed class WhispEngine : IDisposable
         bool capHit = false;
         int buffersReceived = 0;
 
+        // Live low-audio tracker. We sum the duration of consecutive buffers
+        // whose dBFS sits below LowAudioDbfsThreshold; a single buffer above
+        // the threshold resets the counter. Once we pass LowAudioSustainedMs
+        // we fire the overlay warning exactly once per recording, so the user
+        // finds out their mic is misbehaving within a handful of seconds
+        // instead of after a 20 min dictation into the void.
+        const double LowAudioDbfsThreshold = -50.0;
+        const int    LowAudioSustainedMs   = 5000;
+        int  lowAudioConsecutiveMs = 0;
+        bool lowAudioWarned        = false;
+
         while (!_stopRecording)
         {
             NativeMethods.WaitForSingleObject(hEvent, 100);
@@ -985,6 +988,34 @@ internal sealed class WhispEngine : IDisposable
                         allBytes.AddRange(data);
                         EmitAudioLevels(data);
                         buffersReceived++;
+
+                        // Track sustained low signal, fire warning at most once.
+                        // 16 kHz mono PCM16 = 32 bytes per millisecond.
+                        if (!lowAudioWarned)
+                        {
+                            double bufferDbfs = ComputeBufferDbfs(data);
+                            int bufferMs = data.Length / 32;
+                            if (bufferDbfs < LowAudioDbfsThreshold)
+                            {
+                                lowAudioConsecutiveMs += bufferMs;
+                                if (lowAudioConsecutiveMs >= LowAudioSustainedMs)
+                                {
+                                    lowAudioWarned = true;
+                                    _log.Warning(
+                                        LogSource.Record,
+                                        $"low audio detected | sustained_ms={lowAudioConsecutiveMs} | dbfs_threshold={LowAudioDbfsThreshold}",
+                                        new UserFeedback(
+                                            "Low audio detected",
+                                            "Your mic is picking up very little sound.",
+                                            UserFeedbackSeverity.Warning,
+                                            UserFeedbackRole.Overlay));
+                                }
+                            }
+                            else
+                            {
+                                lowAudioConsecutiveMs = 0;
+                            }
+                        }
                     }
 
                     hdr.dwFlags &= ~(uint)0x00000001;
@@ -1058,12 +1089,6 @@ internal sealed class WhispEngine : IDisposable
             $"capture complete | audio_sec={totalSec:F1} | buffers={buffersReceived} | bytes={allBytes.Count} | rms_avg={rmsAvg:F4} | rms_peak={aggPeak:F4} | dbfs_avg={dbfsAvg:F1}");
         _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
 
-        // Stash for Transcribe() — the "Low audio detected" warning is emitted
-        // downstream, gated on nSeg > 0 so a silent-abandonment recording
-        // doesn't trigger a warning the user has no reason to see.
-        _lastRecordingTotalSec = totalSec;
-        _lastRecordingDbfsAvg  = dbfsAvg;
-
         // Tail RMS: measures the energy of the final 600 ms to see if we're
         // cutting during a syllable (lost punctuation) or in a clean silence.
         // Purely diagnostic — doesn't change the buffer sent to whisper.cpp.
@@ -1123,6 +1148,29 @@ internal sealed class WhispEngine : IDisposable
             handler((float)rms);
             offset += BytesPerSubWin;
         }
+    }
+
+    // Full-buffer dBFS — single pass over a PCM16 mono buffer, returns the
+    // 20*log10(rms) value floored at -120 dBFS for a pure-zero buffer (so the
+    // log domain never sees 0). Used by the live low-audio tracker in
+    // Record(); intentionally coarse (whole-buffer average rather than per
+    // sub-window) because the tracker is already running at buffer cadence
+    // and we don't need finer granularity for a "did it stay quiet for 5 s?"
+    // check.
+    private static double ComputeBufferDbfs(byte[] pcm16)
+    {
+        int nSamples = pcm16.Length / 2;
+        if (nSamples == 0) return -120.0;
+
+        double sumSq = 0;
+        for (int i = 0; i < nSamples; i++)
+        {
+            short s = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
+            double v = s / 32768.0;
+            sumSq += v * v;
+        }
+        double rms = Math.Sqrt(sumSq / nSamples);
+        return rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
     }
 
     // ── Whisper transcription ────────────────────────────────────────────────
@@ -1388,30 +1436,11 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        // Low-audio warning: fires only once we know there WAS a real dictation
-        // attempt (non-empty transcript) that was sustained long enough (>= 5 s
-        // of capture) AND the full-buffer average stayed below -50 dBFS. Three
-        // gates together:
-        //   nSeg > 0 / text non-empty  — rules out "user didn't speak" (the
-        //                                silent-abandon path exits above with
-        //                                no warning, as requested).
-        //   totalSec >= 5 s            — rules out accidental short taps; a
-        //                                brief quiet recording is not a signal
-        //                                of a broken mic, just a short attempt.
-        //   dbfsAvg < -50              — typical dictation lands at -15 to
-        //                                -30 dBFS; below -50 is consistently
-        //                                sub-speech across the whole capture.
-        if (_lastRecordingTotalSec >= 5.0 && _lastRecordingDbfsAvg < -50.0)
-        {
-            _log.Warning(
-                LogSource.Record,
-                $"low audio detected | dbfs_avg={_lastRecordingDbfsAvg:F1} | duration={_lastRecordingTotalSec:F1}s",
-                new UserFeedback(
-                    "Low audio detected",
-                    "Signal was very quiet. See in settings.",
-                    UserFeedbackSeverity.Warning,
-                    UserFeedbackRole.Overlay));
-        }
+        // Low-audio warning is emitted live from Record() once 5 s of
+        // sustained sub-threshold signal has accumulated — see the tracker in
+        // the capture loop. Alerting during recording is the whole point of
+        // that message: we want the user to stop talking into a broken mic
+        // within seconds, not discover it 20 min later.
 
         // Always copy raw text first — safety net even if LLM fails. If the
         // copy fails (all three CopyToClipboard error paths already emit a

@@ -28,7 +28,7 @@ namespace WhispUI;
 // slots shift one stride toward the HUD's old location.
 internal sealed class HudOverlayManager : IDisposable
 {
-    private const int GapDip = 24;
+    private const int GapDip = 12;
 
     private readonly HudWindow _mainHud;
     private readonly DispatcherQueue _dispatcher;
