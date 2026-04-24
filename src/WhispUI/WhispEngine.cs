@@ -495,8 +495,9 @@ internal sealed class WhispEngine : IDisposable
                 $"load aborted | reason=file_not_found | path={_modelPath}",
                 new UserFeedback(
                     "Whisper model not found",
-                    $"File missing: {_modelPath}. Check settings.",
-                    UserFeedbackSeverity.Error));
+                    "See in settings.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
             RaiseStatus("Ready");
             return false;
         }
@@ -531,7 +532,8 @@ internal sealed class WhispEngine : IDisposable
                 new UserFeedback(
                     "Failed to load model",
                     "Low GPU memory or corrupt file.",
-                    UserFeedbackSeverity.Error));
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
             RaiseStatus("Ready");
             return false;
         }
@@ -713,8 +715,9 @@ internal sealed class WhispEngine : IDisposable
                     "warmup flag | model_ok=false",
                     new UserFeedback(
                         "Model not ready",
-                        "The Whisper model failed to load at startup. Check the Whisper settings.",
-                        UserFeedbackSeverity.Error));
+                        "Load failed. See in settings.",
+                        UserFeedbackSeverity.Error,
+                        UserFeedbackRole.Replacement));
                 return;
             }
             if (!OllamaWarmupOk)
@@ -724,8 +727,9 @@ internal sealed class WhispEngine : IDisposable
                     "warmup flag | ollama_ok=false",
                     new UserFeedback(
                         "Rewriter unavailable",
-                        "Ollama is not reachable. Recording still works — no rewrite this session.",
-                        UserFeedbackSeverity.Warning));
+                        "Ollama is not reachable. No rewrite this session.",
+                        UserFeedbackSeverity.Warning,
+                        UserFeedbackRole.Overlay));
                 // Proceed with recording — rewrite is optional, transcription
                 // and clipboard copy still deliver the raw text.
             }
@@ -750,7 +754,8 @@ internal sealed class WhispEngine : IDisposable
             _log.Error(
                 LogSource.Record,
                 $"probe MMSYSERR={probeErr} — {title}",
-                new UserFeedback(title, body, UserFeedbackSeverity.Error));
+                new UserFeedback(title, body,
+                    UserFeedbackSeverity.Error, UserFeedbackRole.Replacement));
             return;
         }
 
@@ -800,9 +805,10 @@ internal sealed class WhispEngine : IDisposable
                     LogSource.Transcribe,
                     $"pipeline crashed: {ex.GetType().Name}: {ex.Message}",
                     new UserFeedback(
-                        "Unexpected error",
-                        "Try again. If it persists, check the logs.",
-                        UserFeedbackSeverity.Error));
+                        "Pipeline crashed",
+                        "Try again. Check logs if it persists.",
+                        UserFeedbackSeverity.Error,
+                        UserFeedbackRole.Replacement));
                 RaiseStatus("Ready");
                 RaiseFinished(TranscriptionOutcome.None);
             }
@@ -864,10 +870,10 @@ internal sealed class WhispEngine : IDisposable
     // — no Win32 jargon. Raw code is logged elsewhere for debug.
     private static (string Title, string Body) DescribeMicError(uint err) => err switch
     {
-        2 => ("No microphone detected", "Plug in a microphone or check the audio input selected in the transcription settings."),
-        6 => ("No microphone detected", "Plug in a microphone or check the audio input selected in the transcription settings."),
-        4 => ("Microphone in use", "Another application is already using the microphone. Close it and try again."),
-        _ => ("Microphone unavailable", $"Opening the audio device failed (MMSYSERR code {err}).")
+        2 => ("No microphone detected", "Plug in a mic. See in settings."),
+        6 => ("No microphone detected", "Plug in a mic. See in settings."),
+        4 => ("Microphone in use",      "Another app is using it. Try again."),
+        _ => ("Microphone unavailable", $"Audio device open failed (MMSYSERR {err}).")
     };
 
     // ── Audio recording ─────────────────────────────────────────────────────
@@ -949,6 +955,17 @@ internal sealed class WhispEngine : IDisposable
         bool capHit = false;
         int buffersReceived = 0;
 
+        // Live low-audio tracker. We sum the duration of consecutive buffers
+        // whose dBFS sits below LowAudioDbfsThreshold; a single buffer above
+        // the threshold resets the counter. Once we pass LowAudioSustainedMs
+        // we fire the overlay warning exactly once per recording, so the user
+        // finds out their mic is misbehaving within a handful of seconds
+        // instead of after a 20 min dictation into the void.
+        const double LowAudioDbfsThreshold = -50.0;
+        const int    LowAudioSustainedMs   = 5000;
+        int  lowAudioConsecutiveMs = 0;
+        bool lowAudioWarned        = false;
+
         while (!_stopRecording)
         {
             NativeMethods.WaitForSingleObject(hEvent, 100);
@@ -971,6 +988,34 @@ internal sealed class WhispEngine : IDisposable
                         allBytes.AddRange(data);
                         EmitAudioLevels(data);
                         buffersReceived++;
+
+                        // Track sustained low signal, fire warning at most once.
+                        // 16 kHz mono PCM16 = 32 bytes per millisecond.
+                        if (!lowAudioWarned)
+                        {
+                            double bufferDbfs = ComputeBufferDbfs(data);
+                            int bufferMs = data.Length / 32;
+                            if (bufferDbfs < LowAudioDbfsThreshold)
+                            {
+                                lowAudioConsecutiveMs += bufferMs;
+                                if (lowAudioConsecutiveMs >= LowAudioSustainedMs)
+                                {
+                                    lowAudioWarned = true;
+                                    _log.Warning(
+                                        LogSource.Record,
+                                        $"low audio detected | sustained_ms={lowAudioConsecutiveMs} | dbfs_threshold={LowAudioDbfsThreshold}",
+                                        new UserFeedback(
+                                            "Low audio detected",
+                                            "Your mic is picking up very little sound.",
+                                            UserFeedbackSeverity.Warning,
+                                            UserFeedbackRole.Overlay));
+                                }
+                            }
+                            else
+                            {
+                                lowAudioConsecutiveMs = 0;
+                            }
+                        }
                     }
 
                     hdr.dwFlags &= ~(uint)0x00000001;
@@ -1044,22 +1089,6 @@ internal sealed class WhispEngine : IDisposable
             $"capture complete | audio_sec={totalSec:F1} | buffers={buffersReceived} | bytes={allBytes.Count} | rms_avg={rmsAvg:F4} | rms_peak={aggPeak:F4} | dbfs_avg={dbfsAvg:F1}");
         _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
 
-        // Low-audio detection. Threshold -50 dBFS on the buffer average is
-        // below any normal dictation range (typical speech lands at -15 to
-        // -30 dBFS average). Gated by a 2 s minimum to avoid false-alarming
-        // on accidental double-tap Stop. Distinct from the tail analysis
-        // below, which only checks the final 600 ms to spot a sharp cut.
-        if (totalSec >= 2.0 && dbfsAvg < -50.0)
-        {
-            _log.Warning(
-                LogSource.Record,
-                $"low audio detected | dbfs_avg={dbfsAvg:F1} | rms_peak={aggPeak:F4}",
-                new UserFeedback(
-                    "Low audio detected",
-                    "The microphone signal was very quiet. Check the mic, input level, or audio input selected in the transcription settings.",
-                    UserFeedbackSeverity.Warning));
-        }
-
         // Tail RMS: measures the energy of the final 600 ms to see if we're
         // cutting during a syllable (lost punctuation) or in a clean silence.
         // Purely diagnostic — doesn't change the buffer sent to whisper.cpp.
@@ -1119,6 +1148,29 @@ internal sealed class WhispEngine : IDisposable
             handler((float)rms);
             offset += BytesPerSubWin;
         }
+    }
+
+    // Full-buffer dBFS — single pass over a PCM16 mono buffer, returns the
+    // 20*log10(rms) value floored at -120 dBFS for a pure-zero buffer (so the
+    // log domain never sees 0). Used by the live low-audio tracker in
+    // Record(); intentionally coarse (whole-buffer average rather than per
+    // sub-window) because the tracker is already running at buffer cadence
+    // and we don't need finer granularity for a "did it stay quiet for 5 s?"
+    // check.
+    private static double ComputeBufferDbfs(byte[] pcm16)
+    {
+        int nSamples = pcm16.Length / 2;
+        if (nSamples == 0) return -120.0;
+
+        double sumSq = 0;
+        for (int i = 0; i < nSamples; i++)
+        {
+            short s = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
+            double v = s / 32768.0;
+            sumSq += v * v;
+        }
+        double rms = Math.Sqrt(sumSq / nSamples);
+        return rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
     }
 
     // ── Whisper transcription ────────────────────────────────────────────────
@@ -1344,8 +1396,9 @@ internal sealed class WhispEngine : IDisposable
                 $"whisper_full failed | result={result}",
                 new UserFeedback(
                     "Transcription failed",
-                    "Whisper could not decode this audio. Check the log for details.",
-                    UserFeedbackSeverity.Error));
+                    "Whisper could not decode the audio.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
             RaiseStatus("Transcription failed");
             RaiseFinished(TranscriptionOutcome.None);
             return;
@@ -1382,6 +1435,12 @@ internal sealed class WhispEngine : IDisposable
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
+
+        // Low-audio warning is emitted live from Record() once 5 s of
+        // sustained sub-threshold signal has accumulated — see the tracker in
+        // the capture loop. Alerting during recording is the whole point of
+        // that message: we want the user to stop talking into a broken mic
+        // within seconds, not discover it 20 min later.
 
         // Always copy raw text first — safety net even if LLM fails. If the
         // copy fails (all three CopyToClipboard error paths already emit a
@@ -1617,8 +1676,9 @@ internal sealed class WhispEngine : IDisposable
                 $"GlobalAlloc failed | bytes={byteCount}",
                 new UserFeedback(
                     "Clipboard copy failed",
-                    "Windows could not allocate memory for the clipboard. Try again.",
-                    UserFeedbackSeverity.Error));
+                    "Memory allocation failed. Try again.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
             return false;
         }
 
@@ -1636,8 +1696,9 @@ internal sealed class WhispEngine : IDisposable
                 "OpenClipboard failed",
                 new UserFeedback(
                     "Clipboard unavailable",
-                    "Another application is holding the clipboard. Close it and try again.",
-                    UserFeedbackSeverity.Error));
+                    "Another app is holding it. Try again.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
             return false;
         }
 
@@ -1651,8 +1712,9 @@ internal sealed class WhispEngine : IDisposable
                 "SetClipboardData failed | handle=0",
                 new UserFeedback(
                     "Clipboard copy failed",
-                    "Windows refused the clipboard write. Try again.",
-                    UserFeedbackSeverity.Error));
+                    "Windows refused the write. Try again.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
             return false;
         }
 
@@ -1669,9 +1731,10 @@ internal sealed class WhispEngine : IDisposable
                     LogSource.Clipboard,
                     "verify failed | reason=no_unicode_data",
                     new UserFeedback(
-                        "Clipboard copy may be incomplete",
-                        "The text is on the clipboard but could not be verified.",
-                        UserFeedbackSeverity.Warning));
+                        "Clipboard may be incomplete",
+                        "Text is copied but unverified.",
+                        UserFeedbackSeverity.Warning,
+                        UserFeedbackRole.Overlay));
             }
             else
             {
@@ -1684,9 +1747,10 @@ internal sealed class WhispEngine : IDisposable
                         LogSource.Clipboard,
                         $"verify failed | expected_chars={text.Length} | actual_chars={back?.Length ?? -1}",
                         new UserFeedback(
-                            "Clipboard copy may be incomplete",
-                            "The text length on the clipboard does not match what was sent.",
-                            UserFeedbackSeverity.Warning));
+                            "Clipboard may be incomplete",
+                            "Length mismatch on read-back.",
+                            UserFeedbackSeverity.Warning,
+                            UserFeedbackRole.Overlay));
                 }
             }
             NativeMethods.CloseClipboard();

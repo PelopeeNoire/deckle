@@ -1,0 +1,15 @@
+<Window
+    x:Class="WhispUI.HudOverlayWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:WhispUI.Controls">
+    <!-- Overlay card hosted by HudOverlayManager. Same technical shell as
+         HudWindow (fixed 272x78, opaque card painted by LayerFillColorDefaultBrush,
+         DWM round + default stroke in code-behind) minus proximity fade and
+         Raw Input — overlay cards are transient (2-8 s) so proximity would
+         add noise without benefit. -->
+    <Grid x:Name="RootGrid"
+          Background="{ThemeResource LayerFillColorDefaultBrush}">
+        <controls:HudMessage x:Name="Message" />
+    </Grid>
+</Window>
