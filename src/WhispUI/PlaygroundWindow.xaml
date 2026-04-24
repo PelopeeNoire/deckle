@@ -3,9 +3,17 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:WhispUI.Controls"
+    xmlns:playground="using:WhispUI.Playground"
     Title="WhispUI Playground">
 
-    <Grid x:Name="RootGrid">
+    <!-- RootGrid is hit-testable (Background="Transparent") + focusable
+         (IsTabStop) so a tap on empty space can dismiss the focus from a
+         NumberBox. Focused input controls in WinUI 3 don't release on
+         background click unless something else takes focus — handler
+         wired in code-behind. -->
+    <Grid x:Name="RootGrid"
+          Background="Transparent"
+          IsTabStop="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -117,20 +125,23 @@
             </Grid>
 
             <!-- ── Col 1 — resize sash ──────────────────────────────────── -->
-            <!-- Thumb with a plain divider-coloured template. DragDelta in
-                 the code-behind adjusts PreviewCol.Width within the clamp
-                 imposed by PreviewCol.MinWidth and TuningCol.MinWidth. -->
-            <Thumb Grid.Column="1"
-                   x:Name="Sash"
-                   HorizontalAlignment="Stretch"
-                   VerticalAlignment="Stretch"
-                   DragDelta="OnSashDragDelta">
-                <Thumb.Template>
+            <!-- SashThumb: Thumb subclass that sets ProtectedCursor to
+                 SizeWestEast so hovering the 6 dp divider shows the
+                 horizontal-resize cursor (universal "drag me" affordance).
+                 DragDelta in the code-behind adjusts PreviewCol.Width
+                 within the clamp imposed by PreviewCol.MinWidth and
+                 TuningCol.MinWidth. -->
+            <playground:SashThumb Grid.Column="1"
+                                  x:Name="Sash"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"
+                                  DragDelta="OnSashDragDelta">
+                <playground:SashThumb.Template>
                     <ControlTemplate TargetType="Thumb">
                         <Border Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
                     </ControlTemplate>
-                </Thumb.Template>
-            </Thumb>
+                </playground:SashThumb.Template>
+            </playground:SashThumb>
 
             <!-- ── Col 2 — tuning Expanders ─────────────────────────────── -->
             <ScrollViewer Grid.Column="2"
