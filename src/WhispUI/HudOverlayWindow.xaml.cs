@@ -30,10 +30,14 @@ public sealed partial class HudOverlayWindow : Window
     public const int HUD_WIDTH  = 272;
     public const int HUD_HEIGHT = 78;
 
-    // Proximity smoothstep constants — same profile as HudWindow so both
-    // surfaces fade in lockstep when the cursor moves through the HUD region.
+    // Proximity smoothstep constants. NEAR / MIN / MAX match HudWindow so
+    // the endpoints behave the same, but FAR_RADIUS is deliberately wider
+    // than HudWindow's 128 dip — overlays sit above the main HUD so any
+    // cursor approach toward the main HUD naturally passes through the
+    // overlay region too, and the user wants those cards to start clearing
+    // earlier to stay out of the way.
     private const double NEAR_RADIUS_DIP = 10;
-    private const double FAR_RADIUS_DIP  = 128;
+    private const double FAR_RADIUS_DIP  = 256;
     private const byte   MAX_ALPHA       = 255;
     private const byte   MIN_ALPHA       = 40;
 
@@ -64,8 +68,18 @@ public sealed partial class HudOverlayWindow : Window
         presenter.SetBorderAndTitleBar(hasBorder: false, hasTitleBar: false);
         AppWindow.SetPresenter(presenter);
 
-        // Same DWM triptych as HudWindow — rounded HWND silhouette, system
-        // default 1-dip accent stroke, DWMSBT_NONE to suppress Mica/Acrylic.
+        // Same DWM triptych as HudWindow — DWMWCP_ROUND for the rounded HWND
+        // silhouette, DWMWA_COLOR_DEFAULT for the 1-dip system accent stroke
+        // that frames the card (without it the card reads as a naked colored
+        // rectangle on the desktop), DWMSBT_NONE to keep Mica/Acrylic off.
+        //
+        // Additional tweak on overlay cards vs the main HUD:
+        // DWMWA_NCRENDERING_POLICY = DWMNCRP_DISABLED. The main HUD's Win11
+        // Shell dropshadow is fine against the desktop, but when an overlay
+        // card sits 12 dip above the HUD that same shadow lands on the HUD's
+        // top edge as a visible halo. Disabling NC rendering kills the
+        // shadow on overlays; the stroke + corner-preference compositor clip
+        // are independent paths, they keep doing their job.
         uint cornerPref = NativeMethods.DWMWCP_ROUND;
         NativeMethods.DwmSetWindowAttribute(
             _hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE,
@@ -74,6 +88,10 @@ public sealed partial class HudOverlayWindow : Window
         NativeMethods.DwmSetWindowAttribute(
             _hwnd, NativeMethods.DWMWA_BORDER_COLOR,
             ref borderColor, sizeof(uint));
+        uint ncPolicy = NativeMethods.DWMNCRP_DISABLED;
+        NativeMethods.DwmSetWindowAttribute(
+            _hwnd, NativeMethods.DWMWA_NCRENDERING_POLICY,
+            ref ncPolicy, sizeof(uint));
         uint backdropType = NativeMethods.DWMSBT_NONE;
         NativeMethods.DwmSetWindowAttribute(
             _hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE,
