@@ -110,6 +110,11 @@
                                                IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
                             <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
                         </controls:SettingsCard>
+                        <controls:SettingsCard Header="Animate transitions"
+                                               Description="Smoothly slide and fade the overlay and message cards. Stays on even when Windows reduced-motion is enabled, because those transitions help you track which message replaced which."
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayAnimations, Mode=TwoWay}" />
+                        </controls:SettingsCard>
                         <controls:SettingsCard Header="Screen position"
                                                Description="Where the overlay appears on your primary display. Applied on the next recording."
                                                IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">

@@ -1,6 +1,7 @@
 using System;
 using Microsoft.UI.Dispatching;
 using WhispUI.Interop;
+using WhispUI.Settings;
 
 namespace WhispUI;
 
@@ -10,17 +11,17 @@ namespace WhispUI;
 // while an animation is in progress restarts from the current interpolated
 // value so transitions collapse instead of queueing.
 //
-// When the user opted out of motion via Accessibility → Visual effects →
-// "Animation effects", SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)
-// returns 0 and the animators jump straight to the target without spinning a
-// timer.
+// Animation toggle is driven by Settings.Overlay.Animations, not by
+// SPI_GETCLIENTAREAANIMATION. HUD transitions are load-bearing (the user has
+// to track which message just arrived and which got pushed away) so we treat
+// them like the motion Windows itself keeps under reduced-motion (Task Manager
+// pane, Settings NavigationView). Users who want everything still can flip
+// the setting off manually.
 
 internal static class AnimationSystemSetting
 {
     public static bool AreClientAreaAnimationsEnabled()
-        => NativeMethods.SystemParametersInfo(
-                NativeMethods.SPI_GETCLIENTAREAANIMATION, 0, out var value, 0)
-            && value != 0;
+        => SettingsService.Instance.Current.Overlay.Animations;
 }
 
 // Slides an HWND from its tracked position to a target via SetWindowPos.
