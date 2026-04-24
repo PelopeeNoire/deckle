@@ -1,0 +1,242 @@
+<Window
+    x:Class="WhispUI.PlaygroundWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:WhispUI.Controls"
+    Title="WhispUI Playground">
+
+    <!-- RootGrid is hit-testable (Background="Transparent") + focusable
+         (IsTabStop) so a tap on empty space can dismiss the focus from a
+         NumberBox. Focused input controls in WinUI 3 don't release on
+         background click unless something else takes focus — handler
+         wired in code-behind. -->
+    <Grid x:Name="RootGrid"
+          Background="Transparent"
+          IsTabStop="True">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Native TitleBar: icon + title. Matches SettingsWindow / LogWindow.
+             ImageIconSource rebuilt wholesale on recording state change. -->
+        <TitleBar Grid.Row="0"
+                  x:Name="AppTitleBar"
+                  Title="WhispUI Playground">
+            <TitleBar.IconSource>
+                <ImageIconSource x:Name="AppTitleBarIcon" />
+            </TitleBar.IconSource>
+        </TitleBar>
+
+        <!-- Main content: two panels, both responsive, no sash.
+               Col 0 (preview): Width="*" — grows with the window, absorbs
+                                all extra horizontal space. MinWidth=720
+                                so the 7-tab SelectorBar fits without
+                                horizontal scroll. Preview content is
+                                center-aligned so the HudChrono stays
+                                centered as the column widens.
+               Col 1 (tuning):  Width="Auto" — desired width reported by
+                                the inner ScrollViewer, which is capped
+                                at MaxWidth=840 (~900 is "too much
+                                whitespace", ~700 feels cramped). The
+                                column never exceeds that cap no matter
+                                how wide the window gets; Col 0 picks up
+                                the slack.
+
+             The earlier draggable sash was removed: a user-set PreviewCol
+             width survived window shrinks, leaving the tuning panel clipped
+             off-screen with no way back short of re-enlarging the window.
+             Fluid columns with a MaxWidth-capped tuning panel make the
+             responsive contract explicit and avoid the stuck-state
+             regression. -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="720" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ── Col 0 — preview (grows, content centered) ───────────── -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- 7 targets: 4 HUD states + 3 naked diagnostic masks.
+                     Horizontal scroll when the column is narrowed below the
+                     natural SelectorBar width. -->
+                <ScrollViewer Grid.Row="0"
+                              HorizontalScrollMode="Auto"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollMode="Disabled"
+                              VerticalScrollBarVisibility="Disabled"
+                              Padding="16,24,16,8">
+                    <SelectorBar x:Name="TargetSelector"
+                                 HorizontalAlignment="Center"
+                                 SelectionChanged="OnTargetSelectionChanged">
+                        <SelectorBarItem x:Name="TabCharging"     Text="Charging" />
+                        <SelectorBarItem x:Name="TabRecording"    Text="Recording" />
+                        <SelectorBarItem x:Name="TabTranscribing" Text="Transcribing" IsSelected="True" />
+                        <SelectorBarItem x:Name="TabRewriting"    Text="Rewriting" />
+                        <SelectorBarItem x:Name="TabConic"        Text="Conic" />
+                        <SelectorBarItem x:Name="TabArcMask"      Text="ArcMask" />
+                        <SelectorBarItem x:Name="TabCombined"     Text="Combined" />
+                    </SelectorBar>
+                </ScrollViewer>
+
+                <!-- Play / Pause = two mutually-exclusive RadioButton. Button
+                     labels name the action triggered, not the current state —
+                     a label-swap ToggleButton (Playing / Paused) is a UX
+                     trap Louis wants to avoid. -->
+                <RadioButtons Grid.Row="1"
+                              x:Name="PlayPauseGroup"
+                              SelectedIndex="0"
+                              SelectionChanged="OnPlayPauseSelectionChanged"
+                              MaxColumns="2"
+                              HorizontalAlignment="Center"
+                              Margin="0,8,0,12">
+                    <RadioButton Content="Play" />
+                    <RadioButton Content="Pause" />
+                </RadioButtons>
+
+                <!-- Preview surface. The Border is the "playground stage":
+                     stretches horizontally to fill Col 0 (width matches
+                     the SelectorBar / Play-Pause area above) and fills
+                     the remainder of the column vertically, so the
+                     whole region below the controls reads as one
+                     substrate. HudChrono 272×78 and the naked 300×300
+                     host are fixed-size and centered inside the
+                     stretching stage — the animation never resizes,
+                     only the background does. On Pause BOTH are
+                     collapsed so the preview area goes empty — no
+                     residual Charging silhouette. -->
+                <Border Grid.Row="2"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Margin="24">
+                    <Grid HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                        <controls:HudChrono x:Name="ChronoPreview"
+                                            Width="272"
+                                            Height="78" />
+                        <Grid x:Name="NakedPreviewHost"
+                              Width="300"
+                              Height="300"
+                              Visibility="Collapsed">
+                            <Border Width="272" Height="78"
+                                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ── Col 1 — tuning Expanders ─────────────────────────────── -->
+            <!--
+                Header row above the Expanders: "Tunables" title + status
+                label + Reset all + Save.
+
+                Three-state persistence UX:
+                  - Pristine (no file on disk, A == defaults): label hidden,
+                    Save disabled, Reset all disabled.
+                  - Dirty (A != file, or edits on top of defaults): label
+                    shows "Unsaved changes" in italic, Save enabled, Revert
+                    enabled.
+                  - Modified-and-saved (A == file, but the file itself holds
+                    non-default values): label shows "Modified parameters"
+                    in regular weight, Save disabled (nothing to write),
+                    Revert enabled.
+
+                Reset all resets every section to the shipping defaults
+                AND deletes the on-disk file — so the next launch genuinely
+                starts pristine. See PlaygroundPersistence comment for the
+                file layout rationale.
+
+                Multi-profile (named presets + dropdown) is deferred; the
+                natural extension if Louis wants it later.
+            -->
+            <!-- MinWidth=480 + MaxWidth=920 caps the tuning column between
+                 two comfortable sizes: narrow enough to stay legible on
+                 a smallest-allowed 1200-wide window, wide enough that
+                 the header row (title + italic status + "Reset all" +
+                 "Save") breathes and the slider+NumberBox pairs don't
+                 crowd. Anything wider is wasted whitespace; Col 0
+                 absorbs the surplus instead. -->
+            <ScrollViewer Grid.Column="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24"
+                          MinWidth="480"
+                          MaxWidth="920">
+                <StackPanel x:Name="TuningStack" Spacing="6">
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="Tunables"
+                                   Style="{ThemeResource TitleTextBlockStyle}"
+                                   VerticalAlignment="Center" />
+
+                        <!-- Status label. Always italic regardless of
+                             state so it reads as a secondary info string
+                             even when sitting next to the Reset all /
+                             Save button labels. Text + Visibility driven
+                             from code-behind by UpdateHeaderUi():
+                               _isDirty         → "Unsaved changes"
+                               !dirty & saved   → "Modified parameters"
+                               pristine         → Collapsed. -->
+                        <TextBlock Grid.Column="1"
+                                   x:Name="StateLabel"
+                                   FontStyle="Italic"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,12,0"
+                                   Visibility="Collapsed" />
+
+                        <!-- Reset all: mirrors the "Reset all" pattern
+                             in Settings › Whisper — SubtleButtonStyle +
+                             FontIcon E777 (refresh / circular arrow) +
+                             label. Disabled in pristine state. Resets
+                             every field to defaults AND deletes the
+                             persisted file. -->
+                        <Button Grid.Column="2"
+                                x:Name="ResetAllButton"
+                                Style="{ThemeResource SubtleButtonStyle}"
+                                IsEnabled="False"
+                                VerticalAlignment="Center"
+                                Margin="0,0,8,0"
+                                ToolTipService.ToolTip="Reset every section to the shipping defaults and delete the saved file"
+                                Click="OnResetAllClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                <TextBlock Text="Reset all" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Save button. Disabled unless _isDirty — once
+                             saved, nothing more to write until the next
+                             edit. Grays per the Fluent disabled state. -->
+                        <Button Grid.Column="3"
+                                x:Name="SaveButton"
+                                VerticalAlignment="Center"
+                                IsEnabled="False"
+                                Click="OnSaveClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Save" />
+                                <TextBlock Text="Save" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>

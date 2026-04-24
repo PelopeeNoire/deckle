@@ -7,6 +7,7 @@
       "Edit",
       "Glob",
       "Grep",
+      "Powershell",
       "WebSearch",
       "WebFetch",
       "mcp__claude_ai_Figma__get_design_context",
@@ -17,7 +18,8 @@
       "mcp__claude_ai_Figma__get_metadata",
       "Skill(git-commit)",
       "Skill(benchmark-loop)",
-      "Skill(benchmark-loop:*)"
+      "Skill(benchmark-loop:*)",
+      "mcp__50540b09-5411-4166-bfbf-67df46c1be7a__microsoft_docs_search"
     ]
   }
 }

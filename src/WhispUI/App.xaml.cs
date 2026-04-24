@@ -15,6 +15,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
     private SettingsWindow? _settingsWindow;
+    private PlaygroundWindow? _playgroundWindow;
     private HudWindow? _hudWindow;
     private HudOverlayManager? _overlayManager;
     private TrayIconManager? _tray;
@@ -84,6 +85,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         };
         Milestone("settingswindow");
 
+        // PlaygroundWindow created once, never destroyed. Same contract
+        // as SettingsWindow / LogWindow — opened on demand via tray.
+        _playgroundWindow = new PlaygroundWindow();
+        Milestone("playgroundwindow");
+
         // HudWindow created once, never destroyed. No initial Show: the
         // constructor captures the HWND and sets up subclass / raw input /
         // extended styles directly on the native handle — no need to show the
@@ -111,6 +117,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             OnShowLogs        = () => _logWindow.ShowAndActivate(),
             OnShowSettings    = () => _settingsWindow.ShowAndActivate(),
+            OnShowPlayground  = () => _playgroundWindow.ShowAndActivate(),
             // Left-click tray = toggle transcription via the same path as the
             // standard hotkey. Allows starting with the mouse one-handed.
             OnToggleRecording = () => OnHotkey(NativeMethods.HOTKEY_ID_TRANSCRIBE),
@@ -128,8 +135,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         {
             _tray.UpdateStatus(status);
             _log.Info(LogSource.Status, status);
-            // Beacon app icon in LogWindow: red = recording, grey = idle.
-            _logWindow.SetRecordingState(status == "Recording");
+            // Beacon app icon in LogWindow + PlaygroundWindow: red =
+            // recording, grey = idle. Single source of truth driven
+            // from the engine status transition.
+            bool isRecording = status == "Recording";
+            _logWindow.SetRecordingState(isRecording);
+            _playgroundWindow?.SetRecordingState(isRecording);
 
             // HUD: driven by status transition. Background thread → HudWindow
             // marshals internally via DispatcherQueue.
@@ -253,7 +264,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (Current is not App app) return;
 
         foreach (var window in new Microsoft.UI.Xaml.Window?[]
-                     { app._settingsWindow, app._logWindow, app._hudWindow })
+                     { app._settingsWindow, app._playgroundWindow, app._logWindow, app._hudWindow })
         {
             if (window is null) continue;
             if (window.Content is Microsoft.UI.Xaml.FrameworkElement fe)

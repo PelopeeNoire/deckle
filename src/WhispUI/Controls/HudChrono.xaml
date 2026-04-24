@@ -27,7 +27,24 @@
                 <Setter Property="FontWeight" Value="ExtraLight" />
                 <Setter Property="FontSize" Value="48" />
                 <Setter Property="TextLineBounds" Value="Tight" />
+                <!-- CharacterSpacing is a no-op when each TextBlock holds a
+                     single glyph — the thousandths-of-em adjustment is
+                     applied *between* characters within a Run, and there
+                     are no inter-character gaps to shrink here. Kept at
+                     -600 for parity with how the Runs-based prior design
+                     was tuned, but the actual tightening between the 8
+                     TextBlocks now comes from the negative Margin below. -->
                 <Setter Property="CharacterSpacing" Value="-600" />
+                <!-- Negative horizontal Margin clips into the font's
+                     side-bearings on both sides of each glyph. The Bitcount
+                     Single "0" at FontSize 48 has ~6 dip of intrinsic
+                     side-bearing per side; -1 dip on each side nets ~2 dip
+                     of tightening per inter-digit gap — enough to close
+                     the optical gap between digits without cropping the
+                     glyph body. Tuneable from XAML directly — no rebuild
+                     needed because this is a layout-time measurement,
+                     not baked into Composition geometry. -->
+                <Setter Property="Margin" Value="-1,0,-1,0" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
             </Style>
         </Grid.Resources>
@@ -48,24 +65,62 @@
         <Border x:Name="ProcessingSurfaceHost"
                 IsHitTestVisible="False" />
 
-        <!-- 8 individual TextBlocks (6 digits + 2 dots) inside a StackPanel.
-             Per-element TextBlock so each can be targeted by the swipe reveal
-             animation via ElementCompositionPreview.GetElementVisual (Runs
-             are Inlines, not UIElements, and share their parent TextBlock's
-             Composition.Visual). ClockText is preserved as the panel name
-             so HudChrono.xaml.cs references still resolve. -->
+        <!-- 8 elements inside a StackPanel: 6 digit Grids (each holding a
+             primary TextBlock + an accent overlay) and 2 standalone dot
+             TextBlocks.
+
+             Per-digit overlay pattern: each digit Grid stacks two
+             TextBlocks with identical text. The primary is always at
+             full opacity with the theme Foreground brush; the accent
+             sibling uses SystemFillColorCriticalBrush and is hidden by
+             default (Opacity=0). The swipe animation code in
+             HudChrono.xaml.cs modulates each accent's Opacity each
+             vsync so the digit cross-fades from primary to critical red
+             and back as the wave passes — rather than snapping the
+             Foreground DP between two brushes per frame (which caused
+             visible stepping because the swap was instantaneous).
+
+             Dots never flash, so they stay single TextBlocks — no
+             overlay sibling, no heat tracking.
+
+             ClockText is preserved as the panel name so HudChrono.xaml.cs
+             references still resolve. -->
         <StackPanel x:Name="ClockText"
                     Orientation="Horizontal"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center">
-            <TextBlock x:Name="Min1" Text="0" Style="{StaticResource ChronoDigitStyle}" />
-            <TextBlock x:Name="Min2" Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <Grid>
+                <TextBlock x:Name="Min1"       Text="0" Style="{StaticResource ChronoDigitStyle}" />
+                <TextBlock x:Name="Min1Accent" Text="0" Style="{StaticResource ChronoDigitStyle}"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" Opacity="0" />
+            </Grid>
+            <Grid>
+                <TextBlock x:Name="Min2"       Text="0" Style="{StaticResource ChronoDigitStyle}" />
+                <TextBlock x:Name="Min2Accent" Text="0" Style="{StaticResource ChronoDigitStyle}"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" Opacity="0" />
+            </Grid>
             <TextBlock x:Name="DotA" Text="." Style="{StaticResource ChronoDigitStyle}" />
-            <TextBlock x:Name="Sec1" Text="0" Style="{StaticResource ChronoDigitStyle}" />
-            <TextBlock x:Name="Sec2" Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <Grid>
+                <TextBlock x:Name="Sec1"       Text="0" Style="{StaticResource ChronoDigitStyle}" />
+                <TextBlock x:Name="Sec1Accent" Text="0" Style="{StaticResource ChronoDigitStyle}"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" Opacity="0" />
+            </Grid>
+            <Grid>
+                <TextBlock x:Name="Sec2"       Text="0" Style="{StaticResource ChronoDigitStyle}" />
+                <TextBlock x:Name="Sec2Accent" Text="0" Style="{StaticResource ChronoDigitStyle}"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" Opacity="0" />
+            </Grid>
             <TextBlock x:Name="DotB" Text="." Style="{StaticResource ChronoDigitStyle}" />
-            <TextBlock x:Name="Cs1"  Text="0" Style="{StaticResource ChronoDigitStyle}" />
-            <TextBlock x:Name="Cs2"  Text="0" Style="{StaticResource ChronoDigitStyle}" />
+            <Grid>
+                <TextBlock x:Name="Cs1"       Text="0" Style="{StaticResource ChronoDigitStyle}" />
+                <TextBlock x:Name="Cs1Accent" Text="0" Style="{StaticResource ChronoDigitStyle}"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" Opacity="0" />
+            </Grid>
+            <Grid>
+                <TextBlock x:Name="Cs2"       Text="0" Style="{StaticResource ChronoDigitStyle}" />
+                <TextBlock x:Name="Cs2Accent" Text="0" Style="{StaticResource ChronoDigitStyle}"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" Opacity="0" />
+            </Grid>
         </StackPanel>
     </Grid>
 </UserControl>
