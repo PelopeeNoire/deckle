@@ -70,6 +70,14 @@ public sealed partial class HudWindow : Window
     private HudState _state = HudState.Hidden;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _messageHideTimer;
 
+    // Raised when the HUD transitions between visible and hidden. Used by
+    // HudOverlayManager to slide cards into / out of the main HUD's slot
+    // (slot 0 drops onto the HUD's position while the HUD is hidden).
+    public event EventHandler<bool>? MainHudVisibilityChanged;
+
+    public IntPtr Hwnd             => _hwnd;
+    public bool   IsMainHudShown   => _state != HudState.Hidden;
+
     public HudWindow()
     {
         InitializeComponent();
@@ -177,25 +185,25 @@ public sealed partial class HudWindow : Window
     public void SwitchToTranscribing() => EnqueueUI(() => SetState(HudState.Transcribing));
     public void SwitchToRewriting()    => EnqueueUI(() => SetState(HudState.Rewriting));
 
-    // All message kinds use the same 4 s display duration — uniform read
-    // time, no semantic-driven pacing. Per the design choice: the HUD just
-    // shows a state and clears, no interaction; 4 s gives time to read
-    // without lingering.
-    private static readonly TimeSpan MessageDuration = TimeSpan.FromSeconds(4);
+    // Durations are severity-driven (see UserFeedbackDurations). Success and
+    // Informational clear fast, warnings and errors linger so the user has
+    // time to read the actionable body.
 
     public void ShowError(string title, string body) =>
         EnqueueUI(() => SetState(HudState.Message,
-            new MessagePayload(MessageKind.Critical, title, body, MessageDuration)));
+            new MessagePayload(MessageKind.Critical, title, body,
+                UserFeedbackDurations.For(UserFeedbackSeverity.Error))));
 
     public void ShowPasted() =>
         EnqueueUI(() => SetState(HudState.Message,
-            new MessagePayload(MessageKind.Success, "Pasted", string.Empty, MessageDuration)));
+            new MessagePayload(MessageKind.Success, "Pasted", string.Empty,
+                UserFeedbackDurations.Success)));
 
     public void ShowCopied() =>
         EnqueueUI(() => SetState(HudState.Message,
-            new MessagePayload(MessageKind.Informational,
+            new MessagePayload(MessageKind.Success,
                 "Copied to clipboard", "Ctrl+V where you want it.",
-                MessageDuration)));
+                UserFeedbackDurations.Success)));
 
     public void ShowUserFeedback(UserFeedback fb)
     {
@@ -206,7 +214,8 @@ public sealed partial class HudWindow : Window
             _                              => MessageKind.Critical,
         };
         EnqueueUI(() => SetState(HudState.Message,
-            new MessagePayload(kind, fb.Title, fb.Body, MessageDuration)));
+            new MessagePayload(kind, fb.Title, fb.Body,
+                UserFeedbackDurations.For(fb.Severity))));
     }
 
     public void Hide() => EnqueueUI(() => SetState(HudState.Hidden));
@@ -251,9 +260,14 @@ public sealed partial class HudWindow : Window
             return;
         }
 
+        bool wasShown = _state != HudState.Hidden;
         _state = next;
+        bool isShown = _state != HudState.Hidden;
 
         _messageHideTimer?.Stop();
+
+        if (wasShown != isShown)
+            MainHudVisibilityChanged?.Invoke(this, isShown);
 
         switch (next)
         {
@@ -323,10 +337,11 @@ public sealed partial class HudWindow : Window
         else DispatcherQueue.TryEnqueue(() => a());
     }
 
-    private void ShowNoActivate()
+    // Pixel rect the HUD would occupy at the current DPI + work area +
+    // Overlay.Position setting, regardless of visibility. HudOverlayManager
+    // reads this to lay out the stack even when the HUD itself is hidden.
+    public Windows.Graphics.RectInt32 GetRectPx()
     {
-        // Recomputed on every show: a Windows DPI scale change between two
-        // dictations (125% → 150%) is reflected immediately.
         var wa = DisplayArea.Primary.WorkArea;
 
         uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
@@ -345,7 +360,16 @@ public sealed partial class HudWindow : Window
         int y = position.StartsWith("Top")
             ? wa.Y + margin
             : wa.Y + wa.Height - h - margin;
-        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, w, h));
+
+        return new Windows.Graphics.RectInt32(x, y, w, h);
+    }
+
+    private void ShowNoActivate()
+    {
+        // Recomputed on every show: a Windows DPI scale change between two
+        // dictations (125% → 150%) is reflected immediately.
+        var rect = GetRectPx();
+        AppWindow.MoveAndResize(rect);
 
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNOACTIVATE);
         NativeMethods.SetWindowPos(
