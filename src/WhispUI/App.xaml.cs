@@ -16,6 +16,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
     private SettingsWindow? _settingsWindow;
     private HudWindow? _hudWindow;
+    private HudOverlayManager? _overlayManager;
     private TrayIconManager? _tray;
     private WhispEngine? _engine;
 
@@ -90,11 +91,20 @@ public partial class App : Microsoft.UI.Xaml.Application
         // ShowNoActivate, which positions bottom-center and calls SW_SHOWNOACTIVATE.
         _hudWindow = new HudWindow();
 
+        // Manager for the transient overlay card stack (independent HWNDs
+        // stacked 24 dip away from the main HUD). Owns per-card timers and
+        // positions; reacts to main HUD show/hide via MainHudVisibilityChanged.
+        _overlayManager = new HudOverlayManager(_hudWindow, _hudWindow.DispatcherQueue);
+
         // HUD feedback sink: picks up log entries that carry a UserFeedback
         // payload and surfaces them on the HUD. Events without feedback flow
-        // only through the file sink and LogWindow. Added after HudWindow is
-        // constructed so the closure captures a non-null reference.
-        TelemetryService.Instance.AddSink(new HudFeedbackSink(fb => _hudWindow.ShowUserFeedback(fb)));
+        // only through the file sink and LogWindow. Added after HudWindow and
+        // HudOverlayManager are constructed so the closures capture non-null
+        // references. Routing rule: Replacement → main HUD slot (chrono
+        // swapped out); Overlay → stacked card via HudOverlayManager.
+        TelemetryService.Instance.AddSink(new HudFeedbackSink(
+            onReplacement: fb => _hudWindow.ShowUserFeedback(fb),
+            onOverlay:     fb => _overlayManager.Enqueue(fb)));
         Milestone("hudwindow");
 
         _tray = new TrayIconManager
@@ -267,10 +277,11 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         _log.Info(LogSource.App, "Shutdown requested");
         try { Settings.SettingsService.Instance.Flush(); } catch (Exception ex) { _log.Warning(LogSource.App, "settings flush: " + ex.Message); }
-        try { _hotkeyManager?.Dispose(); } catch (Exception ex) { _log.Warning(LogSource.App, "hotkeys dispose: " + ex.Message); }
-        try { _tray?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "tray dispose: " + ex.Message); }
-        try { _messageHost?.Dispose();   } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
-        try { _engine?.Dispose();        } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
+        try { _hotkeyManager?.Dispose();   } catch (Exception ex) { _log.Warning(LogSource.App, "hotkeys dispose: " + ex.Message); }
+        try { _tray?.Dispose();            } catch (Exception ex) { _log.Warning(LogSource.App, "tray dispose: " + ex.Message); }
+        try { _messageHost?.Dispose();     } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
+        try { _overlayManager?.Dispose();  } catch (Exception ex) { _log.Warning(LogSource.App, "overlay manager dispose: " + ex.Message); }
+        try { _engine?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
         Environment.Exit(0);
     }
 

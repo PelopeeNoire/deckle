@@ -132,8 +132,9 @@ internal class LlmService
                 $"timeout | cap_min={REWRITE_HARD_CAP.TotalMinutes:F0} | profile={profile.Name} | model={profile.Model}",
                 new UserFeedback(
                     "Rewriter took too long",
-                    $"Ollama did not answer within {REWRITE_HARD_CAP.TotalMinutes:F0} min. The raw transcript is on the clipboard.",
-                    UserFeedbackSeverity.Warning));
+                    $"Over {REWRITE_HARD_CAP.TotalMinutes:F0} min. Raw transcript copied.",
+                    UserFeedbackSeverity.Warning,
+                    UserFeedbackRole.Overlay));
             return null;
         }
         catch (Exception ex)
@@ -144,8 +145,9 @@ internal class LlmService
                 $"unavailable | error={ex.GetType().Name}: {ex.Message} | profile={profile.Name} | model={profile.Model}",
                 new UserFeedback(
                     "Rewriter unavailable",
-                    "Ollama is not reachable. The raw transcript is on the clipboard.",
-                    UserFeedbackSeverity.Warning));
+                    "Ollama unreachable. Raw transcript copied.",
+                    UserFeedbackSeverity.Warning,
+                    UserFeedbackRole.Overlay));
             return null;
         }
     }
