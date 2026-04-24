@@ -408,6 +408,18 @@ internal static class NativeMethods
     public const uint DWMSBT_AUTO              = 0;
     public const uint DWMSBT_NONE              = 1;
 
+    // DWMWA_NCRENDERING_POLICY (2) tells DWM whether to render non-client
+    // decorations (frame, 1-dip accent stroke, Shell dropshadow around
+    // rounded corners) for the window. DWMNCRP_DISABLED (1) turns all of
+    // that off — needed on the overlay cards so their Win11 rounded-corner
+    // Shell shadow stops bleeding down onto the main HUD sitting 12 dip
+    // below. The DWMWCP_ROUND corner clipping is a separate compositor-
+    // level attribute and keeps working with NC rendering disabled.
+    public const uint DWMWA_NCRENDERING_POLICY = 2;
+    public const uint DWMNCRP_USEWINDOWSTYLE   = 0;
+    public const uint DWMNCRP_DISABLED         = 1;
+    public const uint DWMNCRP_ENABLED          = 2;
+
     [DllImport("dwmapi.dll", PreserveSig = true)]
     public static extern int DwmSetWindowAttribute(
         IntPtr hwnd, uint dwAttribute, ref uint pvAttribute, uint cbAttribute);

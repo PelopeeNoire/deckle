@@ -54,7 +54,7 @@ internal static class HudComposition
     // Fixed across all three variants — stroke metrics are a property of
     // the HUD rect, not of the animation.
     private const float  StrokeThickness              = 8f;    // dip, stroke width
-    private const float  InsetDip                     = -2f;    // dip, inset from HUD edge
+    private const float  InsetDip                     = -4f;    // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
