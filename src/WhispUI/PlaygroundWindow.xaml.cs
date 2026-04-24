@@ -109,6 +109,17 @@ public sealed partial class PlaygroundWindow : Window
     // the paired event during every programmatic write.
     private bool _syncing;
 
+    // ── Naked preview bundle ────────────────────────────────────────────
+    //
+    // HudComposition.CreateNakedMaskPreview returns a disposable bundle
+    // that wraps the container visual + rotation property sets + brushes
+    // + surfaces. We MUST Dispose it before mounting a new one, otherwise
+    // every rebuild leaks two Forever ScalarKeyFrameAnimations on the
+    // compositor — after enough slider moves the compositor saturates and
+    // the rotation freezes mid-animation (the Conic preview regression
+    // Louis reported). See NakedPreview class comment in HudComposition.
+    private HudComposition.NakedPreview? _nakedPreview;
+
     public PlaygroundWindow()
     {
         InitializeComponent();
@@ -179,6 +190,13 @@ public sealed partial class PlaygroundWindow : Window
             _rmsTimer.Stop();
             _rmsClock.Stop();
             _rebuildDebounce.Stop();
+            // Detach the composition child first so the compositor stops
+            // referencing the bundle's visual tree, then dispose. In the
+            // singleton-hidden pattern (Closing→Hide) Closed only fires at
+            // QuitApp so this is a belt-and-braces rather than a hot path.
+            ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
+            _nakedPreview?.Dispose();
+            _nakedPreview = null;
         };
     }
 
@@ -282,6 +300,8 @@ public sealed partial class PlaygroundWindow : Window
         // Tear down everything first.
         ChronoPreview.ApplyState(HudState.Hidden);
         ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
+        _nakedPreview?.Dispose();
+        _nakedPreview = null;
         StopRmsPump();
 
         if (!_isPlaying)
@@ -343,15 +363,30 @@ public sealed partial class PlaygroundWindow : Window
     private void AttachNakedPreview(HudComposition.NakedMaskPart part)
     {
         ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
+        _nakedPreview?.Dispose();
+        _nakedPreview = null;
 
         var compositor = ElementCompositionPreview.GetElementVisual(NakedPreviewHost).Compositor;
-        var naked = HudComposition.CreateNakedMaskPreview(
-            compositor, NakedHudSize, _tuning.ToConfig(), part);
 
-        float inset = (NakedHostDim - naked.Size.X) / 2f;
-        naked.Offset = new Vector3(inset, inset, 0f);
+        // Theme-aware arc fill: the arc mask surface is a solid colour +
+        // alpha ramp, and only the ArcMask rail (no Conic colour behind
+        // it) relies on that colour for visibility against the window's
+        // LayerFillColorDefaultBrush. Light theme → LayerFill is near-white
+        // so white-on-alpha vanishes; invert to black. Dark theme keeps
+        // white. Combined goes through AlphaMaskEffect and ignores the
+        // arc RGB, so the colour choice is harmless there.
+        bool isLightTheme =
+            Content is FrameworkElement fe &&
+            fe.ActualTheme == ElementTheme.Light;
+        var arcFill = isLightTheme ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White;
 
-        ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, naked);
+        _nakedPreview = HudComposition.CreateNakedMaskPreview(
+            compositor, NakedHudSize, _tuning.ToConfig(), part, arcFill);
+
+        float inset = (NakedHostDim - _nakedPreview.Container.Size.X) / 2f;
+        _nakedPreview.Container.Offset = new Vector3(inset, inset, 0f);
+
+        ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, _nakedPreview.Container);
     }
 
     private static readonly Vector2 NakedHudSize = new(272f, 78f);

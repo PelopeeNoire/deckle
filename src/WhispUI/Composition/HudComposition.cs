@@ -884,7 +884,12 @@ internal static class HudComposition
         // surface, so both copies rotate together and stay in perfect
         // symmetry. Extracted to PaintArcMaskSurface for CreateNaked-
         // MaskPreview reuse.
-        var arcMaskSurface = PaintArcMaskSurface(canvasDevice, graphicsDevice, pxSquare, cfg);
+        //
+        // fillColor = Colors.White: downstream AlphaMaskEffect reads only
+        // .A, so the mask's RGB is invisible to the shipping stroke. We
+        // still write premultiplied-consistent bytes (white · α).
+        var arcMaskSurface = PaintArcMaskSurface(
+            canvasDevice, graphicsDevice, pxSquare, cfg, Colors.White);
 
         // ── Surface 3: stroke silhouette (static rounded-rect outline) ───
         // Inset by 0.5 dip so the 1-dip stroke is centred on the same path
@@ -1353,23 +1358,42 @@ internal static class HudComposition
     // ArcMirror is set. Full white, straight-alpha. Shared with
     // CreateNakedMaskPreview so the dev rail sees the exact same fade
     // geometry the shipping stroke uses.
+    //
+    // Why per-pixel (not polygonal wedges like the old code) — same
+    // reason as PaintConicSurface: rasterising WedgeCount triangles that
+    // share a vertex at the centre produces a radial moiré at high wedge
+    // counts, because D2D's antialiased coverage at each shared seam is a
+    // tiny bit off-1 and the errors stack along every fan ray. That moiré
+    // was invisible on the Conic-only preview once that path went
+    // per-pixel, but it reappeared whenever the ArcMask was composited in
+    // (Rewriting, Combined, and the shipping stroke for Transcribing /
+    // Rewriting / Recording — all of which route through AlphaMaskEffect
+    // with Arc as the mask). Per-pixel eliminates the polygon seams
+    // entirely; alpha is computed independently at each pixel from its
+    // own atan2 angle, with the same lead / tail / curve / mirror
+    // semantics the polygonal path had.
+    //
+    // Bonus: no CanvasGeometry.CreatePolygon calls, which removes the
+    // degenerate-triangle edge case (near-colinear vertices at high
+    // WedgeCount) that Win2D can throw on.
+    // `fillColor` — premultiplied RGB written alongside the coverage alpha.
+    // Shipping passes Colors.White because the downstream AlphaMaskEffect
+    // only reads .A (colour is invisible to the stroke's masking stage).
+    // The playground's Naked rail passes a theme-aware opaque colour
+    // (black on light, white on dark) so ArcMask and ArcMask-only overlays
+    // are legible against LayerFillColorDefaultBrush in both themes —
+    // without a colour knob the white-on-alpha mask vanished on light.
     private static CompositionDrawingSurface PaintArcMaskSurface(
         CanvasDevice canvasDevice,
         CompositionGraphicsDevice graphicsDevice,
         int pxSquare,
-        ConicArcStrokeConfig cfg)
+        ConicArcStrokeConfig cfg,
+        Color fillColor)
     {
         var surface = graphicsDevice.CreateDrawingSurface(
             new Windows.Foundation.Size(pxSquare, pxSquare),
             DirectXPixelFormat.B8G8R8A8UIntNormalized,
             DirectXAlphaMode.Premultiplied);
-
-        using var ds = CanvasComposition.CreateDrawingSession(surface);
-        ds.Clear(Colors.Transparent);
-        var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
-        float radius = pxSquare * MathF.Sqrt(2f) * 0.5f;
-        int wedges = Math.Max(3, cfg.WedgeCount);
-        float step = MathF.Tau / wedges;
 
         // Mirror: max Span is 0.5 so the two arcs can't overlap.
         // Without mirror: Span can go up to 1 (full ring).
@@ -1377,9 +1401,9 @@ internal static class HudComposition
         float spanTurns     = Math.Clamp(cfg.ConicSpanTurns, 0f, maxSpanTurns);
         float leadFadeTurns = Math.Clamp(cfg.ConicLeadFadeTurns, 0f, spanTurns);
         float tailFadeTurns = Math.Clamp(cfg.ConicTailFadeTurns, 0f, spanTurns);
-        // If the two fades would overlap past the span, scale both
-        // so they just meet at the mid of the arc (bell shape, no
-        // solid core). Otherwise preserve the user-requested lengths.
+        // If the two fades would overlap past the span, scale both so
+        // they just meet at the mid of the arc (bell shape, no solid
+        // core). Otherwise preserve the user-requested lengths.
         float totalFadeTurns = leadFadeTurns + tailFadeTurns;
         if (totalFadeTurns > spanTurns && totalFadeTurns > 0f)
         {
@@ -1392,57 +1416,82 @@ internal static class HudComposition
         float tailFadeRadians  = MathF.Tau * tailFadeTurns;
         float tailStartRadians = spanRadians - tailFadeRadians;
         float curve            = MathF.Max(0.01f, cfg.ConicFadeCurve);
+        bool  mirror           = cfg.ArcMirror;
 
-        // One branch = one arc painted. Two branches when mirror is
-        // enabled — the second offset by π (180°) from the first.
-        int branchCount = cfg.ArcMirror ? 2 : 1;
+        // Early-out for a degenerate span (no arc visible). Return the
+        // empty transparent surface rather than iterating the full grid
+        // with alpha=0 — saves ~3 ms on 272² at no visual cost.
+        if (spanRadians <= 0f)
+            return surface;
 
-        for (int branch = 0; branch < branchCount; branch++)
+        var bytes  = new byte[pxSquare * pxSquare * 4];
+        float centre = pxSquare / 2f;
+
+        for (int y = 0; y < pxSquare; y++)
         {
-            float branchOffset = branch * MathF.PI;
-
-            for (int i = 0; i < wedges; i++)
+            float dy = y + 0.5f - centre;
+            for (int x = 0; x < pxSquare; x++)
             {
-                float a0  = i * step;
-                float a1  = a0 + step;
-                float mid = a0 + step * 0.5f;
+                float dx = x + 0.5f - centre;
 
-                if (mid >= spanRadians) break;
+                // atan2 yields [-π, π]; shift to [0, 2π) for positive
+                // angle space matching the polygonal path's convention.
+                float ang = MathF.Atan2(dy, dx);
+                if (ang < 0) ang += MathF.Tau;
+
+                // Mirror collapses the second branch (ang ∈ [π, 2π))
+                // onto the first [0, π) so a single alpha profile
+                // computation covers both arcs. The polygonal path used
+                // a branch loop with identical alpha profiles — the
+                // collapse here is the per-pixel equivalent.
+                if (mirror && ang >= MathF.PI)
+                    ang -= MathF.PI;
 
                 float alpha;
-                if (leadFadeRadians > 0f && mid < leadFadeRadians)
+                if (ang >= spanRadians)
+                {
+                    alpha = 0f;
+                }
+                else if (leadFadeRadians > 0f && ang < leadFadeRadians)
                 {
                     // Leading ramp: 0 at a=0, 1 at a=LeadFade.
-                    float t = mid / leadFadeRadians;
+                    float t = ang / leadFadeRadians;
                     alpha = MathF.Pow(t, curve);
                 }
-                else if (tailFadeRadians > 0f && mid >= tailStartRadians)
+                else if (tailFadeRadians > 0f && ang >= tailStartRadians)
                 {
                     // Trailing ramp: 1 at a=Span-TailFade, 0 at a=Span.
-                    float t = (mid - tailStartRadians) / tailFadeRadians;
+                    float t = (ang - tailStartRadians) / tailFadeRadians;
                     alpha = MathF.Pow(1f - t, curve);
                 }
                 else
                 {
                     alpha = 1f;
                 }
-                if (alpha <= 0f) continue;
 
-                var color = Color.FromArgb((byte)MathF.Round(alpha * 255f), 255, 255, 255);
+                byte a = (byte)MathF.Round(Math.Clamp(alpha, 0f, 1f) * 255f);
+                int idx = (y * pxSquare + x) * 4;
 
-                // Apply the branch offset only to the drawn geometry.
-                // The alpha profile is computed on un-offset angles
-                // so both branches share the exact same shape.
-                float d0 = a0 + branchOffset;
-                float d1 = a1 + branchOffset;
-                var p0 = centre;
-                var p1 = centre + new Vector2(MathF.Cos(d0), MathF.Sin(d0)) * radius;
-                var p2 = centre + new Vector2(MathF.Cos(d1), MathF.Sin(d1)) * radius;
-
-                using var wedge = CanvasGeometry.CreatePolygon(canvasDevice, new[] { p0, p1, p2 });
-                ds.FillGeometry(wedge, color);
+                // Premultiplied BGRA: a mask with fill colour (R, G, B) at
+                // coverage α stores as (B·α/255, G·α/255, R·α/255, α).
+                // AlphaMaskEffect downstream reads .A as the mask value;
+                // RGB is invisible to the shipping stroke's masking stage
+                // but matters for the playground's ArcMask / Combined naked
+                // rails where the user sees the surface directly — hence
+                // the theme-driven fillColor parameter.
+                bytes[idx + 0] = (byte)((fillColor.B * a) / 255);
+                bytes[idx + 1] = (byte)((fillColor.G * a) / 255);
+                bytes[idx + 2] = (byte)((fillColor.R * a) / 255);
+                bytes[idx + 3] = a;
             }
         }
+
+        using var bitmap = CanvasBitmap.CreateFromBytes(
+            canvasDevice, bytes, pxSquare, pxSquare,
+            Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized);
+        using var ds = CanvasComposition.CreateDrawingSession(surface);
+        ds.Clear(Colors.Transparent);
+        ds.DrawImage(bitmap);
 
         return surface;
     }
@@ -1464,6 +1513,94 @@ internal static class HudComposition
         Conic    = 1,   // raw 360° HSV rainbow ring, full square
         ArcMask  = 2,   // alpha-ramped pie slice(s), monochrome
         Combined = 3,   // Conic ⊗ ArcMask, no stroke silhouette
+    }
+
+    // Disposable bundle returned by CreateNakedMaskPreview. Mirrors the
+    // ProcessingStroke pattern on purpose: the rotation PropertySets
+    // returned by StartRotation drive two Forever ScalarKeyFrameAnimations
+    // that the compositor keeps live until they are explicitly stopped.
+    // If the caller (PlaygroundWindow) lets the PropertySets fall out of
+    // scope on every rebuild, the compositor accumulates orphan
+    // animations; after enough slider moves it saturates and Forever
+    // animations across the whole window silently freeze — which is the
+    // "Conic preview frozen mid-animation" regression Louis reported.
+    //
+    // Ownership convention: the caller holds the NakedPreview while the
+    // bundle is mounted on the visual tree, disposes it BEFORE replacing
+    // it with a fresh one (and before the host Window closes). Dispose
+    // stops both rotations' Linear + Eased animations and releases every
+    // Composition object the bundle allocated.
+    internal sealed class NakedPreview : IDisposable
+    {
+        public ContainerVisual Container { get; }
+
+        private readonly SpriteVisual _sprite;
+        private readonly CompositionSurfaceBrush _conicBrush;
+        private readonly CompositionSurfaceBrush _arcMaskBrush;
+        private readonly CompositionEffectBrush? _effectBrush;
+        private readonly CompositionDrawingSurface _conicSurface;
+        private readonly CompositionDrawingSurface _arcMaskSurface;
+        private readonly CompositionPropertySet _conicRotationProps;
+        private readonly CompositionPropertySet _arcRotationProps;
+
+        private bool _disposed;
+
+        internal NakedPreview(
+            ContainerVisual container,
+            SpriteVisual sprite,
+            CompositionSurfaceBrush conicBrush,
+            CompositionSurfaceBrush arcMaskBrush,
+            CompositionEffectBrush? effectBrush,
+            CompositionDrawingSurface conicSurface,
+            CompositionDrawingSurface arcMaskSurface,
+            CompositionPropertySet conicRotationProps,
+            CompositionPropertySet arcRotationProps)
+        {
+            Container            = container;
+            _sprite              = sprite;
+            _conicBrush          = conicBrush;
+            _arcMaskBrush        = arcMaskBrush;
+            _effectBrush         = effectBrush;
+            _conicSurface        = conicSurface;
+            _arcMaskSurface      = arcMaskSurface;
+            _conicRotationProps  = conicRotationProps;
+            _arcRotationProps    = arcRotationProps;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            // 1. Stop every Forever animation so the native scheduler drops
+            //    its refs. ExpressionAnimation on the brush's TransformMatrix
+            //    is what binds the PropertySet scalars; stop it first so
+            //    stopping the scalars doesn't race against a live read.
+            try { _conicBrush.StopAnimation("TransformMatrix");   } catch { }
+            try { _arcMaskBrush.StopAnimation("TransformMatrix"); } catch { }
+
+            try { _conicRotationProps.StopAnimation("Linear"); } catch { }
+            try { _conicRotationProps.StopAnimation("Eased");  } catch { }
+            try { _arcRotationProps.StopAnimation("Linear");   } catch { }
+            try { _arcRotationProps.StopAnimation("Eased");    } catch { }
+
+            // 2. Dispose in the same order the shipping stroke uses:
+            //    effect brush first (it binds the source brushes), then
+            //    surface brushes, then surfaces, then property sets, then
+            //    the sprite + container last.
+            try { _effectBrush?.Dispose();   } catch { }
+            try { _conicBrush.Dispose();     } catch { }
+            try { _arcMaskBrush.Dispose();   } catch { }
+
+            try { _conicSurface.Dispose();   } catch { }
+            try { _arcMaskSurface.Dispose(); } catch { }
+
+            try { _conicRotationProps.Dispose(); } catch { }
+            try { _arcRotationProps.Dispose();   } catch { }
+
+            try { _sprite.Dispose();    } catch { }
+            try { Container.Dispose();  } catch { }
+        }
     }
 
     // Returns a ContainerVisual sized pxSquare × pxSquare — the same
@@ -1489,9 +1626,20 @@ internal static class HudComposition
     // those are state-blend concerns; the diagnostic is about geometry,
     // and stripping the colour pipeline keeps the visual signal focused
     // on where each lobe actually lands.
-    internal static ContainerVisual CreateNakedMaskPreview(
+    //
+    // `arcFillColor` — the caller picks a theme-legible opaque colour for
+    // the arc mask surface (black on light substrates, white on dark). The
+    // Combined path composites through AlphaMaskEffect and reads only the
+    // mask's .A, so the colour is invisible there; the ArcMask rail draws
+    // the mask directly and relies on this colour to show up against the
+    // window's LayerFillColorDefaultBrush in both themes.
+    //
+    // Returns a NakedPreview bundle the caller MUST hold and Dispose when
+    // replaced — see the type-level comment on NakedPreview for why.
+    internal static NakedPreview CreateNakedMaskPreview(
         Compositor compositor, Vector2 hudSize,
-        ConicArcStrokeConfig cfg, NakedMaskPart part)
+        ConicArcStrokeConfig cfg, NakedMaskPart part,
+        Color arcFillColor)
     {
         // Reuse the exact pxSquare math from CreateConicArcStroke so the
         // naked preview paints the same brush footprint. Any drift here
@@ -1511,7 +1659,7 @@ internal static class HudComposition
         container.Size = new Vector2(pxSquare, pxSquare);
 
         var conicSurface   = PaintConicSurface  (canvasDevice, graphicsDevice, pxSquare, cfg);
-        var arcMaskSurface = PaintArcMaskSurface(canvasDevice, graphicsDevice, pxSquare, cfg);
+        var arcMaskSurface = PaintArcMaskSurface(canvasDevice, graphicsDevice, pxSquare, cfg, arcFillColor);
 
         // Stretch.Fill — source is pxSquare, sprite is pxSquare, map 1:1.
         // (CreateConicArcStroke uses Stretch.None because its sprite is
@@ -1533,7 +1681,11 @@ internal static class HudComposition
         // stroke silently masks.
         var centre = new Vector2(pxSquare / 2f, pxSquare / 2f);
 
-        StartRotation(
+        // Capture the returned PropertySets — see NakedPreview class
+        // comment. Letting them die on GC leaks two Forever animations
+        // per rebuild and eventually freezes every Composition animation
+        // in the window.
+        var conicRotationProps = StartRotation(
             compositor, conicBrush, centre,
             cfg.HuePeriodSeconds,
             cfg.HueDirection,
@@ -1541,7 +1693,7 @@ internal static class HudComposition
             cfg.HueEaseP1X, cfg.HueEaseP1Y,
             cfg.HueEaseP2X, cfg.HueEaseP2Y,
             cfg.HueMinSpeedFraction);
-        StartRotation(
+        var arcRotationProps = StartRotation(
             compositor, arcMaskBrush, centre,
             cfg.ArcPeriodSeconds,
             cfg.ArcDirection,
@@ -1553,6 +1705,7 @@ internal static class HudComposition
         var sprite = compositor.CreateSpriteVisual();
         sprite.Size = new Vector2(pxSquare, pxSquare);
 
+        CompositionEffectBrush? effectBrush = null;
         switch (part)
         {
             case NakedMaskPart.Conic:
@@ -1564,14 +1717,16 @@ internal static class HudComposition
             case NakedMaskPart.Combined:
                 // Single AlphaMaskEffect — output = (Conic.RGB, Conic.A · Arc.A).
                 // No Sat/Hue/Exp nodes (those are state-blend concerns;
-                // the diagnostic is about geometry).
+                // the diagnostic is about geometry). Pattern matches the
+                // shipping CreateConicArcStroke (no factory disposal; the
+                // factory is short-lived and collected on GC).
                 var effectGraph = new AlphaMaskEffect
                 {
                     Source    = new CompositionEffectSourceParameter("Conic"),
                     AlphaMask = new CompositionEffectSourceParameter("Arc"),
                 };
                 var effectFactory = compositor.CreateEffectFactory(effectGraph);
-                var effectBrush = effectFactory.CreateBrush();
+                effectBrush = effectFactory.CreateBrush();
                 effectBrush.SetSourceParameter("Conic", conicBrush);
                 effectBrush.SetSourceParameter("Arc",   arcMaskBrush);
                 sprite.Brush = effectBrush;
@@ -1579,7 +1734,12 @@ internal static class HudComposition
         }
 
         container.Children.InsertAtTop(sprite);
-        return container;
+
+        return new NakedPreview(
+            container, sprite,
+            conicBrush, arcMaskBrush, effectBrush,
+            conicSurface, arcMaskSurface,
+            conicRotationProps, arcRotationProps);
     }
 
     // OKLCh → sRGB conversion. L and C are OKLab cylindrical
