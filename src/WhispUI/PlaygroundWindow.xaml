@@ -28,28 +28,34 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Main content: two panels, responsive, no sash.
-               Col 0 (preview): pixel-fixed at a width that fits the HudChrono
-                                272×78 with a comfortable Border padding —
-                                enough for the SelectorBar to display its
-                                full 7 tabs without horizontal scroll.
-               Col 1 (tuning):  takes the remainder via Width="*". Shrinks
-                                with the window; the window's
-                                PreferredMinimumWidth guarantees both panels
-                                stay usable at the smallest allowed size.
+        <!-- Main content: two panels, both responsive, no sash.
+               Col 0 (preview): Width="*" — grows with the window, absorbs
+                                all extra horizontal space. MinWidth=720
+                                so the 7-tab SelectorBar fits without
+                                horizontal scroll. Preview content is
+                                center-aligned so the HudChrono stays
+                                centered as the column widens.
+               Col 1 (tuning):  Width="Auto" — desired width reported by
+                                the inner ScrollViewer, which is capped
+                                at MaxWidth=840 (~900 is "too much
+                                whitespace", ~700 feels cramped). The
+                                column never exceeds that cap no matter
+                                how wide the window gets; Col 0 picks up
+                                the slack.
 
              The earlier draggable sash was removed: a user-set PreviewCol
              width survived window shrinks, leaving the tuning panel clipped
              off-screen with no way back short of re-enlarging the window.
-             Fixed columns make the responsive contract explicit and avoid
-             the stuck-state regression. -->
+             Fluid columns with a MaxWidth-capped tuning panel make the
+             responsive contract explicit and avoid the stuck-state
+             regression. -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="720" />
-                <ColumnDefinition Width="*" MinWidth="480" />
+                <ColumnDefinition Width="*" MinWidth="720" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <!-- ── Col 0 — sticky preview ───────────────────────────────── -->
+            <!-- ── Col 0 — preview (grows, content centered) ───────────── -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -94,15 +100,18 @@
                     <RadioButton Content="Pause" />
                 </RadioButtons>
 
-                <!-- Preview surface. HudChrono 272×78 and the naked 300×300
-                     host share the same substrate Border so all targets
-                     read against identical Layer fill. On Pause BOTH are
-                     collapsed so the preview area goes empty — no residual
-                     Charging silhouette. -->
+                <!-- Preview surface. The Border is the "playground stage":
+                     stretches horizontally to fill Col 0 (width matches
+                     the SelectorBar / Play-Pause area above) and fills
+                     the remainder of the column vertically, so the
+                     whole region below the controls reads as one
+                     substrate. HudChrono 272×78 and the naked 300×300
+                     host are fixed-size and centered inside the
+                     stretching stage — the animation never resizes,
+                     only the background does. On Pause BOTH are
+                     collapsed so the preview area goes empty — no
+                     residual Charging silhouette. -->
                 <Border Grid.Row="2"
-                        Padding="40"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
                         Background="{ThemeResource LayerFillColorDefaultBrush}"
                         CornerRadius="{ThemeResource ControlCornerRadius}"
                         Margin="24">
@@ -149,10 +158,19 @@
                 Multi-profile (named presets + dropdown) is deferred; the
                 natural extension if Louis wants it later.
             -->
+            <!-- MinWidth=480 + MaxWidth=920 caps the tuning column between
+                 two comfortable sizes: narrow enough to stay legible on
+                 a smallest-allowed 1200-wide window, wide enough that
+                 the header row (title + italic status + "Reset all" +
+                 "Save") breathes and the slider+NumberBox pairs don't
+                 crowd. Anything wider is wasted whitespace; Col 0
+                 absorbs the surplus instead. -->
             <ScrollViewer Grid.Column="1"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
-                          Padding="24">
+                          Padding="24"
+                          MinWidth="480"
+                          MaxWidth="920">
                 <StackPanel x:Name="TuningStack" Spacing="6">
                     <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
