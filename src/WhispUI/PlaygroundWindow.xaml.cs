@@ -4,7 +4,6 @@ using System.Numerics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -233,7 +232,7 @@ public sealed partial class PlaygroundWindow : Window
     // total available width minus the sash and TuningCol.MinWidth. This
     // mirrors how a GridSplitter would clamp — keeping both columns above
     // their minimums regardless of window size.
-    private void OnSashDragDelta(object sender, DragDeltaEventArgs e)
+    private void OnSashDragDelta(SashThumb sender, double dx)
     {
         double total = RootGrid.ActualWidth;
         if (total <= 0) return;
@@ -244,7 +243,7 @@ public sealed partial class PlaygroundWindow : Window
         double max = Math.Max(previewMin, total - sashWidth - tuningMin);
 
         double current = PreviewCol.ActualWidth;
-        double target  = Math.Clamp(current + e.HorizontalChange, previewMin, max);
+        double target  = Math.Clamp(current + dx, previewMin, max);
 
         PreviewCol.Width = new GridLength(target);
     }
