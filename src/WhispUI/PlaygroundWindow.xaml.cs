@@ -166,6 +166,15 @@ public sealed partial class PlaygroundWindow : Window
             };
         }
 
+        // Tap on empty background → move focus to RootGrid, which dismisses
+        // the caret from a NumberBox the user just edited. Focused input
+        // controls in WinUI 3 keep focus on background clicks unless some
+        // other element claims it — same UX wart as Settings windows if
+        // left unhandled. Tapped bubbles up only when no child control
+        // marks it Handled, so clicks that land on a Slider / NumberBox /
+        // Expander header don't trigger dismissal.
+        RootGrid.Tapped += (_, _) => RootGrid.Focus(FocusState.Pointer);
+
         this.Closed += (_, _) =>
         {
             _rmsTimer.Stop();
@@ -697,15 +706,19 @@ public sealed partial class PlaygroundWindow : Window
     private void AddSimulatedRmsExpander()
     {
         var stack = NewExpander("Simulated RMS (Recording only)", ResetSimulatedRms);
-        AddFloatRow(stack, "SimRmsMin", 0, 0.3, 0.01, _simRmsMin,
+        // Step 0.001 (not 0.05/0.01) — the RMS range is 0..0.3 and the
+        // meaningful defaults (0.013 = engine gate at -38 dBFS, 0.100 =
+        // conversational mid -20 dBFS) need 3 decimals to display cleanly.
+        // Coarser grid would snap 0.013 → 0.01 and destroy the semantic.
+        AddFloatRow(stack, "SimRmsMin", 0, 0.3, 0.001, _simRmsMin,
             v => _simRmsMin = (float)v);
-        AddFloatRow(stack, "SimRmsMax", 0, 0.3, 0.01, _simRmsMax,
+        AddFloatRow(stack, "SimRmsMax", 0, 0.3, 0.001, _simRmsMax,
             v => _simRmsMax = (float)v);
         AddFloatRow(stack, "SimRmsPeriodSeconds", 0.2, 10, 0.1, _simRmsPeriodSeconds,
             v => _simRmsPeriodSeconds = (float)v);
         AddToggleRow(stack, "Manual override", _simManualOverride,
             v => _simManualOverride = v);
-        AddFloatRow(stack, "SimRmsManualValue", 0, 0.3, 0.01, _simManualValue,
+        AddFloatRow(stack, "SimRmsManualValue", 0, 0.3, 0.001, _simManualValue,
             v => _simManualValue = (float)v);
     }
 
@@ -851,9 +864,18 @@ public sealed partial class PlaygroundWindow : Window
         Action<double> setter,
         bool rebuild = false)
     {
+        // Clean up float→double promotion noise in the displayed default.
+        // TuningModel stores floats; promoting to double for Slider.Value /
+        // NumberBox.Value exposes binary-precision artefacts (0.4f shows
+        // as 0.4000006, 0.013f as 0.01300027). Rounding to the step's
+        // decimal count strips the noise without altering semantics.
+        // digits formula: step 1 → 0, 0.5/0.1 → 1, 0.05/0.01 → 2, 0.001 → 3.
+        int digits = Math.Max(0, (int)Math.Ceiling(-Math.Log10(step)));
+        double displayValue = Math.Round(value, digits);
+
         var slider = new Slider
         {
-            Minimum = min, Maximum = max, Value = value,
+            Minimum = min, Maximum = max, Value = displayValue,
             StepFrequency = step,
             SmallChange = step,
             LargeChange = step * 10,
@@ -862,7 +884,7 @@ public sealed partial class PlaygroundWindow : Window
         };
         var numberBox = new NumberBox
         {
-            Value = value,
+            Value = displayValue,
             Minimum = min, Maximum = max,
             SmallChange = step,
             LargeChange = step * 10,
