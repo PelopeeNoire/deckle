@@ -225,6 +225,12 @@ public sealed partial class HudChrono : UserControl
         for (int i = 0; i < _digitHeat.Length; i++) _digitHeat[i] = 0f;
         if (_digitAccent is null) return;
         foreach (var t in _digitAccent) t.Opacity = 0;
+        // Restore the primary-glyph invariant: accent = 0 ⇒ primary = 1.
+        // Without this, primaries knocked to 0 by a previous Recording
+        // flash would stay hidden after the state transition clears the
+        // accents.
+        if (_digitPrimary is null) return;
+        foreach (var t in _digitPrimary) t.Opacity = 1;
     }
 
     private void ResetDigitTexts()
@@ -627,7 +633,15 @@ public sealed partial class HudChrono : UserControl
         // Transcribing/Rewriting the swipe rewrites Opacity every
         // vsync — this write is immediately superseded by UpdateSwipe,
         // so no interference with the wave animation.
-        accent.Opacity = 1;
+        //
+        // Invariant primary.Opacity + accent.Opacity = 1 so only one
+        // glyph ever contributes ink. Without this, both TextBlocks
+        // render at full alpha simultaneously and the accent glyph
+        // appears visibly thicker / bolder than an unchanged digit,
+        // because two ClearType-hinted copies of the same glyph at
+        // the same position double up on subpixel coverage.
+        accent.Opacity  = 1;
+        primary.Opacity = 0;
     }
 
     private void UpdateClock()
@@ -796,9 +810,17 @@ public sealed partial class HudChrono : UserControl
             // need to guard manually — but we round to 3 decimals first
             // so a heat of 0.9999997 (floating noise) doesn't repeatedly
             // invalidate the render pass.
+            //
+            // The primary glyph's Opacity is pushed to (1 - accent) so
+            // the two layers never double up on subpixel coverage (see
+            // WriteDigit comment). Skipping this invariant makes
+            // Recording-time flashes look bolder than unchanged digits.
             double rounded = System.Math.Round(_digitHeat[i], 3);
             if (_digitAccent[i].Opacity != rounded)
                 _digitAccent[i].Opacity = rounded;
+            double primaryOpacity = 1.0 - rounded;
+            if (_digitPrimary[i].Opacity != primaryOpacity)
+                _digitPrimary[i].Opacity = primaryOpacity;
         }
     }
 
