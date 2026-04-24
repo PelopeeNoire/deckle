@@ -955,16 +955,36 @@ internal sealed class WhispEngine : IDisposable
         bool capHit = false;
         int buffersReceived = 0;
 
-        // Live low-audio tracker. We sum the duration of consecutive buffers
-        // whose dBFS sits below LowAudioDbfsThreshold; a single buffer above
-        // the threshold resets the counter. Once we pass LowAudioSustainedMs
-        // we fire the overlay warning exactly once per recording, so the user
-        // finds out their mic is misbehaving within a handful of seconds
-        // instead of after a 20 min dictation into the void.
-        const double LowAudioDbfsThreshold = -50.0;
-        const int    LowAudioSustainedMs   = 5000;
-        int  lowAudioConsecutiveMs = 0;
-        bool lowAudioWarned        = false;
+        // Live low-audio tracker — "did the user speak at a healthy volume
+        // at least once in the first 5 s?" phrasing. The warning fires once
+        // per recording if the answer is no.
+        //
+        // Why not just count sub-threshold duration: a short peak (finger
+        // snap, breath hit) spikes above -50 dBFS for 50-100 ms, which would
+        // reset a naive consecutive counter and hide a genuinely broken mic.
+        // Instead we track the positive case — a stretch of ≥200 ms where
+        // dBFS stays ≥-45 is strong evidence of real speech (one full
+        // syllable on a typical USB mic), and we lock the warning off for
+        // the rest of the recording. Peaks are too short to clear 200 ms
+        // consecutively, so they can't fake a pass.
+        //
+        // Threshold chosen by observation: modern condenser/USB mics at
+        // typing distance produce normal conversation around -35 to -45
+        // dBFS. The old -35 dBFS threshold rejected Louis's mic even during
+        // active speech. -45 dBFS leaves headroom for quieter setups while
+        // still catching the broken-mic / unplugged / miles-away scenarios
+        // (those sit below -55 dBFS).
+        //
+        // Per-buffer Verbose log below reports live dBFS + counter state
+        // for empirical tuning — flip Verbose on in LogWindow to see the
+        // actual values your mic produces.
+        const double NormalVoiceDbfsThreshold = -45.0;
+        const int    NormalVoiceSustainedMs   = 200;
+        const int    WarnAfterSilenceMs       = 5000;
+        int  healthyVoiceConsecutiveMs = 0;
+        int  recordingMs               = 0;
+        bool userVoiceConfirmed        = false;
+        bool lowAudioWarned            = false;
 
         while (!_stopRecording)
         {
@@ -989,32 +1009,56 @@ internal sealed class WhispEngine : IDisposable
                         EmitAudioLevels(data);
                         buffersReceived++;
 
-                        // Track sustained low signal, fire warning at most once.
-                        // 16 kHz mono PCM16 = 32 bytes per millisecond.
-                        if (!lowAudioWarned)
+                        // Per-buffer low-audio tracker. 16 kHz mono PCM16 = 32
+                        // bytes per ms. Two state machines side by side:
+                        //   • healthyVoiceConsecutiveMs: consecutive duration
+                        //     above NormalVoiceDbfsThreshold. Hitting
+                        //     NormalVoiceSustainedMs flips userVoiceConfirmed,
+                        //     which permanently disarms the warning for this
+                        //     recording.
+                        //   • recordingMs: total captured duration. Once we
+                        //     pass WarnAfterSilenceMs without
+                        //     userVoiceConfirmed being set, emit the overlay
+                        //     warning (one-shot).
+                        //
+                        // Per-buffer Verbose log below prints the live dBFS
+                        // and counter state for empirical tuning. Stops as
+                        // soon as voice is confirmed (no need to keep spamming
+                        // once the detector is latched).
+                        int bufferMs = data.Length / 32;
+                        recordingMs += bufferMs;
+
+                        if (!userVoiceConfirmed)
                         {
                             double bufferDbfs = ComputeBufferDbfs(data);
-                            int bufferMs = data.Length / 32;
-                            if (bufferDbfs < LowAudioDbfsThreshold)
+                            if (bufferDbfs >= NormalVoiceDbfsThreshold)
                             {
-                                lowAudioConsecutiveMs += bufferMs;
-                                if (lowAudioConsecutiveMs >= LowAudioSustainedMs)
+                                healthyVoiceConsecutiveMs += bufferMs;
+                                if (healthyVoiceConsecutiveMs >= NormalVoiceSustainedMs)
                                 {
-                                    lowAudioWarned = true;
-                                    _log.Warning(
-                                        LogSource.Record,
-                                        $"low audio detected | sustained_ms={lowAudioConsecutiveMs} | dbfs_threshold={LowAudioDbfsThreshold}",
-                                        new UserFeedback(
-                                            "Low audio detected",
-                                            "Your mic is picking up very little sound.",
-                                            UserFeedbackSeverity.Warning,
-                                            UserFeedbackRole.Overlay));
+                                    userVoiceConfirmed = true;
                                 }
                             }
                             else
                             {
-                                lowAudioConsecutiveMs = 0;
+                                healthyVoiceConsecutiveMs = 0;
                             }
+
+                            _log.Verbose(LogSource.Record,
+                                $"low-audio tracker | dbfs={bufferDbfs:F1} | healthy_ms={healthyVoiceConsecutiveMs} | recording_ms={recordingMs} | voice_confirmed={userVoiceConfirmed}");
+                        }
+
+                        if (!lowAudioWarned && !userVoiceConfirmed && recordingMs >= WarnAfterSilenceMs)
+                        {
+                            lowAudioWarned = true;
+                            _log.Warning(
+                                LogSource.Record,
+                                $"low audio detected | recording_ms={recordingMs} | no healthy voice ≥{NormalVoiceSustainedMs} ms above {NormalVoiceDbfsThreshold} dBFS",
+                                new UserFeedback(
+                                    "Low audio detected",
+                                    "Your mic is picking up very little sound.",
+                                    UserFeedbackSeverity.Warning,
+                                    UserFeedbackRole.Overlay));
                         }
                     }
 
