@@ -135,9 +135,9 @@
                                   x:Name="Sash"
                                   HorizontalAlignment="Stretch"
                                   VerticalAlignment="Stretch"
-                                  DragDelta="OnSashDragDelta">
+                                  HorizontalDragDelta="OnSashDragDelta">
                 <playground:SashThumb.Template>
-                    <ControlTemplate TargetType="Thumb">
+                    <ControlTemplate TargetType="ContentControl">
                         <Border Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
                     </ControlTemplate>
                 </playground:SashThumb.Template>
