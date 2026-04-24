@@ -191,9 +191,14 @@ public sealed partial class HudWindow : Window
         EnqueueUI(() => SetState(HudState.Message,
             new MessagePayload(MessageKind.Success, "Pasted", string.Empty, MessageDuration)));
 
+    // "Copied to clipboard" is a *success* outcome — the transcription
+    // landed on the clipboard, which is the default flow when
+    // AutoPasteEnabled is off (ship default). The green checkmark matches
+    // the user's model: the operation succeeded. "Ctrl+V where you want it"
+    // is a next-step hint, not a failure notice.
     public void ShowCopied() =>
         EnqueueUI(() => SetState(HudState.Message,
-            new MessagePayload(MessageKind.Informational,
+            new MessagePayload(MessageKind.Success,
                 "Copied to clipboard", "Ctrl+V where you want it.",
                 MessageDuration)));
 

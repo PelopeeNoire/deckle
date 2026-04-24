@@ -7,29 +7,24 @@ namespace WhispUI.Controls;
 
 // Message card used for Pasted / Copied / Error / UserFeedback feedback.
 //
-// Fixed 272x78, fills the whole HUD window. The semantic badge (16x16) is
-// painted with a Win11 system fill brush resolved from Application.Resources
-// at Show time — tracks the live theme. Title + subtitle stay in standard
-// Win11 text brushes (theme-resource-bound). The rounded card surface is the
-// MessageCard Border in XAML (LayerFillColorDefaultBrush + OverlayCornerRadius).
-// No Composition stroke for messages.
+// Fixed 272x78, fills the whole HUD window. The semantic badge is a 17x17
+// disc (odd-side so the centre lands on a true pixel, not between four —
+// anything smaller plus even means the inner glyph rasterises off-axis).
+// The disc brush and the title / subtitle brushes are resolved from XAML
+// ThemeResource bindings so dark / light / high-contrast swaps just work.
+//
+// Badge brushes live in the local UserControl.Resources, not in App.xaml —
+// a code-side Application.Current.Resources[key] lookup does NOT walk
+// ThemeDictionaries, so themed tokens like SystemFillColorAttention return
+// null and the fallback (previously Colors.Gray) leaked through as the
+// pastille grise we saw. Pulling them from this.Resources[key] does the
+// right thing because the XAML {ThemeResource} bindings were evaluated
+// inside the local RD.
 public sealed partial class HudMessage : UserControl
 {
-    private string? _badgeBrushKey;
-
     public HudMessage()
     {
         InitializeComponent();
-
-        // Re-resolve the badge brush on theme switch so the 16x16 badge
-        // follows dark/light. The brush keys live in the system theme
-        // dictionaries — assigning a Brush in code does not track theme
-        // changes the way ThemeResource bindings do.
-        MessageRoot.ActualThemeChanged += (_, _) =>
-        {
-            if (_badgeBrushKey is not null)
-                BadgeBackground.Background = ResolveBadgeBrush(_badgeBrushKey);
-        };
     }
 
     // Pushes payload into the static layout. Called by HudWindow.SetState
@@ -41,12 +36,14 @@ public sealed partial class HudMessage : UserControl
         MessageTitle.Text    = payload.Title    ?? string.Empty;
         MessageSubtitle.Text = payload.Subtitle ?? string.Empty;
 
-        _badgeBrushKey = entry.BrushKey;
-        BadgeBackground.Background = ResolveBadgeBrush(entry.BrushKey);
-        BadgeGlyph.Glyph           = entry.Glyph;
-    }
+        // Resources[key] hits the local <UserControl.Resources> dictionary
+        // declared in HudMessage.xaml, where each BadgeBrush is a
+        // SolidColorBrush whose Color is {ThemeResource SystemFillColor*}.
+        // Theme changes on the UserControl re-evaluate that binding, so no
+        // manual ActualThemeChanged handler is needed.
+        if (Resources.TryGetValue(entry.BrushKey, out var obj) && obj is Brush brush)
+            BadgeBackground.Background = brush;
 
-    private static Brush ResolveBadgeBrush(string key) =>
-        (Application.Current.Resources[key] as Brush)
-        ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
+        BadgeGlyph.Glyph = entry.Glyph;
+    }
 }
