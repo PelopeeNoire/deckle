@@ -12,6 +12,8 @@ src/**/bin/
 src/**/obj/
 archive/**/bin/
 archive/**/obj/
+dev/**/bin/
+dev/**/obj/
 
 # Deployment output — rebuildable via dotnet publish
 publish/
