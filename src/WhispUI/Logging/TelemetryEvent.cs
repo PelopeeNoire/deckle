@@ -33,7 +33,7 @@ namespace WhispUI.Logging;
 // Warning   : non-fatal issues (focus loss, empty buffers, slow dependency).
 // Error     : failures (init errors, transcription failures, mic unavailable).
 // Narrative : plain-language explanation of pipeline activity, written for the
-//             user (Steps view) — sits outside the technical hierarchy above.
+//             user (Narrative view) — sits outside the technical hierarchy above.
 public enum LogLevel { Verbose, Info, Success, Warning, Error, Narrative }
 
 public enum TelemetryKind { Log, Latency, Corpus, Microphone }

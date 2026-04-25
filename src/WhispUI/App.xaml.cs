@@ -17,6 +17,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private SettingsWindow? _settingsWindow;
     private PlaygroundWindow? _playgroundWindow;
     private HudWindow? _hudWindow;
+    private HudOverlayManager? _overlayManager;
     private TrayIconManager? _tray;
     private WhispEngine? _engine;
 
@@ -96,11 +97,20 @@ public partial class App : Microsoft.UI.Xaml.Application
         // ShowNoActivate, which positions bottom-center and calls SW_SHOWNOACTIVATE.
         _hudWindow = new HudWindow();
 
+        // Manager for the transient overlay card stack (independent HWNDs
+        // stacked 24 dip away from the main HUD). Owns per-card timers and
+        // positions; reacts to main HUD show/hide via MainHudVisibilityChanged.
+        _overlayManager = new HudOverlayManager(_hudWindow, _hudWindow.DispatcherQueue);
+
         // HUD feedback sink: picks up log entries that carry a UserFeedback
         // payload and surfaces them on the HUD. Events without feedback flow
-        // only through the file sink and LogWindow. Added after HudWindow is
-        // constructed so the closure captures a non-null reference.
-        TelemetryService.Instance.AddSink(new HudFeedbackSink(fb => _hudWindow.ShowUserFeedback(fb)));
+        // only through the file sink and LogWindow. Added after HudWindow and
+        // HudOverlayManager are constructed so the closures capture non-null
+        // references. Routing rule: Replacement → main HUD slot (chrono
+        // swapped out); Overlay → stacked card via HudOverlayManager.
+        TelemetryService.Instance.AddSink(new HudFeedbackSink(
+            onReplacement: fb => _hudWindow.ShowUserFeedback(fb),
+            onOverlay:     fb => _overlayManager.Enqueue(fb)));
         Milestone("hudwindow");
 
         _tray = new TrayIconManager
@@ -218,13 +228,13 @@ public partial class App : Microsoft.UI.Xaml.Application
             string? pageTag = settingsIdx + 1 < cliArgs.Length
                 ? cliArgs[settingsIdx + 1]
                 : null;
-            _log.Info(LogSource.App, $"--settings flag detected, page={pageTag ?? "(default)"}");
+            _log.Verbose(LogSource.App, $"--settings flag detected | page={pageTag ?? "(default)"}");
             _settingsWindow?.ShowAndActivate(pageTag);
         }
 
         sw.Stop();
         milestones.Add($"total {sw.ElapsedMilliseconds}ms");
-        _log.Info(LogSource.App, "startup milestones: " + string.Join(" | ", milestones));
+        _log.Verbose(LogSource.App, "startup milestones | " + string.Join(" | ", milestones));
     }
 
     // ── Level window ─────────────────────────────────────────────────────────
@@ -299,10 +309,11 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         _log.Info(LogSource.App, "Shutdown requested");
         try { Settings.SettingsService.Instance.Flush(); } catch (Exception ex) { _log.Warning(LogSource.App, "settings flush: " + ex.Message); }
-        try { _hotkeyManager?.Dispose(); } catch (Exception ex) { _log.Warning(LogSource.App, "hotkeys dispose: " + ex.Message); }
-        try { _tray?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "tray dispose: " + ex.Message); }
-        try { _messageHost?.Dispose();   } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
-        try { _engine?.Dispose();        } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
+        try { _hotkeyManager?.Dispose();   } catch (Exception ex) { _log.Warning(LogSource.App, "hotkeys dispose: " + ex.Message); }
+        try { _tray?.Dispose();            } catch (Exception ex) { _log.Warning(LogSource.App, "tray dispose: " + ex.Message); }
+        try { _messageHost?.Dispose();     } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
+        try { _overlayManager?.Dispose();  } catch (Exception ex) { _log.Warning(LogSource.App, "overlay manager dispose: " + ex.Message); }
+        try { _engine?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
         Environment.Exit(0);
     }
 
@@ -326,7 +337,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             var args = pageTag is not null
                 ? $"--settings {pageTag}"
                 : "--settings";
-            _log.Info(LogSource.App, $"Starting new process: {exePath} {args}");
+            _log.Verbose(LogSource.App, $"spawn new process | exe={exePath} | args={args}");
             System.Diagnostics.Process.Start(exePath, args);
         }
 
@@ -345,7 +356,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         var exePath = Environment.ProcessPath;
         if (exePath is not null)
         {
-            _log.Info(LogSource.App, $"Starting new process: {exePath}");
+            _log.Verbose(LogSource.App, $"spawn new process | exe={exePath}");
             System.Diagnostics.Process.Start(exePath);
         }
         QuitApp();
@@ -400,7 +411,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (!_engine.IsRecording)
         {
             _log.Success(LogSource.Hotkey,
-                $"start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
+                $"Start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
 
             // Show the HUD immediately in its "Preparing" state so the user
             // gets visual feedback from the very first millisecond after the
@@ -415,7 +426,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
         else
         {
-            _log.Success(LogSource.Hotkey, "stop");
+            _log.Success(LogSource.Hotkey, "Stop");
             _engine.StopRecording();
         }
     }

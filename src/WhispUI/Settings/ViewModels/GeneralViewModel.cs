@@ -104,6 +104,9 @@ public partial class GeneralViewModel : ObservableObject
     public partial bool OverlayFadeOnProximity { get; set; }
 
     [ObservableProperty]
+    public partial bool OverlayAnimations { get; set; }
+
+    [ObservableProperty]
     public partial string OverlayPosition { get; set; }
 
     partial void OnOverlayEnabledChanged(bool value)
@@ -117,6 +120,13 @@ public partial class GeneralViewModel : ObservableObject
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Overlay fade ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnOverlayAnimationsChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Overlay animations ← {value}");
         PushToSettings();
     }
 
@@ -271,6 +281,7 @@ public partial class GeneralViewModel : ObservableObject
         MicrophoneTelemetry = false;
         OverlayEnabled = true;
         OverlayFadeOnProximity = true;
+        OverlayAnimations = true;
         OverlayPosition = "BottomCenter";
         AutostartEnabled = false;
         StartMinimized = true;
@@ -300,6 +311,7 @@ public partial class GeneralViewModel : ObservableObject
             MicrophoneTelemetry = s.Telemetry.MicrophoneTelemetry;
             OverlayEnabled = s.Overlay.Enabled;
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
+            OverlayAnimations = s.Overlay.Animations;
             OverlayPosition = s.Overlay.Position;
             AutostartEnabled = AutostartService.IsEnabled();
             StartMinimized = s.Startup.StartMinimized;
@@ -329,6 +341,7 @@ public partial class GeneralViewModel : ObservableObject
         s.Telemetry.MicrophoneTelemetry = MicrophoneTelemetry;
         s.Overlay.Enabled = OverlayEnabled;
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
+        s.Overlay.Animations = OverlayAnimations;
         s.Overlay.Position = OverlayPosition;
         s.Startup.StartMinimized = StartMinimized;
         s.Startup.WarmupOnLaunch = WarmupOnLaunch;
@@ -360,6 +373,7 @@ public partial class GeneralViewModel : ObservableObject
             LevelWindowAutoCalibration = false;
             OverlayEnabled = true;
             OverlayFadeOnProximity = true;
+            OverlayAnimations = true;
             OverlayPosition = "BottomCenter";
         }
         finally { _isSyncing = false; }

@@ -367,6 +367,16 @@ internal static class NativeMethods
     public static extern bool SetLayeredWindowAttributes(
         IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
+    // Accessibility → Visual effects → "Animation effects". When the user
+    // disables it, SystemParametersInfo(SPI_GETCLIENTAREAANIMATION) returns
+    // pvParam=0. Our slide/fade animators short-circuit to the final state in
+    // that case, so we never spin a timer for a transition the user opted out of.
+    public const uint SPI_GETCLIENTAREAANIMATION = 0x1042;
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "SystemParametersInfoW")]
+    public static extern bool SystemParametersInfo(
+        uint uiAction, uint uiParam, out int pvParam, uint fWinIni);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
 
@@ -397,6 +407,18 @@ internal static class NativeMethods
     public const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
     public const uint DWMSBT_AUTO              = 0;
     public const uint DWMSBT_NONE              = 1;
+
+    // DWMWA_NCRENDERING_POLICY (2) tells DWM whether to render non-client
+    // decorations (frame, 1-dip accent stroke, Shell dropshadow around
+    // rounded corners) for the window. DWMNCRP_DISABLED (1) turns all of
+    // that off — needed on the overlay cards so their Win11 rounded-corner
+    // Shell shadow stops bleeding down onto the main HUD sitting 12 dip
+    // below. The DWMWCP_ROUND corner clipping is a separate compositor-
+    // level attribute and keeps working with NC rendering disabled.
+    public const uint DWMWA_NCRENDERING_POLICY = 2;
+    public const uint DWMNCRP_USEWINDOWSTYLE   = 0;
+    public const uint DWMNCRP_DISABLED         = 1;
+    public const uint DWMNCRP_ENABLED          = 2;
 
     [DllImport("dwmapi.dll", PreserveSig = true)]
     public static extern int DwmSetWindowAttribute(
