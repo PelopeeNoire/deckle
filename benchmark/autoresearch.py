@@ -10,8 +10,9 @@ Usage:
 
 Paths (all relative to ``benchmark/``):
     config/prompts/system_prompt.txt           — the prompt being optimized.
-    telemetry/reports/results.tsv              — one row per experiment.
-    telemetry/reports/autoresearch_report.txt  — human-readable narrative.
+    results.tsv                                — autoresearch journal, one row per experiment.
+    reports/autoresearch_report.txt            — human-readable narrative.
+    reports/last_report.json                   — last benchmark.py structured dump.
     logs/autoresearch-YYYYMMDD-HHMMSS.log      — live step log (if logging hook).
 """
 
@@ -40,9 +41,9 @@ from lib import ollama as ollama_client                 # noqa: E402
 
 CONFIG_FILE   = BENCHMARK_DIR / "config" / "config.ini"
 PROMPT_FILE   = BENCHMARK_DIR / "config" / "prompts" / "system_prompt.txt"
-REPORTS_DIR   = BENCHMARK_DIR / "telemetry" / "reports"
+REPORTS_DIR   = BENCHMARK_DIR / "reports"
 REPORT_FILE   = REPORTS_DIR / "autoresearch_report.txt"
-RESULTS_FILE  = REPORTS_DIR / "results.tsv"
+RESULTS_FILE  = BENCHMARK_DIR / "results.tsv"
 LAST_REPORT   = REPORTS_DIR / "last_report.json"
 
 
