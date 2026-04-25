@@ -89,8 +89,8 @@ internal sealed class TuningModel
     public float  RecordingSaturationDark  = 0f;
     public float  RecordingSaturationLight = 0f;
     public float  RecordingHueShiftTurns   = 0f;
-    public float  RecordingExposureDark    = 0f;
-    public float  RecordingExposureLight   = 0f;
+    public float  RecordingExposureDark    = 0.5f;
+    public float  RecordingExposureLight   = -1.0f;
     public double RecordingBlendSeconds    = 2;
     public double RecordingHuePeriodSeconds = 0;
 

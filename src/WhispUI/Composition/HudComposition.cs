@@ -53,14 +53,14 @@ internal static class HudComposition
     // ╚════════════════════════════════════════════════════════════════════╝
     // Fixed across all three variants — stroke metrics are a property of
     // the HUD rect, not of the animation.
-    private const float  StrokeThickness              = 8f;    // dip, stroke width
+    private const float  StrokeThickness              = 4f;    // dip, stroke width
     // `public static` (not const) — HudPlayground tunes the inset live to
     // explore stroke geometry without rebuilding the app. Shipping code
     // still reads it as if it were a const: the field reads inline cleanly
     // when nothing mutates it in a given process. Mutating live requires
     // rebuilding the stroke (paint-time geometry); the playground triggers
     // that via its existing rebuild path.
-    public  static       float InsetDip                = -4f;  // dip, inset from HUD edge
+    public  static       float InsetDip                = -2f;  // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -303,8 +303,8 @@ internal static class HudComposition
         public float  RecordingSaturationDark      { get; init; } = 0f;
         public float  RecordingSaturationLight     { get; init; } = 0f;
         public float  RecordingHueShiftTurns       { get; init; } = 0f;
-        public float  RecordingExposureDark        { get; init; } = 0f;
-        public float  RecordingExposureLight       { get; init; } = 0f;
+        public float  RecordingExposureDark        { get; init; } = 0.5f;
+        public float  RecordingExposureLight       { get; init; } = -1.0f;
         public double RecordingBlendSeconds        { get; init; } = 2;
 
         // Recording hue rotation — independent from arc rotation (which is
