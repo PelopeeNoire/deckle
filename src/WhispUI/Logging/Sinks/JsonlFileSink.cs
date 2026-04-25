@@ -11,9 +11,10 @@ namespace WhispUI.Logging.Sinks;
 //
 // Writes every TelemetryEvent as a JSON line to disk, routed by kind:
 //
-//   kind=log      → <telemetry>/app.jsonl              — gated, rotated
-//   kind=latency  → <telemetry>/latency.jsonl          — gated
-//   kind=corpus   → <telemetry>/<slug>/corpus.jsonl    — gated
+//   kind=log         → <telemetry>/app.jsonl           — gated, rotated
+//   kind=latency     → <telemetry>/latency.jsonl       — gated
+//   kind=corpus      → <telemetry>/<slug>/corpus.jsonl — gated
+//   kind=microphone  → <telemetry>/microphone.jsonl    — gated
 //
 // Everything produced at runtime lives under <benchmark>/telemetry/. The
 // <benchmark>/logs/ folder is reserved for the benchmark script's own
@@ -125,6 +126,10 @@ internal sealed class JsonlFileSink : ITelemetrySink
                 if (ev.Payload is not CorpusPayload cp) return null;
                 string profileDir = Path.Combine(root, CorpusPaths.Sanitize(cp.Slug));
                 return Path.Combine(profileDir, "corpus.jsonl");
+
+            case TelemetryKind.Microphone:
+                if (!ReadSettingsToggle(s => s.MicrophoneTelemetry)) return null;
+                return Path.Combine(root, "microphone.jsonl");
         }
         return null;
     }

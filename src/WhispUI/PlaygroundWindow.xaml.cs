@@ -461,13 +461,13 @@ public sealed partial class PlaygroundWindow : Window
         HudChrono.SwipeRiseAlpha    = 0.1f;
         HudChrono.SwipeDecayAlpha   = 0.05f;
         HudChrono.EmaAlpha          = 0.25f;
-        HudChrono.MinDbfs           = -40f;
+        HudChrono.MinDbfs           = -55f;
         HudChrono.MaxDbfs           = -32f;
-        HudChrono.DbfsCurveExponent = 2.0f;
+        HudChrono.DbfsCurveExponent = 1.0f;
 
         // HudComposition geometry mutables tuned via the HUD geometry
         // expander.
-        HudComposition.InsetDip = -6f;
+        HudComposition.InsetDip = -4f;
 
         BuildTuningPanel();
         ApplyTarget();
@@ -535,7 +535,7 @@ public sealed partial class PlaygroundWindow : Window
 
     private void ResetHudGeometry()
     {
-        HudComposition.InsetDip = -6f;
+        HudComposition.InsetDip = -4f;
         RebuildTuningPanel();
         RequestRebuild();
     }
@@ -791,9 +791,9 @@ public sealed partial class PlaygroundWindow : Window
     private void ResetAudioMapping()
     {
         HudChrono.EmaAlpha          = 0.25f;
-        HudChrono.MinDbfs           = -40f;
+        HudChrono.MinDbfs           = -55f;
         HudChrono.MaxDbfs           = -32f;
-        HudChrono.DbfsCurveExponent = 2.0f;
+        HudChrono.DbfsCurveExponent = 1.0f;
         RebuildTuningPanel();
     }
 

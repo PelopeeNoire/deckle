@@ -56,15 +56,24 @@ public sealed class PasteSettings
 // diagnose a specific issue across a restart, noisy in steady-state — so
 // opt-in with line-based rotation to cap disk footprint.
 //
+// MicrophoneTelemetry adds a per-Recording RMS distribution summary
+// (min / p10 / p25 / p50 / p75 / p90 / max in dBFS + linear mean RMS)
+// to the LogWindow AND to a dedicated <telemetry>/microphone.jsonl file.
+// Calibration aid for tuning the HUD level window (MinDbfs / MaxDbfs /
+// DbfsCurveExponent) against the user's actual mic+DSP chain instead of
+// textbook conversational levels. Off by default — the line is dense
+// enough to clutter the All filter for users who aren't calibrating.
+//
 // StorageDirectory is the common root for latency.jsonl / app.jsonl /
-// <profile-slug>/corpus.jsonl. Empty = default resolver (<repo>/benchmark/
-// telemetry/ when running from the dev tree).
+// microphone.jsonl / <profile-slug>/corpus.jsonl. Empty = default resolver
+// (<repo>/benchmark/telemetry/ when running from the dev tree).
 public sealed class TelemetrySettings
 {
     public bool   LatencyEnabled       { get; set; } = false;
     public bool   CorpusEnabled        { get; set; } = false;
     public bool   RecordAudioCorpus    { get; set; } = false;
     public bool   ApplicationLogToDisk { get; set; } = false;
+    public bool   MicrophoneTelemetry  { get; set; } = false;
     public string StorageDirectory     { get; set; } = "";
 }
 
@@ -81,16 +90,6 @@ public sealed class RecordingSettings
     // from running for hours and hitting a Whisper hallucination loop or
     // running out of RAM. 0 = no cap (legacy behaviour).
     public int MaxRecordingDurationSeconds { get; set; } = 20 * 60;
-
-    // Microphone telemetry — when true, Stop emits a per-recording RMS
-    // distribution summary (min / p10 / p25 / p50 / p75 / p90 / max in dBFS
-    // + linear mean RMS) alongside the always-on Tail-600 ms diagnostic.
-    // Calibration aid: lets the user tune MinDbfs / MaxDbfs / EmaAlpha
-    // against the dBFS range their microphone+DSP chain actually produces,
-    // not against generic conversational reference levels. Off by default
-    // because the line is verbose enough to clutter the All filter for
-    // users who aren't calibrating.
-    public bool MicrophoneTelemetry { get; set; } = false;
 }
 
 // Apparence globale. Theme = "System" | "Light" | "Dark".

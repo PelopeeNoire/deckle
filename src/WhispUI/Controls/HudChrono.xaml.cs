@@ -363,9 +363,9 @@ public sealed partial class HudChrono : UserControl
     //
     // `public static` (not const) — HudPlayground mutates these live to
     // explore the window and the curve shape. Defaults preserved.
-    public static float MinDbfs           = -40f;
+    public static float MinDbfs           = -55f;
     public static float MaxDbfs           = -32f;
-    public static float DbfsCurveExponent = 2.0f;
+    public static float DbfsCurveExponent = 1.0f;
 
     private static float RmsToPerceptualLevel(float rms)
     {

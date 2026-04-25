@@ -60,7 +60,7 @@ internal static class HudComposition
     // when nothing mutates it in a given process. Mutating live requires
     // rebuilding the stroke (paint-time geometry); the playground triggers
     // that via its existing rebuild path.
-    public  static       float InsetDip                = -6f;  // dip, inset from HUD edge
+    public  static       float InsetDip                = -4f;  // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗

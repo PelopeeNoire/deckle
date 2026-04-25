@@ -963,48 +963,6 @@ internal sealed class WhispEngine : IDisposable
 
         int n = _rmsLog.Count;
 
-        // ── Distribution summary (opt-in via Settings ▸ Recording ▸
-        //    Microphone telemetry) ─────────────────────────────────────────
-        //
-        // Percentile sweep + mean linear RMS, ordered as a calibration tool:
-        // the user reads "what dBFS does my mic actually produce when I
-        // talk", then sets MinDbfs / MaxDbfs / EmaAlpha so the HUD window
-        // straddles their realistic range instead of a generic textbook
-        // one. Off by default — the line is dense and pollutes the All
-        // filter for users who aren't calibrating.
-        bool micTelemetryEnabled = Settings.SettingsService.Instance
-            .Current.Recording.MicrophoneTelemetry;
-        if (micTelemetryEnabled)
-        {
-            // Snapshot + sort for percentiles. A copy is fine — even at 30 min
-            // recording @ 20 Hz the array is 36 K floats, sub-millisecond sort.
-            var sorted = _rmsLog.ToArray();
-            Array.Sort(sorted);
-
-            // Percentile picker: nearest-rank, clamped to [0, n-1]. Good enough
-            // for human-readable telemetry; we're not feeding a stats engine.
-            float Pick(double frac) => sorted[Math.Clamp((int)(n * frac), 0, n - 1)];
-
-            float min = sorted[0];
-            float max = sorted[n - 1];
-            float p10 = Pick(0.10), p25 = Pick(0.25), p50 = Pick(0.50);
-            float p75 = Pick(0.75), p90 = Pick(0.90);
-
-            // Mean of linear RMS — the number to compare against MaxDbfs
-            // window when calibrating the HUD response. NOT the mean of
-            // dBFS values (logs of small numbers skew that mean).
-            double meanLinear = 0;
-            for (int i = 0; i < n; i++) meanLinear += sorted[i];
-            meanLinear /= n;
-
-            double durSec = n * 0.05; // 50 ms per sub-window
-            _log.Info(LogSource.Record,
-                $"Mic telemetry over {durSec:F1}s ({n} samples @20Hz): "
-              + $"min={ToDbfs(min):F1} p10={ToDbfs(p10):F1} p25={ToDbfs(p25):F1} "
-              + $"p50={ToDbfs(p50):F1} p75={ToDbfs(p75):F1} p90={ToDbfs(p90):F1} max={ToDbfs(max):F1} dBFS "
-              + $"| mean RMS={meanLinear:F4} ({ToDbfs((float)meanLinear):F1} dBFS)");
-        }
-
         // ── Tail-600 ms diagnostic (always on) ─────────────────────────────
         //
         // Root-mean-square of the last 12 sub-windows. Sums the sub-window
@@ -1022,9 +980,76 @@ internal sealed class WhispEngine : IDisposable
         double tailRms = Math.Sqrt(tailSumSq / tailCount);
         double tailDbfs = ToDbfs((float)tailRms);
         int tailMs = tailCount * 50;
-        string state = tailDbfs > -50 ? "active" : "silent";
+        string tailState = tailDbfs > -50 ? "active" : "silent";
         _log.Info(LogSource.Record,
-            $"Tail {tailMs}ms RMS={tailRms:F4} ({tailDbfs:F1} dBFS) — signal {state} at Stop");
+            $"Tail {tailMs}ms RMS={tailRms:F4} ({tailDbfs:F1} dBFS) — signal {tailState} at Stop");
+
+        // ── Distribution summary (opt-in via Settings ▸ Telemetry ▸
+        //    Log microphone) ───────────────────────────────────────────────
+        //
+        // Percentile sweep + mean linear RMS, ordered as a calibration tool:
+        // the user reads "what dBFS does my mic actually produce when I
+        // talk", then sets MinDbfs / MaxDbfs / DbfsCurveExponent so the HUD
+        // window straddles their realistic range instead of textbook
+        // conversational levels. Two outputs when the toggle is on:
+        //   1. Human-readable LogWindow line (this method, _log.Info).
+        //   2. Structured JSONL row in <telemetry>/microphone.jsonl
+        //      (TelemetryService.Microphone() → JsonlFileSink). Same gate
+        //      so you never get one without the other.
+        bool micTelemetryEnabled = Settings.SettingsService.Instance
+            .Current.Telemetry.MicrophoneTelemetry;
+        if (!micTelemetryEnabled) return;
+
+        // Snapshot + sort for percentiles. A copy is fine — even at 30 min
+        // recording @ 20 Hz the array is 36 K floats, sub-millisecond sort.
+        var sorted = _rmsLog.ToArray();
+        Array.Sort(sorted);
+
+        // Percentile picker: nearest-rank, clamped to [0, n-1]. Good enough
+        // for human-readable telemetry; we're not feeding a stats engine.
+        float Pick(double frac) => sorted[Math.Clamp((int)(n * frac), 0, n - 1)];
+
+        float min = sorted[0];
+        float max = sorted[n - 1];
+        float p10 = Pick(0.10), p25 = Pick(0.25), p50 = Pick(0.50);
+        float p75 = Pick(0.75), p90 = Pick(0.90);
+
+        // Mean of linear RMS — the number to compare against MaxDbfs window
+        // when calibrating the HUD response. NOT the mean of dBFS values
+        // (logs of small numbers skew that mean).
+        double meanLinear = 0;
+        for (int i = 0; i < n; i++) meanLinear += sorted[i];
+        meanLinear /= n;
+        double meanDbfs = ToDbfs((float)meanLinear);
+
+        double durSec = n * 0.05; // 50 ms per sub-window
+
+        _log.Info(LogSource.Record,
+            $"Mic telemetry over {durSec:F1}s ({n} samples @20Hz): "
+          + $"min={ToDbfs(min):F1} p10={ToDbfs(p10):F1} p25={ToDbfs(p25):F1} "
+          + $"p50={ToDbfs(p50):F1} p75={ToDbfs(p75):F1} p90={ToDbfs(p90):F1} max={ToDbfs(max):F1} dBFS "
+          + $"| mean RMS={meanLinear:F4} ({meanDbfs:F1} dBFS)");
+
+        // Persistence path — a structured row per Recording when the toggle
+        // is on. The sink reads the same setting at write time, so even if
+        // this method emits we still no-op cleanly when the gate is off
+        // (defence in depth — the early-return above is the primary gate).
+        Logging.TelemetryService.Instance.Microphone(
+            new Logging.MicrophoneTelemetryPayload(
+                DurationSeconds: durSec,
+                Samples:         n,
+                MinDbfs:         ToDbfs(min),
+                P10Dbfs:         ToDbfs(p10),
+                P25Dbfs:         ToDbfs(p25),
+                P50Dbfs:         ToDbfs(p50),
+                P75Dbfs:         ToDbfs(p75),
+                P90Dbfs:         ToDbfs(p90),
+                MaxDbfs:         ToDbfs(max),
+                MeanRms:         meanLinear,
+                MeanDbfs:        meanDbfs,
+                TailRms:         tailRms,
+                TailDbfs:        tailDbfs,
+                TailState:       tailState));
     }
 
     // waveIn delivers 50ms PCM16 buffers (BYTES_PER_BUF = 1600 bytes); the

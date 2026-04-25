@@ -29,6 +29,7 @@ public sealed partial class GeneralPage : Page
     private bool _suppressCorpusToggle;
     private bool _suppressAudioCorpusToggle;
     private bool _suppressApplicationLogToggle;
+    private bool _suppressMicrophoneTelemetryToggle;
 
     public GeneralPage()
     {
@@ -246,6 +247,29 @@ public sealed partial class GeneralPage : Page
         finally
         {
             _suppressApplicationLogToggle = false;
+        }
+    }
+
+    // Microphone telemetry consent — lighter posture than corpus / app log
+    // (no audio, no text, just dBFS percentiles), but the calibration-tool
+    // framing still benefits from an explicit opt-in so the user knows a
+    // microphone.jsonl file gets created.
+    private async void MicrophoneTelemetryToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_initializing || _suppressMicrophoneTelemetryToggle) return;
+        if (!MicrophoneTelemetryToggle.IsOn) return;
+
+        bool confirmed = await MicrophoneTelemetryConsentDialog.ShowAsync(this.XamlRoot);
+        if (confirmed) return;
+
+        _suppressMicrophoneTelemetryToggle = true;
+        try
+        {
+            MicrophoneTelemetryToggle.IsOn = false;
+        }
+        finally
+        {
+            _suppressMicrophoneTelemetryToggle = false;
         }
     }
 

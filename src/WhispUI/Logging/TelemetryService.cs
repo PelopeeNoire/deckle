@@ -96,6 +96,20 @@ public sealed class TelemetryService
         Emit(new TelemetryEvent(TelemetryKind.Corpus, SessionId, payload, LogLevel.Info, feedback: null, text));
     }
 
+    // ── Microphone ─────────────────────────────────────────────────────────
+    //
+    // One row per Recording, summarising the per-50-ms-sub-window RMS series
+    // accumulated during capture. Gated by the caller (TelemetrySettings.
+    // MicrophoneTelemetry) — same posture as Latency / Corpus. No Text:
+    // WhispEngine emits its own human-readable LogWindow line in parallel,
+    // because the JSONL row is for offline calibration analysis (one line
+    // per recording across many sessions) and a re-rendered LogWindow row
+    // for the same data would duplicate the entry without adding signal.
+    public void Microphone(MicrophoneTelemetryPayload payload)
+    {
+        Emit(new TelemetryEvent(TelemetryKind.Microphone, SessionId, payload, LogLevel.Info, feedback: null, text: ""));
+    }
+
     private void Emit(TelemetryEvent ev)
     {
         ITelemetrySink[] snapshot;
