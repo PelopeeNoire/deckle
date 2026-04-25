@@ -1036,28 +1036,21 @@ internal sealed class WhispEngine : IDisposable
             TailDbfs:        tailDbfs,
             TailState:       tailState);
 
-        // ── Optional: human-readable line + JSONL row ──────────────────────
+        // ── Optional: emit the Microphone telemetry event ──────────────────
         //
-        // Two outputs gated by Settings ▸ Telemetry ▸ Log microphone:
-        //   1. LogWindow line (_log.Info) for live inspection.
-        //   2. Structured row in <telemetry>/microphone.jsonl for offline
-        //      cross-session analysis.
-        // Same gate so you never get one without the other.
+        // Single event, two consumers fanned out by the bus:
+        //   - LogWindow renders the human-readable Text via the Microphone
+        //     template (kind=Microphone routes through the template
+        //     selector to the Info layout).
+        //   - JsonlFileSink writes the structured payload to
+        //     <telemetry>/microphone.jsonl.
+        // Both gated by Settings ▸ Telemetry ▸ Log microphone — the sink
+        // re-checks the toggle at write time (defence in depth) and
+        // returning early here keeps the LogWindow quiet too.
         bool micTelemetryEnabled = Settings.SettingsService.Instance
             .Current.Telemetry.MicrophoneTelemetry;
         if (micTelemetryEnabled)
-        {
-            _log.Info(LogSource.Record,
-                $"Mic telemetry over {durSec:F1}s ({n} samples @20Hz): "
-              + $"min={ToDbfs(min):F1} p10={ToDbfs(p10):F1} p25={ToDbfs(p25):F1} "
-              + $"p50={ToDbfs(p50):F1} p75={ToDbfs(p75):F1} p90={ToDbfs(p90):F1} max={ToDbfs(max):F1} dBFS "
-              + $"| mean RMS={meanLinear:F4} ({meanDbfs:F1} dBFS)");
-
-            // Persistence path — a structured row per Recording when the
-            // toggle is on. The sink reads the same setting at write time
-            // so we get defence in depth on the gate.
             Logging.TelemetryService.Instance.Microphone(payload);
-        }
 
         // ── Optional: auto-calibrate the dBFS window ───────────────────────
         TryAutoCalibrate(payload);

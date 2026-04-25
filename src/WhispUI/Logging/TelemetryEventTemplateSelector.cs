@@ -5,12 +5,15 @@ namespace WhispUI.Logging;
 
 // ── TelemetryEventTemplateSelector ──────────────────────────────────────────
 //
-// Picks the right DataTemplate for every row in LogWindow's list. Three
+// Picks the right DataTemplate for every row in LogWindow's list. Four
 // kinds share the same collection:
 //
-//   Kind.Log      → one of six level-colored templates (Verbose/Info/…)
-//   Kind.Latency  → compact [LATENCY] row
-//   Kind.Corpus   → compact [CORPUS] row
+//   Kind.Log         → one of six level-colored templates (Verbose/Info/…)
+//   Kind.Latency     → compact [LATENCY] row
+//   Kind.Corpus      → compact [CORPUS] row
+//   Kind.Microphone  → routes through the Info template (the prebuilt
+//                      Text already carries "[RECORD] Mic telemetry over
+//                      …" so the row reads like any other [RECORD] line)
 //
 // Instantiated twice in XAML resources (NoWrapSelector / WrapSelector) so
 // the Word-wrap toggle swaps the entire set. Every slot is required at
@@ -42,9 +45,10 @@ public sealed class TelemetryEventTemplateSelector : DataTemplateSelector
         {
             return e.Kind switch
             {
-                TelemetryKind.Latency => Latency!,
-                TelemetryKind.Corpus  => Corpus!,
-                TelemetryKind.Log     => e.Level switch
+                TelemetryKind.Latency    => Latency!,
+                TelemetryKind.Corpus     => Corpus!,
+                TelemetryKind.Microphone => Info!,
+                TelemetryKind.Log        => e.Level switch
                 {
                     LogLevel.Verbose   => Verbose!,
                     LogLevel.Info      => Info!,
