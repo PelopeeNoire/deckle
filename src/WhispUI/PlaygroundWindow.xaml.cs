@@ -467,7 +467,7 @@ public sealed partial class PlaygroundWindow : Window
 
         // HudComposition geometry mutables tuned via the HUD geometry
         // expander.
-        HudComposition.InsetDip = -4f;
+        HudComposition.InsetDip = -2f;
 
         BuildTuningPanel();
         ApplyTarget();
@@ -535,7 +535,7 @@ public sealed partial class PlaygroundWindow : Window
 
     private void ResetHudGeometry()
     {
-        HudComposition.InsetDip = -4f;
+        HudComposition.InsetDip = -2f;
         RebuildTuningPanel();
         RequestRebuild();
     }
