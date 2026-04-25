@@ -57,10 +57,17 @@ public partial class GeneralViewModel : ObservableObject
     [ObservableProperty]
     public partial bool LevelWindowAutoCalibration { get; set; }
 
+    // Slider drags fire ValueChanged on every step (50+ events per drag),
+    // so we keep the per-edit log line at Verbose level — visible in the
+    // All filter for debugging, hidden from Activity / Steps where it
+    // would drown the actual pipeline narrative. PushToSettings is fine
+    // on every step (the file save is debounced one level deeper inside
+    // SettingsService); App.ApplyLevelWindow is a static-field write,
+    // also free.
     partial void OnLevelWindowMinDbfsChanged(double value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
+        _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
         PushToSettings();
         App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
     }
@@ -68,7 +75,7 @@ public partial class GeneralViewModel : ObservableObject
     partial void OnLevelWindowMaxDbfsChanged(double value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
+        _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
         PushToSettings();
         App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
     }
@@ -76,7 +83,7 @@ public partial class GeneralViewModel : ObservableObject
     partial void OnLevelWindowExponentChanged(double value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
+        _log.Verbose(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
         PushToSettings();
         App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
     }
