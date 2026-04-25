@@ -195,7 +195,7 @@ internal static class HudComposition
         // Saturation=0 greyscale variants, which otherwise inherit
         // HSV's top/bottom brightness asymmetry as a grey gradient.
         public float  OklchLightness     { get; init; } = 0.75f;
-        public float  OklchChroma        { get; init; } = 0.15f;
+        public float  OklchChroma        { get; init; } = 0.3f;
         public float  HueStart           { get; init; } = 0f;
         public float  HueRange           { get; init; } = 1f;
         public int    WedgeCount         { get; init; } = 360;
