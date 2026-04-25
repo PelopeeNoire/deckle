@@ -997,10 +997,6 @@ internal sealed class WhispEngine : IDisposable
         // active speech. -45 dBFS leaves headroom for quieter setups while
         // still catching the broken-mic / unplugged / miles-away scenarios
         // (those sit below -55 dBFS).
-        //
-        // Per-buffer Verbose log below reports live dBFS + counter state
-        // for empirical tuning — flip Verbose on in LogWindow to see the
-        // actual values your mic produces.
         const double NormalVoiceDbfsThreshold = -45.0;
         const int    NormalVoiceSustainedMs   = 200;
         const int    WarnAfterSilenceMs       = 5000;
@@ -1008,6 +1004,7 @@ internal sealed class WhispEngine : IDisposable
         int  recordingMs               = 0;
         bool userVoiceConfirmed        = false;
         bool lowAudioWarned            = false;
+        bool captureLagWarned          = false;
 
         while (!_stopRecording)
         {
@@ -1043,11 +1040,6 @@ internal sealed class WhispEngine : IDisposable
                         //     pass WarnAfterSilenceMs without
                         //     userVoiceConfirmed being set, emit the overlay
                         //     warning (one-shot).
-                        //
-                        // Per-buffer Verbose log below prints the live dBFS
-                        // and counter state for empirical tuning. Stops as
-                        // soon as voice is confirmed (no need to keep spamming
-                        // once the detector is latched).
                         int bufferMs = data.Length / 32;
                         recordingMs += bufferMs;
 
@@ -1066,9 +1058,6 @@ internal sealed class WhispEngine : IDisposable
                             {
                                 healthyVoiceConsecutiveMs = 0;
                             }
-
-                            _log.Verbose(LogSource.Record,
-                                $"low-audio tracker | dbfs={bufferDbfs:F1} | healthy_ms={healthyVoiceConsecutiveMs} | recording_ms={recordingMs} | voice_confirmed={userVoiceConfirmed}");
                         }
 
                         if (!lowAudioWarned && !userVoiceConfirmed && recordingMs >= WarnAfterSilenceMs)
@@ -1091,8 +1080,15 @@ internal sealed class WhispEngine : IDisposable
                 }
             }
 
-            if (bufferDoneCount > 1)
+            // Capture lag — fire once per recording when the ring buffer is
+            // really under pressure. With 4 buffers × 50 ms and a 100 ms
+            // wait, finding 1-2 buffers WHDR_DONE per iteration is normal;
+            // 3+ means the consumer fell at least 150 ms behind the producer.
+            if (!captureLagWarned && bufferDoneCount >= 3)
+            {
+                captureLagWarned = true;
                 _log.Warning(LogSource.Record, $"capture lag | buffers_ready={bufferDoneCount}");
+            }
 
             // Duration cap — forces a stop as if the user had pressed the
             // hotkey. Audio captured so far still flows through the full
