@@ -143,6 +143,14 @@ public sealed partial class LogWindow : Window, ITelemetrySink
 
     public void Write(TelemetryEvent ev)
     {
+        // Microphone telemetry events have no human-readable Text — they're a
+        // calibration-side data stream that lives in microphone.jsonl and the
+        // LogWindow already shows the matching Mic-telemetry line via the
+        // _log.Info path (kind=Log) emitted in parallel by WhispEngine. Drop
+        // the kind=Microphone event here so the ListView doesn't render an
+        // empty row using the fallback Info template.
+        if (ev.Kind == TelemetryKind.Microphone) return;
+
         if (DispatcherQueue.HasThreadAccess) AddEntrySafe(ev);
         else DispatcherQueue.TryEnqueue(() => AddEntrySafe(ev));
     }

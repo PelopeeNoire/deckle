@@ -26,7 +26,7 @@ internal sealed class TuningModel
 {
     // ── Colour palette (paint-time, OKLCh) ──────────────────────────────
     public float OklchLightness = 0.75f;
-    public float OklchChroma    = 0.15f;
+    public float OklchChroma    = 0.3f;
     public float HueStart       = 0f;
     public float HueRange       = 1f;
     public int   WedgeCount     = 360;
