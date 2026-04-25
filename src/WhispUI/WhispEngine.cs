@@ -177,6 +177,14 @@ internal sealed class WhispEngine : IDisposable
     // a resize allocation explosion thanks to standard doubling.
     private readonly List<float> _rmsLog = new(capacity: 20 * 60 * 10);
 
+    // Auto-calibration ring buffer — one MicrophoneTelemetryPayload per
+    // recording. Only filled when LevelWindow.AutoCalibrationEnabled is on.
+    // Once the buffer has AutoCalibrationSamples entries, the engine pushes
+    // a fresh MinDbfs/MaxDbfs back into Settings + HudChrono so the HUD
+    // tracks the user's hardware drift without manual re-tuning. See
+    // TryAutoCalibrate below for the heuristic.
+    private readonly Queue<Logging.MicrophoneTelemetryPayload> _autoCalibBuffer = new();
+
     // VAD timing — whisper.cpp's Silero VAD runs inside whisper_full() natively,
     // so we can't bracket it with a C# stopwatch. Instead we watch the native
     // log hook for "whisper_vad" lines: the first one starts the stopwatch,
@@ -984,24 +992,12 @@ internal sealed class WhispEngine : IDisposable
         _log.Info(LogSource.Record,
             $"Tail {tailMs}ms RMS={tailRms:F4} ({tailDbfs:F1} dBFS) — signal {tailState} at Stop");
 
-        // ── Distribution summary (opt-in via Settings ▸ Telemetry ▸
-        //    Log microphone) ───────────────────────────────────────────────
+        // ── Distribution payload (always computed) ─────────────────────────
         //
-        // Percentile sweep + mean linear RMS, ordered as a calibration tool:
-        // the user reads "what dBFS does my mic actually produce when I
-        // talk", then sets MinDbfs / MaxDbfs / DbfsCurveExponent so the HUD
-        // window straddles their realistic range instead of textbook
-        // conversational levels. Two outputs when the toggle is on:
-        //   1. Human-readable LogWindow line (this method, _log.Info).
-        //   2. Structured JSONL row in <telemetry>/microphone.jsonl
-        //      (TelemetryService.Microphone() → JsonlFileSink). Same gate
-        //      so you never get one without the other.
-        bool micTelemetryEnabled = Settings.SettingsService.Instance
-            .Current.Telemetry.MicrophoneTelemetry;
-        if (!micTelemetryEnabled) return;
-
-        // Snapshot + sort for percentiles. A copy is fine — even at 30 min
-        // recording @ 20 Hz the array is 36 K floats, sub-millisecond sort.
+        // Builds the per-Recording percentile + mean payload regardless of
+        // the log/disk toggles, because auto-calibration consumes it
+        // independently. Computing this is cheap — sort of ~few thousand
+        // floats — so we don't gate it.
         var sorted = _rmsLog.ToArray();
         Array.Sort(sorted);
 
@@ -1024,32 +1020,123 @@ internal sealed class WhispEngine : IDisposable
 
         double durSec = n * 0.05; // 50 ms per sub-window
 
-        _log.Info(LogSource.Record,
-            $"Mic telemetry over {durSec:F1}s ({n} samples @20Hz): "
-          + $"min={ToDbfs(min):F1} p10={ToDbfs(p10):F1} p25={ToDbfs(p25):F1} "
-          + $"p50={ToDbfs(p50):F1} p75={ToDbfs(p75):F1} p90={ToDbfs(p90):F1} max={ToDbfs(max):F1} dBFS "
-          + $"| mean RMS={meanLinear:F4} ({meanDbfs:F1} dBFS)");
+        var payload = new Logging.MicrophoneTelemetryPayload(
+            DurationSeconds: durSec,
+            Samples:         n,
+            MinDbfs:         ToDbfs(min),
+            P10Dbfs:         ToDbfs(p10),
+            P25Dbfs:         ToDbfs(p25),
+            P50Dbfs:         ToDbfs(p50),
+            P75Dbfs:         ToDbfs(p75),
+            P90Dbfs:         ToDbfs(p90),
+            MaxDbfs:         ToDbfs(max),
+            MeanRms:         meanLinear,
+            MeanDbfs:        meanDbfs,
+            TailRms:         tailRms,
+            TailDbfs:        tailDbfs,
+            TailState:       tailState);
 
-        // Persistence path — a structured row per Recording when the toggle
-        // is on. The sink reads the same setting at write time, so even if
-        // this method emits we still no-op cleanly when the gate is off
-        // (defence in depth — the early-return above is the primary gate).
-        Logging.TelemetryService.Instance.Microphone(
-            new Logging.MicrophoneTelemetryPayload(
-                DurationSeconds: durSec,
-                Samples:         n,
-                MinDbfs:         ToDbfs(min),
-                P10Dbfs:         ToDbfs(p10),
-                P25Dbfs:         ToDbfs(p25),
-                P50Dbfs:         ToDbfs(p50),
-                P75Dbfs:         ToDbfs(p75),
-                P90Dbfs:         ToDbfs(p90),
-                MaxDbfs:         ToDbfs(max),
-                MeanRms:         meanLinear,
-                MeanDbfs:        meanDbfs,
-                TailRms:         tailRms,
-                TailDbfs:        tailDbfs,
-                TailState:       tailState));
+        // ── Optional: human-readable line + JSONL row ──────────────────────
+        //
+        // Two outputs gated by Settings ▸ Telemetry ▸ Log microphone:
+        //   1. LogWindow line (_log.Info) for live inspection.
+        //   2. Structured row in <telemetry>/microphone.jsonl for offline
+        //      cross-session analysis.
+        // Same gate so you never get one without the other.
+        bool micTelemetryEnabled = Settings.SettingsService.Instance
+            .Current.Telemetry.MicrophoneTelemetry;
+        if (micTelemetryEnabled)
+        {
+            _log.Info(LogSource.Record,
+                $"Mic telemetry over {durSec:F1}s ({n} samples @20Hz): "
+              + $"min={ToDbfs(min):F1} p10={ToDbfs(p10):F1} p25={ToDbfs(p25):F1} "
+              + $"p50={ToDbfs(p50):F1} p75={ToDbfs(p75):F1} p90={ToDbfs(p90):F1} max={ToDbfs(max):F1} dBFS "
+              + $"| mean RMS={meanLinear:F4} ({meanDbfs:F1} dBFS)");
+
+            // Persistence path — a structured row per Recording when the
+            // toggle is on. The sink reads the same setting at write time
+            // so we get defence in depth on the gate.
+            Logging.TelemetryService.Instance.Microphone(payload);
+        }
+
+        // ── Optional: auto-calibrate the dBFS window ───────────────────────
+        TryAutoCalibrate(payload);
+    }
+
+    // Auto-calibration heuristic — runs after every Recording when
+    // LevelWindow.AutoCalibrationEnabled is true, independent of the
+    // Log microphone toggle (the payload is always computed in
+    // LogRecordingTelemetry above).
+    //
+    // Strategy:
+    //   - Keep the last N MicrophoneTelemetryPayloads in a ring buffer
+    //     (N = LevelWindow.AutoCalibrationSamples, default 5).
+    //   - Once the buffer is full, recompute MinDbfs / MaxDbfs from
+    //     median-across-sessions percentiles:
+    //       MinDbfs = median(p10)        — silence floor across sessions
+    //       MaxDbfs = median(p90) + 2 dB — voice ceiling with a small
+    //                                      headroom so peaks above routine
+    //                                      speech still saturate cleanly
+    //   - Refuse to write if the resulting window collapses to < 10 dB
+    //     (pathological case — e.g. all-silence sessions).
+    //   - Push to settings + HudChrono statics + log a Success line.
+    //
+    // The buffer is in-memory only: a fresh app launch starts collecting
+    // again, which is fine — calibration only fires after N consecutive
+    // recordings within one process anyway, and the persisted Min/Max
+    // already reflects the last successful auto-calibration.
+    //
+    // The user's manual slider edits override auto-calibration until the
+    // next time it fires — there's no "manual flag" gating; whoever wrote
+    // last wins, which is the natural behaviour from the user's POV.
+    private void TryAutoCalibrate(Logging.MicrophoneTelemetryPayload payload)
+    {
+        var lw = Settings.SettingsService.Instance.Current.Recording.LevelWindow;
+        if (!lw.AutoCalibrationEnabled) return;
+
+        int needed = Math.Max(1, lw.AutoCalibrationSamples);
+
+        _autoCalibBuffer.Enqueue(payload);
+        while (_autoCalibBuffer.Count > needed) _autoCalibBuffer.Dequeue();
+        if (_autoCalibBuffer.Count < needed) return;
+
+        // Median across the buffer — avoids one rogue session pulling the
+        // window in either direction.
+        var p10s = _autoCalibBuffer.Select(p => p.P10Dbfs).OrderBy(v => v).ToArray();
+        var p90s = _autoCalibBuffer.Select(p => p.P90Dbfs).OrderBy(v => v).ToArray();
+        double medianP10 = p10s[p10s.Length / 2];
+        double medianP90 = p90s[p90s.Length / 2];
+
+        double newMin = Math.Round(medianP10);
+        double newMax = Math.Round(medianP90 + 2.0);
+
+        // Sanity: dBFS window must span at least 10 dB to give the HUD a
+        // visible dynamic range. A pathological all-silence buffer would
+        // produce a near-flat window — skip and wait for richer sessions.
+        if (newMax - newMin < 10) return;
+
+        // Clamp to the slider domains so the persisted values stay editable.
+        newMin = Math.Clamp(newMin, -90, -10);
+        newMax = Math.Clamp(newMax, -60, -10);
+        if (newMax <= newMin) return;
+
+        // Check whether anything changed — avoid log spam on stable mics.
+        bool changed = Math.Abs(lw.MinDbfs - newMin) >= 0.5f
+                    || Math.Abs(lw.MaxDbfs - newMax) >= 0.5f;
+        if (!changed) return;
+
+        lw.MinDbfs = (float)newMin;
+        lw.MaxDbfs = (float)newMax;
+        Settings.SettingsService.Instance.Save();
+
+        // Push live into HudChrono so the next sub-window already uses the
+        // new calibration. App.ApplyLevelWindow is the single point of
+        // truth for the static-field write.
+        App.ApplyLevelWindow(lw);
+
+        _log.Success(LogSource.Record,
+            $"Auto-calibrated level window: Min={newMin:F0} Max={newMax:F0} dBFS "
+          + $"(median over {needed} sessions, p10/p90+2dB headroom)");
     }
 
     // waveIn delivers 50ms PCM16 buffers (BYTES_PER_BUF = 1600 bytes); the
