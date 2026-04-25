@@ -43,14 +43,14 @@ BENCHMARK_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BENCHMARK_DIR))
 
 from lib import metrics, ollama as ollama_client              # noqa: E402
-from lib.corpus import Sample, load_corpus                    # noqa: E402
+from lib.corpus import BRACKET_SLUGS, Sample, load_corpus     # noqa: E402
 from lib.judge import CRITERIA, Judge, JudgeResult            # noqa: E402
 
 
 CONFIG_FILE         = BENCHMARK_DIR / "config" / "config.ini"
 JUDGE_PROMPT_FILE   = BENCHMARK_DIR / "config" / "prompts" / "judge_system_prompt.txt"
-REPORTS_DIR         = BENCHMARK_DIR / "data" / "reports"
-DEFAULT_CORPUS_GLOB = str(BENCHMARK_DIR / "data" / "corpus" / "*.jsonl")
+REPORTS_DIR         = BENCHMARK_DIR / "reports"
+DEFAULT_CORPUS_GLOB = str(BENCHMARK_DIR / "telemetry" / "*" / "corpus.jsonl")
 DEFAULT_PROMPT_FILE = BENCHMARK_DIR / "config" / "prompts" / "system_prompt.txt"
 
 
@@ -245,6 +245,8 @@ def main() -> None:
     parser.add_argument("--judge-model",   default=cfg.get("judge_model", "") or "")
     parser.add_argument("--skip-judge",    action="store_true")
     parser.add_argument("--slug",          default=None, help="Filter samples by profile slug")
+    parser.add_argument("--bracket",       choices=BRACKET_SLUGS, default=None,
+                        help="Filter samples by audio duration bracket")
     parser.add_argument("--duration-min",  type=float, default=None)
     parser.add_argument("--duration-max",  type=float, default=None)
     parser.add_argument("--verbose",       action="store_true")
@@ -269,6 +271,7 @@ def main() -> None:
         duration_min = args.duration_min,
         duration_max = args.duration_max,
         slug         = args.slug,
+        bracket      = args.bracket,
     )
     if not samples:
         sys.exit(f"No corpus samples found at {corpus_glob}")

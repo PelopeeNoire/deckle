@@ -28,6 +28,23 @@ TelemetryEvent envelope:
 Consumers want the raw Whisper text plus enough metadata to slice by
 duration and group by initial prompt. Anything else stays accessible via
 ``Sample.envelope``.
+
+Audio duration brackets
+-----------------------
+For Whisper-side benchmarks we segment the corpus into four named
+brackets, each describing the *level of cleanup* the rewrite step is
+allowed to perform on the resulting text. The brackets are derived from
+``payload.duration_seconds`` at read time — nothing is stored on disk.
+See the plan file for the full naming rationale.
+
+    Slug          | Audio duration       | Allowed cleanup
+    relecture     | ≤ 60 s               | surface fixes
+    lissage       | 60 s < d ≤ 300 s     | flow, transitions
+    affinage      | 300 s < d ≤ 600 s    | precise detail work
+    arrangement   | 600 s < d ≤ 1200 s   | regroup duplicates with same nuance
+
+Samples beyond the 1200 s cap (matching ``MaxRecordingDurationSeconds``
+on the app side) bucket to ``None`` and are dropped from grouping.
 """
 
 from __future__ import annotations
@@ -36,6 +53,30 @@ import glob as _glob
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+BRACKETS: list[tuple[str, float]] = [
+    ("relecture",     60.0),
+    ("lissage",      300.0),
+    ("affinage",     600.0),
+    ("arrangement", 1200.0),
+]
+"""Ordered (slug, upper_bound_inclusive_seconds) pairs.
+
+Order matters: ``bracket_of`` walks the list left-to-right and returns
+the first slug whose upper bound covers the sample's duration. The
+cap (1200 s) mirrors the app's ``MaxRecordingDurationSeconds``.
+"""
+
+BRACKET_SLUGS: tuple[str, ...] = tuple(slug for slug, _ in BRACKETS)
+
+
+def bracket_of(duration_seconds: float) -> str | None:
+    """Return the bracket slug for ``duration_seconds`` or ``None`` if past the cap."""
+    for slug, upper in BRACKETS:
+        if duration_seconds <= upper:
+            return slug
+    return None
 
 
 @dataclass(slots=True)
@@ -101,6 +142,7 @@ def load_corpus(
     duration_max: float | None = None,
     initial_prompt: str | None = None,
     slug:           str | None = None,
+    bracket:        str | None = None,
 ) -> list[Sample]:
     """Load every JSONL matching ``patterns`` and return the kept samples.
 
@@ -113,10 +155,19 @@ def load_corpus(
         - ``initial_prompt``: exact match on ``whisper.initial_prompt``.
           Use the literal empty string ``""`` to keep only entries with
           no initial prompt set.
-        - ``slug``: exact match on the payload slug (profile folder).
+        - ``slug``: exact match on the payload slug (profile folder, e.g.
+          ``nettoyage-69b8e91208d4``).
+        - ``bracket``: keep only samples whose duration falls into the
+          named audio bracket (``relecture``/``lissage``/``affinage``/
+          ``arrangement``). Composes with ``duration_min``/``duration_max``.
     """
     if isinstance(patterns, str):
         patterns = [patterns]
+
+    if bracket is not None and bracket not in BRACKET_SLUGS:
+        raise ValueError(
+            f"Unknown bracket {bracket!r}; expected one of {BRACKET_SLUGS}"
+        )
 
     paths: list[str] = []
     for pattern in patterns:
@@ -146,6 +197,8 @@ def load_corpus(
                     continue
                 if slug is not None and sample.slug != slug:
                     continue
+                if bracket is not None and bracket_of(sample.duration_seconds) != bracket:
+                    continue
                 samples.append(sample)
     return samples
 
@@ -159,4 +212,21 @@ def group_by_initial_prompt(samples: list[Sample]) -> dict[str, list[Sample]]:
     buckets: dict[str, list[Sample]] = {}
     for s in samples:
         buckets.setdefault(s.initial_prompt or "", []).append(s)
+    return buckets
+
+
+def group_by_bracket(samples: list[Sample]) -> dict[str, list[Sample]]:
+    """Bucket samples by audio duration bracket.
+
+    Returns a dict keyed by the four bracket slugs in canonical order
+    (``relecture``, ``lissage``, ``affinage``, ``arrangement``). Samples
+    past the 1200 s cap are dropped silently — they should not have been
+    recorded in the first place since the app enforces the same cap.
+    """
+    buckets: dict[str, list[Sample]] = {slug: [] for slug, _ in BRACKETS}
+    for s in samples:
+        slug = bracket_of(s.duration_seconds)
+        if slug is None:
+            continue
+        buckets[slug].append(s)
     return buckets
