@@ -111,7 +111,7 @@
                 -->
                 <controls:SettingsExpander Header="Voice level window"
                                            Description="The dBFS range the recording HUD uses to map your microphone signal onto the on-screen level. Calibrate once against your mic and forget it, or let auto-calibration update it from your measured percentiles."
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xEC4F;}">
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE993;}">
                     <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                         <TextBlock Text="Auto"
                                    VerticalAlignment="Center"

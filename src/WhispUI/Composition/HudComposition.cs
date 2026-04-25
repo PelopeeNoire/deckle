@@ -303,8 +303,8 @@ internal static class HudComposition
         public float  RecordingSaturationDark      { get; init; } = 0f;
         public float  RecordingSaturationLight     { get; init; } = 0f;
         public float  RecordingHueShiftTurns       { get; init; } = 0f;
-        public float  RecordingExposureDark        { get; init; } = 1.5f;
-        public float  RecordingExposureLight       { get; init; } = -1.5f;
+        public float  RecordingExposureDark        { get; init; } = 0f;
+        public float  RecordingExposureLight       { get; init; } = 0f;
         public double RecordingBlendSeconds        { get; init; } = 2;
 
         // Recording hue rotation — independent from arc rotation (which is

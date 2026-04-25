@@ -1072,11 +1072,18 @@ internal sealed class WhispEngine : IDisposable
     //   - Keep the last N MicrophoneTelemetryPayloads in a ring buffer
     //     (N = LevelWindow.AutoCalibrationSamples, default 5).
     //   - Once the buffer is full, recompute MinDbfs / MaxDbfs from
-    //     median-across-sessions percentiles:
-    //       MinDbfs = median(p10)        — silence floor across sessions
-    //       MaxDbfs = median(p90) + 2 dB — voice ceiling with a small
-    //                                      headroom so peaks above routine
-    //                                      speech still saturate cleanly
+    //     median-across-sessions percentiles, with margins:
+    //       MinDbfs = median(p25) - 5 dB  — p25 (not p10) so a noise gate
+    //                                       cutting to digital silence
+    //                                       (-97 dBFS) doesn't drag the
+    //                                       floor into "anything below
+    //                                       the gate threshold". Then
+    //                                       -5 dB of headroom under the
+    //                                       useful-signal minimum.
+    //       MaxDbfs = median(p90) + 5 dB  — voice ceiling with breathing
+    //                                       room above routine peaks.
+    //   - Floor clamp at -75 dBFS to guarantee we never sit on the gate
+    //     even if p25 itself is in the noise floor.
     //   - Refuse to write if the resulting window collapses to < 10 dB
     //     (pathological case — e.g. all-silence sessions).
     //   - Push to settings + HudChrono statics + log a Success line.
@@ -1102,13 +1109,24 @@ internal sealed class WhispEngine : IDisposable
 
         // Median across the buffer — avoids one rogue session pulling the
         // window in either direction.
-        var p10s = _autoCalibBuffer.Select(p => p.P10Dbfs).OrderBy(v => v).ToArray();
+        var p25s = _autoCalibBuffer.Select(p => p.P25Dbfs).OrderBy(v => v).ToArray();
         var p90s = _autoCalibBuffer.Select(p => p.P90Dbfs).OrderBy(v => v).ToArray();
-        double medianP10 = p10s[p10s.Length / 2];
+        double medianP25 = p25s[p25s.Length / 2];
         double medianP90 = p90s[p90s.Length / 2];
 
-        double newMin = Math.Round(medianP10);
-        double newMax = Math.Round(medianP90 + 2.0);
+        // -5 dB / +5 dB margins keep the HUD from sitting flush against
+        // the user's measured percentiles — peaks above the median p90
+        // still saturate cleanly, and the floor doesn't trigger on the
+        // very edge of the silence band.
+        double newMin = Math.Round(medianP25 - 5.0);
+        double newMax = Math.Round(medianP90 + 5.0);
+
+        // Floor guard — even with p25, a session dominated by gate-induced
+        // silence can drag the median into the digital floor zone. Clamp
+        // at -75 dBFS so we never calibrate the HUD to react to gated
+        // silence. The user can still go lower manually via the slider
+        // if they want to capture a quieter mic.
+        if (newMin < -75) newMin = -75;
 
         // Sanity: dBFS window must span at least 10 dB to give the HUD a
         // visible dynamic range. A pathological all-silence buffer would
@@ -1136,7 +1154,7 @@ internal sealed class WhispEngine : IDisposable
 
         _log.Success(LogSource.Record,
             $"Auto-calibrated level window: Min={newMin:F0} Max={newMax:F0} dBFS "
-          + $"(median over {needed} sessions, p10/p90+2dB headroom)");
+          + $"(median over {needed} sessions, p25-5dB / p90+5dB margins)");
     }
 
     // waveIn delivers 50ms PCM16 buffers (BYTES_PER_BUF = 1600 bytes); the
