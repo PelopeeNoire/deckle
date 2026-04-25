@@ -100,6 +100,84 @@
                     <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
+                <!--
+                    Voice level window — calibration of the dBFS range the
+                    HUD chrono maps onto its visible response. Three sliders
+                    target HudChrono.{Min,Max}Dbfs + DbfsCurveExponent, pushed
+                    live via App.ApplyLevelWindow on every change. The header
+                    toggle enables auto-calibration: after a few recordings
+                    with "Log microphone" on, the engine snaps the floor and
+                    ceiling to the user's measured percentiles.
+                -->
+                <controls:SettingsExpander Header="Voice level window"
+                                           Description="The dBFS range the recording HUD uses to map your microphone signal onto the on-screen level. Calibrate once against your mic and forget it, or let auto-calibration update it from your measured percentiles."
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xEC4F;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <TextBlock Text="Auto"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <ToggleSwitch IsOn="{x:Bind ViewModel.LevelWindowAutoCalibration, Mode=TwoWay}"
+                                      OnContent=""
+                                      OffContent="" />
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard Header="Floor"
+                                               Description="Below this level, the HUD reads silence. Set just under the percentile of your normal pauses (typical: -55 dBFS).">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowMinSlider"
+                                        Minimum="-90" Maximum="-10"
+                                        Value="{x:Bind ViewModel.LevelWindowMinDbfs, Mode=TwoWay}"
+                                        StepFrequency="1"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowMinDbfs, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="dBFS"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard Header="Ceiling"
+                                               Description="At or above this level, the HUD saturates. Set just below your loudest peaks (typical: -32 dBFS).">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowMaxSlider"
+                                        Minimum="-60" Maximum="-10"
+                                        Value="{x:Bind ViewModel.LevelWindowMaxDbfs, Mode=TwoWay}"
+                                        StepFrequency="1"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowMaxDbfs, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="dBFS"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard Header="Curve"
+                                               Description="Shape of the response between floor and ceiling. 1.0 = linear (recommended). Higher = compress quiet, expand loud. Lower = the opposite.">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowExponentSlider"
+                                        Minimum="0.3" Maximum="3.0"
+                                        Value="{x:Bind ViewModel.LevelWindowExponent, Mode=TwoWay}"
+                                        StepFrequency="0.05"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowExponent, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
                 <controls:SettingsExpander Header="Show the overlay while recording"
                                            Description="A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
@@ -206,7 +284,7 @@
 
                 <controls:SettingsCard Header="Log microphone"
                                        Description="At the end of every recording, log the RMS distribution of your microphone (min, percentiles, max in dBFS) to the LogWindow and to microphone.jsonl. Useful when calibrating the level window."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
                     <ToggleSwitch x:Name="MicrophoneTelemetryToggle"
                                   IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}"
                                   Toggled="MicrophoneTelemetryToggle_Toggled" />

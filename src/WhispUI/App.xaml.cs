@@ -204,6 +204,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Apply saved theme (System/Light/Dark).
         ApplyTheme(Settings.SettingsService.Instance.Current.Appearance.Theme);
 
+        // Apply persisted level window (MinDbfs / MaxDbfs / DbfsCurveExponent)
+        // into HudChrono statics so the first Recording reflects the user's
+        // calibration without a restart-from-defaults round-trip.
+        ApplyLevelWindow(Settings.SettingsService.Instance.Current.Recording.LevelWindow);
+
         // If launched with --settings (restart from Settings), automatically
         // reopen the Settings window on the right page.
         var cliArgs = Environment.GetCommandLineArgs();
@@ -220,6 +225,22 @@ public partial class App : Microsoft.UI.Xaml.Application
         sw.Stop();
         milestones.Add($"total {sw.ElapsedMilliseconds}ms");
         _log.Info(LogSource.App, "startup milestones: " + string.Join(" | ", milestones));
+    }
+
+    // ── Level window ─────────────────────────────────────────────────────────
+    //
+    // Pushes the persisted dBFS calibration window from settings into the
+    // HudChrono statics that the per-frame RMS mapper reads. Called at boot
+    // (OnLaunched) and on every ViewModel change so live edits in
+    // GeneralPage propagate without restart. Idempotent — safe to call
+    // multiple times.
+
+    public static void ApplyLevelWindow(Settings.LevelWindowSettings cfg)
+    {
+        if (cfg is null) return;
+        Controls.HudChrono.MinDbfs           = cfg.MinDbfs;
+        Controls.HudChrono.MaxDbfs           = cfg.MaxDbfs;
+        Controls.HudChrono.DbfsCurveExponent = cfg.DbfsCurveExponent;
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────

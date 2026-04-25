@@ -38,6 +38,56 @@ public partial class GeneralViewModel : ObservableObject
         PushToSettings();
     }
 
+    // ── Level window (calibration) ──────────────────────────────────────────
+    //
+    // Three sliders + an auto toggle that map onto HudChrono.{Min,Max}Dbfs +
+    // DbfsCurveExponent. Each change pushes to settings AND directly into the
+    // HudChrono statics via App.ApplyLevelWindow so the HUD reflects the new
+    // window on the next sub-window without restart.
+
+    [ObservableProperty]
+    public partial double LevelWindowMinDbfs { get; set; }
+
+    [ObservableProperty]
+    public partial double LevelWindowMaxDbfs { get; set; }
+
+    [ObservableProperty]
+    public partial double LevelWindowExponent { get; set; }
+
+    [ObservableProperty]
+    public partial bool LevelWindowAutoCalibration { get; set; }
+
+    partial void OnLevelWindowMinDbfsChanged(double value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
+        PushToSettings();
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+    }
+
+    partial void OnLevelWindowMaxDbfsChanged(double value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
+        PushToSettings();
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+    }
+
+    partial void OnLevelWindowExponentChanged(double value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
+        PushToSettings();
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+    }
+
+    partial void OnLevelWindowAutoCalibrationChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"LevelWindow.AutoCalibration ← {value}");
+        PushToSettings();
+    }
+
     // ── Overlay ──────────────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -207,6 +257,10 @@ public partial class GeneralViewModel : ObservableObject
 
         AudioInputDeviceId = -1;
         AutoPasteEnabled = false;
+        LevelWindowMinDbfs = -55;
+        LevelWindowMaxDbfs = -32;
+        LevelWindowExponent = 1.0;
+        LevelWindowAutoCalibration = false;
         MicrophoneTelemetry = false;
         OverlayEnabled = true;
         OverlayFadeOnProximity = true;
@@ -232,6 +286,10 @@ public partial class GeneralViewModel : ObservableObject
             var s = SettingsService.Instance.Current;
             AudioInputDeviceId = s.Recording.AudioInputDeviceId;
             AutoPasteEnabled = s.Paste.AutoPasteEnabled;
+            LevelWindowMinDbfs = s.Recording.LevelWindow.MinDbfs;
+            LevelWindowMaxDbfs = s.Recording.LevelWindow.MaxDbfs;
+            LevelWindowExponent = s.Recording.LevelWindow.DbfsCurveExponent;
+            LevelWindowAutoCalibration = s.Recording.LevelWindow.AutoCalibrationEnabled;
             MicrophoneTelemetry = s.Telemetry.MicrophoneTelemetry;
             OverlayEnabled = s.Overlay.Enabled;
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
@@ -257,6 +315,10 @@ public partial class GeneralViewModel : ObservableObject
         var s = SettingsService.Instance.Current;
         s.Recording.AudioInputDeviceId = AudioInputDeviceId;
         s.Paste.AutoPasteEnabled = AutoPasteEnabled;
+        s.Recording.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
+        s.Recording.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
+        s.Recording.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
+        s.Recording.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
         s.Telemetry.MicrophoneTelemetry = MicrophoneTelemetry;
         s.Overlay.Enabled = OverlayEnabled;
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
@@ -285,12 +347,17 @@ public partial class GeneralViewModel : ObservableObject
         {
             AudioInputDeviceId = -1;
             AutoPasteEnabled = false;
+            LevelWindowMinDbfs = -55;
+            LevelWindowMaxDbfs = -32;
+            LevelWindowExponent = 1.0;
+            LevelWindowAutoCalibration = false;
             OverlayEnabled = true;
             OverlayFadeOnProximity = true;
             OverlayPosition = "BottomCenter";
         }
         finally { _isSyncing = false; }
         PushToSettings();
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
         _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
     }
 
