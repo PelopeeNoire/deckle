@@ -165,6 +165,18 @@ internal sealed class WhispEngine : IDisposable
     // Stopwatch started at the beginning of each recording (used for logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
 
+    // Per-recording RMS history — one linear-RMS sample per 50 ms sub-window
+    // (so ~20 Hz). Cleared at every Recording start, fed by EmitAudioLevels
+    // in flow order. Drives:
+    //   - the Tail-600 ms diagnostic at Stop (last 12 samples — sidesteps the
+    //     bytes-buffer ordering ambiguity of the old re-computation path),
+    //   - the per-recording mic telemetry summary (min / percentiles / max
+    //     in dBFS) Louis uses to calibrate MinDbfs / MaxDbfs / EmaAlpha
+    //     against his actual hardware response.
+    // Pre-reserved for ~10 minutes at 20 Hz; the List grows past that without
+    // a resize allocation explosion thanks to standard doubling.
+    private readonly List<float> _rmsLog = new(capacity: 20 * 60 * 10);
+
     // VAD timing — whisper.cpp's Silero VAD runs inside whisper_full() natively,
     // so we can't bracket it with a C# stopwatch. Instead we watch the native
     // log hook for "whisper_vad" lines: the first one starts the stopwatch,
@@ -816,6 +828,9 @@ internal sealed class WhispEngine : IDisposable
         // Single buffer, grows throughout the recording.
         // 1 sample = 2 bytes PCM16. At 16 kHz, 1 minute = 1.92M bytes.
         var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
+        // Reset the per-recording RMS series — the previous session's tail
+        // must not leak into this run's telemetry summary.
+        _rmsLog.Clear();
         _log.Info(LogSource.Record, "Recording started (16kHz mono PCM16)");
 
         double nextHeartbeatSec = 60.0;
@@ -890,6 +905,11 @@ internal sealed class WhispEngine : IDisposable
                 var data = new byte[hdr.dwBytesRecorded];
                 Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
                 allBytes.AddRange(data);
+                // Push the drained tail through the same sub-window mill so
+                // _rmsLog covers the full session (the in-loop EmitAudioLevels
+                // path stops as soon as _stopRecording flips, leaving the last
+                // 1-3 buffers undrained without this explicit pass).
+                EmitAudioLevels(data);
             }
             NativeMethods.waveInUnprepareHeader(hWaveIn, hdrPtrs[i], hdrSize);
             Marshal.FreeHGlobal(bufPtrs[i]);
@@ -903,43 +923,124 @@ internal sealed class WhispEngine : IDisposable
         _log.Info(LogSource.Record, $"Capture complete — {totalSec:F1}s audio ({allBytes.Count} bytes)");
         _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
 
-        // Tail RMS: measures the energy of the final 600ms to see if we're
-        // cutting during a syllable (lost punctuation) or in a clean silence.
-        // Purely diagnostic — doesn't change the buffer sent to whisper.cpp.
-        // 600ms = typical breathing/inter-phrase pause duration, enough to
-        // check if the last word was fully spoken before Stop.
-        {
-            const int TailMs = 600;
-            int tailBytes = Math.Min(allBytes.Count, 16000 * 2 * TailMs / 1000);
-            if (tailBytes >= 400) // au moins ~12ms
-            {
-                int start = allBytes.Count - tailBytes;
-                double sumSq = 0;
-                int nSamples = tailBytes / 2;
-                for (int i = 0; i < nSamples; i++)
-                {
-                    short s = (short)(allBytes[start + i * 2] | (allBytes[start + i * 2 + 1] << 8));
-                    double v = s / 32768.0;
-                    sumSq += v * v;
-                }
-                double rms = Math.Sqrt(sumSq / nSamples);
-                double dbfs = rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
-                double tailSec = tailBytes / 32000.0;
-                _log.Info(LogSource.Record, $"Tail {tailSec * 1000:F0}ms RMS={rms:F4} ({dbfs:F1} dBFS) — signal {(dbfs > -50 ? "active" : "silent")} at Stop");
-            }
-        }
+        // Mic telemetry — distribution + tail summary derived from _rmsLog.
+        // Replaces the previous Tail-on-allBytes computation, which was
+        // returning RMS=0 (= -96.7 dBFS, the "uninitialised buffer" floor)
+        // even on sessions Whisper transcribed perfectly. Root cause:
+        // the post-Stop drain loop concatenates buffers in WHDR index order
+        // 0..N-1, which does not always match temporal order at Stop, so
+        // the last 600 ms read from the byte tail could land on an
+        // out-of-order or partially-zeroed buffer. _rmsLog is fed in flow
+        // order by EmitAudioLevels (during Recording AND in the drain
+        // pass above), so its tail genuinely reflects the final ~600 ms
+        // of audio.
+        LogRecordingTelemetry();
 
         return PcmToFloat(allBytes.ToArray());
     }
 
-    // waveIn delivers 500ms PCM16 buffers; we slice each into 10 × 50ms
-    // sub-windows so AudioLevel fires at ~20 Hz — fine enough for a smooth
-    // contour animation without swamping subscribers. RMS is linear [0, 1],
-    // clamped so a rare overshoot from quantization never escapes the range.
+    // Logs the per-recording mic telemetry: full-session percentile sweep
+    // (min / p10 / p25 / p50 / p75 / p90 / max in dBFS) plus the legacy
+    // Tail-600 ms diagnostic (active vs silent at Stop). Both lines are
+    // Info level so they appear in the Activity selector without forcing
+    // Verbose. Called once per Recording cycle from the Stop path.
+    //
+    // Linear RMS → dBFS via 20·log10(rms); guarded against rms ≤ 0
+    // (returns -120 dBFS, the conventional "digital silence" floor — the
+    // -96.7 dBFS we used to see corresponded to a single-LSB residual
+    // from a zero-initialised buffer, indistinguishable from true silence
+    // and historically misleading).
+    private void LogRecordingTelemetry()
+    {
+        if (_rmsLog.Count == 0)
+        {
+            _log.Warning(LogSource.Record, "Mic telemetry: no RMS samples captured (recording too short or audio thread starved)");
+            return;
+        }
+
+        static double ToDbfs(float linear) =>
+            linear > 0f ? 20.0 * Math.Log10(linear) : -120.0;
+
+        int n = _rmsLog.Count;
+
+        // ── Distribution summary (opt-in via Settings ▸ Recording ▸
+        //    Microphone telemetry) ─────────────────────────────────────────
+        //
+        // Percentile sweep + mean linear RMS, ordered as a calibration tool:
+        // the user reads "what dBFS does my mic actually produce when I
+        // talk", then sets MinDbfs / MaxDbfs / EmaAlpha so the HUD window
+        // straddles their realistic range instead of a generic textbook
+        // one. Off by default — the line is dense and pollutes the All
+        // filter for users who aren't calibrating.
+        bool micTelemetryEnabled = Settings.SettingsService.Instance
+            .Current.Recording.MicrophoneTelemetry;
+        if (micTelemetryEnabled)
+        {
+            // Snapshot + sort for percentiles. A copy is fine — even at 30 min
+            // recording @ 20 Hz the array is 36 K floats, sub-millisecond sort.
+            var sorted = _rmsLog.ToArray();
+            Array.Sort(sorted);
+
+            // Percentile picker: nearest-rank, clamped to [0, n-1]. Good enough
+            // for human-readable telemetry; we're not feeding a stats engine.
+            float Pick(double frac) => sorted[Math.Clamp((int)(n * frac), 0, n - 1)];
+
+            float min = sorted[0];
+            float max = sorted[n - 1];
+            float p10 = Pick(0.10), p25 = Pick(0.25), p50 = Pick(0.50);
+            float p75 = Pick(0.75), p90 = Pick(0.90);
+
+            // Mean of linear RMS — the number to compare against MaxDbfs
+            // window when calibrating the HUD response. NOT the mean of
+            // dBFS values (logs of small numbers skew that mean).
+            double meanLinear = 0;
+            for (int i = 0; i < n; i++) meanLinear += sorted[i];
+            meanLinear /= n;
+
+            double durSec = n * 0.05; // 50 ms per sub-window
+            _log.Info(LogSource.Record,
+                $"Mic telemetry over {durSec:F1}s ({n} samples @20Hz): "
+              + $"min={ToDbfs(min):F1} p10={ToDbfs(p10):F1} p25={ToDbfs(p25):F1} "
+              + $"p50={ToDbfs(p50):F1} p75={ToDbfs(p75):F1} p90={ToDbfs(p90):F1} max={ToDbfs(max):F1} dBFS "
+              + $"| mean RMS={meanLinear:F4} ({ToDbfs((float)meanLinear):F1} dBFS)");
+        }
+
+        // ── Tail-600 ms diagnostic (always on) ─────────────────────────────
+        //
+        // Root-mean-square of the last 12 sub-windows. Sums the sub-window
+        // squared RMS values and re-roots, which is the mathematically
+        // correct way to combine RMS samples (NOT a plain mean of RMS).
+        // -50 dBFS keeps the active/silent threshold from the previous
+        // diagnostic so existing log readers stay calibrated.
+        int tailCount = Math.Min(12, n);
+        double tailSumSq = 0;
+        for (int i = _rmsLog.Count - tailCount; i < _rmsLog.Count; i++)
+        {
+            double v = _rmsLog[i];
+            tailSumSq += v * v;
+        }
+        double tailRms = Math.Sqrt(tailSumSq / tailCount);
+        double tailDbfs = ToDbfs((float)tailRms);
+        int tailMs = tailCount * 50;
+        string state = tailDbfs > -50 ? "active" : "silent";
+        _log.Info(LogSource.Record,
+            $"Tail {tailMs}ms RMS={tailRms:F4} ({tailDbfs:F1} dBFS) — signal {state} at Stop");
+    }
+
+    // waveIn delivers 50ms PCM16 buffers (BYTES_PER_BUF = 1600 bytes); the
+    // sub-window walker below loops at most once per call but keeps the
+    // pattern in case the buffer size changes. AudioLevel fires at ~20 Hz —
+    // fine enough for a smooth contour animation without swamping
+    // subscribers. RMS is linear [0, 1], clamped so a rare overshoot from
+    // quantization never escapes the range.
+    //
+    // Collect side-effect: every sub-window RMS is appended to _rmsLog. The
+    // accumulation runs unconditionally (independent of AudioLevel
+    // subscription) so the Stop-time mic-telemetry summary reflects the
+    // entire session even when the HUD isn't listening.
     private void EmitAudioLevels(byte[] pcm16)
     {
         var handler = AudioLevel;
-        if (handler is null) return;
 
         const int SubWindowMs     = 50;
         const int BytesPerSubWin  = 16000 * 2 * SubWindowMs / 1000; // 1600 bytes
@@ -957,7 +1058,9 @@ internal sealed class WhispEngine : IDisposable
             }
             double rms = Math.Sqrt(sumSq / SamplesPerSubWin);
             if (rms > 1.0) rms = 1.0;
-            handler((float)rms);
+            float rmsF = (float)rms;
+            _rmsLog.Add(rmsF);
+            handler?.Invoke(rmsF);
             offset += BytesPerSubWin;
         }
     }

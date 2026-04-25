@@ -38,6 +38,20 @@ public partial class GeneralViewModel : ObservableObject
         PushToSettings();
     }
 
+    // Microphone telemetry — when on, every Recording Stop logs an extra
+    // line summarising the per-recording RMS distribution (min / p10 / p25 /
+    // p50 / p75 / p90 / max in dBFS + linear mean RMS). Calibration tool —
+    // off by default to keep the All filter readable for everyday use.
+    [ObservableProperty]
+    public partial bool MicrophoneTelemetry { get; set; }
+
+    partial void OnMicrophoneTelemetryChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Microphone telemetry ← {value}");
+        PushToSettings();
+    }
+
     // ── Overlay ──────────────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -192,6 +206,7 @@ public partial class GeneralViewModel : ObservableObject
 
         AudioInputDeviceId = -1;
         AutoPasteEnabled = false;
+        MicrophoneTelemetry = false;
         OverlayEnabled = true;
         OverlayFadeOnProximity = true;
         OverlayPosition = "BottomCenter";
@@ -216,6 +231,7 @@ public partial class GeneralViewModel : ObservableObject
             var s = SettingsService.Instance.Current;
             AudioInputDeviceId = s.Recording.AudioInputDeviceId;
             AutoPasteEnabled = s.Paste.AutoPasteEnabled;
+            MicrophoneTelemetry = s.Recording.MicrophoneTelemetry;
             OverlayEnabled = s.Overlay.Enabled;
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
             OverlayPosition = s.Overlay.Position;
@@ -240,6 +256,7 @@ public partial class GeneralViewModel : ObservableObject
         var s = SettingsService.Instance.Current;
         s.Recording.AudioInputDeviceId = AudioInputDeviceId;
         s.Paste.AutoPasteEnabled = AutoPasteEnabled;
+        s.Recording.MicrophoneTelemetry = MicrophoneTelemetry;
         s.Overlay.Enabled = OverlayEnabled;
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
         s.Overlay.Position = OverlayPosition;
@@ -310,6 +327,7 @@ public partial class GeneralViewModel : ObservableObject
         _isSyncing = true;
         try
         {
+            MicrophoneTelemetry = false;
             TelemetryLatencyEnabled = false;
             TelemetryCorpusEnabled = false;
             RecordAudioCorpus = false;

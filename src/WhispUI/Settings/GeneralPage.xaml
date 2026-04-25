@@ -204,6 +204,12 @@
                                      Click="ResetTelemetry_Click" />
                 </Grid>
 
+                <controls:SettingsCard Header="Log microphone"
+                                       Description="At the end of every recording, log the RMS distribution of your microphone (min, percentiles, max in dBFS). Useful when calibrating the level window."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
                 <controls:SettingsCard Header="Latency"
                                        Description="Record per-step timings of each transcription — voice detection, Whisper, rewrite, clipboard, paste — to latency.jsonl. Timings only, no transcript text."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
