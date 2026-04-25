@@ -81,6 +81,16 @@ public sealed class RecordingSettings
     // from running for hours and hitting a Whisper hallucination loop or
     // running out of RAM. 0 = no cap (legacy behaviour).
     public int MaxRecordingDurationSeconds { get; set; } = 20 * 60;
+
+    // Microphone telemetry — when true, Stop emits a per-recording RMS
+    // distribution summary (min / p10 / p25 / p50 / p75 / p90 / max in dBFS
+    // + linear mean RMS) alongside the always-on Tail-600 ms diagnostic.
+    // Calibration aid: lets the user tune MinDbfs / MaxDbfs / EmaAlpha
+    // against the dBFS range their microphone+DSP chain actually produces,
+    // not against generic conversational reference levels. Off by default
+    // because the line is verbose enough to clutter the All filter for
+    // users who aren't calibrating.
+    public bool MicrophoneTelemetry { get; set; } = false;
 }
 
 // Apparence globale. Theme = "System" | "Light" | "Dark".

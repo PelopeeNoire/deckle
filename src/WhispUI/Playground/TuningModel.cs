@@ -32,7 +32,7 @@ internal sealed class TuningModel
     public int   WedgeCount     = 360;
 
     // ── Hue rotation ────────────────────────────────────────────────────
-    public double HuePeriodSeconds = 8.0;
+    public double HuePeriodSeconds = 14.0;
     public float  HueDirection     = 1f;
     public float  HuePhaseTurns    = 0f;
     // Out-in (0.125, 0.375, 0.875, 0.625) — endpoint tangent slope 3.0
@@ -45,7 +45,7 @@ internal sealed class TuningModel
     public float  HueMinSpeedFraction = 0f;
 
     // ── Arc mask shape ──────────────────────────────────────────────────
-    public float ConicSpanTurns     = 0.4f;
+    public float ConicSpanTurns     = 0.5f;
     public float ConicLeadFadeTurns = 1f;
     public float ConicTailFadeTurns = 1f;
     public float ConicFadeCurve     = 4f;
@@ -66,7 +66,7 @@ internal sealed class TuningModel
     public float  RewritingHueShiftTurns = 0f;
     public float  RewritingExposure      = 0f;
     public float  RewritingOpacity       = 1f;
-    public double RewritingBlendSeconds  = 1;
+    public double RewritingBlendSeconds  = 2;
 
     // ── Transcribing variant ────────────────────────────────────────────
     public float  TranscribingSaturationDark  = 0f;
@@ -75,13 +75,13 @@ internal sealed class TuningModel
     public float  TranscribingExposureDark    = 0f;
     public float  TranscribingExposureLight   = 0f;
     public float  TranscribingOpacity         = 1f;
-    public double TranscribingBlendSeconds    = 1;
+    public double TranscribingBlendSeconds    = 2;
 
     // ── Recording variant — paint-time ──────────────────────────────────
     public float RecordingConicSpanTurns     = 0.5f;
     public float RecordingConicLeadFadeTurns = 1f;
     public float RecordingConicTailFadeTurns = 1f;
-    public float RecordingConicFadeCurve     = 4f;
+    public float RecordingConicFadeCurve     = 2f;
     public bool  RecordingArcMirror          = true;
     public float RecordingArcPhaseTurns      = 0f;
 
@@ -91,7 +91,7 @@ internal sealed class TuningModel
     public float  RecordingHueShiftTurns   = 0f;
     public float  RecordingExposureDark    = 1.5f;
     public float  RecordingExposureLight   = -1.5f;
-    public double RecordingBlendSeconds    = 1;
+    public double RecordingBlendSeconds    = 2;
     public double RecordingHuePeriodSeconds = 0;
 
     // Projects the current field values into a fresh ConicArcStrokeConfig

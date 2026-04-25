@@ -324,7 +324,7 @@ public sealed partial class HudChrono : UserControl
     // the audio-mapping tunables live. Shipping code still resolves them
     // as if they were constants — the field reads are inlined by the JIT
     // when nothing mutates them in a given process. Defaults preserved.
-    public static float EmaAlpha = 0.72f;
+    public static float EmaAlpha = 0.25f;
 
     // Linear RMS mapped through a dBFS window, then through a power
     // curve, before EMA smoothing. The window [MinDbfs, MaxDbfs] folds
@@ -364,7 +364,7 @@ public sealed partial class HudChrono : UserControl
     // `public static` (not const) — HudPlayground mutates these live to
     // explore the window and the curve shape. Defaults preserved.
     public static float MinDbfs           = -40f;
-    public static float MaxDbfs           = -22f;
+    public static float MaxDbfs           = -32f;
     public static float DbfsCurveExponent = 2.0f;
 
     private static float RmsToPerceptualLevel(float rms)
@@ -734,8 +734,8 @@ public sealed partial class HudChrono : UserControl
     public static float   SwipeCycleSeconds = 1.6f;
     public static Vector2 SwipeEaseP1       = new(0.5f, 0f);
     public static Vector2 SwipeEaseP2       = new(0.2f, 1f);
-    public static float   SwipeRiseAlpha    = 0.22f;
-    public static float   SwipeDecayAlpha   = 0.06f;
+    public static float   SwipeRiseAlpha    = 0.1f;
+    public static float   SwipeDecayAlpha   = 0.05f;
 
     // Digit count — structural, mirrors _digitHeat.Length and the 6 accent
     // overlays declared in HudChrono.xaml. Not a tunable.

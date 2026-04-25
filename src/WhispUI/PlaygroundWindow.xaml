@@ -136,35 +136,26 @@
 
             <!-- ── Col 1 — tuning Expanders ─────────────────────────────── -->
             <!--
-                Header row above the Expanders: "Tunables" title + status
-                label + Reset all + Save.
+                Header row above the Expanders: "Tunables" title + a one-line
+                description + "Reset all".
 
-                Three-state persistence UX:
-                  - Pristine (no file on disk, A == defaults): label hidden,
-                    Save disabled, Reset all disabled.
-                  - Dirty (A != file, or edits on top of defaults): label
-                    shows "Unsaved changes" in italic, Save enabled, Revert
-                    enabled.
-                  - Modified-and-saved (A == file, but the file itself holds
-                    non-default values): label shows "Modified parameters"
-                    in regular weight, Save disabled (nothing to write),
-                    Revert enabled.
+                The Playground is intentionally non-persistent. It reads its
+                initial values from the running app's defaults, lets the user
+                tune them in-memory for the current process, and writes
+                nothing to disk. Every relaunch of WhispUI returns to the
+                compiled defaults — values that look right move into the code
+                as the new defaults; the Playground's job is to find them,
+                not to remember them.
 
-                Reset all resets every section to the shipping defaults
-                AND deletes the on-disk file — so the next launch genuinely
-                starts pristine. See PlaygroundPersistence comment for the
-                file layout rationale.
-
-                Multi-profile (named presets + dropdown) is deferred; the
-                natural extension if Louis wants it later.
+                Reset all reverts every section to the shipping defaults for
+                the current process — useful mid-session to start over.
             -->
             <!-- MinWidth=480 + MaxWidth=920 caps the tuning column between
                  two comfortable sizes: narrow enough to stay legible on
-                 a smallest-allowed 1200-wide window, wide enough that
-                 the header row (title + italic status + "Reset all" +
-                 "Save") breathes and the slider+NumberBox pairs don't
-                 crowd. Anything wider is wasted whitespace; Col 0
-                 absorbs the surplus instead. -->
+                 a smallest-allowed 1200-wide window, wide enough that the
+                 title + description + "Reset all" breathe and the
+                 slider+NumberBox pairs don't crowd. Anything wider is
+                 wasted whitespace; Col 0 absorbs the surplus instead. -->
             <ScrollViewer Grid.Column="1"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
@@ -176,44 +167,28 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Column="0"
+                        <TextBlock Grid.Column="0" Grid.Row="0"
                                    Text="Tunables"
                                    Style="{ThemeResource TitleTextBlockStyle}"
                                    VerticalAlignment="Center" />
 
-                        <!-- Status label. Always italic regardless of
-                             state so it reads as a secondary info string
-                             even when sitting next to the Reset all /
-                             Save button labels. Text + Visibility driven
-                             from code-behind by UpdateHeaderUi():
-                               _isDirty         → "Unsaved changes"
-                               !dirty & saved   → "Modified parameters"
-                               pristine         → Collapsed. -->
-                        <TextBlock Grid.Column="1"
-                                   x:Name="StateLabel"
-                                   FontStyle="Italic"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,12,0"
-                                   Visibility="Collapsed" />
-
-                        <!-- Reset all: mirrors the "Reset all" pattern
-                             in Settings › Whisper — SubtleButtonStyle +
-                             FontIcon E777 (refresh / circular arrow) +
-                             label. Disabled in pristine state. Resets
-                             every field to defaults AND deletes the
-                             persisted file. -->
-                        <Button Grid.Column="2"
+                        <!-- Reset all: mirrors the "Reset all" pattern in
+                             Settings › Whisper — SubtleButtonStyle + FontIcon
+                             E777 (refresh / circular arrow) + label. Always
+                             enabled: the Playground keeps no dirty state, so
+                             the button is just "snap back to defaults" with
+                             no precondition. -->
+                        <Button Grid.Column="1" Grid.Row="0"
                                 x:Name="ResetAllButton"
                                 Style="{ThemeResource SubtleButtonStyle}"
-                                IsEnabled="False"
                                 VerticalAlignment="Center"
-                                Margin="0,0,8,0"
-                                ToolTipService.ToolTip="Reset every section to the shipping defaults and delete the saved file"
+                                ToolTipService.ToolTip="Reset every section to the shipping defaults"
                                 Click="OnResetAllClick">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xE777;" FontSize="14" />
@@ -221,19 +196,33 @@
                             </StackPanel>
                         </Button>
 
-                        <!-- Save button. Disabled unless _isDirty — once
-                             saved, nothing more to write until the next
-                             edit. Grays per the Fluent disabled state. -->
-                        <Button Grid.Column="3"
-                                x:Name="SaveButton"
-                                VerticalAlignment="Center"
-                                IsEnabled="False"
-                                Click="OnSaveClick">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <SymbolIcon Symbol="Save" />
-                                <TextBlock Text="Save" />
-                            </StackPanel>
-                        </Button>
+                        <!-- Description sits under the title (spans both
+                             columns) and tells the user the contract: this
+                             is a scratchpad for the current session, nothing
+                             is saved, restart resets everything.
+                             CaptionTextBlockStyle + Secondary brush so it
+                             reads as supporting info, not a primary
+                             instruction.
+
+                             MaxWidth=400 caps the natural measure so the
+                             outer Grid's "Auto" column on the body cannot
+                             grow past the header row's intrinsic width.
+                             Without it, TextWrapping=Wrap reports an
+                             unbounded natural width, the body Auto column
+                             demands ~800 dip, and the tuning panel stops
+                             responding to window shrinks. With the cap,
+                             the natural width of the header is ~400 +
+                             button + padding ≈ 530 dip, well under the
+                             ScrollViewer's MaxWidth=920, so the column
+                             negotiates normally. -->
+                        <TextBlock Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2"
+                                   Text="Tweak values live for the current session — nothing is saved. Restart WhispUI to reset to defaults."
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="400"
+                                   HorizontalAlignment="Left"
+                                   Margin="0,4,0,0" />
                     </Grid>
                 </StackPanel>
             </ScrollViewer>

@@ -54,7 +54,13 @@ internal static class HudComposition
     // Fixed across all three variants — stroke metrics are a property of
     // the HUD rect, not of the animation.
     private const float  StrokeThickness              = 8f;    // dip, stroke width
-    private const float  InsetDip                     = -2f;    // dip, inset from HUD edge
+    // `public static` (not const) — HudPlayground tunes the inset live to
+    // explore stroke geometry without rebuilding the app. Shipping code
+    // still reads it as if it were a const: the field reads inline cleanly
+    // when nothing mutates it in a given process. Mutating live requires
+    // rebuilding the stroke (paint-time geometry); the playground triggers
+    // that via its existing rebuild path.
+    public  static       float InsetDip                = -6f;  // dip, inset from HUD edge
     private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
@@ -196,7 +202,7 @@ internal static class HudComposition
 
         // ── Hue rotation — spins the conic under the fixed arc mask,
         //    so the colour at the arc head walks the wheel over time ─────
-        public double HuePeriodSeconds   { get; init; } = 8.0;
+        public double HuePeriodSeconds   { get; init; } = 14.0;
         public float  HueDirection       { get; init; } = 1f;
         public float  HuePhaseTurns      { get; init; } = 0f;
         // Out-in shape at (0.125, 0.375) / (0.875, 0.625) — tangent at
@@ -219,7 +225,7 @@ internal static class HudComposition
         public float  HueMinSpeedFraction { get; init; } = 0f;
 
         // ── Arc mask shape (white pie slice, alpha-ramped at both ends) ─
-        public float  ConicSpanTurns     { get; init; } = 0.4f;
+        public float  ConicSpanTurns     { get; init; } = 0.5f;
         public float  ConicLeadFadeTurns { get; init; } = 1f;
         public float  ConicTailFadeTurns { get; init; } = 1f;
         public float  ConicFadeCurve     { get; init; } = 4f;
@@ -245,7 +251,7 @@ internal static class HudComposition
         public float  RewritingHueShiftTurns    { get; init; } = 0f;
         public float  RewritingExposure         { get; init; } = 0f;
         public float  RewritingOpacity          { get; init; } = 1f;
-        public double RewritingBlendSeconds     { get; init; } = 1;
+        public double RewritingBlendSeconds     { get; init; } = 2;
 
         // ── Transcribing variant — greyscale (Saturation 0) by default.
         //    Saturation + Exposure are split Dark/Light because even with
@@ -260,7 +266,7 @@ internal static class HudComposition
         public float  TranscribingExposureDark    { get; init; } = 0f;
         public float  TranscribingExposureLight   { get; init; } = 0f;
         public float  TranscribingOpacity         { get; init; } = 1f;
-        public double TranscribingBlendSeconds    { get; init; } = 1;
+        public double TranscribingBlendSeconds    { get; init; } = 2;
 
         // ── Recording variant — frozen-rotation stroke with RMS-driven
         //    opacity. Two blocks:
@@ -291,7 +297,7 @@ internal static class HudComposition
         public float  RecordingConicSpanTurns      { get; init; } = 0.5f;
         public float  RecordingConicLeadFadeTurns  { get; init; } = 1f;
         public float  RecordingConicTailFadeTurns  { get; init; } = 1f;
-        public float  RecordingConicFadeCurve      { get; init; } = 4f;
+        public float  RecordingConicFadeCurve      { get; init; } = 2f;
         public bool   RecordingArcMirror           { get; init; } = true;
         public float  RecordingArcPhaseTurns       { get; init; } = 0f;
         public float  RecordingSaturationDark      { get; init; } = 0f;
@@ -299,7 +305,7 @@ internal static class HudComposition
         public float  RecordingHueShiftTurns       { get; init; } = 0f;
         public float  RecordingExposureDark        { get; init; } = 1.5f;
         public float  RecordingExposureLight       { get; init; } = -1.5f;
-        public double RecordingBlendSeconds        { get; init; } = 1;
+        public double RecordingBlendSeconds        { get; init; } = 2;
 
         // Recording hue rotation — independent from arc rotation (which is
         // always frozen in Recording). 0 = hue frozen on HuePhaseTurns
