@@ -53,7 +53,7 @@ public static class AutostartService
         }
         catch (Exception ex)
         {
-            _log.Warning(LogSource.Settings, $"Autostart probe failed: {ex.GetType().Name} {ex.Message}");
+            _log.Warning(LogSource.Settings, $"autostart probe failed | error={ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -63,7 +63,7 @@ public static class AutostartService
         string? exePath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(exePath))
         {
-            _log.Warning(LogSource.Settings, "Autostart enable skipped — Environment.ProcessPath is empty");
+            _log.Warning(LogSource.Settings, "autostart enable skipped | reason=Environment.ProcessPath empty");
             return false;
         }
 
@@ -76,16 +76,17 @@ public static class AutostartService
             using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true);
             if (key is null)
             {
-                _log.Warning(LogSource.Settings, $"Autostart enable failed — cannot open HKCU\\{RunKeyPath}");
+                _log.Warning(LogSource.Settings, $"autostart enable failed | reason=cannot open HKCU\\{RunKeyPath}");
                 return false;
             }
             key.SetValue(ValueName, command, RegistryValueKind.String);
-            _log.Info(LogSource.Settings, $"Autostart enabled → {command}");
+            _log.Info(LogSource.Settings, "Autostart enabled");
+            _log.Verbose(LogSource.Settings, $"autostart enabled | command={command}");
             return true;
         }
         catch (Exception ex)
         {
-            _log.Warning(LogSource.Settings, $"Autostart enable failed: {ex.GetType().Name} {ex.Message}");
+            _log.Warning(LogSource.Settings, $"autostart enable failed | error={ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -103,7 +104,7 @@ public static class AutostartService
             if (key.GetValue(ValueName) is string s && !IsOwnedByCurrentExe(s))
             {
                 // Entry belongs to another install of WhispUI — leave it alone.
-                _log.Info(LogSource.Settings, "Autostart disable skipped — entry points to a different install");
+                _log.Verbose(LogSource.Settings, "autostart disable skipped | reason=entry points to different install");
                 return true;
             }
             key.DeleteValue(ValueName, throwOnMissingValue: false);
@@ -112,7 +113,7 @@ public static class AutostartService
         }
         catch (Exception ex)
         {
-            _log.Warning(LogSource.Settings, $"Autostart disable failed: {ex.GetType().Name} {ex.Message}");
+            _log.Warning(LogSource.Settings, $"autostart disable failed | error={ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

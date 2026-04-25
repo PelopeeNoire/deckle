@@ -66,7 +66,9 @@ internal class LlmService
             string generateUrl = NormalizeGenerateUrl(endpoint);
             var options = BuildOptions(profile, stops);
 
-            _log.Info(LogSource.Llm, $"request {text.Length} chars → {profile.Model} (profile: {profile.Name}, family: {family}) | {FormatOptions(options)}");
+            _log.Info(LogSource.Llm, $"Rewriting ({profile.Name})");
+            _log.Narrative(LogSource.Llm, $"Rewriting the transcript with {profile.Name} — the {family} model running in Ollama is cleaning up the raw text into the final phrasing.");
+            _log.Verbose(LogSource.Llm, $"request | chars={text.Length} | model={profile.Model} | profile={profile.Name} | family={family} | {FormatOptions(options)}");
 
             var body = new
             {
@@ -116,23 +118,36 @@ internal class LlmService
 
                 sw.Stop();
                 string trimmed = PromptTemplates.StripStops(rewritten ?? "", family).Trim();
-                _log.Info(LogSource.Llm, $"Rewrite OK ({sw.ElapsedMilliseconds} ms, {text.Length}→{trimmed.Length} chars, profile: {profile.Name})");
-                _log.Info(LogSource.Llm, FormatMetrics(doc.RootElement));
+                _log.Success(LogSource.Llm, "Rewrite complete");
+                _log.Verbose(LogSource.Llm, $"rewrite complete | ms={sw.ElapsedMilliseconds} | in_chars={text.Length} | out_chars={trimmed.Length} | profile={profile.Name}");
+                _log.Verbose(LogSource.Llm, FormatMetrics(doc.RootElement));
                 return trimmed;
             }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             sw.Stop();
-            _log.Warning(LogSource.Llm, $"Ollama took longer than {REWRITE_HARD_CAP.TotalMinutes:F0} min — giving up, raw text preserved");
+            _log.Warning(
+                LogSource.Llm,
+                $"timeout | cap_min={REWRITE_HARD_CAP.TotalMinutes:F0} | profile={profile.Name} | model={profile.Model}",
+                new UserFeedback(
+                    "Rewriter took too long",
+                    $"Over {REWRITE_HARD_CAP.TotalMinutes:F0} min. Raw transcript copied.",
+                    UserFeedbackSeverity.Warning,
+                    UserFeedbackRole.Overlay));
             return null;
         }
         catch (Exception ex)
         {
             sw.Stop();
-            _log.Warning(LogSource.Llm,
-                $"unavailable: {ex.GetType().Name} {ex.Message} " +
-                $"(profile: {profile.Name}, model: {profile.Model}) — raw text preserved");
+            _log.Warning(
+                LogSource.Llm,
+                $"unavailable | error={ex.GetType().Name}: {ex.Message} | profile={profile.Name} | model={profile.Model}",
+                new UserFeedback(
+                    "Rewriter unavailable",
+                    "Ollama unreachable. Raw transcript copied.",
+                    UserFeedbackSeverity.Warning,
+                    UserFeedbackRole.Overlay));
             return null;
         }
     }
@@ -159,7 +174,7 @@ internal class LlmService
                     using var resp = await _http.GetAsync(psUrl, ct);
                     if (!resp.IsSuccessStatusCode)
                     {
-                        _log.Warning(LogSource.Llm, $"Ollama /api/ps unreachable (HTTP {(int)resp.StatusCode}) — model may have crashed");
+                        _log.Warning(LogSource.Llm, $"ps probe unreachable | http={(int)resp.StatusCode} | hint=model may have crashed");
                         continue;
                     }
 
@@ -169,7 +184,7 @@ internal class LlmService
                         modelsArr.ValueKind != JsonValueKind.Array ||
                         modelsArr.GetArrayLength() == 0)
                     {
-                        _log.Warning(LogSource.Llm, "Ollama /api/ps reports no resident model — request may be stuck");
+                        _log.Warning(LogSource.Llm, "ps probe empty | hint=no resident model, request may be stuck");
                         continue;
                     }
 
@@ -206,7 +221,7 @@ internal class LlmService
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    _log.Warning(LogSource.Llm, $"Ollama /api/ps probe failed: {ex.GetType().Name} {ex.Message}");
+                    _log.Warning(LogSource.Llm, $"ps probe failed | error={ex.GetType().Name}: {ex.Message}");
                 }
             }
         }

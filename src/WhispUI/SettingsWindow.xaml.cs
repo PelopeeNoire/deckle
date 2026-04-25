@@ -143,16 +143,16 @@ public sealed partial class SettingsWindow : Window
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        _log.Verbose(LogSource.Settings, $"SelectionChanged fired, item={(args.SelectedItem as NavigationViewItem)?.Content}");
+        _log.Verbose(LogSource.Settings, $"selection changed | item={(args.SelectedItem as NavigationViewItem)?.Content}");
 
         if (args.SelectedItem is not NavigationViewItem item)
         {
-            _log.Verbose(LogSource.Settings, "SelectedItem is not a NavigationViewItem — ignored");
+            _log.Verbose(LogSource.Settings, "selection ignored | reason=not-navview-item");
             return;
         }
         if (item.Tag is not string tag)
         {
-            _log.Warning(LogSource.Settings, $"Item '{item.Content}' has no Tag — nav impossible");
+            _log.Warning(LogSource.Settings, $"nav impossible | reason=no-tag | item={item.Content}");
             return;
         }
         if (tag == "logs") return;
@@ -160,32 +160,32 @@ public sealed partial class SettingsWindow : Window
         var pageType = Type.GetType(tag);
         if (pageType is null)
         {
-            _log.Error(LogSource.Settings, $"Type not found for tag '{tag}'");
+            _log.Error(LogSource.Settings, $"nav failed | reason=type-not-found | tag={tag}");
             return;
         }
 
         if (PageFrame.CurrentSourcePageType == pageType)
         {
-            _log.Verbose(LogSource.Settings, $"{pageType.Name} already current — ignored");
+            _log.Verbose(LogSource.Settings, $"nav skipped | reason=already-current | page={pageType.Name}");
             return;
         }
 
-        _log.Info(LogSource.Settings, $"Navigate → {pageType.Name}");
+        _log.Info(LogSource.Settings, $"Navigate to {pageType.Name}");
         try
         {
             bool ok = PageFrame.Navigate(pageType, null, new EntranceNavigationTransitionInfo());
             if (!ok)
             {
-                _log.Error(LogSource.Settings, $"Navigate({pageType.Name}) returned false");
+                _log.Error(LogSource.Settings, $"navigate failed | page={pageType.Name} | reason=frame-returned-false");
             }
             else
             {
-                _log.Success(LogSource.Settings, $"{pageType.Name} navigation OK");
+                _log.Success(LogSource.Settings, $"Navigated to {pageType.Name}");
             }
         }
         catch (Exception ex)
         {
-            _log.Error(LogSource.Settings, $"Navigate({pageType.Name}) THREW {ex.GetType().Name}: {ex.Message}");
+            _log.Error(LogSource.Settings, $"navigate threw | page={pageType.Name} | error={ex.GetType().Name}: {ex.Message}");
             _log.Error(LogSource.Settings, ex.StackTrace ?? "(no stack)");
         }
     }
@@ -196,10 +196,10 @@ public sealed partial class SettingsWindow : Window
     private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
         var item = args.InvokedItemContainer as NavigationViewItem;
-        _log.Verbose(LogSource.Settings, $"ItemInvoked: {item?.Content} (tag={item?.Tag})");
+        _log.Verbose(LogSource.Settings, $"item invoked | content={item?.Content} | tag={item?.Tag}");
         if (item?.Tag as string == "logs")
         {
-            _log.Info(LogSource.Settings, "Opening LogWindow via footer");
+            _log.Info(LogSource.Settings, "Open logs from footer");
             OnShowLogsRequested?.Invoke();
         }
     }
