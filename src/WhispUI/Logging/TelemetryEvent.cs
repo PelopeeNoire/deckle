@@ -36,7 +36,7 @@ namespace WhispUI.Logging;
 //             user (Steps view) — sits outside the technical hierarchy above.
 public enum LogLevel { Verbose, Info, Success, Warning, Error, Narrative }
 
-public enum TelemetryKind { Log, Latency, Corpus }
+public enum TelemetryKind { Log, Latency, Corpus, Microphone }
 
 public sealed class TelemetryEvent
 {
@@ -119,3 +119,25 @@ public sealed record CorpusPayload(
     [property: JsonPropertyName("raw")]              RawSection           Raw,
     [property: JsonPropertyName("metrics")]          CorpusMetricsSection Metrics,
     [property: JsonPropertyName("audio_file")]       string?              AudioFile);
+
+// One row per Recording when TelemetrySettings.MicrophoneTelemetry is on.
+// dBFS percentile sweep over the 50 ms sub-window RMS series, plus the
+// linear mean RMS (the value worth comparing against MaxDbfs window when
+// calibrating). MeanDbfs is derived from the linear mean — log of the
+// mean, not mean of the log, since arithmetic mean of dBFS values gets
+// pulled too low by the silence floor.
+public sealed record MicrophoneTelemetryPayload(
+    [property: JsonPropertyName("duration_seconds")] double DurationSeconds,
+    [property: JsonPropertyName("samples")]          int    Samples,
+    [property: JsonPropertyName("min_dbfs")]         double MinDbfs,
+    [property: JsonPropertyName("p10_dbfs")]         double P10Dbfs,
+    [property: JsonPropertyName("p25_dbfs")]         double P25Dbfs,
+    [property: JsonPropertyName("p50_dbfs")]         double P50Dbfs,
+    [property: JsonPropertyName("p75_dbfs")]         double P75Dbfs,
+    [property: JsonPropertyName("p90_dbfs")]         double P90Dbfs,
+    [property: JsonPropertyName("max_dbfs")]         double MaxDbfs,
+    [property: JsonPropertyName("mean_rms")]         double MeanRms,
+    [property: JsonPropertyName("mean_dbfs")]        double MeanDbfs,
+    [property: JsonPropertyName("tail_rms")]         double TailRms,
+    [property: JsonPropertyName("tail_dbfs")]        double TailDbfs,
+    [property: JsonPropertyName("tail_state")]       string TailState);

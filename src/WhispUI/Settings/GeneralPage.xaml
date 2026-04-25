@@ -205,9 +205,11 @@
                 </Grid>
 
                 <controls:SettingsCard Header="Log microphone"
-                                       Description="At the end of every recording, log the RMS distribution of your microphone (min, percentiles, max in dBFS). Useful when calibrating the level window."
+                                       Description="At the end of every recording, log the RMS distribution of your microphone (min, percentiles, max in dBFS) to the LogWindow and to microphone.jsonl. Useful when calibrating the level window."
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}" />
+                    <ToggleSwitch x:Name="MicrophoneTelemetryToggle"
+                                  IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}"
+                                  Toggled="MicrophoneTelemetryToggle_Toggled" />
                 </controls:SettingsCard>
 
                 <controls:SettingsCard Header="Latency"
