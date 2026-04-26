@@ -365,6 +365,88 @@
                     </Grid>
                 </controls:SettingsCard>
 
+                <!-- ── Backup ──────────────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Backup" />
+
+                <controls:SettingsCard ContentAlignment="Vertical"
+                                       Header="Backup folder"
+                                       Description="Where settings snapshots are stored. Leave empty to use the default config\backups\ folder. Point to OneDrive or another cloud-synced folder to carry your settings across machines.">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="BackupFolderBox"
+                                 Grid.Column="0"
+                                 Text="{x:Bind ViewModel.BackupDirectory, Mode=TwoWay}" />
+                        <Button x:Name="ChangeBackupFolderButton"
+                                Grid.Column="1"
+                                Click="ChangeBackupFolderButton_Click"
+                                ToolTipService.ToolTip="Pick a folder">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                <TextBlock Text="Set" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="OpenBackupFolderButton"
+                                Grid.Column="2"
+                                Click="OpenBackupFolderButton_Click"
+                                ToolTipService.ToolTip="Open in File Explorer">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Open" />
+                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard Header="Create a backup now"
+                                       Description="Save a snapshot of your current settings. Useful before changing things you might want to roll back."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE74E;}">
+                    <Button x:Name="CreateBackupButton"
+                            Click="CreateBackupButton_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE74E;" FontSize="14" />
+                            <TextBlock Text="Create" />
+                        </StackPanel>
+                    </Button>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard ContentAlignment="Vertical"
+                                       Header="Restore from a backup"
+                                       Description="Roll back to a previous snapshot. Your current settings will be overwritten — take a backup first if you want to keep them."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7A7;}">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="BackupCombo"
+                                  Grid.Column="0"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="No backups yet"
+                                  ItemsSource="{x:Bind ViewModel.Backups, Mode=OneWay}"
+                                  DisplayMemberPath="DisplayName" />
+                        <Button x:Name="RefreshBackupsButton"
+                                Grid.Column="1"
+                                Click="RefreshBackupsButton_Click"
+                                ToolTipService.ToolTip="Refresh the list">
+                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        </Button>
+                        <Button x:Name="RestoreBackupButton"
+                                Grid.Column="2"
+                                Click="RestoreBackupButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                <TextBlock Text="Restore" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </controls:SettingsCard>
+
             </StackPanel>
         </Grid>
     </ScrollViewer>

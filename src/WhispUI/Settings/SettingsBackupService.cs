@@ -217,7 +217,10 @@ internal static class SettingsBackupService
 
 // One snapshot entry. Path is absolute. Timestamp is local time when the
 // snapshot was taken (parsed back from the filename, falls back to the
-// file's last-write-time when the name doesn't match the pattern). UI
-// renders Timestamp via DateTimeOffset.ToString("g", culture) for the
-// user's locale.
-public sealed record BackupInfo(string Path, DateTimeOffset Timestamp);
+// file's last-write-time when the name doesn't match the pattern).
+// DisplayName is the user-locale formatting used as ComboBox label —
+// computed once on read so the binding stays simple (no value converter).
+public sealed record BackupInfo(string Path, DateTimeOffset Timestamp)
+{
+    public string DisplayName => Timestamp.LocalDateTime.ToString("g");
+}
