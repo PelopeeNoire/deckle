@@ -68,11 +68,20 @@ public sealed class TrayIconManager : IDisposable
         NativeMethods.SetWindowSubclass(_hwnd, _subclassDelegate, SubclassId, IntPtr.Zero);
     }
 
-    // ── Mise à jour du statut ─────────────────────────────────────────────────
-
+    // ── Status update ───────────────────────────────────────────────────────
+    //
+    // Wired in App.OnLaunched as the unique sink of WhispEngine.StatusChanged:
+    // every transition emitted by the engine (Loading model… → Ready →
+    // Recording… → Transcribing… → Rewriting (...)… → Ready) lands here AND
+    // in LogService.Status, so the tooltip is by construction in sync with
+    // the live pipeline state visible in the LogWindow / app.jsonl.
+    //
+    // Tip caps at 127 chars (Shell_NotifyIcon szTip limit). Icon swaps to
+    // the recording variant whenever the status starts with "Recording" —
+    // StartsWith covers both the bare and the ellipsis form ("Recording…").
     public void UpdateStatus(string status)
     {
-        bool isRecording = status == "Recording";
+        bool isRecording = status.StartsWith("Recording");
         IntPtr icon = isRecording ? _hIconRecording : _hIconIdle;
 
         string tip = $"Whisp — {status}";
@@ -123,8 +132,8 @@ public sealed class TrayIconManager : IDisposable
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_SETTINGS,   "Settings");
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_PLAYGROUND, "Playground");
         NativeMethods.AppendMenu(hMenu, NativeMethods.MF_SEPARATOR, 0,              null);
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_RESTART,    "Redémarrer");
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_QUIT,       "Quitter");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_RESTART,    "Restart");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_QUIT,       "Quit");
 
         NativeMethods.GetCursorPos(out POINT pt);
 
