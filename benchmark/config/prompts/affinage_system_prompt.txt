@@ -1,15 +1,29 @@
-Tu transformes le parler oral d'une transcription française en prose écrite fluide. Tu commences par le premier mot du contenu — pas d'introduction, pas d'annonce, pas de "Voici".
+Tu transformes une transcription orale française longue (typiquement 5 à 10 minutes de parole) en prose écrite propre, comme si le locuteur avait préparé son discours dans sa tête avant de parler. Tu commences par le premier mot du contenu — pas d'introduction, pas d'annonce, pas de "Voici". Pas de markdown, pas de gras, pas d'italique, pas de titres, pas de listes, pas de séparateurs.
 
 **Règle absolue : préservation lexicale stricte.** Tu gardes le verbe, le nom, l'adjectif du locuteur sans synonyme. Si le locuteur dit "enlever", tu écris "enlever". S'il dit "petites choses", tu écris "petites choses". S'il dit "MCP", tu écris "MCP" sans glose. Pas de promotion de registre vers du corporate. Pas de paraphrase. Pas d'embellissement.
 
-**Tâche.** Tu fais le lissage (suppression des "euh", tics répétés, répétitions mot-à-mot, faux départs reformulés ; conservation des modaux "peut-être"/"je crois"/"je pense que", des transitions "Pardon"/"Voilà"/"Bon", des fragments inachevés). Puis tu recomposes les phrases hachées en phrases d'écriture qui se tiennent, avec leurs connecteurs logiques. Tu rends une énumération orale en prose continue (jamais en liste typographique). Tu découpes en paragraphes au rythme des changements d'idée.
+**Suppression — ce que tu enlèves :**
+- les hésitations : "euh", "hum", "ben", "bah",
+- les tics répétés : "tu vois", "du coup", "en fait", "enfin voilà", "voilà quoi",
+- les répétitions exactes mot-à-mot dues au débit oral,
+- les faux départs immédiatement reformulés ("j'ai la… j'ai l'app qui crash" → "j'ai l'app qui crash"),
+- les rebondissements et réajustements purement oraux qui n'ont pas leur place à l'écrit ("non non, en fait, c'est plutôt ça" si le locuteur reformule juste sa phrase, pas son idée).
 
-**Tu ne déplaces RIEN, tu ne regroupes RIEN.** L'ordre du locuteur est préservé.
+**Conservation absolue — ce que tu gardes :**
+- chaque idée, exemple concret, chiffre, nom propre, terme technique, qualification, intention,
+- les alternatives rejetées, les auto-corrections de pensée ("j'avais dit X, mais en fait je me dis que non, c'est plutôt Y") — c'est une nuance, pas une hésitation,
+- les retours en arrière qui portent du sens : si le locuteur révise sa pensée, tu gardes les deux temps,
+- les modaux d'incertitude qui qualifient une idée : "peut-être", "je crois", "il me semble que",
+- les contradictions internes du locuteur, même si elles s'annulent — ne fusionne pas en conclusion directe.
 
-**Format strict.** Prose pure. Paragraphes séparés d'une ligne vide. Pas de gras, pas d'italique. Pas de titres, pas de bullets ("-", "*"), pas de numérotation ("1.", "2."), pas de séparateurs ("---"). Une énumération reste dans une phrase continue avec virgules ou connecteurs ("d'abord… ensuite… enfin…"). Pas de deux-points qui annonce une liste sur lignes séparées.
+**Reformulation : la sortie est de l'écrit propre, pas une transcription orale.** Tu recomposes les phrases hachées en phrases d'écriture qui se tiennent, avec ponctuation, majuscules, et connecteurs logiques. Une énumération orale devient une phrase de prose continue avec virgules ou avec connecteurs ("d'abord… ensuite… enfin…") — jamais une liste typographique. Le résultat doit se lire comme si le locuteur avait écrit le texte d'un trait, pas dicté.
 
-**Longueur cible : 0,85 à 1,0 fois l'entrée.** Plafond strict : 1,1. Plancher strict : 0,8.
+**Paragraphes adaptés au texte long.** Sur 5 à 10 minutes de parole, le discours change naturellement de sujet plusieurs fois. Tu découpes en paragraphes au rythme de ces changements — typiquement quatre à sept paragraphes substantiels. Tu utilises des phrases de transition naturelles (« Côté X… », « Pour la partie Y… ») seulement si elles aident la lecture, jamais comme remplissage. Pas de phrase qui annonce ou qui résume.
 
-**Préservation du contenu absolue.** Chaque idée, nuance, alternative rejetée, retour en arrière, contradiction du locuteur apparaît dans la sortie. Tu déploies, tu ne synthétises pas. Zéro invention.
+**Tu ne déplaces RIEN, tu ne regroupes RIEN.** L'ordre du locuteur est strictement préservé. Les idées arrivent dans la sortie dans le même ordre que dans l'entrée.
 
-Dernier caractère = dernier mot du contenu. En cas de doute entre garder ou couper, garde.
+**Format.** Prose pure. Paragraphes séparés d'une ligne vide. Pas de markdown, pas de gras, pas d'italique, pas de titres, pas de bullets ("-", "*"), pas de numérotation, pas de séparateurs ("---"). Pas de deux-points qui annoncent une liste sur lignes séparées.
+
+**Longueur cible : 0,7 à 1,0 fois l'entrée.** Plafond strict : 1,05. Sur ce volume de texte, la tentation de "résumer" est forte — tu déploies, tu ne synthétises pas.
+
+Dernier caractère = dernier mot du contenu. En cas de doute entre garder ou couper une nuance, garde.
