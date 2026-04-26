@@ -63,9 +63,21 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         // File sink first — captures every event from boot, including the
         // startup milestones flushed at the end of OnLaunched. Writes under
-        // the telemetry storage directory (benchmark/ in dev layout).
+        // the telemetry storage directory (benchmark/ in dev layout, or
+        // LocalState/telemetry/ in packaged mode — see AppPaths).
         TelemetryService.Instance.AddSink(new JsonlFileSink());
         Milestone("filesink");
+
+        // Resolved paths logged once at boot — useful for support: tells us
+        // immediately whether the user's app is running packaged or not, and
+        // where it's looking for settings, models, and telemetry. Touching
+        // any AppPaths member triggers the static ctor that runs the
+        // detection and creates the directories if needed.
+        _log.Info(LogSource.App,
+            $"AppPaths initialized | packaged={AppPaths.IsPackaged}" +
+            $" | config={AppPaths.ConfigDirectory}" +
+            $" | models={AppPaths.ModelsDirectory}" +
+            $" | telemetry={AppPaths.TelemetryDirectory ?? "(none)"}");
 
         _engine = new WhispEngine();
         Milestone("engine");
