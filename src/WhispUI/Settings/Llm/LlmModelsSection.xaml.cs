@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,11 +24,39 @@ public sealed partial class LlmModelsSection : UserControl
 {
     private LlmOllamaContext? _context;
 
+    // CTS de cycle de vie de la section. Annule les opérations Ollama en
+    // vol (DeleteModelAsync) quand l'utilisateur ferme SettingsWindow ou
+    // navigue ailleurs pendant l'attente. Sans ça, la requête HTTP continue
+    // jusqu'au timeout 30s, et les UI updates post-await tentent de toucher
+    // une section unloaded — pas crash garanti mais ressources gaspillées.
+    // Recréé à chaque Loaded car la section peut être re-chargée
+    // (NavigationCacheMode.Required sur LlmPage).
+    private CancellationTokenSource _sectionCts = new();
+
     public event EventHandler? RefreshRequested;
 
     public LlmModelsSection()
     {
         InitializeComponent();
+
+        Loaded += (_, _) =>
+        {
+            // Re-arme un CTS frais à chaque retour sur la page.
+            if (_sectionCts.IsCancellationRequested)
+            {
+                _sectionCts.Dispose();
+                _sectionCts = new CancellationTokenSource();
+            }
+        };
+
+        Unloaded += (_, _) =>
+        {
+            // Cancel — laisse les operations en vol observer et abandonner.
+            // Pas de Dispose ici : un await en cours pourrait encore lire
+            // le token. Le Loaded suivant rotate proprement.
+            try { _sectionCts.Cancel(); }
+            catch (ObjectDisposedException) { /* déjà disposé, ignore */ }
+        };
     }
 
     internal void Initialize(LlmOllamaContext context)
@@ -95,11 +124,29 @@ public sealed partial class LlmModelsSection : UserControl
                     try
                     {
                         if (_context?.Service != null)
-                            await _context.Service.DeleteModelAsync(modelName);
+                        {
+                            // Lie le timeout 30s au CTS de section pour que
+                            // Unload (close de SettingsWindow, navigate away)
+                            // annule la suppression en vol au lieu d'attendre
+                            // 30s pour rien.
+                            using var localCts = CancellationTokenSource.CreateLinkedTokenSource(_sectionCts.Token);
+                            localCts.CancelAfter(TimeSpan.FromSeconds(30));
+                            await _context.Service.DeleteModelAsync(modelName, localCts.Token);
+                        }
+                        // Si la section a été unloaded pendant l'await, on
+                        // évite de déclencher RefreshRequested qui forcerait
+                        // un Reload côté page sur un visual tree détaché.
+                        if (_sectionCts.IsCancellationRequested) return;
                         RefreshRequested?.Invoke(this, EventArgs.Empty);
+                    }
+                    catch (OperationCanceledException) when (_sectionCts.IsCancellationRequested)
+                    {
+                        // Section unloaded pendant la suppression — silencieux,
+                        // l'utilisateur a fermé Settings, pas la peine de surfer.
                     }
                     catch (Exception ex)
                     {
+                        if (_sectionCts.IsCancellationRequested) return;
                         ErrorBar.Title = "Error removing model";
                         ErrorBar.Message = ex.Message;
                         ErrorBar.IsOpen = true;

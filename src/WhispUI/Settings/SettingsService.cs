@@ -290,12 +290,46 @@ public sealed class SettingsService
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "models"));
     }
 
+    // Mutex inter-process : si une autre instance de WhispUI tourne en
+    // parallèle (double-clic accidentel, login script qui relance), évite
+    // les écritures concurrentes sur settings.json qui causeraient une
+    // perte de configuration silencieuse (dernier writer gagne sans
+    // warning, modifs de l'instance "perdante" effacées). Scope local
+    // (per-session Terminal Services) — pas besoin de Global\, settings
+    // est per-user. Nom unique au projet.
+    private const string SettingsMutexName = "WhispUI-Settings-Save";
+
     // Public pour permettre un flush synchrone avant un arrêt du process
     // (RestartApp, QuitApp) — le debounce timer ne survivrait pas à Environment.Exit.
     public void Flush()
     {
+        using var processMutex = new Mutex(initiallyOwned: false, SettingsMutexName);
+        bool acquired = false;
         try
         {
+            try
+            {
+                // Timeout court : on n'attend pas indéfiniment qu'une autre
+                // instance finisse — si elle tarde, on logue et on skip
+                // plutôt que de bloquer. La modif sera retentée au prochain
+                // Save (debounce), donc pas de perte structurelle.
+                acquired = processMutex.WaitOne(TimeSpan.FromSeconds(2));
+            }
+            catch (AbandonedMutexException)
+            {
+                // L'autre instance a crashé en tenant le mutex — on l'a
+                // hérité (WaitOne a réussi malgré l'exception). État anormal
+                // mais récupérable, on continue avec l'écriture.
+                acquired = true;
+                LogService.Instance.Warning(LogSource.Settings, "settings mutex was abandoned (other WhispUI instance crashed?) — recovering");
+            }
+
+            if (!acquired)
+            {
+                LogService.Instance.Warning(LogSource.Settings, "save skipped: another WhispUI instance holds the settings mutex");
+                return;
+            }
+
             string json;
             lock (_lock)
             {
@@ -314,6 +348,10 @@ public sealed class SettingsService
         catch (Exception ex)
         {
             LogService.Instance.Error(LogSource.Settings, $"save failed: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            if (acquired) processMutex.ReleaseMutex();
         }
     }
 }

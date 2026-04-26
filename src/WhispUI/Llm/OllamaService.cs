@@ -37,47 +37,113 @@ internal sealed class OllamaService
 
     // ── Health check ────────────────────────────────────────────────────────
 
-    /// <summary>Vérifie qu'Ollama est joignable (timeout court).</summary>
-    public async Task<bool> IsAvailableAsync()
+    /// <summary>
+    /// Vérifie qu'Ollama est joignable (timeout court). Opt-in retry via
+    /// <paramref name="maxAttempts"/> > 1 — couvre la race classique au boot
+    /// du PC où WhispUI démarre avant qu'Ollama ait fini d'écouter sur 11434.
+    /// Default = 1 pour rester rapide sur les usages UI (Settings page),
+    /// le warmup engine demande explicitement maxAttempts=3.
+    /// </summary>
+    /// <param name="maxAttempts">Nombre de tentatives. ≥ 1.</param>
+    /// <param name="retryDelay">Pause entre tentatives. Ignoré si maxAttempts=1.</param>
+    public async Task<bool> IsAvailableAsync(int maxAttempts = 1, TimeSpan? retryDelay = null)
     {
-        try
+        if (maxAttempts < 1) maxAttempts = 1;
+        TimeSpan delay = retryDelay ?? TimeSpan.FromMilliseconds(500);
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-            using var resp = await _http.GetAsync($"{BaseUrl}/api/tags", cts.Token);
-            return resp.IsSuccessStatusCode;
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                using var resp = await _http.GetAsync($"{BaseUrl}/api/tags", cts.Token);
+                if (resp.IsSuccessStatusCode) return true;
+            }
+            catch
+            {
+                // Retry sur exception (connection refused, timeout). Pas de
+                // log par essai pour ne pas polluer — le caller logge le
+                // résultat final.
+            }
+
+            if (attempt < maxAttempts)
+            {
+                try { await Task.Delay(delay); }
+                catch { /* shouldn't happen, no token */ }
+            }
         }
-        catch { return false; }
+
+        return false;
     }
 
     // ── Model listing ───────────────────────────────────────────────────────
 
-    /// <summary>Liste tous les modèles locaux.</summary>
-    public async Task<List<OllamaModel>> ListModelsAsync()
+    /// <summary>
+    /// Liste tous les modèles locaux. Le caller fournit un CancellationToken
+    /// pour borner la requête — le HttpClient partagé a un timeout de 30 min,
+    /// inadapté aux appels rapides comme list/show. Sans token, l'appel peut
+    /// pendre jusqu'à 30 min si Ollama est saturé (ex. benchmark GPU
+    /// concurrent).
+    /// HTTP errors et cancellation propagent au caller. JsonException est
+    /// trappée localement et retourne une liste vide — Ollama compromis ou
+    /// reverse proxy qui renvoie du HTML d'erreur ne doit pas casser l'UI.
+    /// </summary>
+    public async Task<List<OllamaModel>> ListModelsAsync(CancellationToken ct = default)
     {
-        using var resp = await _http.GetAsync($"{BaseUrl}/api/tags");
+        using var resp = await _http.GetAsync($"{BaseUrl}/api/tags", ct);
         resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize<OllamaTagsResponse>(json, _jsonOpts);
-        return result?.Models ?? new();
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        try
+        {
+            var result = JsonSerializer.Deserialize<OllamaTagsResponse>(json, _jsonOpts);
+            return result?.Models ?? new();
+        }
+        catch (JsonException ex)
+        {
+            string preview = json.Length > 200 ? json[..200] + "..." : json;
+            Logging.LogService.Instance.Warning(
+                Logging.LogSource.Llm,
+                $"ListModels: invalid JSON from Ollama ({ex.Message}) | preview={preview}");
+            return new();
+        }
     }
 
     // ── Model details ───────────────────────────────────────────────────────
 
-    /// <summary>Affiche les détails d'un modèle (template, system, params).</summary>
-    public async Task<OllamaModelInfo?> ShowModelAsync(string name)
+    /// <summary>
+    /// Affiche les détails d'un modèle (template, system, params). Voir
+    /// ListModelsAsync pour la note sur le CancellationToken et le retour
+    /// fail-soft sur JSON invalide.
+    /// </summary>
+    public async Task<OllamaModelInfo?> ShowModelAsync(string name, CancellationToken ct = default)
     {
         var body = JsonSerializer.Serialize(new OllamaModelRequest { Model = name }, _jsonOpts);
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        using var resp = await _http.PostAsync($"{BaseUrl}/api/show", content);
+        using var resp = await _http.PostAsync($"{BaseUrl}/api/show", content, ct);
         resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<OllamaModelInfo>(json, _jsonOpts);
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        try
+        {
+            return JsonSerializer.Deserialize<OllamaModelInfo>(json, _jsonOpts);
+        }
+        catch (JsonException ex)
+        {
+            string preview = json.Length > 200 ? json[..200] + "..." : json;
+            Logging.LogService.Instance.Warning(
+                Logging.LogSource.Llm,
+                $"ShowModel: invalid JSON from Ollama ({ex.Message}) | model={name} | preview={preview}");
+            return null;
+        }
     }
 
     // ── Model deletion ──────────────────────────────────────────────────────
 
-    /// <summary>Supprime un modèle local.</summary>
-    public async Task DeleteModelAsync(string name)
+    /// <summary>
+    /// Supprime un modèle local. Voir ListModelsAsync pour la note sur le
+    /// CancellationToken — la suppression peut être lente sur gros modèles
+    /// donc le caller fournit un timeout généreux (10-30 s).
+    /// </summary>
+    public async Task DeleteModelAsync(string name, CancellationToken ct = default)
     {
         var req = new HttpRequestMessage(HttpMethod.Delete, $"{BaseUrl}/api/delete")
         {
@@ -85,7 +151,7 @@ internal sealed class OllamaService
                 JsonSerializer.Serialize(new OllamaModelRequest { Model = name }, _jsonOpts),
                 Encoding.UTF8, "application/json")
         };
-        using var resp = await _http.SendAsync(req);
+        using var resp = await _http.SendAsync(req, ct);
         resp.EnsureSuccessStatusCode();
     }
 
