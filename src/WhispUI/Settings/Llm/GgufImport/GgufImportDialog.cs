@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WhispUI.Llm;
+using WhispUI.Logging;
 
 namespace WhispUI.Settings.Llm.GgufImport;
 
@@ -41,9 +42,21 @@ internal static class GgufImportDialog
             // thread remains free to render progress bar updates.
             args.Cancel = true;
 
-            // Fire-and-forget: TryImportAsync handles its own errors.
-            // On success it calls dialog.Hide() to close the dialog.
-            _ = RunImportAsync();
+            // Fire-and-forget: TryImportAsync handles its own errors via
+            // ShowError. ContinueWith catches anything that slips past — e.g.
+            // dialog.Hide() racing with a programmatic close, or a XAML
+            // exception during teardown. Sans ce filet, l'exception irait
+            // dans TaskScheduler.UnobservedTaskException et perdrait le
+            // contexte — log explicite ici pour pouvoir diagnostiquer.
+            _ = RunImportAsync().ContinueWith(t =>
+            {
+                if (t.IsFaulted && t.Exception is not null)
+                {
+                    var ex = t.Exception.GetBaseException();
+                    LogService.Instance.Error(LogSource.SetLlm,
+                        $"GGUF import task faulted: {ex.GetType().Name}: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
         };
 
         async Task RunImportAsync()

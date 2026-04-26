@@ -670,10 +670,15 @@ internal sealed class WhispEngine : IDisposable
     // C# is reserved for methods returning Task / ValueTask.
     public void Warmup()
     {
+        if (_disposed) return;
         var thread = new Thread(() =>
         {
             try
             {
+                // Re-check : Dispose peut survenir entre le Thread.Start et
+                // le démarrage effectif du thread (rare mais possible si
+                // l'utilisateur quitte très tôt après le boot).
+                if (_disposed) return;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 _log.Info(LogSource.Init, "Warmup start");
 
@@ -713,8 +718,10 @@ internal sealed class WhispEngine : IDisposable
 
                 // 3) Ollama health-check. Skipped (and left as OK) when the LLM
                 //    feature is disabled — no rewriter needed, no warning to
-                //    surface. 3 s timeout inside IsAvailableAsync keeps the
-                //    warmup bounded even if the endpoint is a dead address.
+                //    surface. 3 s timeout par tentative dans IsAvailableAsync
+                //    × 3 essais espacés de 500 ms — couvre la race classique
+                //    au boot PC où WhispUI démarre avant qu'Ollama ait fini
+                //    d'écouter sur 11434. Pire cas borné à ~10 s.
                 var llmSettings = Settings.SettingsService.Instance.Current.Llm;
                 if (llmSettings.Enabled)
                 {
@@ -722,7 +729,7 @@ internal sealed class WhispEngine : IDisposable
                     {
                         var ollama = new Llm.OllamaService(
                             () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
-                        bool reachable = ollama.IsAvailableAsync().GetAwaiter().GetResult();
+                        bool reachable = ollama.IsAvailableAsync(maxAttempts: 3).GetAwaiter().GetResult();
                         _ollamaWarmupOk = reachable ? 1 : 0;
                     }
                     catch
@@ -753,6 +760,12 @@ internal sealed class WhispEngine : IDisposable
     // null, fall back to AutoRewriteRules based on recording duration.
     public void StartRecording(string? manualProfileName, bool shouldPaste)
     {
+        // Defense en profondeur : si l'engine a été disposed (QuitApp en cours)
+        // mais qu'un hotkey arrive juste après via la message pump, on évite
+        // d'accéder à un contexte whisper libéré (whisper_full sur ctx mort
+        // = segfault non récupérable). Pas de log : Dispose est l'autorité,
+        // un hotkey post-Dispose est attendu silencieusement.
+        if (_disposed) return;
         if (_isRecording) return;
 
         // Reset per-run latency stage timers. _modelLoadMs is overwritten by
@@ -790,14 +803,47 @@ internal sealed class WhispEngine : IDisposable
             }
             if (!OllamaWarmupOk)
             {
-                _log.Warning(
-                    LogSource.Init,
-                    "warmup flag | ollama_ok=false",
-                    new UserFeedback(
-                        "Rewriter unavailable",
-                        "Ollama is not reachable. No rewrite this session.",
-                        UserFeedbackSeverity.Warning,
-                        UserFeedbackRole.Overlay));
+                // Live re-probe avant d'émettre le warning : Ollama peut
+                // être devenu reachable entre warmup et premier hotkey
+                // (cas typique : l'utilisateur a démarré Ollama après
+                // WhispUI, ou le service Windows a fini son init après
+                // les 3 essais retry du warmup). Single-shot 3s, exécuté
+                // sur thread pool pour éviter tout risque de deadlock sur
+                // le UI thread du message host.
+                bool reachableNow = false;
+                try
+                {
+                    var ollama = new Llm.OllamaService(
+                        () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
+                    var probeTask = Task.Run(() => ollama.IsAvailableAsync());
+                    // Wait borné — IsAvailableAsync a son propre timeout 3s,
+                    // 4s lui laisse une marge.
+                    if (probeTask.Wait(TimeSpan.FromSeconds(4)))
+                        reachableNow = probeTask.Result;
+                }
+                catch
+                {
+                    // IsAvailableAsync est fail-soft (catch interne), mais
+                    // filet sur Task.Run / Wait au cas où.
+                }
+
+                if (!reachableNow)
+                {
+                    _log.Warning(
+                        LogSource.Init,
+                        "warmup flag | ollama_ok=false (live re-probe also failed)",
+                        new UserFeedback(
+                            "Rewriter unavailable",
+                            "Ollama wasn't ready at startup. Start it and try again.",
+                            UserFeedbackSeverity.Warning,
+                            UserFeedbackRole.Overlay));
+                }
+                else
+                {
+                    _log.Info(
+                        LogSource.Init,
+                        "warmup flag | ollama_ok=false but live re-probe ok — proceeding without warning");
+                }
                 // Proceed with recording — rewrite is optional, transcription
                 // and clipboard copy still deliver the raw text.
             }
@@ -896,6 +942,8 @@ internal sealed class WhispEngine : IDisposable
 
     public void StopRecording()
     {
+        if (_disposed) return;
+
         // Stop-to-pipeline latency starts here — closed by the whisper.cpp
         // log hook on the first whisper_vad line. Captures Record() drain
         // (waveInStop + buffer concat) plus Transcribe() entry (params build,
