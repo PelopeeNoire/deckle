@@ -103,17 +103,62 @@ Protocole :
 
 **Au début de chaque turn** : lire `results.tsv` filtré sur le bracket courant pour savoir où en est la boucle (numéro de la dernière itération, état keep/discard, commits en place).
 
+## Caps d'itérations par bracket
+
+Caps cibles pour la nuit du 26→27 avril 2026 :
+
+| Bracket | Cap | Justification |
+|---|---|---|
+| `whisper` | 5–10 | Tester en variant le prompt initial + paramètres ; objectif = transcription fidèle (accents, mots techniques, peu d'espaces parasites) |
+| `relecture` | 10 | Petits textes, le mandat est strict (surface only) — converge vite |
+| `lissage` | 10 | Le pivot conceptuel est posé ; surtout valider la formulation, pas explorer 30 angles |
+| `affinage` | 40 | Plus difficile (texte long), les 20 dernières servent à prouver les limites — utile pour cartographier l'espace |
+| `arrangement` | 40 | Idem, plus le critère de regroupement thématique en plus |
+
+Si Louis précise un cap explicite (`/benchmark-loop lissage 30`), suivre.
+
+## Stratégie de la nuit : copier-puis-adapter
+
+Ordre fixe d'enchaînement, géré automatiquement par les ScheduleWakeup successifs :
+
+1. **Whisper baseline** — 5-10 itérations pour figer le `whisper_initial_prompt.txt`. Quand le résultat est satisfaisant (peu d'espaces parasites, accents corrects, pas de mots inventés sur le corpus relecture), porter le prompt champion **dans l'app** : éditer `src/WhispUI/Settings/AppSettings.cs` champ `InitialPrompt` (ne PAS toucher `BeamSize` / `Temperature` / autres params, ils suivent les recommandations Whisper). Commit séparé `feat(whisper): champion initial prompt → AppSettings`.
+
+2. **Lissage** — 10 itérations pour finaliser le pivot « comme un discours préparé ».
+
+3. **Copier-puis-adapter sur affinage et arrangement** : prendre le prompt lissage champion, le copier dans `affinage_system_prompt.txt` et `arrangement_system_prompt.txt` comme **point de départ**, puis adapter à la longueur cible :
+   - Affinage : ajuster mention de durée (5-10 min), structure paragraphique, plafond.
+   - Arrangement : réintroduire la voix 1ère personne stricte + permission de regroupement thématique + plafond plus large.
+   - Cette adaptation initiale compte comme l'itération 1 du bracket.
+
+4. **Affinage** — 40 itérations à partir de la base copiée-adaptée. Premier diagnostic = lecture qualitative sur les 7 samples. Pattern d'échec attendu = sur-compression sur les samples >500s (vu en bench précédent).
+
+5. **Arrangement** — 40 itérations à partir de la base copiée-adaptée. Premier diagnostic sur les 9 samples (dont un de 49 min). Pattern d'échec attendu = perte de la voix 1ère personne, ou regroupement insuffisant.
+
+## Recherches web autorisées
+
+Si tu observes un pattern d'échec persistant (3+ itérations sans amélioration sur le même angle), tu peux faire une recherche web ciblée pour voir comment d'autres ont résolu un problème analogue. Cibles utiles : Mistral / Ministral prompting techniques, oral→écrit prompt patterns, French dictation cleanup. Garder court (1-2 recherches max par bracket), capitaliser ce que tu trouves dans le journal `results.tsv` (colonne `description`).
+
 ## Critères d'arrêt
 
 Arrêter uniquement si **un** de ces critères est atteint :
 
-- **Cap d'itérations atteint** : 30 par défaut pour le bracket prioritaire (généralement lissage), 10-15 pour les autres. Si Louis précise un cap explicite au lancement (`/benchmark-loop lissage 40`), suivre.
+- **Cap d'itérations atteint** (cf. table ci-dessus).
 - **Stagnation qualitative** : 5 itérations consécutives sans amélioration humaine ET sans régression métrique. Pas seulement la métrique — c'est l'observation qualitative qui tranche.
 - **Régression métrique brutale** : si tu vois apparaître des `catastrophe: true` qui n'existaient pas, des `length_ratio` < 0.5, ou du `novel_words` > 0.5 — recule à l'incumbent et change d'angle.
 - **Instruction explicite de Louis** (message, interruption) — toujours respecter.
 - **Cap horaire dur** : 6h00 du matin si la session a démarré la veille au soir. Commit le dernier état stable, écrire un mini-SUMMARY dans `reports/SUMMARY.md`, s'arrêter sans exception.
 
 Ne jamais déclarer « plancher atteint » de sa propre initiative sur la base de la métrique seule. La métrique rule-based ne capte pas le critère humain *« comme un discours préparé »* — c'est la lecture qualitative qui prime.
+
+## Au matin (cap 6h00)
+
+Au moment d'atteindre le cap horaire (ou les caps d'itérations cumulés) :
+
+1. Commit du dernier état stable de chaque bracket.
+2. Écrire `benchmark/reports/SUMMARY.md` (gitignored) — un bloc par bracket : score qualitatif final, modifs retenues (diff résumé en 2-3 lignes), patterns encore problématiques, hypothèses non testées.
+3. Si Whisper a un champion convaincant et que ce n'est pas déjà fait → porter dans `AppSettings.cs` (commit séparé).
+4. Si les 4 brackets LLM ont des champions convaincants → préparer un commit unique sur `main` qui porte les 4 prompts dans `src/WhispUI/Settings/AppSettings.cs` (le squash-merge de la branche autoresearch fera le reste).
+5. Stop, ne pas continuer même si Ollama est encore disponible.
 
 ## Pièges connus
 
@@ -141,8 +186,29 @@ En cas de timeout / connexion refusée : attendre 30s, réessayer une fois. Si e
 7. Vérifier qu'on est sur la branche `autoresearch/llm-rewrite-pivot-lissage-20260427` ou similaire — sinon créer la branche depuis `main` avant la première itération.
 8. Enchaîner 2-3 itérations, puis `ScheduleWakeup`.
 
-## Whisper baseline en début de nuit
+## Whisper bench — détail spécifique
 
-Si la nuit doit aussi traiter Whisper (artefacts vus en usage : « fichu » → « figue », accents circonflexes manquants), faire 1-2 itérations Whisper bench d'abord, AVANT la passe LLM longue. Sinon les itérations LLM optimisent contre des artefacts Whisper au lieu de leur vrai mandat. Le prompt cible dans ce cas est `whisper_initial_prompt.txt`.
+Le bench Whisper s'exécute via `whisper_bench.py --bracket relecture --verbose` — on cible volontairement les samples courts (corpus relecture, 11-56 s) car l'itération est rapide et les artefacts (accents, espaces, mots techniques) y sont déjà visibles. Pas besoin d'enchaîner sur les longs.
 
-Si appelé via `/benchmark-loop whisper`, faire un mini-cycle (3-5 itérations max) puis basculer automatiquement sur `lissage` (la priorité de la nuit). Annoncer le pivot à Louis dans le message du tick.
+Variations à explorer sur les itérations :
+
+- Variantes du `whisper_initial_prompt.txt` : style français propre vs. style oral, présence d'accents circonflexes ciblés, vocabulaire technique étendu, longueur du prompt (~500 vs. ~800 chars).
+- Tester occasionnellement en ajoutant `--extra-cli-args "--no-fallback --no-speech-thold 0.8"` ou autres flags whisper-cli si tu vois des hallucinations.
+- Tester un prompt avec exemple court de bonne sortie (« Voici une transcription propre : Je pense que c'est intéressant, mais il faut quand même tester. »).
+
+Critères qualité (à juger qualitativement sur les outputs) :
+
+- **Accents corrects** : « même », « quand même », « être » avec circonflexe.
+- **Pas de mots inventés** : « fichu » et pas « figue », pas de néologismes.
+- **Espaces propres** : pas de double-espaces parasites, pas d'espace avant ponctuation simple (virgule, point), espace insécable correct avant `:` `;` `?` `!`.
+- **Capitalisation** : début de phrase, noms propres.
+- **Pas d'amorce parasite** : Whisper ne doit pas produire l'initial prompt en sortie (cap-off).
+
+Quand un champion sort (3+ itérations sans amélioration, qualité satisfaisante) :
+
+1. Le prompt champion vit déjà dans `benchmark/config/prompts/whisper_initial_prompt.txt`.
+2. **Porter dans l'app** : éditer `src/WhispUI/Settings/AppSettings.cs` champ `InitialPrompt` avec le contenu champion. **NE PAS toucher** `BeamSize`, `Temperature`, ou les autres paramètres Whisper — ils restent aux recommandations.
+3. Commit séparé sur la branche autoresearch : `feat(whisper): champion initial prompt → AppSettings`.
+4. Basculer sur le bracket suivant via ScheduleWakeup avec `prompt = "/benchmark-loop lissage"` (annoncer le pivot dans le `reason`).
+
+Si appelé via `/benchmark-loop whisper`, faire le mini-cycle (5-10 itérations max) puis basculer automatiquement sur `lissage` (la priorité de la nuit).
