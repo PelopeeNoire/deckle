@@ -32,17 +32,27 @@ benchmark/
 ├── README.md                           ← this file
 ├── launch.ps1                          ← interactive launcher
 │
-├── whisper_bench.py                    ← Whisper transcription bench (no auto-judge)
-├── benchmark.py                        ← legacy: rewrite quality scoring
-├── autoresearch.py                     ← legacy: rewrite-prompt optimisation loop
+├── whisper_bench.py                    ← Whisper transcription bench
+├── rewrite_bench.py                    ← Rewrite bench across the 4 brackets
+├── benchmark.py                        ← legacy unitary runner (one prompt × one corpus)
+├── autoresearch.py                     ← legacy rewrite-prompt optimisation loop
 ├── _template_bench.py                  ← skeleton for new benches (excluded from launcher)
+│
+│   # utilities
+├── refresh_corpus.py                   ← swap raw.text with a fresh whisper_bench dump
+├── segment_corpus.py                   ← bucket a corpus into corpus-<bracket>/ folders
+├── compare_runs.py                     ← side-by-side digest of last_rewrite_run.json
 │
 ├── config/
 │   ├── config.ini                      ← per-bench defaults
 │   └── prompts/
 │       ├── whisper_initial_prompt.txt  ← active Whisper initial prompt
-│       ├── system_prompt.txt           ← active rewrite system prompt (legacy)
-│       └── judge_system_prompt.txt     ← rewrite judge grid (legacy)
+│       ├── relecture_system_prompt.txt    \
+│       ├── lissage_system_prompt.txt      / 4 bracket prompts — source of
+│       ├── affinage_system_prompt.txt     \   truth for the AppSettings.cs
+│       ├── arrangement_system_prompt.txt  /  defaults in WhispUI
+│       ├── system_prompt.txt           ← legacy autoresearch target
+│       └── judge_system_prompt.txt     ← legacy 6-criteria grid
 │
 ├── lib/
 │   ├── corpus.py                       ← WhispUI JSONL reader + bracket bucketing
@@ -108,23 +118,57 @@ python whisper_bench.py --bracket lissage --initial-prompt-file my_prompt.txt
 Iteration pattern: see [`AGENT.md`](AGENT.md) → "Autoresearch
 workflow".
 
+## Rewrite bench (4 brackets)
+
+`rewrite_bench.py` runs the 4 cleanup-bracket prompts (relecture /
+lissage / affinage / arrangement) against the matching corpora
+(`telemetry/corpus-<bracket>/corpus.jsonl`) and dumps everything to
+`reports/last_rewrite_run.{json,txt}`. **No automated LLM judge** — the
+bench runs `--skip-judge` and the agent (Claude session, you) reads the
+output and scores qualitatively against the 6-criteria grid in
+`judge_system_prompt.txt`, with C5 (thematic regrouping) inverted on
+relecture / lissage / affinage where regrouping is a regression.
+
+Quick commands:
+
+```powershell
+# All 4 axes with the canonical prompts
+python rewrite_bench.py --verbose
+
+# Single bracket, custom temperature
+python rewrite_bench.py --bracket affinage --temperature 0.15
+
+# Try a variant: save it as <bracket>_system_prompt_v2.txt
+python rewrite_bench.py --bracket affinage --prompt-suffix _v2
+
+# Build a side-by-side digest after the run
+python compare_runs.py
+```
+
+The 4 canonical prompts in `config/prompts/<bracket>_system_prompt.txt`
+are the source of truth for the `Profiles` defaults in
+`src/WhispUI/Settings/AppSettings.cs`. Edit one place, re-run the bench,
+port to AppSettings.cs — that's the loop.
+
+## Reusable pipeline (when corpus is enriched)
+
+```powershell
+python whisper_bench.py --bracket all --slug <new-slug>
+python refresh_corpus.py --source-corpus telemetry/<new-slug>/corpus.jsonl
+python segment_corpus.py --source telemetry/<new-slug>/corpus.jsonl
+python rewrite_bench.py --verbose
+python compare_runs.py
+```
+
 ## Legacy rewrite bench
 
-`benchmark.py` and `autoresearch.py` predate the Whisper-side work.
-They score LLM rewrites of frozen Whisper text (no re-transcription)
-on a six-criteria grid via a judge — Ministral 14B by default for a
-fully local run, or Anthropic Claude if you export
-`ANTHROPIC_API_KEY` in your shell.
-
-Configuration sits in `config/config.ini` under `[benchmark]` and
-`[autoresearch]`. Reports land in `reports/`. The full
-six-criteria grid (Complétude macro, Préservation des nuances,
-Densité, Non-invention, Structure thématique, Clarté/registre) lives
-in `config/prompts/judge_system_prompt.txt`.
-
-These are kept around because the rewrite optimisation isn't
-finished, but the active focus is the Whisper side first — once the
-raw transcription is stable, the rewrite numbers stop being noise.
+`benchmark.py` and `autoresearch.py` predate the bracket-aligned work.
+`benchmark.py` is a unitary runner — one prompt × one corpus glob —
+and `rewrite_bench.py` calls into it for each axis. `autoresearch.py`
+is an auto-loop driver that mutates `system_prompt.txt` with a
+designer LLM and keeps the best variant. Both still work as-is; the
+6-criteria grid still lives at `config/prompts/judge_system_prompt.txt`
+for when an automated judge run makes sense again.
 
 ## Dependencies
 

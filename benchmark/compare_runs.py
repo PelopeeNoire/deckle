@@ -1,26 +1,29 @@
-"""Side-by-side report assembler over the 4 cleanup-level axes.
+"""Build a side-by-side digest from last_rewrite_run.json for human review.
 
-Reads ``reports/run_{relecture,lissage,affinage,arrangement}.json`` and
-emits a ``reports/comparison.txt`` with one block per source sample::
+Reads ``reports/last_rewrite_run.json`` (the structured output of
+``rewrite_bench.py``) and emits ``reports/comparison.txt`` with one
+block per source sample::
 
-    [sample_id  duration  bracket  input_chars]
+    [bracket  sample_id  duration  input_chars]
     INPUT (raw Whisper):
         <raw text>
-    --- RELECTURE   (chars=…)  novel=…  len=…
-        <output>
-    --- LISSAGE     (chars=…)  novel=…  len=…
-        <output>
-    --- AFFINAGE    (chars=…)  novel=…  len=…
-        <output>
-    --- ARRANGEMENT (chars=…)  novel=…  len=…
-        <output>
+    --- OUTPUT  chars=…  novel=…  len_ratio=…  preamble=…  lists=…
+        <rewritten text>
 
-This is the file the agent reads to score qualitatively against the
-6-criteria grid (judge_system_prompt.txt). The composite axis gets its
-own block at the bottom (only one sample, no comparison across axes).
+Per-bracket organisation: for each of the 4 axes, all samples in that
+axis appear in one section. Use this when you want the verbose,
+output-side-by-input view for qualitative scoring against the 6-criteria
+grid in ``judge_system_prompt.txt`` (C5 inverted on relecture / lissage /
+affinage where thematic regrouping is a regression).
 
-Usage:
-    python compare_runs.py [--output PATH]
+Raw input text is recovered by re-reading the per-bracket corpora at
+``telemetry/corpus-<bracket>/corpus.jsonl`` — they're the same files
+``rewrite_bench.py`` consumed.
+
+Usage::
+
+    python compare_runs.py                       # writes reports/comparison.txt
+    python compare_runs.py --output other.txt
 """
 
 from __future__ import annotations
@@ -35,161 +38,131 @@ if sys.stdout.encoding != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BENCHMARK_DIR = Path(__file__).resolve().parent
-REPORTS_DIR   = BENCHMARK_DIR / "reports"
+sys.path.insert(0, str(BENCHMARK_DIR))
 
-CORE_AXES = ("relecture", "lissage", "affinage", "arrangement")
-COMPOSITE_AXES = ("arrangement_composite",)
+from lib.corpus import BRACKET_SLUGS, load_corpus                   # noqa: E402
 
-
-def load_report(axis: str) -> dict | None:
-    path = REPORTS_DIR / f"run_{axis}.json"
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
+REPORTS_DIR = BENCHMARK_DIR / "reports"
+RUN_REPORT  = REPORTS_DIR / "last_rewrite_run.json"
 
 
-def load_corpus_inputs(corpus_glob: str) -> dict[str, dict]:
-    """Re-read corpus to recover raw input text by sample id ({slug}:{line_no})."""
-    import glob as _glob
-    inputs: dict[str, dict] = {}
-    for path in sorted(_glob.glob(str(BENCHMARK_DIR / corpus_glob))):
-        with open(path, "r", encoding="utf-8") as f:
-            for line_no, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line: continue
-                try:
-                    env = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if env.get("kind", "").lower() != "corpus": continue
-                payload = env.get("payload") or {}
-                slug    = payload.get("slug") or ""
-                sid     = f"{slug}:{line_no}"
-                inputs[sid] = {
-                    "raw_text":         (payload.get("raw") or {}).get("text", ""),
-                    "duration_seconds": payload.get("duration_seconds", 0.0),
-                    "audio_file":       payload.get("audio_file"),
-                }
-    return inputs
+def corpus_inputs_for(bracket: str) -> dict[str, dict]:
+    """Return ``{sample_id → {raw_text, duration_seconds}}`` for the bracket."""
+    glob = f"telemetry/corpus-{bracket}/corpus.jsonl"
+    samples = load_corpus(str(BENCHMARK_DIR / glob))
+    return {
+        s.id: {
+            "raw_text":         s.raw_text,
+            "duration_seconds": s.duration_seconds,
+        }
+        for s in samples
+    }
 
 
-def bracket_of(duration_seconds: float) -> str:
-    if duration_seconds <= 60:    return "relecture"
-    if duration_seconds <= 300:   return "lissage"
-    if duration_seconds <= 600:   return "affinage"
-    if duration_seconds <= 1200:  return "arrangement"
-    return "—"
-
-
-def build_core_blocks(inputs: dict[str, dict], reports: dict[str, dict]) -> list[str]:
-    """One block per sample id present in the inputs, with side-by-side outputs."""
-    blocks: list[str] = []
-    sample_ids = sorted(inputs.keys(), key=lambda s: int(s.split(":")[-1]))
-
-    for sid in sample_ids:
-        ip = inputs[sid]
-        dur = ip["duration_seconds"]
-        bracket = bracket_of(dur)
-        raw_text = ip["raw_text"]
-
-        header = f"[{sid}  {dur:.0f}s  {bracket}  in={len(raw_text)}c]"
-        block_lines = [header, "INPUT (raw Whisper):", _indent(raw_text), ""]
-
-        for axis in CORE_AXES:
-            report = reports.get(axis)
-            entry  = _find_entry(report, sid)
-            if entry is None:
-                block_lines.append(f"--- {axis.upper():12s} (missing)")
-                block_lines.append("")
-                continue
-            output = entry.get("output_text", "")
-            rule   = entry.get("rule", {})
-            novel  = rule.get("novel_words", float("nan"))
-            lr     = rule.get("length_ratio", float("nan"))
-            preamb = rule.get("preamble", 0)
-            lists  = rule.get("lists", 0)
-            cat    = " CATA" if entry.get("catastrophe") else ""
-            stats  = f"chars={len(output)}  novel={novel:.3f}  len={lr:.3f}  preamble={int(preamb)}  lists={int(lists)}{cat}"
-
-            block_lines.append(f"--- {axis.upper():12s}  {stats}")
-            block_lines.append(_indent(output))
-            block_lines.append("")
-        blocks.append("\n".join(block_lines))
-    return blocks
-
-
-def build_composite_blocks(reports: dict[str, dict]) -> list[str]:
-    blocks: list[str] = []
-    for axis in COMPOSITE_AXES:
-        report = reports.get(axis)
-        if report is None:
-            blocks.append(f"=== {axis.upper()} (no report)")
-            continue
-        for entry in report.get("details", []):
-            sid    = entry.get("id", "?")
-            inc    = entry.get("input_chars", 0)
-            outc   = entry.get("output_chars", 0)
-            rule   = entry.get("rule", {})
-            output = entry.get("output_text", "")
-
-            header = f"=== {axis.upper()}  [{sid}  in={inc}c  out={outc}c  novel={rule.get('novel_words', 0):.3f}  len={rule.get('length_ratio', 0):.3f}]"
-            block_lines = [header, output, ""]
-            blocks.append("\n".join(block_lines))
-    return blocks
-
-
-def _indent(text: str, prefix: str = "    ") -> str:
+def indent(text: str, prefix: str = "    ") -> str:
     return "\n".join(prefix + line for line in text.splitlines())
 
 
-def _find_entry(report: dict | None, sid: str) -> dict | None:
-    if not report: return None
-    for entry in report.get("details", []):
-        if entry.get("id") == sid:
-            return entry
-    return None
+def build_block(bracket: str, entry: dict, source: dict | None) -> str:
+    sid    = entry.get("id", "?")
+    rule   = entry.get("rule") or {}
+    output = entry.get("output_text", "")
+    cata   = " CATASTROPHE" if entry.get("catastrophe") else ""
+
+    if source:
+        dur     = source["duration_seconds"]
+        raw     = source["raw_text"]
+    else:
+        dur     = entry.get("duration_sec", 0)
+        raw     = "(raw input not found in corpus)"
+
+    header = (
+        f"[{bracket}  {sid}  {dur:.0f}s  in={len(raw)}c]{cata}"
+    )
+    stats = (
+        f"chars={len(output)}  "
+        f"novel={rule.get('novel_words', 0):.3f}  "
+        f"len_ratio={rule.get('length_ratio', 0):.3f}  "
+        f"preamble={int(rule.get('preamble', 0))}  "
+        f"lists={int(rule.get('lists', 0))}"
+    )
+    return "\n".join([
+        header,
+        "INPUT (raw Whisper):",
+        indent(raw),
+        "",
+        f"--- OUTPUT  {stats}",
+        indent(output),
+        "",
+    ])
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Side-by-side comparison of the 4 cleanup-level runs")
-    parser.add_argument("--output", type=Path, default=REPORTS_DIR / "comparison.txt")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--report", type=Path, default=RUN_REPORT,
+        help="Path to last_rewrite_run.json (default: reports/last_rewrite_run.json).",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=REPORTS_DIR / "comparison.txt",
+        help="Destination path (default: reports/comparison.txt).",
+    )
     args = parser.parse_args()
 
-    reports = {axis: load_report(axis) for axis in CORE_AXES + COMPOSITE_AXES}
-    missing = [a for a, r in reports.items() if r is None]
-    if missing:
-        print(f"  warning: {len(missing)} axis report(s) missing: {missing}")
+    if not args.report.exists():
+        sys.exit(
+            f"Run report not found: {args.report}\n"
+            f"Run `python rewrite_bench.py` first."
+        )
 
-    # Use the corpus glob from any available core report.
-    corpus_inputs: dict[str, dict] = {}
-    if reports.get("relecture") or reports.get("lissage"):
-        corpus_inputs = load_corpus_inputs("telemetry/nettoyage-69b8e91208d4/corpus.refreshed.jsonl")
+    run = json.loads(args.report.read_text(encoding="utf-8"))
+    results = run.get("results") or []
 
-    out_lines = [
-        "Side-by-side comparison — 4 cleanup-level rewrite axes",
+    # Pre-load corpora for all brackets we care about
+    inputs_by_bracket: dict[str, dict[str, dict]] = {}
+    for r in results:
+        bracket = r.get("bracket")
+        if bracket and bracket in BRACKET_SLUGS and bracket not in inputs_by_bracket:
+            inputs_by_bracket[bracket] = corpus_inputs_for(bracket)
+
+    out_lines: list[str] = [
+        "Side-by-side comparison — 4 cleanup-bracket rewrite axes",
         "=" * 70,
-        f"Reports loaded: {[a for a, r in reports.items() if r is not None]}",
-        f"Samples in inputs: {len(corpus_inputs)}",
+        f"Source: {args.report.relative_to(BENCHMARK_DIR)}",
+        f"Generated: {run.get('timestamp', '?')}",
         "",
     ]
 
-    if corpus_inputs:
-        out_lines.append("CORE CORPUS (refreshed, 27 samples)")
+    for r in results:
+        bracket = r.get("bracket", "?")
         out_lines.append("=" * 70)
-        out_lines.extend(build_core_blocks(corpus_inputs, reports))
+        if "error" in r:
+            out_lines.append(f"## {bracket}: SKIPPED ({r['error']})")
+            out_lines.append("")
+            continue
+        if "warning" in r:
+            out_lines.append(f"## {bracket}: {r['warning']}")
+            out_lines.append("")
+            continue
 
-    out_lines.append("")
-    out_lines.append("LONG-FORM COMPOSITE (samples 3 + 11)")
-    out_lines.append("=" * 70)
-    out_lines.extend(build_composite_blocks(reports))
+        out_lines.append(
+            f"## {bracket}  ({r.get('samples', 0)} samples, "
+            f"med={r.get('composite_median')}, cata={r.get('catastrophes')})"
+        )
+        out_lines.append(
+            f"   prompt: {r.get('prompt_file')}  "
+            f"model: {r.get('model')}  "
+            f"T={r.get('temperature')}  "
+            f"ctx={r.get('num_ctx_k')}K"
+        )
+        out_lines.append("")
+        sources = inputs_by_bracket.get(bracket, {})
+        for entry in r.get("details", []):
+            out_lines.append(build_block(bracket, entry, sources.get(entry.get("id"))))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(out_lines), encoding="utf-8")
-    print(f"\n→ {args.output}")
-    print(f"  {len([r for r in reports.values() if r is not None])}/{len(reports)} axes loaded")
+    print(f"  → {args.output.relative_to(BENCHMARK_DIR)}")
 
 
 if __name__ == "__main__":

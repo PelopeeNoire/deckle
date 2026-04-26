@@ -37,21 +37,34 @@ Hard rules:
 ```
 benchmark/
 ├── AGENT.md                  ← you are here
-├── README.md                 ← legacy doc, slowly being trimmed
+├── README.md                 ← user-facing tour
 ├── launch.ps1                ← single entry point, auto-discovers benches
 ├── results.tsv               ← autoresearch journal (gitignored)
 │
-├── benchmark.py              ← legacy bench: rewrite quality (Ministral)
-├── autoresearch.py           ← legacy autoresearch loop on rewrite prompt
 ├── whisper_bench.py          ← bench: Whisper transcription quality
+├── rewrite_bench.py          ← bench: rewrite quality across the 4 brackets
+├── benchmark.py              ← legacy unitary runner (one prompt × one corpus)
+├── autoresearch.py           ← legacy autoresearch loop on rewrite prompt
 ├── _template_bench.py        ← skeleton — copy when adding a new bench
+│
+│   # ── utilities (no _bench suffix; not exposed in launcher) ──
+├── refresh_corpus.py         ← pre-bench: substitute raw.text in a corpus.jsonl
+│                                 with the latest whisper_bench transcription
+├── segment_corpus.py         ← pre-bench: bucket a corpus.jsonl into 4
+│                                 telemetry/corpus-<bracket>/corpus.jsonl files
+├── compare_runs.py           ← post-bench: side-by-side digest from
+│                                 reports/last_rewrite_run.json
 │
 ├── config/
 │   ├── config.ini            ← per-bench defaults
 │   └── prompts/
-│       ├── system_prompt.txt           (rewrite, legacy)
-│       ├── judge_system_prompt.txt     (rewrite judge, legacy)
-│       └── whisper_initial_prompt.txt  (active Whisper prompt)
+│       ├── relecture_system_prompt.txt    ← bracket prompts (4×)
+│       ├── lissage_system_prompt.txt           tunés sur Ministral 14B Q4,
+│       ├── affinage_system_prompt.txt          source-of-truth pour les
+│       ├── arrangement_system_prompt.txt       defaults dans AppSettings.cs
+│       ├── whisper_initial_prompt.txt     ← active Whisper prompt
+│       ├── system_prompt.txt              ← legacy (autoresearch.py target)
+│       └── judge_system_prompt.txt        ← legacy 6-criteria grid
 │
 ├── lib/
 │   ├── corpus.py             ← reads telemetry corpus, bracket bucketing
@@ -90,10 +103,61 @@ You can also run any bench directly:
 
 ```powershell
 python whisper_bench.py --bracket lissage --verbose
+python rewrite_bench.py --bracket affinage --temperature 0.15
 ```
 
 All scripts must accept `--verbose` and `--limit N`; bench-specific
 flags live alongside.
+
+### Reusable pipeline (when corpus is enriched)
+
+When Louis records new samples in the missing duration brackets (<60 s
+native, >10 min native with audio preserved), the same four commands
+reproduce a full evaluation cycle:
+
+```powershell
+# 1. Re-transcribe with the locked Whisper initial prompt
+python whisper_bench.py --bracket all --slug <new-slug>
+
+# 2. Refresh corpus.jsonl in-place (clones the envelope, swaps raw.text)
+python refresh_corpus.py --source-corpus telemetry/<new-slug>/corpus.jsonl
+
+# 3. Segment by bracket (one corpus.jsonl per bracket)
+python segment_corpus.py --source telemetry/<new-slug>/corpus.jsonl
+
+# 4. Run all 4 bracket axes against the canonical prompts
+python rewrite_bench.py --verbose
+
+# 5. (optional) Build a side-by-side digest for qualitative scoring
+python compare_runs.py
+```
+
+Step 3 segments by `payload.duration_seconds` into
+`telemetry/corpus-{relecture,lissage,affinage,arrangement}/corpus.jsonl`
+— that's exactly what `rewrite_bench.py` reads. You can merge several
+sources by repeating `--source` or by passing `--append` on a second
+run.
+
+`rewrite_bench.py --bracket <name>` runs a single axis. To iterate on
+a prompt without touching the canonical, save the variant as
+`<bracket>_system_prompt_v2.txt` and pass `--prompt-suffix _v2`.
+
+### When to add a bench vs. an utility
+
+Two patterns coexist on purpose:
+
+- A **bench** (`*_bench.py`) is a measurement that produces
+  `reports/last_<name>_run.{json,txt}`. The launcher picks it up.
+  Anything that turns inputs into a scored / inspectable artifact
+  belongs here.
+
+- An **utility** (any other `*.py` at the top level) is a step in the
+  pipeline that doesn't measure — it transforms data so a bench can
+  consume it (`refresh_corpus.py`, `segment_corpus.py`) or post-
+  processes a bench result (`compare_runs.py`). The launcher ignores
+  it. Keep them small, single-purpose, idempotent, and don't pile up
+  one-shot scripts that are tied to a specific dataset — write the
+  utility so it works on any source path.
 
 ---
 
