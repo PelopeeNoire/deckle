@@ -506,7 +506,7 @@ internal sealed class WhispEngine : IDisposable
     /// </summary>
     private bool LoadModel()
     {
-        RaiseStatus("Loading model");
+        RaiseStatus("Loading model…");
 
         if (!File.Exists(_modelPath))
         {
@@ -808,12 +808,12 @@ internal sealed class WhispEngine : IDisposable
                 }
 
                 _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-                RaiseStatus("Recording");
+                RaiseStatus("Recording…");
                 _log.Narrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
 
                 float[] audio = Record();
                 _isRecording = false;
-                RaiseStatus("Transcribing");
+                RaiseStatus("Transcribing…");
                 Transcribe(audio);
                 ResetIdleTimer();
             }

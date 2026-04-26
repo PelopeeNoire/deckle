@@ -149,22 +149,22 @@ public partial class App : Microsoft.UI.Xaml.Application
             _log.Info(LogSource.Status, status);
             // Beacon app icon in LogWindow + PlaygroundWindow: red =
             // recording, grey = idle. Single source of truth driven
-            // from the engine status transition.
-            bool isRecording = status == "Recording";
+            // from the engine status transition. StartsWith covers the
+            // "Recording…" ellipsis variant emitted by RaiseStatus to
+            // signal a transient state visually in the tray tooltip.
+            bool isRecording = status.StartsWith("Recording");
             _logWindow.SetRecordingState(isRecording);
             _playgroundWindow?.SetRecordingState(isRecording);
 
             // HUD: driven by status transition. Background thread → HudWindow
-            // marshals internally via DispatcherQueue.
-            if (status == "Recording")
+            // marshals internally via DispatcherQueue. StartsWith on every
+            // branch so transient ellipsis variants ("Transcribing…",
+            // "Rewriting (cleanup)…") all route correctly.
+            if (status.StartsWith("Recording"))
                 _hudWindow.ShowRecording();
-            else if (status == "Transcribing")
+            else if (status.StartsWith("Transcribing"))
                 _hudWindow.SwitchToTranscribing();
-            // Engine emits "Réécriture (...)" today; the FR→EN sweep at
-            // WhispEngine.cs:858 ("Rewriting (...)") lands once the parallel
-            // logs branch is merged. Match both so the dispatcher is robust
-            // across the swap.
-            else if (status.StartsWith("Réécriture") || status.StartsWith("Rewriting"))
+            else if (status.StartsWith("Rewriting"))
                 _hudWindow.SwitchToRewriting();
         };
         _engine.TranscriptionFinished += outcome =>
