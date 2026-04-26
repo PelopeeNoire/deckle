@@ -160,12 +160,18 @@ public sealed class OverlaySettings
     public bool Animations { get; set; } = true;
 }
 
-// Chemins utilisateur. ModelsDirectory = dossier où vivent les .bin (Whisper
-// large-v3, base, Silero VAD...). Vide = résolution automatique vers
-// `../../shared` relatif à l'exe (disposition historique du dépôt).
+// Chemins utilisateur. Tous vides par défaut → résolution automatique via
+// AppPaths (à côté de l'exe en dev unpackaged, sous LocalState en packagé MSIX).
+//
+// ModelsDirectory  : dossier des .bin Whisper (large-v3, base, Silero VAD).
+// BackupDirectory  : dossier où SettingsBackupService dépose les snapshots
+//                    settings-YYYYMMDD-HHmmss.json. Pattern PowerToys :
+//                    le user peut pointer vers un dossier OneDrive/Drive
+//                    pour faire suivre ses backups entre machines.
 public sealed class PathsSettings
 {
     public string ModelsDirectory { get; set; } = "";
+    public string BackupDirectory { get; set; } = "";
 }
 
 // Choix fondamentaux du moteur. Les 3 premiers (Model / UseGpu / Language) sont
