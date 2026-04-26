@@ -38,7 +38,7 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,12"
-                           Text="Keyboard shortcuts, recording overlay, startup behavior and appearance." />
+                           Text="Keyboard shortcuts, appearance, startup behavior, recording and data." />
 
                 <!-- ── Shortcuts ───────────────────────────────────────────── -->
                 <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
@@ -66,6 +66,70 @@
                     <TextBlock Text="Ctrl + Win + `"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </controls:SettingsCard>
+
+                <!-- ── Appearance ──────────────────────────────────────────── -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Appearance" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetAppearance_Click" />
+                </Grid>
+
+                <controls:SettingsCard Header="App theme"
+                                       Description="Light, dark, or follow your Windows theme."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
+                    <ComboBox x:Name="ThemeCombo"
+                              MinWidth="160"
+                              SelectionChanged="ThemeCombo_SelectionChanged">
+                        <ComboBoxItem Tag="System">System</ComboBoxItem>
+                        <ComboBoxItem Tag="Light">Light</ComboBoxItem>
+                        <ComboBoxItem Tag="Dark">Dark</ComboBoxItem>
+                    </ComboBox>
+                </controls:SettingsCard>
+
+                <!-- ── Startup ─────────────────────────────────────────────── -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                               Text="Startup" />
+                    <HyperlinkButton Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Content="Reset"
+                                     ToolTipService.ToolTip="Reset this section to defaults"
+                                     Click="ResetStartup_Click" />
+                </Grid>
+
+                <controls:SettingsCard Header="Start with Windows"
+                                       Description="Launch WhispUI automatically when you sign in."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutostartEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard Header="Start minimized"
+                                       Description="Open straight to the system tray, without any visible window. Default: on."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard Header="Warm up Whisper at launch"
+                                       Description="Run a silent transcription at startup so the first real recording is fast. Costs a few seconds of GPU at launch."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
                 <!-- ── Recording ───────────────────────────────────────────── -->
@@ -205,70 +269,6 @@
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
-
-                <!-- ── Startup ─────────────────────────────────────────────── -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                               Text="Startup" />
-                    <HyperlinkButton Grid.Column="1"
-                                     VerticalAlignment="Bottom"
-                                     Margin="0,0,0,2"
-                                     Content="Reset"
-                                     ToolTipService.ToolTip="Reset this section to defaults"
-                                     Click="ResetStartup_Click" />
-                </Grid>
-
-                <controls:SettingsCard Header="Start with Windows"
-                                       Description="Launch WhispUI automatically when you sign in."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutostartEnabled, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard Header="Start minimized"
-                                       Description="Open straight to the system tray, without any visible window. Default: on."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard Header="Warm up Whisper at launch"
-                                       Description="Run a silent transcription at startup so the first real recording is fast. Costs a few seconds of GPU at launch."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
-                <!-- ── Appearance ──────────────────────────────────────────── -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                               Text="Appearance" />
-                    <HyperlinkButton Grid.Column="1"
-                                     VerticalAlignment="Bottom"
-                                     Margin="0,0,0,2"
-                                     Content="Reset"
-                                     ToolTipService.ToolTip="Reset this section to defaults"
-                                     Click="ResetAppearance_Click" />
-                </Grid>
-
-                <controls:SettingsCard Header="App theme"
-                                       Description="Light, dark, or follow your Windows theme."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
-                    <ComboBox x:Name="ThemeCombo"
-                              MinWidth="160"
-                              SelectionChanged="ThemeCombo_SelectionChanged">
-                        <ComboBoxItem Tag="System">System</ComboBoxItem>
-                        <ComboBoxItem Tag="Light">Light</ComboBoxItem>
-                        <ComboBoxItem Tag="Dark">Dark</ComboBoxItem>
-                    </ComboBox>
-                </controls:SettingsCard>
 
                 <!-- ── Telemetry ───────────────────────────────────────────── -->
                 <Grid>
