@@ -228,6 +228,29 @@ internal sealed class WhispEngine : IDisposable
         @"mapping table with\s+(\d+)\s+points",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    // Latency instrumentation — extra stage timers feeding LatencyPayload.
+    // Reset at the entry of StartRecording so each run reports its own values.
+    //   _modelLoadMs        — captured by LoadModel; 0 when warm.
+    //   _hotkeySw           — entry of StartRecording → just after waveInStart.
+    //                         On a cold run includes _modelLoadMs (load runs on
+    //                         the worker thread before the mic opens), plus
+    //                         the mic probe and worker thread spin-up.
+    //   _recordDrainSw      — _stopRecording flips → end of Record() (just before
+    //                         the float[] return). Subset of _stopToPipelineSw —
+    //                         shows how much of the stop-to-pipeline cost is
+    //                         spent in the mic drain alone.
+    //   _stopToPipelineSw   — entry of StopRecording → first whisper_vad log.
+    //                         Captures Record() drain + Transcribe() entry.
+    //   _whisperInitSw      — just before whisper_full() → first whisper_vad log.
+    //                         Pre-VAD overhead inside whisper_full (context
+    //                         init, mel allocation, GPU upload).
+    // The latter two stop in the same hook branch that starts _vadSw.
+    private long _modelLoadMs;
+    private System.Diagnostics.Stopwatch? _hotkeySw;
+    private System.Diagnostics.Stopwatch? _recordDrainSw;
+    private System.Diagnostics.Stopwatch? _stopToPipelineSw;
+    private System.Diagnostics.Stopwatch? _whisperInitSw;
+
     // Effective compute backend, parsed from the first whisper.cpp log lines
     // emitted during model init (ggml_vulkan: / ggml_cuda_init: / ggml_metal_init:).
     // Defaults to "CPU" when no GPU prefix is seen before LoadModel finishes —
@@ -327,6 +350,14 @@ internal sealed class WhispEngine : IDisposable
                     if (_vadSw is null)
                     {
                         _vadSw = System.Diagnostics.Stopwatch.StartNew();
+                        // Close two upstream timers on the same first VAD line:
+                        //   _stopToPipelineSw bracketed StopRecording → here.
+                        //   _whisperInitSw    bracketed whisper_full() → here.
+                        // Both share the same anchor on purpose — the VAD line
+                        // is the first observable signal that whisper.cpp has
+                        // moved past its setup phase into actual work.
+                        _stopToPipelineSw?.Stop();
+                        _whisperInitSw?.Stop();
                         _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording — a small detector is scanning the audio for spoken segments.");
                     }
 
@@ -558,6 +589,11 @@ internal sealed class WhispEngine : IDisposable
             return false;
         }
 
+        // Capture for the next LatencyPayload — read once by Transcribe(), reset
+        // by the next StartRecording. A non-zero value here means the run paid
+        // the cold-load cost; warm runs report 0.
+        _modelLoadMs = sw.ElapsedMilliseconds;
+
         _log.Success(LogSource.Model, $"Model loaded ({_detectedBackend})");
         _log.Verbose(LogSource.Model, $"load complete | load_ms={sw.ElapsedMilliseconds} | backend={_detectedBackend}");
         return true;
@@ -719,6 +755,18 @@ internal sealed class WhispEngine : IDisposable
     {
         if (_isRecording) return;
 
+        // Reset per-run latency stage timers. _modelLoadMs is overwritten by
+        // LoadModel() if it runs (cold path); _hotkeySw is stopped after
+        // waveInStart in Record(); _recordDrainSw is started/stopped inside
+        // Record() around the post-stop drain; _stopToPipelineSw and
+        // _whisperInitSw are stopped from the whisper.cpp log hook on the
+        // first whisper_vad line.
+        _modelLoadMs = 0;
+        _hotkeySw = System.Diagnostics.Stopwatch.StartNew();
+        _recordDrainSw = null;
+        _stopToPipelineSw = null;
+        _whisperInitSw = null;
+
         // Consume the warmup flags on the first StartRecording call — surface
         // any problems detected silently at startup before the recording begins.
         // Interlocked.Exchange makes the consumption race-free even if two
@@ -848,6 +896,17 @@ internal sealed class WhispEngine : IDisposable
 
     public void StopRecording()
     {
+        // Stop-to-pipeline latency starts here — closed by the whisper.cpp
+        // log hook on the first whisper_vad line. Captures Record() drain
+        // (waveInStop + buffer concat) plus Transcribe() entry (params build,
+        // log preamble) before whisper_full hits the VAD module. Only armed
+        // when actually recording: the timer is read once by the LatencyPayload
+        // builder; a spurious start with no recording would never be stopped.
+        if (_isRecording)
+        {
+            _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
+        }
+
         // Paste target is whatever the user has focused at Stop time — read
         // live in PasteFromClipboard. We deliberately don't freeze anything at
         // Start: the recording + transcription + LLM pipeline takes seconds,
@@ -963,6 +1022,12 @@ internal sealed class WhispEngine : IDisposable
         }
 
         NativeMethods.waveInStart(hWaveIn);
+        // Hotkey-to-capture latency closes here — the mic is now live and the
+        // first 50 ms buffer is on its way. Includes EnsureModelLoaded (and
+        // therefore _modelLoadMs on cold runs), the mic probe, and worker
+        // thread spin-up. Stopwatch may be null if Record() is called outside
+        // the StartRecording path (e.g. Warmup) — guard before reading.
+        _hotkeySw?.Stop();
         // Single buffer, grows throughout the recording.
         // 1 sample = 2 bytes PCM16. At 16 kHz, 1 minute = 1.92M bytes.
         var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
@@ -1106,6 +1171,12 @@ internal sealed class WhispEngine : IDisposable
             }
         }
 
+        // Drain phase starts here — measured separately from the in-loop
+        // recording time so the LatencyPayload can show how much of
+        // StopToPipelineMs is spent draining the mic alone (the 100 ms guard
+        // sleep below is the obvious lower bound).
+        _recordDrainSw = System.Diagnostics.Stopwatch.StartNew();
+
         NativeMethods.waveInStop(hWaveIn);
         Thread.Sleep(100);
 
@@ -1169,6 +1240,11 @@ internal sealed class WhispEngine : IDisposable
         // pass above), so its tail genuinely reflects the final ~600 ms
         // of audio.
         LogRecordingTelemetry();
+
+        // Drain done — _recordDrainSw is read once by the LatencyPayload
+        // builder. Anything past this point (Transcribe entry, params build,
+        // whisper_full setup) is captured by _stopToPipelineSw / _whisperInitSw.
+        _recordDrainSw?.Stop();
 
         return PcmToFloat(allBytes.ToArray());
     }
@@ -1622,6 +1698,11 @@ internal sealed class WhispEngine : IDisposable
         _vadCapturing = true;
 
         _transcribeSw = System.Diagnostics.Stopwatch.StartNew();
+        // Whisper init latency starts here — closed by the log hook on the
+        // first whisper_vad line. Measures pre-VAD overhead inside whisper_full
+        // (context init, mel computation, GPU upload). Distinct from VadMs,
+        // which measures the VAD module itself.
+        _whisperInitSw = System.Diagnostics.Stopwatch.StartNew();
         var sw = _transcribeSw;
         int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
         sw.Stop();
@@ -1629,8 +1710,17 @@ internal sealed class WhispEngine : IDisposable
 
         _vadCapturing = false;
         if (_vadSw is { IsRunning: true }) _vadSw.Stop();
+        // Force-stop the upstream timers when whisper_full bailed before any
+        // whisper_vad line was emitted (e.g. an init-phase failure). The hook
+        // path stops them on the first VAD line; without that signal they
+        // would keep running and report unbounded values into the payload.
+        if (_whisperInitSw is { IsRunning: true }) _whisperInitSw.Stop();
+        if (_stopToPipelineSw is { IsRunning: true }) _stopToPipelineSw.Stop();
         long vadMs = _vadSw?.ElapsedMilliseconds ?? 0;
-        long whisperMs = Math.Max(0, transcribeMsTotal - vadMs);
+        long whisperInitMs = _whisperInitSw?.ElapsedMilliseconds ?? 0;
+        // Pure decoding time = total wall time of whisper_full minus the two
+        // sub-phases observed via the log hook (pre-VAD setup + VAD itself).
+        long whisperMs = Math.Max(0, transcribeMsTotal - vadMs - whisperInitMs);
 
         // No-speech path: whisper.cpp short-circuits before emitting the
         // "Reduced audio from" marker when VAD finds 0 segments, so the hook
@@ -1721,7 +1811,12 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        long llmMs = 0;
+        long llmMs           = 0;
+        long ollamaLoadMs    = 0;
+        long llmPromptEvalMs = 0;
+        long llmEvalMs       = 0;
+        int  llmPromptTokens = 0;
+        int  llmEvalTokens   = 0;
         var llmSettings = Settings.SettingsService.Instance.Current.Llm;
         double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
         int rawWordCount = Logging.TextMetrics.CountWords(fullText);
@@ -1794,12 +1889,22 @@ internal sealed class WhispEngine : IDisposable
             // (no counter-narrative was ever emitted). HUD state + polling
             // heartbeat already cover live feedback during the wait.
             var swLlm = System.Diagnostics.Stopwatch.StartNew();
-            string? rewritten = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
+            var llmResult = _llm.Rewrite(fullText, llmSettings.OllamaEndpoint, profile);
             swLlm.Stop();
-            llmMs = swLlm.ElapsedMilliseconds;
-            if (!string.IsNullOrWhiteSpace(rewritten))
+            // Wall-clock total (caller-side) is the authoritative number for
+            // user-perceived latency — includes HTTP transit + JSON parse on
+            // top of the server-side Ollama timings. The structured Ollama
+            // metrics flow through to the LatencyPayload so we can later
+            // compare wall vs server side and isolate transit overhead.
+            llmMs           = swLlm.ElapsedMilliseconds;
+            ollamaLoadMs    = llmResult.OllamaLoadMs;
+            llmPromptEvalMs = llmResult.PromptEvalMs;
+            llmEvalMs       = llmResult.EvalMs;
+            llmPromptTokens = llmResult.PromptTokens;
+            llmEvalTokens   = llmResult.EvalTokens;
+            if (!string.IsNullOrWhiteSpace(llmResult.Text))
             {
-                fullText = rewritten;
+                fullText = llmResult.Text;
                 // If the post-rewrite copy fails, the raw transcript from the
                 // first copy is still on the clipboard — degrade silently to
                 // the raw text instead of making a loud noise about a failure
@@ -1847,9 +1952,25 @@ internal sealed class WhispEngine : IDisposable
                                                       : TranscriptionOutcome.ClipboardOnly;
         int finalWordCount = Logging.TextMetrics.CountWords(fullText);
 
+        // Snapshot stage timers once for both the log line and the telemetry
+        // payload. Each can be null when the run skipped that stage (e.g.
+        // _hotkeySw is null on the Warmup path) — coerce to 0 so the payload
+        // stays well-formed.
+        long hotkeyToCaptureMs = _hotkeySw?.ElapsedMilliseconds         ?? 0;
+        long recordDrainMs     = _recordDrainSw?.ElapsedMilliseconds    ?? 0;
+        long stopToPipelineMs  = _stopToPipelineSw?.ElapsedMilliseconds ?? 0;
+        // _vadInferenceMs is parsed from the whisper.cpp `vad time = X ms`
+        // log line as a float; rounded to long here to match the inventory
+        // ms-int convention. -1f means "no VAD line was parsed" (no-speech
+        // short-circuit, hook miss) — coerce to 0 so the payload only carries
+        // valid values.
+        long vadInferenceMs    = _vadInferenceMs >= 0 ? (long)Math.Round(_vadInferenceMs) : 0;
+
         _log.Success(LogSource.Done, $"Done ({outcome})");
         _log.Verbose(LogSource.Done,
-            $"timings | audio_sec={recDurationSec:F1} | vad_ms={vadMs} | whisper_ms={whisperMs} | llm_ms={llmMs} | clipboard_ms={swClip.ElapsedMilliseconds} | paste_ms={pasteMs}");
+            $"timings | audio_sec={recDurationSec:F1} | model_load_ms={_modelLoadMs} | hotkey_to_capture_ms={hotkeyToCaptureMs} | record_drain_ms={recordDrainMs} | stop_to_pipeline_ms={stopToPipelineMs} | whisper_init_ms={whisperInitMs} | vad_ms={vadMs} | vad_inference_ms={vadInferenceMs} | whisper_ms={whisperMs} | llm_ms={llmMs} | clipboard_ms={swClip.ElapsedMilliseconds} | paste_ms={pasteMs}");
+        _log.Verbose(LogSource.Done,
+            $"llm_metrics | ollama_load_ms={ollamaLoadMs} | prompt_eval_ms={llmPromptEvalMs} | eval_ms={llmEvalMs} | prompt_tokens={llmPromptTokens} | eval_tokens={llmEvalTokens}");
         _log.Verbose(LogSource.Done,
             $"outputs | n_seg={nSeg} | chars={fullText.Length} | words={finalWordCount} | strategy={_strategyLabel} | profile={profile?.Name ?? "(none)"} | outcome={outcome}");
         _log.Narrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
@@ -1858,19 +1979,30 @@ internal sealed class WhispEngine : IDisposable
         _recordingSw?.Stop();
 
         Logging.TelemetryService.Instance.Latency(new Logging.LatencyPayload(
-            AudioSec:    audioSec,
-            VadMs:       vadMs,
-            WhisperMs:   whisperMs,
-            LlmMs:       llmMs,
-            ClipboardMs: swClip.ElapsedMilliseconds,
-            PasteMs:     pasteMs,
-            Strategy:    _strategyLabel,
-            NSegments:   nSeg,
-            TextChars:   fullText.Length,
-            TextWords:   finalWordCount,
-            Profile:     profile?.Name ?? "",
-            Pasted:      pasteVerified,
-            Outcome:     outcome.ToString()));
+            AudioSec:          audioSec,
+            ModelLoadMs:       _modelLoadMs,
+            HotkeyToCaptureMs: hotkeyToCaptureMs,
+            RecordDrainMs:     recordDrainMs,
+            StopToPipelineMs:  stopToPipelineMs,
+            WhisperInitMs:     whisperInitMs,
+            VadMs:             vadMs,
+            VadInferenceMs:    vadInferenceMs,
+            WhisperMs:         whisperMs,
+            LlmMs:             llmMs,
+            OllamaLoadMs:      ollamaLoadMs,
+            LlmPromptEvalMs:   llmPromptEvalMs,
+            LlmEvalMs:         llmEvalMs,
+            LlmPromptTokens:   llmPromptTokens,
+            LlmEvalTokens:     llmEvalTokens,
+            ClipboardMs:       swClip.ElapsedMilliseconds,
+            PasteMs:           pasteMs,
+            Strategy:          _strategyLabel,
+            NSegments:         nSeg,
+            TextChars:         fullText.Length,
+            TextWords:         finalWordCount,
+            Profile:           profile?.Name ?? "",
+            Pasted:            pasteVerified,
+            Outcome:           outcome.ToString()));
 
         // Corpus logging — captures the raw Whisper output only. We don't
         // persist the rewrite: prompts evolve, so paired (raw, rewrite)

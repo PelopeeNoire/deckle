@@ -131,6 +131,90 @@ Filets de diagnostic globaux dans `App` :
 
 ---
 
+## Règles UX non négociables
+
+### Clipboard — 2 états maximum par transcription
+
+Le clipboard porte au plus deux contenus successifs sur la durée d'une
+transcription : (1) la transcription brute Whisper, (2) le texte
+réécrit par le LLM (si profil actif). **Jamais d'accumulation token par
+token, jamais d'incréments mot par mot.** L'historique du presse-papier
+système doit rester propre — un utilisateur qui ouvre l'historique
+clipboard après une transcription voit `raw` et `rewrite`, pas
+`raw1`, `raw1+w2`, `raw1+w2+w3`, …
+
+Conséquence pour un éventuel streaming LLM : si on streame, on
+**remplace** l'objet clipboard en place (ou on le supprime puis on
+ré-ajoute), pas d'append. Granularité acceptable : phrase entière (sur
+détection de point), ou intervalle régulier (toutes les ~5 s), pas
+token par token. La règle prime sur le gain de latence perçue.
+
+### Pré-chargement VAD au hotkey (idée notée)
+
+Le VAD whisper.cpp prend ~5 % du temps audio quel que soit le backend
+GPU/CPU — confirmé sur 700+ runs de télémétrie. Une piste plausible :
+pré-charger le contexte VAD dès le démarrage de l'enregistrement
+(hotkey reçu), libérer au stop. À tester avec mesure avant/après une
+fois l'instrumentation en place. Pas implémenté pour l'instant.
+
+---
+
+## Télémétrie — source unique
+
+Tout ce que WhispUI observe au runtime passe par
+`Logging.TelemetryService.Instance` — c'est le hub central, pas un
+détail d'implémentation. Quatre canaux :
+
+- `Log(source, message, level, feedback)` — événements applicatifs.
+- `Latency(payload)` — un row `LatencyPayload` par transcription terminée.
+- `Corpus(payload)` — texte brut Whisper pour benchmark, gated par setting.
+- `Microphone(payload)` — résumé RMS par recording, gated par setting.
+
+Chaque appel construit un `TelemetryEvent` (timestamp + kind + session +
+payload + texte précompilé pour LogWindow) et le dispatche aux
+`ITelemetrySink` enregistrés. Les deux sinks de prod sont
+`JsonlFileSink` (persiste dans `<storage>/{app,latency,microphone,corpus}.jsonl`)
+et `LogWindow` (display live).
+
+**Invariant — single source of truth.** Toute observation runtime *doit*
+emprunter ce chemin. Pas de `Console.WriteLine` parallèle, pas d'écriture
+fichier hors sink, pas de mesure cachée dans une variable locale qui ne
+remonte nulle part. Si une métrique mérite d'exister, elle mérite de
+passer par le payload structuré (pour le JSONL) ET par le texte
+précompilé (pour LogWindow).
+
+**Quand on ajoute une étape mesurée :**
+
+1. **Respecter la nomenclature** — durées en `ms` (entier) ou `sec`
+   (1 décimale), tokens en `tok`, caractères en `chars`. Suffixe
+   `_ms`/`_sec`/`_tok`/`_chars` obligatoire dans le nom du champ. La
+   table canonique vit dans
+   [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md)
+   section "Vocabulaire de mesures" — la **lire avant** d'inventer
+   un nom. Toute divergence est une régression et doit être
+   refusée en review.
+2. Étendre le `record` payload approprié dans
+   [Logging/TelemetryEvent.cs](Logging/TelemetryEvent.cs) avec un
+   `JsonPropertyName` snake_case (le sink JSONL le sérialise
+   automatiquement, sans nouveau code).
+3. Mettre à jour le `text` précompilé dans `TelemetryService.<Kind>()`
+   pour que la ligne LogWindow reflète la nouvelle info — au minimum
+   un résumé compact, le détail complet vit dans le JSONL.
+4. Passer la mesure de `[à instrumenter]` à `[logué]` dans
+   [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md),
+   section concernée. Mettre à jour le gabarit standard si la ligne
+   Verbose change.
+5. Vérifier que les consommateurs existants ne cassent pas (recherche
+   sur `payload.<Field>` ou `<PayloadType>(...)` dans tout le projet).
+
+L'inventaire `reference--logging-inventory--0.1.md` est la **doc
+canonique** : quoi mesurer, à quel niveau, dans quel format. Avant
+d'ajouter ou de modifier un log, le lire. Sera promu un jour en
+document de nomenclature séparé ; tant que ce n'est pas fait, c'est
+ce fichier qui fait foi.
+
+---
+
 ## Journal d'implémentation — dossier `docs/`
 
 Les détails par sous-système vivent dans `docs/`. Fichiers lus à la
@@ -157,3 +241,7 @@ lire son fichier `docs/*.md`.
   modes), TitleBar natif Standard, Frame+Page, SettingsCard
   CommunityToolkit, GeneralPage 4 sections câblées, WhisperPage 6
   sections, persistance JSON portable, restart ciblé.
+- [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md)
+  — inventaire normatif des mesures par étape (vocabulaire d'unités,
+  niveaux de sévérité, gabarits standards, recap UserFeedback). Référence
+  unique avant d'ajouter ou de modifier un log.
