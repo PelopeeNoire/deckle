@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -365,5 +366,115 @@ public sealed partial class GeneralPage : Page
             _log.Error(LogSource.SetGeneral,
                 $"Open telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    // ── Backup ──────────────────────────────────────────────────────────────
+    //
+    // Three actions: Create (writes a snapshot), Restore (overwrites
+    // settings.json after explicit confirmation), Refresh (re-enumerates the
+    // list). The folder picker mirrors the telemetry one — same FolderPicker
+    // + InitializeWithWindow dance for unpackaged WinUI 3.
+
+    private void CreateBackupButton_Click(object sender, RoutedEventArgs e)
+    {
+        var info = SettingsBackupService.CreateBackup();
+        ViewModel.RefreshBackups();
+        if (info is not null)
+        {
+            // Pre-select the snapshot we just created so a follow-up Restore
+            // click rolls back to it (the most common immediate use of the
+            // create button — "let me try this and revert if I don't like").
+            BackupCombo.SelectedItem = ViewModel.Backups
+                .FirstOrDefault(b => b.Path == info.Path);
+        }
+    }
+
+    private async void RestoreBackupButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (BackupCombo.SelectedItem is not BackupInfo selected)
+        {
+            _log.Warning(LogSource.SetGeneral,
+                "restore skipped | reason=no_selection");
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = this.XamlRoot,
+            Title = "Restore settings?",
+            Content = $"This will overwrite your current settings with the snapshot from {selected.DisplayName}. Your current settings will not be saved unless you create a backup first.",
+            PrimaryButtonText = "Restore",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        bool ok = SettingsBackupService.RestoreFromBackup(selected.Path);
+        if (!ok) return;
+
+        // Settings have been replaced and SettingsService.Reload has fired
+        // Changed. Refill the VM from the new in-memory snapshot, and
+        // re-sync the non-bindable combos that don't refresh from x:Bind.
+        _initializing = true;
+        try
+        {
+            ViewModel.Load();
+            PopulateAudioInputDevices();
+            SyncOverlayPositionCombo();
+            SyncThemeCombo();
+            SyncCorpusFolderPlaceholder();
+
+            // Apply settings that have side-effects beyond the VM —
+            // theme switch, level-window statics — without going through
+            // the property setters (which are guarded by _initializing).
+            App.ApplyTheme(ViewModel.Theme);
+            App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+        }
+        finally
+        {
+            _initializing = false;
+        }
+    }
+
+    private void RefreshBackupsButton_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.RefreshBackups();
+    }
+
+    private async void ChangeBackupFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FolderPicker
+            {
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeFilter.Add("*");
+
+            var settingsWin = App.SettingsWin
+                ?? throw new InvalidOperationException("Settings window not initialized");
+            var hwnd = WindowNative.GetWindowHandle(settingsWin);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is null) return;
+
+            ViewModel.BackupDirectory = folder.Path;
+            // OnBackupDirectoryChanged already calls RefreshBackups, but the
+            // user explicit action deserves an immediate refill regardless.
+            ViewModel.RefreshBackups();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetGeneral,
+                $"Change backup folder failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void OpenBackupFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsBackupService.OpenBackupDirectory();
     }
 }

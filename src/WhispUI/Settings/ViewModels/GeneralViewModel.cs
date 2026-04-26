@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WhispUI.Logging;
 using WhispUI.Shell;
@@ -263,6 +264,34 @@ public partial class GeneralViewModel : ObservableObject
         PushToSettings();
     }
 
+    // ── Backup ───────────────────────────────────────────────────────────────
+    //
+    // BackupDirectory is the user override for where snapshots live (empty =
+    // <AppPaths.ConfigDirectory>/backups/, see SettingsService.ResolveBackupDirectory).
+    // Backups is the live observable list driving the Restore ComboBox; it
+    // refills via RefreshBackups() — called on Load, after CreateBackup, and
+    // any time the BackupDirectory changes.
+
+    [ObservableProperty]
+    public partial string BackupDirectory { get; set; }
+
+    public ObservableCollection<BackupInfo> Backups { get; } = new();
+
+    partial void OnBackupDirectoryChanged(string value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Paths.BackupDirectory ← \"{value}\"");
+        PushToSettings();
+        RefreshBackups();
+    }
+
+    public void RefreshBackups()
+    {
+        Backups.Clear();
+        foreach (var b in SettingsBackupService.ListBackups())
+            Backups.Add(b);
+    }
+
     // ── Sync with SettingsService ────────────────────────────────────────────
 
     public GeneralViewModel()
@@ -292,6 +321,7 @@ public partial class GeneralViewModel : ObservableObject
         RecordAudioCorpus = false;
         ApplicationLogToDisk = false;
         TelemetryStorageDirectory = "";
+        BackupDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
     }
@@ -322,11 +352,16 @@ public partial class GeneralViewModel : ObservableObject
             RecordAudioCorpus = s.Telemetry.RecordAudioCorpus;
             ApplicationLogToDisk = s.Telemetry.ApplicationLogToDisk;
             TelemetryStorageDirectory = s.Telemetry.StorageDirectory;
+            BackupDirectory = s.Paths.BackupDirectory;
         }
         finally
         {
             _isSyncing = false;
         }
+
+        // Refresh outside the _isSyncing guard so any future logic in
+        // RefreshBackups that touches observable state behaves normally.
+        RefreshBackups();
     }
 
     private void PushToSettings()
@@ -351,6 +386,7 @@ public partial class GeneralViewModel : ObservableObject
         s.Telemetry.RecordAudioCorpus = RecordAudioCorpus;
         s.Telemetry.ApplicationLogToDisk = ApplicationLogToDisk;
         s.Telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
+        s.Paths.BackupDirectory = BackupDirectory ?? "";
         SettingsService.Instance.Save();
     }
 
