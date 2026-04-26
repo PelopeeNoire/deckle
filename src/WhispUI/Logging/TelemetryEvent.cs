@@ -78,20 +78,62 @@ public sealed record LogPayload(
     [property: JsonPropertyName("message")] string Message,
     [property: JsonPropertyName("level")]   string Level);
 
+// Latency stages, in pipeline order. Every numeric field is in ms unless
+// suffixed otherwise. All zeros are valid runtime values (warm path,
+// short-circuited stage) — analysis code must not treat 0 as "missing".
+//
+// Capture path:
+//   ModelLoadMs        — Whisper model load (0 when warm). Stopwatch in LoadModel.
+//   HotkeyToCaptureMs  — entry of StartRecording → waveInStart returned. Includes
+//                        ModelLoadMs on cold start.
+//   RecordDrainMs      — _stopRecording set → end of Record() (waveInStop + 100 ms
+//                        guard sleep + buffer concat + telemetry compute).
+//   StopToPipelineMs   — entry of StopRecording → first VAD log line. Superset
+//                        of RecordDrainMs (also covers Transcribe entry).
+//   WhisperInitMs      — entry whisper_full() → first VAD log line.
+//   VadMs              — wall time bracket from whisper.cpp log hook (first
+//                        "whisper_vad" line → "Reduced audio from" marker).
+//   VadInferenceMs     — `vad time = X ms` reported by whisper.cpp itself
+//                        (parsed from logs). VadMs − VadInferenceMs ≈ overhead
+//                        of log dispatch + alloc on top of pure inference.
+//   WhisperMs          — derived: transcribe wall time minus VadMs and
+//                        WhisperInitMs. Pure decoding.
+//   ClipboardMs        — first clipboard write of raw transcript (rewrite
+//                        replaces it later — keep clipboard policy in mind:
+//                        max 2 states per run, raw then rewrite).
+//   LlmMs              — Ollama rewrite, full HTTP request/response wall.
+//   OllamaLoadMs       — Ollama-side model load, parsed from `load_duration`
+//                        in /api/generate response. 0 when warm.
+//   LlmPromptEvalMs    — `prompt_eval_duration` (server-side prompt eval).
+//   LlmEvalMs          — `eval_duration` (server-side generation).
+//   LlmPromptTokens    — `prompt_eval_count` (input tokens).
+//   LlmEvalTokens      — `eval_count` (output tokens). tok/s = EvalTokens / EvalMs.
+//   PasteMs            — UIA probe + SendInput Ctrl+V wall time.
 public sealed record LatencyPayload(
-    [property: JsonPropertyName("audio_sec")]    double AudioSec,
-    [property: JsonPropertyName("vad_ms")]       long   VadMs,
-    [property: JsonPropertyName("whisper_ms")]   long   WhisperMs,
-    [property: JsonPropertyName("llm_ms")]       long   LlmMs,
-    [property: JsonPropertyName("clipboard_ms")] long   ClipboardMs,
-    [property: JsonPropertyName("paste_ms")]     long   PasteMs,
-    [property: JsonPropertyName("strategy")]     string Strategy,
-    [property: JsonPropertyName("n_segments")]   int    NSegments,
-    [property: JsonPropertyName("text_chars")]   int    TextChars,
-    [property: JsonPropertyName("text_words")]   int    TextWords,
-    [property: JsonPropertyName("profile")]      string Profile,
-    [property: JsonPropertyName("pasted")]       bool   Pasted,
-    [property: JsonPropertyName("outcome")]      string Outcome);
+    [property: JsonPropertyName("audio_sec")]             double AudioSec,
+    [property: JsonPropertyName("model_load_ms")]         long   ModelLoadMs,
+    [property: JsonPropertyName("hotkey_to_capture_ms")]  long   HotkeyToCaptureMs,
+    [property: JsonPropertyName("record_drain_ms")]       long   RecordDrainMs,
+    [property: JsonPropertyName("stop_to_pipeline_ms")]   long   StopToPipelineMs,
+    [property: JsonPropertyName("whisper_init_ms")]       long   WhisperInitMs,
+    [property: JsonPropertyName("vad_ms")]                long   VadMs,
+    [property: JsonPropertyName("vad_inference_ms")]      long   VadInferenceMs,
+    [property: JsonPropertyName("whisper_ms")]            long   WhisperMs,
+    [property: JsonPropertyName("llm_ms")]                long   LlmMs,
+    [property: JsonPropertyName("ollama_load_ms")]        long   OllamaLoadMs,
+    [property: JsonPropertyName("llm_prompt_eval_ms")]    long   LlmPromptEvalMs,
+    [property: JsonPropertyName("llm_eval_ms")]           long   LlmEvalMs,
+    [property: JsonPropertyName("llm_prompt_tokens")]     int    LlmPromptTokens,
+    [property: JsonPropertyName("llm_eval_tokens")]       int    LlmEvalTokens,
+    [property: JsonPropertyName("clipboard_ms")]          long   ClipboardMs,
+    [property: JsonPropertyName("paste_ms")]              long   PasteMs,
+    [property: JsonPropertyName("strategy")]              string Strategy,
+    [property: JsonPropertyName("n_segments")]            int    NSegments,
+    [property: JsonPropertyName("text_chars")]            int    TextChars,
+    [property: JsonPropertyName("text_words")]            int    TextWords,
+    [property: JsonPropertyName("profile")]               string Profile,
+    [property: JsonPropertyName("pasted")]                bool   Pasted,
+    [property: JsonPropertyName("outcome")]               string Outcome);
 
 // Whisper-side configuration captured alongside the raw text. InitialPrompt
 // is the new knob: benchmark runs group corpus entries by prompt version to
