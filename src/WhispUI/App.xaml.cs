@@ -73,9 +73,21 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         // File sink first — captures every event from boot, including the
         // startup milestones flushed at the end of OnLaunched. Writes under
-        // the telemetry storage directory (benchmark/ in dev layout).
+        // the telemetry storage directory (benchmark/ in dev layout, or
+        // LocalState/telemetry/ in packaged mode — see AppPaths).
         TelemetryService.Instance.AddSink(new JsonlFileSink());
         Milestone("filesink");
+
+        // Resolved paths logged once at boot — useful for support: tells us
+        // immediately whether the user's app is running packaged or not, and
+        // where it's looking for settings, models, and telemetry. Touching
+        // any AppPaths member triggers the static ctor that runs the
+        // detection and creates the directories if needed.
+        _log.Info(LogSource.App,
+            $"AppPaths initialized | packaged={AppPaths.IsPackaged}" +
+            $" | config={AppPaths.ConfigDirectory}" +
+            $" | models={AppPaths.ModelsDirectory}" +
+            $" | telemetry={AppPaths.TelemetryDirectory ?? "(none)"}");
 
         _engine = new WhispEngine();
         Milestone("engine");
@@ -147,22 +159,22 @@ public partial class App : Microsoft.UI.Xaml.Application
             _log.Info(LogSource.Status, status);
             // Beacon app icon in LogWindow + PlaygroundWindow: red =
             // recording, grey = idle. Single source of truth driven
-            // from the engine status transition.
-            bool isRecording = status == "Recording";
+            // from the engine status transition. StartsWith covers the
+            // "Recording…" ellipsis variant emitted by RaiseStatus to
+            // signal a transient state visually in the tray tooltip.
+            bool isRecording = status.StartsWith("Recording");
             _logWindow.SetRecordingState(isRecording);
             _playgroundWindow?.SetRecordingState(isRecording);
 
             // HUD: driven by status transition. Background thread → HudWindow
-            // marshals internally via DispatcherQueue.
-            if (status == "Recording")
+            // marshals internally via DispatcherQueue. StartsWith on every
+            // branch so transient ellipsis variants ("Transcribing…",
+            // "Rewriting (cleanup)…") all route correctly.
+            if (status.StartsWith("Recording"))
                 _hudWindow.ShowRecording();
-            else if (status == "Transcribing")
+            else if (status.StartsWith("Transcribing"))
                 _hudWindow.SwitchToTranscribing();
-            // Engine emits "Réécriture (...)" today; the FR→EN sweep at
-            // WhispEngine.cs:858 ("Rewriting (...)") lands once the parallel
-            // logs branch is merged. Match both so the dispatcher is robust
-            // across the swap.
-            else if (status.StartsWith("Réécriture") || status.StartsWith("Rewriting"))
+            else if (status.StartsWith("Rewriting"))
                 _hudWindow.SwitchToRewriting();
         };
         _engine.TranscriptionFinished += outcome =>
