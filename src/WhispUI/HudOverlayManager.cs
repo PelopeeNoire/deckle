@@ -4,6 +4,7 @@ using Microsoft.UI.Dispatching;
 using WhispUI.Interop;
 using WhispUI.Logging;
 using WhispUI.Settings;
+using WhispUI.Shell;
 
 namespace WhispUI;
 
@@ -51,7 +52,7 @@ internal sealed class HudOverlayManager : IDisposable
 
         if (!_dispatcher.HasThreadAccess)
         {
-            _dispatcher.TryEnqueue(() => Enqueue(fb));
+            _dispatcher.TryEnqueueOrLog(() => Enqueue(fb), LogSource.Hud, "overlay enqueue");
             return;
         }
 
@@ -99,7 +100,7 @@ internal sealed class HudOverlayManager : IDisposable
 
         if (!_dispatcher.HasThreadAccess)
         {
-            _dispatcher.TryEnqueue(() => OnMainHudVisibilityChanged(sender, visible));
+            _dispatcher.TryEnqueueOrLog(() => OnMainHudVisibilityChanged(sender, visible), LogSource.Hud, "main HUD visibility change");
             return;
         }
 

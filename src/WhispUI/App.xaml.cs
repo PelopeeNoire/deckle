@@ -47,6 +47,16 @@ public partial class App : Microsoft.UI.Xaml.Application
             _log.Error(LogSource.Crash, $"[TaskScheduler] {e.Exception.GetType().Name}: {e.Exception.Message}");
             e.SetObserved();
         };
+
+        // Trace explicit du process-exit. Le sink JsonlFileSink flush à
+        // chaque écriture (using StreamWriter), donc les events précédents
+        // sont déjà sur disque — mais distinguer un shutdown propre d'un
+        // crash brut dans les logs aide le post-mortem. Pas un dump, juste
+        // un marqueur "on est sorti par cette voie".
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            _log.Info(LogSource.App, "ProcessExit triggered");
+        };
     }
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
@@ -199,7 +209,32 @@ public partial class App : Microsoft.UI.Xaml.Application
         _messageHost = new MessageOnlyHost();
         _tray.Register(_messageHost.Hwnd);
         _hotkeyManager = new HotkeyManager(_messageHost.Hwnd, OnHotkey);
-        _hotkeyManager.Register();
+        // Try/catch obligatoire : RegisterHotKey peut échouer avec err 1409
+        // (ERROR_HOTKEY_ALREADY_REGISTERED) quand un autre process possède
+        // déjà la combinaison — typiquement WhispInteropTest qui tourne
+        // encore via la tâche planifiée Whisp, ou PowerToys / une app
+        // tierce qui a pris Win+1. Sans ce filet, le throw d'HotkeyManager
+        // remonte à OnLaunched et l'app refuse de démarrer.
+        //
+        // Compromis : l'app continue de démarrer mais sans hotkeys. Le
+        // tray reste opérationnel (Settings, Quit, toggle recording via
+        // clic), donc l'utilisateur n'est pas verrouillé. UserFeedback
+        // Overlay informe visuellement via le HUD au boot.
+        try
+        {
+            _hotkeyManager.Register();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                LogSource.Hotkey,
+                $"Hotkey registration failed: {ex.Message}",
+                new UserFeedback(
+                    "Hotkeys unavailable",
+                    "Another app owns the chord (often WhispInteropTest still running). Use the tray icon to record.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Overlay));
+        }
         Milestone("hotkeys");
 
         // Silent warmup — runs a dummy transcription on a zero-filled buffer
