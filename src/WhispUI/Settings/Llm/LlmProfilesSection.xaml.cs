@@ -203,8 +203,9 @@ public sealed partial class LlmProfilesSection : UserControl
         ProfilesChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // Scope: the Profiles list only. Replaces user-authored profiles with the
-    // default three (Nettoyage, Restructuration, Prompt). MigrateProfileIds
+    // Scope: the Profiles list only. Replaces user-authored profiles with
+    // the defaults (4 brackets — Relecture, Lissage, Affinage, Arrangement —
+    // plus Prompt for the Primary Rewrite shortcut). MigrateProfileIds
     // rewires slot/rule references to the new default IDs so the related
     // sections don't end up pointing at orphan profiles. ProfilesChanged
     // triggers the host to reload Rules + ShortcutSlots.
