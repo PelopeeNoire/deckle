@@ -275,7 +275,8 @@ Verbose   MODEL  model unloaded | idle_s={X} | state=vram-freed
 **Mesures disponibles**
 
 - `[logué]` warmup_ms total (Verbose)
-- `[à instrumenter]` breakdown : model_load_ms / vad_ms / whisper_ms
+- `[logué runtime, pas warmup]` `model_load_ms` capturé par `LoadModel()` et exposé sur le prochain `LatencyPayload`. Le warmup paye souvent ce coût en premier (modèle pas encore en VRAM), donc le 1er hotkey post-warmup voit `model_load_ms=0`. Pour observer le coût pur du warmup load, regarder le Verbose `MODEL load complete | load_ms={X}` émis pendant `Warmup()`.
+- `[à instrumenter]` warmup breakdown distinct : vad_ms / whisper_ms du run silencieux (aujourd'hui gated par `_isWarmup`, aucun payload n'est émis)
 - `[à instrumenter]` résultat flag : model_ok / ollama_ok (vague 3)
 - `[à instrumenter]` texte produit sur WAV de référence (vague 3) — pour vérifier plausibilité
 
@@ -434,11 +435,12 @@ timestamp). Activity montre uniquement `Transcribing` et
 
 - `[logué]` request init : text_chars, model, profile, family, options
 - `[logué]` Rewrite OK : total_ms, in_chars, out_chars, profile
-- `[logué]` metrics détaillés : total/load/prompt/output ms, tokens, tok/s
+- `[logué]` metrics détaillés : total/load/prompt/output ms, tokens, tok/s (Verbose LLM)
+- `[logué]` `ollama_load_ms`, `llm_prompt_eval_ms`, `llm_eval_ms`, `llm_prompt_tokens`, `llm_eval_tokens` remontés au caller via `RewriteResult` et écrits dans le `LatencyPayload` JSONL — permet l'analyse stat hors LogWindow.
 - `[logué]` polling /api/ps warnings pendant attente
 - `[logué]` timeout 15 min (Warning)
 - `[logué]` unavailable (Warning log)
-- `[à instrumenter]` first-token latency (dans stream response si on y passe)
+- `[à instrumenter]` first-token latency (dans stream response si on y passe — voir règle clipboard 2-états dans `CLAUDE.md` avant d'attaquer)
 
 **Gabarit standard**
 
@@ -510,25 +512,49 @@ reste désactivé.
 
 ### 10. Recap final
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:1328-1350` (Verbose recap +
-Narrative Done), `1341-1350` (LatencyPayload)
+**Fichier** : `src/WhispUI/WhispEngine.cs:1921-1956` (Verbose recap +
+Narrative Done + LatencyPayload).
 
-**Mesures disponibles**
+**Mesures disponibles** — toutes écrites dans le `LatencyPayload` (JSONL `latency.jsonl`), accessibles aussi via Verbose `DONE timings`.
 
-- `[logué]` outcome, audio_sec, vad_ms, whisper_ms, llm_ms, clipboard_ms,
-  paste_ms, strategy, n_segments, text_chars, text_words, profile, pasted
-  (tout dans le LatencyPayload structuré, écrit en JSONL)
-- `[logué]` Narrative Done "Done — X s of dictation processed"
-- `[à splitter]` la ligne Verbose monobloc actuelle (ligne 1328) — 200+ chars
-  → séparer en plusieurs Info lisibles
+Pipeline (entrée → sortie) :
+
+- `[logué]` `audio_sec` — durée de l'enregistrement (1 décimale).
+- `[logué]` `model_load_ms` — load Whisper du run, 0 si warm.
+- `[logué]` `hotkey_to_capture_ms` — entrée `StartRecording` → `waveInStart`. Inclut `model_load_ms` sur cold start, plus mic probe et thread spin-up.
+- `[logué]` `record_drain_ms` — `_stopRecording=true` → fin de `Record()` (waveInStop + 100 ms guard sleep + drain buffers + telemetry compute). Sous-ensemble de `stop_to_pipeline_ms`.
+- `[logué]` `stop_to_pipeline_ms` — entrée `StopRecording` → première ligne `whisper_vad`. Couvre `record_drain` + `Transcribe` entry.
+- `[logué]` `whisper_init_ms` — entrée `whisper_full()` → première ligne `whisper_vad`. Pré-VAD overhead côté whisper.cpp.
+- `[logué]` `vad_ms` — wall time bracket parsing logs whisper.cpp (premier `whisper_vad` → `Reduced audio from`).
+- `[logué]` `vad_inference_ms` — `vad time = X ms` parsé depuis les logs whisper.cpp. `vad_ms − vad_inference_ms` = overhead non-inférence (alloc, log dispatch).
+- `[logué]` `whisper_ms` — décodage pur : `transcribe_total − vad_ms − whisper_init_ms`.
+- `[logué]` `llm_ms` — wall caller-side : HTTP POST + lecture body + JSON parse.
+- `[logué]` `ollama_load_ms` — `load_duration` Ollama. 0 si modèle déjà résident.
+- `[logué]` `llm_prompt_eval_ms` — `prompt_eval_duration` (eval input tokens).
+- `[logué]` `llm_eval_ms` — `eval_duration` (génération output tokens).
+- `[logué]` `llm_prompt_tokens` — `prompt_eval_count` (tokens d'entrée).
+- `[logué]` `llm_eval_tokens` — `eval_count` (tokens de sortie). `tok/s = llm_eval_tokens / llm_eval_ms`.
+- `[logué]` `clipboard_ms` — copie raw + verify (rewrite remplace ensuite, voir règle clipboard).
+- `[logué]` `paste_ms` — UIA probe + SendInput Ctrl+V.
+- `[logué]` `n_segments`, `text_chars`, `text_words`, `strategy`, `profile`, `pasted`, `outcome`.
+- `[logué]` Narrative DONE "Done — X s of dictation processed".
+
+**Côté LogWindow** : la ligne `[LATENCY]` (rendu compact dans `TelemetryService.Latency`) montre `audio | hotkey | vad | whisper | llm | outcome` — les étapes qui varient run-to-run et que l'œil humain peut diagnostiquer d'un coup. Les autres champs ne sont pas dans le rendu compact mais vivent dans le JSONL avec full précision.
 
 **Gabarit standard**
 
 ```
 Success   DONE Done ({outcome})
-Verbose   DONE timings | audio_sec={X:F1} | vad_ms={X} | whisper_ms={X} | llm_ms={X} | clipboard_ms={X} | paste_ms={X}
+Verbose   DONE timings | audio_sec={X:F1} | model_load_ms={X} | hotkey_to_capture_ms={X} | record_drain_ms={X} | stop_to_pipeline_ms={X} | whisper_init_ms={X} | vad_ms={X} | vad_inference_ms={X} | whisper_ms={X} | llm_ms={X} | clipboard_ms={X} | paste_ms={X}
+Verbose   DONE llm_metrics | ollama_load_ms={X} | prompt_eval_ms={X} | eval_ms={X} | prompt_tokens={n} | eval_tokens={n}
 Verbose   DONE outputs | n_seg={n} | chars={n} | words={n} | strategy={name} | profile={name} | outcome={name}
 Narrative DONE Done — {audio_sec:F1} s of dictation processed. Ready for the next.
+```
+
+**Rendu LogWindow** (précompilé par `TelemetryService.Latency`)
+
+```
+HH:mm:ss.fff [LATENCY] audio={X.X}s hotkey={X}ms vad={X}ms whisper={X}ms llm={X}ms outcome={X}
 ```
 
 ---

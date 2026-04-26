@@ -70,12 +70,22 @@ public sealed class TelemetryService
     //
     // One row per completed transcription (including no-speech outcomes).
     // Compact [LATENCY] rendering in LogWindow; own latency.jsonl file.
+    //
+    // The compact line in LogWindow shows the stages whose magnitude varies
+    // run-to-run (the ones a human glance can spot a regression on). Less
+    // visible stages (clipboard, paste, stop_to_pipeline, whisper_init) live
+    // in the JSONL only — the structured payload carries every field with
+    // full precision regardless of what the row shows.
     public void Latency(LatencyPayload payload)
     {
+        var c = CultureInfo.InvariantCulture;
         string text =
             $"{DateTime.Now:HH:mm:ss.fff} [LATENCY] " +
-            $"audio={payload.AudioSec.ToString("F1", CultureInfo.InvariantCulture)}s " +
-            $"whisper={payload.WhisperMs}ms llm={payload.LlmMs}ms paste={payload.PasteMs}ms " +
+            $"audio={payload.AudioSec.ToString("F1", c)}s " +
+            $"hotkey={payload.HotkeyToCaptureMs}ms " +
+            $"vad={payload.VadMs}ms " +
+            $"whisper={payload.WhisperMs}ms " +
+            $"llm={payload.LlmMs}ms " +
             $"outcome={payload.Outcome}";
         Emit(new TelemetryEvent(TelemetryKind.Latency, SessionId, payload, LogLevel.Info, feedback: null, text));
     }

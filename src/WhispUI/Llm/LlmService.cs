@@ -23,6 +23,22 @@ namespace WhispUI.Llm;
 // Designed to be called from a background thread — .GetAwaiter().GetResult()
 // is safe here (no synchronization context on this thread).
 
+// Result returned by Rewrite — pairs the rewritten text with the structured
+// metrics Ollama reports on /api/generate. Wrapping them avoids losing the
+// timings to the Verbose log line when the caller wants them in a payload
+// (LatencyPayload, benchmark exports). Every numeric field is in ms /
+// tokens to stay aligned with the logging inventory vocabulary. All zeros
+// when Rewrite short-circuits (no model configured, timeout, exception) —
+// the caller is expected to check Text != null before reading metrics.
+internal readonly record struct RewriteResult(
+    string?      Text,
+    long         TotalMs,
+    long         OllamaLoadMs,
+    long         PromptEvalMs,
+    long         EvalMs,
+    int          PromptTokens,
+    int          EvalTokens);
+
 internal class LlmService
 {
     private static readonly LogService _log = LogService.Instance;
@@ -48,14 +64,14 @@ internal class LlmService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public string? Rewrite(string text, string endpoint, RewriteProfile profile)
+    public RewriteResult Rewrite(string text, string endpoint, RewriteProfile profile)
     {
         if (string.IsNullOrWhiteSpace(profile.Model))
         {
             _log.Warning(LogSource.Llm,
                 $"profile '{profile.Name}' has no model configured — rewrite skipped. " +
                 $"Set it in Settings → LLM.");
-            return null;
+            return default;
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -121,7 +137,20 @@ internal class LlmService
                 _log.Success(LogSource.Llm, "Rewrite complete");
                 _log.Verbose(LogSource.Llm, $"rewrite complete | ms={sw.ElapsedMilliseconds} | in_chars={text.Length} | out_chars={trimmed.Length} | profile={profile.Name}");
                 _log.Verbose(LogSource.Llm, FormatMetrics(doc.RootElement));
-                return trimmed;
+
+                // Pull the same Ollama metrics the Verbose line above shows
+                // and lift them up to the caller in ms/tokens. Two lookups of
+                // each field would duplicate the JSON parse cost — done in
+                // ExtractMetrics in one pass.
+                var m = ExtractMetrics(doc.RootElement);
+                return new RewriteResult(
+                    Text:         trimmed,
+                    TotalMs:      sw.ElapsedMilliseconds,
+                    OllamaLoadMs: m.LoadMs,
+                    PromptEvalMs: m.PromptEvalMs,
+                    EvalMs:       m.EvalMs,
+                    PromptTokens: m.PromptTokens,
+                    EvalTokens:   m.EvalTokens);
             }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
@@ -135,7 +164,7 @@ internal class LlmService
                     $"Over {REWRITE_HARD_CAP.TotalMinutes:F0} min. Raw transcript copied.",
                     UserFeedbackSeverity.Warning,
                     UserFeedbackRole.Overlay));
-            return null;
+            return new RewriteResult(null, sw.ElapsedMilliseconds, 0, 0, 0, 0, 0);
         }
         catch (Exception ex)
         {
@@ -148,7 +177,7 @@ internal class LlmService
                     "Ollama unreachable. Raw transcript copied.",
                     UserFeedbackSeverity.Warning,
                     UserFeedbackRole.Overlay));
-            return null;
+            return new RewriteResult(null, sw.ElapsedMilliseconds, 0, 0, 0, 0, 0);
         }
     }
 
@@ -323,6 +352,30 @@ internal class LlmService
         if (root.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.Number)
             return prop.GetInt64();
         return 0;
+    }
+
+    // Same Ollama fields as FormatMetrics, extracted in ms / token counts so
+    // the caller can stash them in a structured payload (LatencyPayload).
+    // Kept as a private struct to avoid leaking the internal field names.
+    // Nanoseconds → milliseconds: integer division to stay aligned with the
+    // ms-int convention of the logging inventory (no need for sub-ms precision
+    // on durations measured server-side over hundreds of ms).
+    private readonly record struct OllamaMetrics(
+        long LoadMs, long PromptEvalMs, long EvalMs, int PromptTokens, int EvalTokens);
+
+    static OllamaMetrics ExtractMetrics(JsonElement root)
+    {
+        long load = GetLong(root, "load_duration");
+        long pDur = GetLong(root, "prompt_eval_duration");
+        long eDur = GetLong(root, "eval_duration");
+        int  pCnt = (int)GetLong(root, "prompt_eval_count");
+        int  eCnt = (int)GetLong(root, "eval_count");
+        return new OllamaMetrics(
+            LoadMs:       load / 1_000_000,
+            PromptEvalMs: pDur / 1_000_000,
+            EvalMs:       eDur / 1_000_000,
+            PromptTokens: pCnt,
+            EvalTokens:   eCnt);
     }
 
     /// <summary>
