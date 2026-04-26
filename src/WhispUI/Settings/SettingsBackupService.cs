@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -20,7 +19,6 @@ namespace WhispUI.Settings;
 //   • RestoreFromBackup(p) — overwrites settings.json with the snapshot,
 //                            then asks SettingsService to Reload so every
 //                            subscribed page refreshes.
-//   • OpenBackupDirectory  — opens the backup folder in File Explorer.
 //
 // Where snapshots live:
 //   • Default: <AppPaths.ConfigDirectory>/backups/. Created on first write.
@@ -166,32 +164,6 @@ internal static class SettingsBackupService
             LogService.Instance.Error(LogSource.Settings,
                 $"restore failed | error={ex.GetType().Name}: {ex.Message}");
             return false;
-        }
-    }
-
-    // Open the backup directory in File Explorer. Creates the directory
-    // first if it doesn't exist yet — it's surprising to click "Open" and
-    // get an error because no backup has been taken yet.
-    public static void OpenBackupDirectory()
-    {
-        try
-        {
-            string dir = GetDirectory();
-            Directory.CreateDirectory(dir);
-
-            // UseShellExecute=true routes through Explorer (the default
-            // file manager). Without it we'd be trying to spawn a folder
-            // path as a process, which fails.
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = dir,
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception ex)
-        {
-            LogService.Instance.Warning(LogSource.Settings,
-                $"open backup folder failed | error={ex.GetType().Name}: {ex.Message}");
         }
     }
 

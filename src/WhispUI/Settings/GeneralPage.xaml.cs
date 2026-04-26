@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -370,31 +369,26 @@ public sealed partial class GeneralPage : Page
 
     // ── Backup ──────────────────────────────────────────────────────────────
     //
-    // Three actions: Create (writes a snapshot), Restore (overwrites
-    // settings.json after explicit confirmation), Refresh (re-enumerates the
-    // list). The folder picker mirrors the telemetry one — same FolderPicker
-    // + InitializeWithWindow dance for unpackaged WinUI 3.
+    // PowerToys-style: a single SettingsExpander, two header actions
+    // (Back up / Restore), and a folder picker for the location. Restore
+    // targets the latest snapshot — older ones live in the folder and are
+    // restorable by hand if ever needed. The folder picker mirrors the
+    // telemetry one — same FolderPicker + InitializeWithWindow dance for
+    // unpackaged WinUI 3.
 
     private void CreateBackupButton_Click(object sender, RoutedEventArgs e)
     {
-        var info = SettingsBackupService.CreateBackup();
+        SettingsBackupService.CreateBackup();
         ViewModel.RefreshBackups();
-        if (info is not null)
-        {
-            // Pre-select the snapshot we just created so a follow-up Restore
-            // click rolls back to it (the most common immediate use of the
-            // create button — "let me try this and revert if I don't like").
-            BackupCombo.SelectedItem = ViewModel.Backups
-                .FirstOrDefault(b => b.Path == info.Path);
-        }
     }
 
     private async void RestoreBackupButton_Click(object sender, RoutedEventArgs e)
     {
-        if (BackupCombo.SelectedItem is not BackupInfo selected)
+        var latest = ViewModel.LatestBackup;
+        if (latest is null)
         {
             _log.Warning(LogSource.SetGeneral,
-                "restore skipped | reason=no_selection");
+                "restore skipped | reason=no_backup");
             return;
         }
 
@@ -402,7 +396,7 @@ public sealed partial class GeneralPage : Page
         {
             XamlRoot = this.XamlRoot,
             Title = "Restore settings?",
-            Content = $"This will overwrite your current settings with the snapshot from {selected.DisplayName}. Your current settings will not be saved unless you create a backup first.",
+            Content = $"This will overwrite your current settings with the snapshot from {latest.DisplayName}. Your current settings will not be saved unless you back them up first.",
             PrimaryButtonText = "Restore",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -411,7 +405,7 @@ public sealed partial class GeneralPage : Page
         var result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary) return;
 
-        bool ok = SettingsBackupService.RestoreFromBackup(selected.Path);
+        bool ok = SettingsBackupService.RestoreFromBackup(latest.Path);
         if (!ok) return;
 
         // Settings have been replaced and SettingsService.Reload has fired
@@ -438,11 +432,6 @@ public sealed partial class GeneralPage : Page
         }
     }
 
-    private void RefreshBackupsButton_Click(object sender, RoutedEventArgs e)
-    {
-        ViewModel.RefreshBackups();
-    }
-
     private async void ChangeBackupFolderButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -462,19 +451,11 @@ public sealed partial class GeneralPage : Page
             if (folder is null) return;
 
             ViewModel.BackupDirectory = folder.Path;
-            // OnBackupDirectoryChanged already calls RefreshBackups, but the
-            // user explicit action deserves an immediate refill regardless.
-            ViewModel.RefreshBackups();
         }
         catch (Exception ex)
         {
             _log.Error(LogSource.SetGeneral,
                 $"Change backup folder failed: {ex.GetType().Name}: {ex.Message}");
         }
-    }
-
-    private void OpenBackupFolderButton_Click(object sender, RoutedEventArgs e)
-    {
-        SettingsBackupService.OpenBackupDirectory();
     }
 }

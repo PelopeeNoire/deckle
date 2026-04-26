@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WhispUI.Logging;
 using WhispUI.Shell;
@@ -268,20 +269,40 @@ public partial class GeneralViewModel : ObservableObject
     //
     // BackupDirectory is the user override for where snapshots live (empty =
     // <AppPaths.ConfigDirectory>/backups/, see SettingsService.ResolveBackupDirectory).
-    // Backups is the live observable list driving the Restore ComboBox; it
-    // refills via RefreshBackups() — called on Load, after CreateBackup, and
-    // any time the BackupDirectory changes.
+    // Backups is the live list refilled by RefreshBackups() — called on Load,
+    // after CreateBackup, and any time BackupDirectory changes. The PowerToys-
+    // style UI only surfaces the latest snapshot (file name + created at);
+    // older snapshots remain on disk for manual access via the folder picker.
 
     [ObservableProperty]
     public partial string BackupDirectory { get; set; }
 
     public ObservableCollection<BackupInfo> Backups { get; } = new();
 
+    public BackupInfo? LatestBackup => Backups.Count > 0 ? Backups[0] : null;
+
+    public bool HasBackup => LatestBackup is not null;
+
+    public string LatestBackupFileName => LatestBackup is null
+        ? "—"
+        : Path.GetFileName(LatestBackup.Path);
+
+    public string LatestBackupCreatedAt => LatestBackup is null
+        ? "No backup yet"
+        : LatestBackup.Timestamp.LocalDateTime.ToString("g");
+
+    // Projection of the resolved backup directory (user override or default).
+    // Read-only display string used in the SettingsExpander Location card —
+    // shows where snapshots actually land, not what the user typed in the
+    // override field. Refreshed when BackupDirectory changes.
+    public string BackupLocationDisplay => SettingsBackupService.GetDirectory();
+
     partial void OnBackupDirectoryChanged(string value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Paths.BackupDirectory ← \"{value}\"");
         PushToSettings();
+        OnPropertyChanged(nameof(BackupLocationDisplay));
         RefreshBackups();
     }
 
@@ -290,6 +311,12 @@ public partial class GeneralViewModel : ObservableObject
         Backups.Clear();
         foreach (var b in SettingsBackupService.ListBackups())
             Backups.Add(b);
+
+        OnPropertyChanged(nameof(LatestBackup));
+        OnPropertyChanged(nameof(HasBackup));
+        OnPropertyChanged(nameof(LatestBackupFileName));
+        OnPropertyChanged(nameof(LatestBackupCreatedAt));
+        OnPropertyChanged(nameof(BackupLocationDisplay));
     }
 
     // ── Sync with SettingsService ────────────────────────────────────────────
