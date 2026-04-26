@@ -17,14 +17,14 @@ namespace WhispUI.Logging;
 // Resolution order:
 //   1. User-configured TelemetrySettings.StorageDirectory (absolute path),
 //      when non-empty.
-//   2. The dev fallback: walk up from the exe directory, looking for a
-//      sibling "benchmark" folder. Returns "<benchmark>/telemetry".
+//   2. AppPaths.TelemetryDirectory: in packaged mode this is
+//      LocalState/telemetry/; in dev unpackaged this is the walk-up to
+//      <repo>/benchmark/telemetry/.
 //
-// Returns null when both paths fail — callers skip persistence.
+// Returns null when both paths are absent (dev outside the repo with no
+// benchmark/ ancestor) — callers skip persistence silently.
 public static class CorpusPaths
 {
-    private static readonly Lazy<string?> _defaultBaseDir = new(ResolveDefaultBaseDir);
-
     public static string? GetDirectoryPath()
     {
         string custom = "";
@@ -40,10 +40,10 @@ public static class CorpusPaths
         if (!string.IsNullOrWhiteSpace(custom))
             return custom;
 
-        return _defaultBaseDir.Value;
+        return AppPaths.TelemetryDirectory;
     }
 
-    public static string? GetDefaultDirectoryPath() => _defaultBaseDir.Value;
+    public static string? GetDefaultDirectoryPath() => AppPaths.TelemetryDirectory;
 
     // Lowercase ASCII, hyphen-separated slug. Accented characters are
     // transliterated via Unicode normalization (NFD + non-spacing-mark
@@ -76,29 +76,5 @@ public static class CorpusPaths
         foreach (char invalid in Path.GetInvalidFileNameChars())
             s = s.Replace(invalid, '-');
         return s;
-    }
-
-    private static string? ResolveDefaultBaseDir()
-    {
-        try
-        {
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir is not null)
-            {
-                string bench = Path.Combine(dir.FullName, "benchmark");
-                if (Directory.Exists(bench))
-                {
-                    string telemetry = Path.Combine(bench, "telemetry");
-                    Directory.CreateDirectory(telemetry);
-                    return telemetry;
-                }
-                dir = dir.Parent;
-            }
-        }
-        catch
-        {
-            // Fall through — persistence disabled.
-        }
-        return null;
     }
 }

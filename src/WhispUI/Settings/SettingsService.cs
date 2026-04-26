@@ -9,15 +9,14 @@ namespace WhispUI.Settings;
 
 // ── SettingsService ───────────────────────────────────────────────────────────
 //
-// Singleton. Charge AppSettings depuis ./config/settings.json au démarrage,
-// expose l'instance courante, et écrit le fichier sur demande avec un léger
+// Singleton. Charge AppSettings depuis settings.json au démarrage, expose
+// l'instance courante, et écrit le fichier sur demande avec un léger
 // debounce (300 ms) pour ne pas réécrire à chaque tick de slider.
 //
-// Emplacement volontairement DANS le dossier de l'application (à côté de
-// l'exe via AppContext.BaseDirectory) et non dans %LOCALAPPDATA% — choix assumé
-// pour cette version unpackaged. Si un jour l'app est packagée MSIX (Store),
-// il faudra basculer vers ApplicationData.Current.LocalFolder (Program Files
-// devient read-only en sandbox Store).
+// Emplacement résolu via AppPaths.ConfigDirectory : à côté de l'exe en mode
+// unpackaged (dev), sous ApplicationData.Current.LocalFolder en packagé MSIX
+// (Program Files devient read-only en sandbox MSIX, et LocalState est l'emplacement
+// standard pour les données utilisateur côté Windows moderne).
 //
 // Thread-safety : toutes les mutations de Current doivent passer par Save().
 // Les lecteurs (WhispEngine côté thread de transcription) prennent une
@@ -53,11 +52,10 @@ public sealed class SettingsService
 
     private SettingsService()
     {
-        string baseDir = AppContext.BaseDirectory;
-        string configDir = Path.Combine(baseDir, "config");
-        _configPath = Path.Combine(configDir, "settings.json");
-
-        Directory.CreateDirectory(configDir);
+        // ConfigDirectory is created by AppPaths static ctor; redundant
+        // CreateDirectory left out on purpose so this constructor reads
+        // as "AppPaths owns the location, we just consume it".
+        _configPath = Path.Combine(AppPaths.ConfigDirectory, "settings.json");
 
         _current = Load(out bool migrated);
         _debounceTimer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
@@ -265,29 +263,18 @@ public sealed class SettingsService
         _debounceTimer.Change(300, Timeout.Infinite);
     }
 
-    // Resolves the directory containing .bin files (Whisper models + VAD Silero).
-    // If the user hasn't configured a custom path, walks up from the exe directory
-    // looking for a `models/` folder with at least one .bin. Covers both the
-    // publish layout (exe in `publish/`, models 2 levels up) and the dev layout
-    // (exe in `bin/x64/Release/net10.0-*/`, models 6 levels up).
+    // Resolves the directory containing .bin files (Whisper models + VAD
+    // Silero). If the user has configured a custom path, that wins. Otherwise
+    // delegates to AppPaths.ModelsDirectory (which handles packaged vs dev
+    // walk-up). Layered this way so the user override stays reachable from
+    // the Settings UI without leaking the resolution policy into AppPaths.
     public string ResolveModelsDirectory()
     {
         string user = Current.Paths.ModelsDirectory;
         if (!string.IsNullOrWhiteSpace(user))
             return user;
 
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        for (int i = 0; i < 8 && dir != null; i++, dir = dir.Parent)
-        {
-            string candidate = Path.Combine(dir.FullName, "models");
-            if (Directory.Exists(candidate) &&
-                Directory.EnumerateFiles(candidate, "*.bin").Any())
-                return candidate;
-        }
-
-        // Nothing found: fall back to legacy path (may not exist — the scanner
-        // will show an empty list, and the user will need to configure manually).
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "models"));
+        return AppPaths.ModelsDirectory;
     }
 
     // Public pour permettre un flush synchrone avant un arrêt du process

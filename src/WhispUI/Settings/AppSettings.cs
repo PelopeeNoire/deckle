@@ -2,7 +2,8 @@ namespace WhispUI.Settings;
 
 // ── AppSettings ───────────────────────────────────────────────────────────────
 //
-// POCO racine sérialisé en JSON vers ./config/settings.json (à côté de l'exe).
+// POCO racine sérialisé en JSON vers <AppPaths.ConfigDirectory>/settings.json
+// (à côté de l'exe en dev unpackaged, sous LocalState en packagé MSIX).
 // Organisé par intention utilisateur, pas par groupes techniques de whisper.cpp.
 // Les défauts sont ceux du rapport de cartographie des paramètres Whisper.
 //

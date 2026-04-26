@@ -50,9 +50,9 @@ Placeholder, pas encore branchee.
 
 ## Persistance
 
-- `WhispUI-settings.json` a cote de l'exe (mode portable, pas `%LOCALAPPDATA%`).
+- `settings.json` sous `AppPaths.ConfigDirectory` : a cote de l'exe en dev unpackaged, sous `LocalState/config/` en packaged MSIX.
 - Sauvegarde immediate a chaque modif (pas de bouton Appliquer / Sauvegarder).
-- `SettingsService` : `Current`, `Save()` debounced 300 ms, `Changed` event, `ResolveModelsDirectory()`.
+- `SettingsService` : `Current`, `Save()` debounced 300 ms, `Changed` event, `ResolveModelsDirectory()` (delegue a `AppPaths.ModelsDirectory` quand pas d'override user).
 
 ## Backdrop + presenter
 
