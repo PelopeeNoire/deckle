@@ -43,6 +43,12 @@ public sealed class SettingsService
         get { lock (_lock) return _current; }
     }
 
+    // Exposed read-only so SettingsBackupService can locate the live file
+    // without duplicating the AppPaths.ConfigDirectory + "settings.json"
+    // resolution. Internal callers only — this is not part of any
+    // settings-changing surface.
+    internal string ConfigPath => _configPath;
+
     // Levé après une écriture disque réussie. Les consommateurs (UI, engine)
     // peuvent s'abonner pour réagir à un changement externe au fichier ou à
     // un Save explicite. L'engine, lui, re-lit Current au début de chaque
@@ -275,6 +281,42 @@ public sealed class SettingsService
             return user;
 
         return AppPaths.ModelsDirectory;
+    }
+
+    // Resolves the directory where settings backups (snapshots) live. Same
+    // layered pattern as ResolveModelsDirectory: user override wins, otherwise
+    // a `backups/` folder next to settings.json. Returned path may not exist
+    // yet — SettingsBackupService creates it on the first CreateBackup call.
+    public string ResolveBackupDirectory()
+    {
+        string user = Current.Paths.BackupDirectory;
+        if (!string.IsNullOrWhiteSpace(user))
+            return user;
+
+        return Path.Combine(AppPaths.ConfigDirectory, "backups");
+    }
+
+    // Re-reads settings.json from disk and replaces the in-memory snapshot.
+    // Used by SettingsBackupService.RestoreFromBackup after it has overwritten
+    // the live settings.json with the contents of a snapshot file. Mutates
+    // Current under the lock and raises Changed so subscribed UI pages
+    // refresh their bound state.
+    //
+    // Bypasses the debounce timer on purpose: we want the new state visible
+    // immediately, not 300 ms later. Any in-flight Save() (a slider mutation
+    // happening at the same time) loses to this reload — that's acceptable
+    // because Restore is an explicit user action that supersedes any pending
+    // edit.
+    public void Reload()
+    {
+        var fresh = Load(out bool migrated);
+        lock (_lock)
+        {
+            _current = fresh;
+        }
+        if (migrated) Flush();
+        LogService.Instance.Info(LogSource.Settings, "reloaded from disk");
+        Changed?.Invoke();
     }
 
     // Public pour permettre un flush synchrone avant un arrêt du process
