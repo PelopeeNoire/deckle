@@ -242,11 +242,26 @@ public sealed partial class HudWindow : Window
     {
         if (DispatcherQueue.HasThreadAccess) { SetState(HudState.Hidden); return; }
         var done = new ManualResetEventSlim();
-        DispatcherQueue.TryEnqueue(() =>
+        bool enqueued = DispatcherQueue.TryEnqueueOrLog(() =>
         {
             try { SetState(HudState.Hidden); } finally { done.Set(); }
-        });
-        done.Wait();
+        }, LogSource.Hud, "HideSync");
+
+        // Si l'enqueue a échoué (queue fermée pendant teardown), on évite
+        // le Wait infini en libérant immédiatement. Le HUD ne sera pas
+        // caché — mais le caller (transcribe thread) doit continuer pour
+        // que le paste suive son cours.
+        if (!enqueued) { done.Set(); return; }
+
+        // Timeout défensif : SetState est microseconds en temps normal,
+        // mais si le UI thread est bloqué (composition glitch, deadlock
+        // externe), on libère le caller plutôt que de hang la pipeline.
+        // Le paste sera émis sans le rendezvous Hide → risque de race
+        // documenté dans docs/paste.md, accepté en cas pathologique.
+        if (!done.Wait(TimeSpan.FromSeconds(5)))
+        {
+            LogService.Instance.Warning(LogSource.Hud, "HideSync timeout — UI thread didn't process within 5s, paste proceeding without Hide rendezvous");
+        }
     }
 
     // ── State dispatcher ──────────────────────────────────────────────────────
@@ -339,7 +354,7 @@ public sealed partial class HudWindow : Window
     private void EnqueueUI(Action a)
     {
         if (DispatcherQueue.HasThreadAccess) a();
-        else DispatcherQueue.TryEnqueue(() => a());
+        else DispatcherQueue.TryEnqueueOrLog(() => a(), LogSource.Hud, "ui action");
     }
 
     // Pixel rect the HUD would occupy at the current DPI + work area +

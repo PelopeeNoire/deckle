@@ -144,13 +144,13 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     public void Write(TelemetryEvent ev)
     {
         if (DispatcherQueue.HasThreadAccess) AddEntrySafe(ev);
-        else DispatcherQueue.TryEnqueue(() => AddEntrySafe(ev));
+        else DispatcherQueue.TryEnqueueOrLog(() => AddEntrySafe(ev), LogSource.LogWin, "log entry");
     }
 
     public void Clear()
     {
         if (DispatcherQueue.HasThreadAccess) ClearAll();
-        else DispatcherQueue.TryEnqueue(ClearAll);
+        else DispatcherQueue.TryEnqueueOrLog(ClearAll, LogSource.LogWin, "clear all");
     }
 
     // Beacon app icon (red = recording / grey = idle). Called from
@@ -158,7 +158,7 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     public void SetRecordingState(bool isRecording)
     {
         if (DispatcherQueue.HasThreadAccess) ApplyRecordingState(isRecording);
-        else DispatcherQueue.TryEnqueue(() => ApplyRecordingState(isRecording));
+        else DispatcherQueue.TryEnqueueOrLog(() => ApplyRecordingState(isRecording), LogSource.LogWin, "recording state");
     }
 
     private void ApplyRecordingState(bool isRecording)

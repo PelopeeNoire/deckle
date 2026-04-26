@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -7,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Llm;
+using WhispUI.Logging;
 using WhispUI.Settings.Llm;
 
 namespace WhispUI.Settings;
@@ -30,6 +32,16 @@ namespace WhispUI.Settings;
 
 public sealed partial class LlmPage : Page
 {
+    private static readonly LogService _log = LogService.Instance;
+
+    // Borne agressive sur les appels Ollama d'admin (list, show). Sans CTS,
+    // le HttpClient partagé d'OllamaService a un timeout de 30 min — adapté
+    // au push de blob GGUF, fatal pour un appel "rapide" dont on attend un
+    // retour quasi-instantané. Si Ollama est saturé (benchmark GPU concurrent,
+    // modèle qui crashe), on tombe en état "unavailable" plutôt que de geler
+    // la page Settings.
+    private static readonly TimeSpan OllamaAdminTimeout = TimeSpan.FromSeconds(5);
+
     private readonly LlmOllamaContext _context = new();
 
     public LlmPage()
@@ -40,20 +52,58 @@ public sealed partial class LlmPage : Page
 
         ModelsSection.Initialize(_context);
 
-        GeneralSection.EndpointChanged += async (_, _) => await RefreshOllamaStateAsync();
-        ProfilesSection.ProfilesChanged += (_, _) =>
-        {
-            RulesSection.Reload();
-            ShortcutSlotsSection.Reload();
-        };
-        ModelsSection.RefreshRequested += async (_, _) => await RefreshOllamaStateAsync();
+        // Handlers nommés (et non lambdas async inline) parce qu'une lambda
+        // async (_, _) => await ... est compilée comme async void : toute
+        // exception non attrapée remonte au dispatcher. Les méthodes nommées
+        // ci-dessous embarquent leur try/catch.
+        GeneralSection.EndpointChanged += OnEndpointChanged;
+        ProfilesSection.ProfilesChanged += OnProfilesChanged;
+        ModelsSection.RefreshRequested += OnRefreshRequested;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
+        // OnNavigatedTo doit être async void (signature override imposée par
+        // WinUI). Try/catch global obligatoire : sans ce filet, une exception
+        // non attrapée pendant Hydrate()/RefreshOllamaStateAsync() remonte au
+        // dispatcher et peut tuer l'app malgré Application.UnhandledException.
         base.OnNavigatedTo(e);
-        Hydrate();
-        await RefreshOllamaStateAsync();
+        try
+        {
+            Hydrate();
+            await RefreshOllamaStateAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetLlm, $"OnNavigatedTo failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private async void OnEndpointChanged(object? sender, EventArgs e)
+    {
+        try { await RefreshOllamaStateAsync(); }
+        catch (Exception ex)
+        {
+            _log.Warning(LogSource.SetLlm, $"Endpoint refresh failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private async void OnRefreshRequested(object? sender, EventArgs e)
+    {
+        try { await RefreshOllamaStateAsync(); }
+        catch (Exception ex)
+        {
+            _log.Warning(LogSource.SetLlm, $"Manual refresh failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void OnProfilesChanged(object? sender, EventArgs e)
+    {
+        // Synchrone, pas de try/catch nécessaire — Reload() ne touche que des
+        // collections en mémoire. Si un Reload lève, c'est un bug d'état
+        // ailleurs et l'UnhandledException global le capture.
+        RulesSection.Reload();
+        ShortcutSlotsSection.Reload();
     }
 
     private void Hydrate()
@@ -68,12 +118,28 @@ public sealed partial class LlmPage : Page
     {
         var service = new OllamaService(() => SettingsService.Instance.Current.Llm.OllamaEndpoint);
 
-        bool available = await service.IsAvailableAsync();
+        bool available = false;
         IReadOnlyList<OllamaModel> models = Array.Empty<OllamaModel>();
-        if (available)
+
+        // Try/catch englobant : IsAvailableAsync est déjà fail-soft (retourne
+        // false sur exception), mais ListModelsAsync peut lever (HttpRequest,
+        // TaskCanceled si CTS expire, JsonException si Ollama renvoie une
+        // erreur HTML). Tomber en état "unavailable" couvre tous les cas
+        // sans casser la page.
+        try
         {
-            try { models = await service.ListModelsAsync(); }
-            catch { models = Array.Empty<OllamaModel>(); }
+            available = await service.IsAvailableAsync();
+            if (available)
+            {
+                using var cts = new CancellationTokenSource(OllamaAdminTimeout);
+                models = await service.ListModelsAsync(cts.Token);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(LogSource.SetLlm, $"Ollama refresh skipped: {ex.GetType().Name}: {ex.Message}");
+            available = false;
+            models = Array.Empty<OllamaModel>();
         }
 
         _context.Service = service;
@@ -118,10 +184,19 @@ public sealed partial class LlmPage : Page
 
     private async void ResetAll_Click(object sender, RoutedEventArgs e)
     {
-        SettingsService.Instance.Current.Llm = new LlmSettings();
-        SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
-        SettingsService.Instance.Save();
-        Hydrate();
-        await RefreshOllamaStateAsync();
+        // Event handler async void — try/catch obligatoire pour éviter qu'une
+        // exception (Save IO, hydration UI) remonte au dispatcher.
+        try
+        {
+            SettingsService.Instance.Current.Llm = new LlmSettings();
+            SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
+            SettingsService.Instance.Save();
+            Hydrate();
+            await RefreshOllamaStateAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetLlm, $"Reset all failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 }
