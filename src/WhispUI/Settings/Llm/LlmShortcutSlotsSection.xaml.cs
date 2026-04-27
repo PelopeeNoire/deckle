@@ -7,8 +7,13 @@ namespace WhispUI.Settings.Llm;
 // ─── Rewrite shortcuts section of LlmPage ──────────────────────────────────
 //
 // Two ComboBoxes, one per manual rewrite shortcut:
-//   Primary rewrite   (Shift+Win+`)  — profile name is required (defaults to first)
+//   Primary rewrite   (Shift+Win+`)  — optional, "(None)" leaves the shortcut unbound
 //   Secondary rewrite (Ctrl+Win+`)   — optional, "(None)" leaves the shortcut unbound
+//
+// Both slots are symmetric: opt-in by default. The four bracket profiles
+// (Relecture/Lissage/Affinage/Arrangement) are picked automatically by
+// AutoRewriteRules on the plain transcribe shortcut, so the manual slots
+// only matter when the user wants a specific override on a dedicated hotkey.
 //
 // The list depends on the defined profiles — Reload() must be called by the
 // host after any mutation of the Profiles section so newly-added / renamed
@@ -16,8 +21,8 @@ namespace WhispUI.Settings.Llm;
 
 public sealed partial class LlmShortcutSlotsSection : UserControl
 {
-    // Sentinel shown in the secondary combo to mean "shortcut pressed but no
-    // rewrite". Stored as null in settings — not as this string.
+    // Sentinel shown in both combos to mean "shortcut pressed but no rewrite".
+    // Stored as null in settings — not as this string.
     private const string NoneSentinel = "(None)";
 
     private bool _loading;
@@ -32,15 +37,16 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
         _loading = true;
         var s = SettingsService.Instance.Current.Llm;
 
-        // Primary: every defined profile. Match the saved slot first by stable
+        // Primary: "(None)" first, then every defined profile. Default to
+        // (None) when nothing resolves. Match the saved slot first by stable
         // ProfileId (survives renames), then fall back to ProfileName for
         // pre-migration configs.
         PrimaryRewriteProfileCombo.Items.Clear();
-        int primaryIndex = ResolveSlotIndex(s, s.PrimaryRewriteProfileId, s.PrimaryRewriteProfileName);
+        PrimaryRewriteProfileCombo.Items.Add(new ComboBoxItem { Content = NoneSentinel });
         for (int i = 0; i < s.Profiles.Count; i++)
             PrimaryRewriteProfileCombo.Items.Add(new ComboBoxItem { Content = s.Profiles[i].Name });
-        PrimaryRewriteProfileCombo.SelectedIndex = primaryIndex >= 0 ? primaryIndex
-            : (s.Profiles.Count > 0 ? 0 : -1);
+        int primaryIndex = ResolveSlotIndex(s, s.PrimaryRewriteProfileId, s.PrimaryRewriteProfileName);
+        PrimaryRewriteProfileCombo.SelectedIndex = primaryIndex >= 0 ? primaryIndex + 1 : 0;
 
         // Secondary: same list prefixed with "(None)". Default to (None) when
         // nothing resolves.
@@ -73,11 +79,12 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
     private void PrimaryRewriteProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || PrimaryRewriteProfileCombo.SelectedItem is not ComboBoxItem item) return;
+        string? content = item.Content?.ToString();
         var s = SettingsService.Instance.Current.Llm;
-        string name = item.Content?.ToString() ?? "";
-        s.PrimaryRewriteProfileName = name;
-        s.PrimaryRewriteProfileId = s.Profiles.Find(p =>
-            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
+        bool none = string.Equals(content, NoneSentinel, StringComparison.Ordinal);
+        s.PrimaryRewriteProfileName = none ? null : content;
+        s.PrimaryRewriteProfileId = none ? null : s.Profiles.Find(p =>
+            string.Equals(p.Name, content, StringComparison.OrdinalIgnoreCase))?.Id;
         SettingsService.Instance.Save();
     }
 

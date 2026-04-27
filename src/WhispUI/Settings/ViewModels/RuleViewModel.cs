@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace WhispUI.Settings.ViewModels;
@@ -6,6 +7,12 @@ namespace WhispUI.Settings.ViewModels;
 // ViewModel for a single auto-rewrite rule — used inside an ItemsRepeater
 // DataTemplate in LlmRulesSection. Auto-saves on every change (no
 // Save/Cancel — the two fields are simple enough for immediate persistence).
+//
+// ProfileChoices is the per-item snapshot of the available profile names,
+// bound directly by the ComboBox in the DataTemplate. Carrying it on the
+// VM (instead of binding the ComboBox to a parent collection via
+// {x:Bind}/Tag) sidesteps the ItemsRepeater virtualization race that was
+// causing a cyclic +1 desync between Header and SelectedItem.
 public partial class RuleViewModel : ObservableObject
 {
     private bool _isSyncing;
@@ -19,6 +26,8 @@ public partial class RuleViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string ProfileName { get; set; }
+
+    public ObservableCollection<string> ProfileChoices { get; } = new();
 
     public string Description => $"Recordings longer than {(int)MinDurationSeconds}s";
 
@@ -47,6 +56,11 @@ public partial class RuleViewModel : ObservableObject
         _isSyncing = true;
         RuleIndex = index;
         MinDurationSeconds = rule.MinDurationSeconds;
+
+        ProfileChoices.Clear();
+        foreach (var p in SettingsService.Instance.Current.Llm.Profiles)
+            ProfileChoices.Add(p.Name);
+
         ProfileName = rule.ProfileName;
         _isSyncing = false;
     }

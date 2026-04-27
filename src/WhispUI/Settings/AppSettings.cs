@@ -293,7 +293,11 @@ public sealed class LlmSettings
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
 
     // Profile used by the Primary Rewrite shortcut (Shift+Win+`).
-    public string PrimaryRewriteProfileName { get; set; } = "Prompt";
+    // null = primary rewrite disabled (hotkey fires but rewriting is skipped).
+    // Symmetric with Secondary — both slots are opt-in by default; the four
+    // bracket profiles (Relecture/Lissage/Affinage/Arrangement) are picked
+    // by AutoRewriteRules on the plain transcribe shortcut.
+    public string? PrimaryRewriteProfileName { get; set; }
 
     // Profile used by the Secondary Rewrite shortcut (Ctrl+Win+`).
     // null = secondary rewrite disabled (hotkey fires but rewriting is skipped).
@@ -305,28 +309,12 @@ public sealed class LlmSettings
     public string? PrimaryRewriteProfileId { get; set; }
     public string? SecondaryRewriteProfileId { get; set; }
 
-    // Bloc anti-préambule partagé par tous les profils par défaut. Répété en
-    // tête de chaque system prompt parce que les modèles instruct sont
-    // entraînés à saluer/introduire — sans cette contrainte explicite et
-    // répétée, ils préfixent systématiquement la sortie par "Voici", "Bien
-    // sûr", "La transcription corrigée est :", ou encadrent tout par des
-    // guillemets ou des backticks.
-    private const string AntiPreamble =
-        "SORTIE : texte brut uniquement. Pas d'introduction, pas de méta-commentaire, " +
-        "pas de balise, pas de guillemets ni de backticks englobants, pas de phrase " +
-        "d'acquiescement. Interdit : 'Voici', 'Bien sûr', 'D'accord', 'Je vais', " +
-        "'La transcription corrigée est', 'En voici une version'. Ta toute première " +
-        "sortie doit être directement le premier mot du texte demandé. Ta dernière " +
-        "sortie doit être le dernier mot du texte demandé.\n\n";
-
     // Quatre profils alignés sur les brackets de cleanup (lib/corpus.py:38-47),
     // tunés par autoresearch nuit 2026-04-25/26 sur Ministral 14B Q4 local
     // (branche autoresearch/llm-rewrite-nettoyage-20260425). Gradient strict
     // d'intervention : relecture (surface) → lissage (disfluences) → affinage
     // (oral → écrit) → arrangement (regroupement thématique). Règle commune :
-    // aucune perte de mots, de sens, de nuances. Profil "Prompt" préservé pour
-    // le shortcut Primary Rewrite (Shift+Win+`) — usage différent (dictée d'un
-    // brief LLM), pas un bracket de durée.
+    // aucune perte de mots, de sens, de nuances.
     public List<RewriteProfile> Profiles { get; set; } = new()
     {
         new()
@@ -508,38 +496,22 @@ public sealed class LlmSettings
 
                 Dernier caractère = dernier mot du contenu. En cas de doute entre garder ou couper une nuance, garde.
                 """
-        },
-        new()
-        {
-            Name = "Prompt",
-            Model = "",
-            Temperature = 0.30,
-            NumCtxK = 16,
-            // Pas un bracket de durée — usage spécifique : la personne dicte
-            // un brief / une demande pour un autre LLM, ce profil le
-            // restructure en prompt clair. Câblé sur le shortcut Primary
-            // Rewrite (Shift+Win+`) par défaut.
-            SystemPrompt = AntiPreamble +
-                "Tu reçois une transcription vocale brute en français où la personne exprime une " +
-                "demande, une réflexion ou un besoin qu'elle veut formuler comme prompt pour un " +
-                "LLM. Réécris-la en prompt structuré et qualitatif : identifie la demande " +
-                "centrale, organise les contraintes et le contexte en points clairs, explicite " +
-                "ce qui est implicite dans le discours oral. Si la personne mentionne des " +
-                "attentes de format (listes, code, etc.), intègre-les. Élimine le superflu oral " +
-                "mais conserve toutes les nuances et tous les points évoqués."
         }
     };
 
     // Auto-rules alignées sur les bornes des brackets cleanup. Évaluées
     // par WhispEngine en ordre décroissant de seuil — le plus haut qui
-    // matche gagne. Tout enregistrement reçoit donc un profil par défaut :
-    // ≥600s → Arrangement, ≥300s → Affinage, ≥60s → Lissage, sinon Relecture.
+    // matche gagne. Plancher Relecture à 20 s : en dessous, aucune règle
+    // ne matche, le profil reste null et la réécriture LLM est skipée
+    // (comportement no-op, le texte brut Whisper part au clipboard tel
+    // quel — utile sur les dictées de quelques mots où un cycle Ollama
+    // serait gratuit).
     public List<AutoRewriteRule> AutoRewriteRules { get; set; } = new()
     {
         new() { MinDurationSeconds = 600, ProfileName = "Arrangement" },
         new() { MinDurationSeconds = 300, ProfileName = "Affinage"    },
         new() { MinDurationSeconds = 60,  ProfileName = "Lissage"     },
-        new() { MinDurationSeconds = 0,   ProfileName = "Relecture"   }
+        new() { MinDurationSeconds = 20,  ProfileName = "Relecture"   }
     };
 
     // Which metric drives auto-rule selection. Default "Duration" — the
@@ -548,15 +520,18 @@ public sealed class LlmSettings
     // LLM context load instead.
     public string RuleMetric { get; set; } = "Duration";
 
-    // Word-based equivalents — French speech ≈ 150 wpm, so 60s ≈ 150,
-    // 300s ≈ 750, 600s ≈ 1500. Same fallthrough order : ≥1500 →
-    // Arrangement, ≥750 → Affinage, ≥150 → Lissage, sinon Relecture.
+    // Word-based equivalents — calibrated on 88 corpus samples (median
+    // 115 wpm globally, range 47–205). The bracket boundaries 1/5/10 min
+    // map to ~115/575/1150 words at that median, rounded to multiples of
+    // 50: 150/600/1200. Plancher Relecture à 50 mots — symétrique avec
+    // la règle duration de 20 s : en dessous, aucune règle ne matche,
+    // pas de cycle Ollama gratuit sur une dictée de quelques mots.
     public List<AutoRewriteRuleByWords> AutoRewriteRulesByWords { get; set; } = new()
     {
-        new() { MinWordCount = 1500, ProfileName = "Arrangement" },
-        new() { MinWordCount = 750,  ProfileName = "Affinage"    },
+        new() { MinWordCount = 1200, ProfileName = "Arrangement" },
+        new() { MinWordCount = 600,  ProfileName = "Affinage"    },
         new() { MinWordCount = 150,  ProfileName = "Lissage"     },
-        new() { MinWordCount = 0,    ProfileName = "Relecture"   }
+        new() { MinWordCount = 50,   ProfileName = "Relecture"   }
     };
 }
 
