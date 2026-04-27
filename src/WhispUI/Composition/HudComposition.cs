@@ -341,7 +341,7 @@ internal static class HudComposition
     // ── DeviceLost hook ──────────────────────────────────────────────────
     // Win2D's CanvasDevice.GetSharedDevice() returns a process-wide D3D11
     // device. If the GPU goes away (driver reset, TDR, Vulkan/D3D contention
-    // with the whisper.cpp Vulkan backend running on the same RX 7900 XT),
+    // with the whisper.cpp Vulkan backend running on the same GPU),
     // every CompositionDrawingSurface we baked onto that device becomes
     // invalid — conic surface, arc mask surface, stroke silhouette surface.
     // The compositor keeps rendering but the brushes sample black, which
@@ -349,7 +349,7 @@ internal static class HudComposition
     // still ticking underneath. We can't cure the device loss from here
     // (recovery = recreate CanvasDevice + repaint surfaces in the right
     // thread), but we can *observe* it — if DeviceLost fires right when
-    // Louis sees the freeze, the Composition leak (fixed via Dispose) is
+    // a freeze is observed, the Composition leak (fixed via Dispose) is
     // not the whole story and we need a device-recovery path.
     //
     // The handler runs on whatever thread Win2D raises the event on —
@@ -685,8 +685,8 @@ internal static class HudComposition
     // LeadFade/TailFade at 0.5 each get auto-scaled by the drawing code to
     // spanTurns/total = 0.25 each — pure bell, no solid core, peak opacity
     // at the lobe centre, smooth fade-out at both sides where the arcs
-    // meet. Matches Louis's "ça doit aller que sur les côtés, on a des
-    // fades puissants qui s'en chargent".
+    // meet. Matches the design intent: the energy stays on the sides
+    // and the strong fades take care of the centre.
     //
     // ── Arc phase math (from RecordingArcPhaseTurns default) ────────────
     // With Span 0.5, the source arc centre is at spanRadians/2 = 0.25·τ
@@ -1275,8 +1275,8 @@ internal static class HudComposition
     // centre. Even with D2D's antialiasing, the triangle boundaries
     // each produce a small coverage error; summed over 360 seams
     // fanning out from the centre, the errors align into a visible
-    // radial moiré (the "effet de grille" Louis flagged in the
-    // baked palette screenshot). Per-pixel evaluation has no
+    // radial moiré (the "grid pattern" first spotted on the baked
+    // palette screenshot). Per-pixel evaluation has no
     // polygon seams — every pixel is an independent atan2 sample —
     // so the gradient comes out perfectly smooth.
     //
@@ -1507,8 +1507,8 @@ internal static class HudComposition
     // ╚════════════════════════════════════════════════════════════════════╝
     // Exposes the raw conic and arc-mask surfaces — the same ones
     // CreateConicArcStroke composites behind the stroke silhouette — so
-    // Louis can verify in the playground whether the brush geometry is
-    // centred on its own rotation axis. The shipping stroke clips every
+    // the developer can verify in the playground whether the brush
+    // geometry is centred on its own rotation axis. The shipping stroke clips every
     // sample to the rounded-rect silhouette, which hides any rotation
     // wobble or off-centre brush footprint; the naked preview removes that
     // silhouette and lets the full pxSquare × pxSquare footprint rotate
@@ -1529,7 +1529,7 @@ internal static class HudComposition
     // scope on every rebuild, the compositor accumulates orphan
     // animations; after enough slider moves it saturates and Forever
     // animations across the whole window silently freeze — which is the
-    // "Conic preview frozen mid-animation" regression Louis reported.
+    // "Conic preview frozen mid-animation" regression that was reported.
     //
     // Ownership convention: the caller holds the NakedPreview while the
     // bundle is mounted on the visual tree, disposes it BEFORE replacing
@@ -1624,8 +1624,8 @@ internal static class HudComposition
     // Both brushes spin independently at HuePeriodSeconds /
     // ArcPeriodSeconds around the sprite's geometric centre
     // (pxSquare / 2). If the rotation centre and the brush-painting
-    // centre disagree (the hypothesis behind Louis's top/bottom luminance
-    // asymmetry observation), the wobble reads immediately on the naked
+    // centre disagree (the working hypothesis behind the top/bottom
+    // luminance asymmetry observation), the wobble reads immediately on the naked
     // preview as a drifting lobe or a wandering dead-spot.
     //
     // No effect-pipeline colour knobs (Saturation / Hue / Exposure) —
@@ -1649,8 +1649,8 @@ internal static class HudComposition
     {
         // Reuse the exact pxSquare math from CreateConicArcStroke so the
         // naked preview paints the same brush footprint. Any drift here
-        // would invalidate the diagnostic — Louis would be looking at a
-        // different geometry than the shipping stroke samples.
+        // would invalidate the diagnostic — the user would be looking at
+        // a different geometry than the shipping stroke samples.
         var innerSize = new Vector2(hudSize.X - 2f * InsetDip, hudSize.Y - 2f * InsetDip);
         int pxSquare = (int)Math.Ceiling(Math.Sqrt(
             (double)innerSize.X * innerSize.X +

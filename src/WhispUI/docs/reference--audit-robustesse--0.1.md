@@ -247,4 +247,4 @@ Tous les findings marqués 📋 backlog sont à reprendre :
 - Soit au passage si on touche le sous-système concerné
 
 Et la passe sécurité finale (SEC-1, SEC-2, SEC-3 + crypto + threat
-modeling formel) est planifiée par Louis pour plus tard, post-packaging.
+modeling formel) est planifiée pour plus tard, post-packaging.

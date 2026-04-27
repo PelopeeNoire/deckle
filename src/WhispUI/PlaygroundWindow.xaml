@@ -88,7 +88,7 @@
                 <!-- Play / Pause = two mutually-exclusive RadioButton. Button
                      labels name the action triggered, not the current state —
                      a label-swap ToggleButton (Playing / Paused) is a UX
-                     trap Louis wants to avoid. -->
+                     trap we want to avoid. -->
                 <RadioButtons Grid.Row="1"
                               x:Name="PlayPauseGroup"
                               SelectedIndex="0"
