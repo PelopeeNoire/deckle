@@ -30,14 +30,14 @@ Suppression des overrides `entropy_thold=1,9` et `no_speech_thold=0,7` (héritag
 
 `Transcribe()` reconstruit ses `WhisperFullParams` à chaque appel via `whisper_full_default_params_by_ref` — snapshot `SettingsService.Instance.Current` en début d'appel pour hot-reload gratuit, sans re-init modèle. Piège thread safety : l'approche snapshot immutable au début de `Transcribe` suffit.
 
-Voir `settings.md` pour le câblage WhisperPage → AppSettings → WhisperParamsMapper.
+Voir [reference--settings-architecture--0.1.md](reference--settings-architecture--0.1.md) pour le câblage WhisperPage → AppSettings → WhisperParamsMapper.
 
 ## Cartographie logs actuelle
 
 - **MODEL** — path / taille / use_gpu, Step au succès, Warning si fichier absent.
 - **HOTKEY** — `DescribeHwnd` cible + Warning si pas de focus clavier.
 - **CLIPBOARD** — méthode d'instance, instrumentation `GlobalAlloc` / `OpenClipboard` / `SetClipboardData` + re-lecture de vérification post-copie.
-- **PASTE** — voir `paste.md`.
+- **PASTE** — voir [reference--paste-behavior--0.1.md](reference--paste-behavior--0.1.md).
 - **LLM** — callbacks `onWarn` / `onStep` / `onInfo`, fallback détaillé avec type d'exception.
 - Helper `Win32Util.DescribeHwnd` (exe / titre / classe focusée).
 
@@ -45,7 +45,7 @@ Voir `settings.md` pour le câblage WhisperPage → AppSettings → WhisperParam
 
 ## Tâches ouvertes
 
-- **Paste "fantôme" intermittent** — voir `paste.md`.
+- **Paste "fantôme" intermittent** — voir [reference--paste-behavior--0.1.md](reference--paste-behavior--0.1.md).
 - **Filtrage par segment + seuils Whisper** — plus de filtrage textuel par patterns ; on s'appuie sur `entropy_thold=2,4` (défaut) et les seuils natifs. À valider en usage réel. Sinon, brancher un filtre **par segment** basé sur `no_speech_prob` (déjà accessible via `_segments`) plutôt que rejeter tout le texte.
 - **Bugs connus restants** : hallucinations sur silences longs / musique en fond (`no_speech_thold`, `suppress_blank`) ; ponctuation manquante si stop net (~300 ms de silence PCM en fin de buffer) ; screensaver casse l'enregistrement (`SetThreadExecutionState`).
 - **Instrumentation niveau voix** — RMS sur PCM16 dans `Record()`, event `AudioLevel(float rms)`, affiché dans LogWindow (niveau instantané + moyenne). But : ajuster la gate du micro, savoir si le marmonnement passe. Prérequis pour le contour animé HUD.

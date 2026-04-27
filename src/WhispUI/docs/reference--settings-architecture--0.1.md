@@ -29,14 +29,17 @@ Pages sous `Settings/` : `GeneralPage`, `WhisperPage`, `LlmPage`. Toutes avec `N
 
 Package NuGet `CommunityToolkit.WinUI.Controls.SettingsControls 8.2.250402`. Pattern canonique Microsoft Learn : ressource `SettingsCardSpacing=4`, style `SettingsSectionHeaderTextBlockStyle` (`BodyStrongTextBlockStyle` + `Margin 1,30,0,6`), `StackPanel MaxWidth=1000` dans un `Grid` wrapper (workaround bug `microsoft-ui-xaml#3842`).
 
-## GeneralPage — 4 sections câblées
+## GeneralPage — sections câblées
 
-Quatre sections fonctionnelles, toutes auto-save via `SettingsService` :
+Toutes les sections sont auto-save via `SettingsService`. Ordre actuel :
+Theme & overlay → Startup → Audio input → Diagnostics → Backup.
 
-- **Audio input** — énumération waveIn Win32, ComboBox "System default" + devices nommés, `AudioInputDeviceId` (-1 = WAVE_MAPPER).
-- **Overlay** — toggle enabled, toggle fade on proximity, position (BottomCenter / BottomRight / TopCenter).
-- **Startup** — toggle start minimized.
 - **Theme** — ComboBox System / Light / Dark, appliqué live sur toutes les fenêtres via `App.ApplyTheme`.
+- **Overlay** — toggle enabled, toggle fade on proximity, position (BottomCenter / BottomRight / TopCenter).
+- **Startup** — toggle start minimized + warmup-on-launch.
+- **Audio input** — énumération waveIn Win32, ComboBox "System default" + devices nommés, `AudioInputDeviceId` (-1 = WAVE_MAPPER) + level window calibration (MinDbfs / MaxDbfs / curve exponent + auto-calibration toggle).
+- **Diagnostics** — quatre opt-in indépendants : latency JSONL, raw corpus capture, audio corpus WAV (nested), application log to disk, microphone telemetry. Tous off par défaut.
+- **Backup** — section PowerToys-style (expander collapsable). `SettingsBackupService` : snapshot ponctuel `settings-YYYYMMDD-HHmmss.json` sous `<ConfigDirectory>/backups/`, liste des backups existants, restore via swap atomique. `BackupDirectory` configurable pour pointer vers OneDrive/Drive.
 
 ## WhisperPage — 6 sections câblées
 
@@ -44,9 +47,13 @@ Transcription, VAD, Decodage, Seuils de confiance, Filtres de sortie, Contexte. 
 
 Bug Slider `Minimum` en XAML release : tout Slider dont la range exclut 0 doit etre configure en code-behind post-`InitializeComponent`. Detail et lecon dans memoire `project_winui3_slider_bug.md`.
 
-## LlmPage — skeleton
+## LlmPage — sections câblées
 
-Placeholder, pas encore branchee.
+- **General** — toggle Enabled + Ollama endpoint (auto-save).
+- **Models** — état de la connexion Ollama (reachable + liste de modèles présents) avec refresh manuel.
+- **Profiles** — liste éditable de profils de réécriture (`RewriteProfile` : name, model, system prompt, temperature, num_ctx_k, top_p, repeat_penalty). Add / Delete / Reset section. Auto-save via `ProfileViewModel`. Quatre profils par défaut alignés sur les 4 brackets de cleanup (Relecture / Lissage / Affinage / Arrangement) tunés par autoresearch nuit 26→27 avril.
+- **Auto-rewrite rules** — pivot RuleMetric (Word count par défaut / Duration). Deux listes mutuellement exclusives, par seuil. Chaque rule pointe vers un profil via `ProfileChoices` collection portée par `RuleViewModel` / `RuleByWordsViewModel` (binding direct ItemsSource/SelectedItem — refactor 2026-04-27 pour fix une race ItemsRepeater virtualization).
+- **Shortcut slots** — Primary (Shift+Win+`) et Secondary (Ctrl+Win+`), tous deux opt-in avec sentinel "(None)" stocké comme null. Utilisés par les hotkeys de réécriture manuelle.
 
 ## Persistance
 
