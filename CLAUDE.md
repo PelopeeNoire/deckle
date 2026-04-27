@@ -2,9 +2,8 @@
 
 <identity>
 whisp-ui est un utilitaire de transcription vocale locale, déclenché par
-hotkey, résultat dans le clipboard. Brique d'un système de travail local
-assisté (LLM via Ollama, Anytype comme base de contexte, Continue.dev
-comme brique IDE).
+hotkey, résultat dans le clipboard. Pensé pour s'intégrer à un pipeline
+de travail local (LLM via Ollama optionnel pour la réécriture).
 
 Objectifs fondamentaux :
 
@@ -181,14 +180,14 @@ condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
 ├── scripts\                  — build-run.ps1, publish.ps1 (versionnés)
 ├── native\                   — DLLs pré-compilées whisper + MinGW (git-ignored)
 ├── models\                   — modèles Whisper (ggml-base.bin, ggml-large-v3.bin)
-├── benchmark\                — suite de benchmark Python (autoresearch)
-├── whisper.cpp\              — dépôt whisper.cpp cloné (git-ignored)
-├── archive\                  — code gelé pour référence (ex. WhispInteropTest)
+├── benchmark/                — suite de benchmark Python
+├── whisper.cpp/              — dépôt whisper.cpp cloné (git-ignored)
 └── CLAUDE.md                 — ce fichier
 ```
 
-DLLs whisper dans `native\whisper\` : `libwhisper.dll`, `ggml.dll`,
-`ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`. Compilées avec
-Vulkan (GPU AMD RX 7900 XT, ROCm non supporté sur Windows). Source :
-`whisper.cpp\build\bin\`.
+DLLs whisper dans `native/whisper/` : `libwhisper.dll`, `ggml.dll`,
+`ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`. Compilées avec le
+backend Vulkan (toute carte compatible Vulkan suffit ; sur AMD,
+ROCm n'est pas supporté côté Windows donc Vulkan est la voie de
+choix). Source : `whisper.cpp/build/bin/`.
 </repository>

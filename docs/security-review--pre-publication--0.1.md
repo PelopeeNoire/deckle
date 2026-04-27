@@ -61,16 +61,17 @@ sections 3 and 4.
 
 ### F2 — Personal paths in tracked documentation (Medium → To fix)
 
-Hardcoded Windows paths under `C:\Users\Louis\` and `D:\bin\...` /
-`D:\projects\...` are present in tracked docs. They leak user account
-name and machine layout, and are useless to anyone else.
+Hardcoded Windows paths under the maintainer's profile (`C:\Users\<user>\…`)
+and machine-specific dev-tool layout (`<dev-drive>\<dev-tools>\…`) are
+present in tracked docs. They leak user account name and machine layout,
+and are useless to anyone else.
 
 | File | Lines (count) | Nature |
 |---|---|---|
 | `src/WhispUI/CLAUDE.md` | 2 | Memory plan path + MSBuild VS path |
 | `src/WhispUI/docs/brief--audit-robustesse--0.1.md` | 1 | Plan path |
 | `src/WhispUI/docs/brief--packaging-foundation--0.1.md` | 1 | Plan path |
-| `.claude/skills/benchmark-loop/SKILL.md` | 4 | Plan path + cwd `D:/projects/ai/transcription/benchmark` |
+| `.claude/skills/benchmark-loop/SKILL.md` | 4 | Plan path + absolute cwd to the benchmark folder |
 
 - **Remediation** — Replace with documentary placeholders
   (`<repo-root>/...`, `<msbuild-path>`, etc.) or restructure the
@@ -78,12 +79,12 @@ name and machine layout, and are useless to anyone else.
   removed entirely (see F4).
 - **Status** — `open` → `fixed`.
 
-### F3 — Personal name "Louis" in tracked text (Low → Soft-fix)
+### F3 — Maintainer's first name in tracked text (Low → Soft-fix)
 
-Multiple files mention "Louis" as the maintainer/user. Acceptable as
-attribution (LICENSE, copyright lines), problematic when used as a
-working-context cue ("Louis builds via..."). Replaced by neutral terms
-("the user", "the maintainer") except in attribution contexts.
+Multiple files used the maintainer's first name as a working-context cue
+("X builds via...", "X observes..."). Acceptable as attribution (LICENSE,
+copyright lines), but not as documentation cue. Replaced by neutral terms
+("the user", "the maintainer", "we") everywhere except attribution.
 
 Files affected (tracked) : `CLAUDE.md`, `src/WhispUI/CLAUDE.md`,
 `benchmark/AGENT.md`, `benchmark/README.md`,
@@ -265,8 +266,9 @@ Each finding's `Status` is updated as remediations land. The branch is
 considered ready to merge when :
 
 1. `git status` is clean.
-2. `git ls-files | xargs grep -l 'C:\\\\Users\\\\Louis'` returns
-   nothing.
+2. `git ls-files | xargs grep -l '<maintainer-profile-path>'` returns
+   nothing — i.e. no `C:\Users\<name>\…`, no machine-specific drive
+   roots, no absolute paths leaking the developer's filesystem layout.
 3. `git log -p | grep -E 'Bearer\s+byeglbuj'` returns nothing
    (post-rewrite).
 4. `LICENSE`, `README.md`, `SECURITY.md` are present at the repo root

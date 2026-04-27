@@ -182,11 +182,11 @@ public sealed class TranscriptionSettings
     public bool UseGpu { get; set; } = true;
     public string Language { get; set; } = "fr";
     public string InitialPrompt { get; set; } =
-        "Bon. Je suis sur WhispUI, je continue le HUD de l'application avec le contour animé qui tourne. " +
-        "C'est quand même propre, même si la fenêtre reste fragile. " +
-        "Côté workflow, je gère plusieurs worktrees, je merge les branches sur main, je lance le benchmark à chaque itération. " +
-        "Côté outils, Ollama, Ministral, Anytype, Continue.dev, MCP, LLM. " +
-        "Ouais, c'est pas mal, même si parfois j'ai un truc fichu et il faut tout reprendre. " +
+        "Bon. Je suis en train de coder une application Windows, je continue l'interface avec un contour animé qui tourne. " +
+        "C'est plutôt propre, même si certaines parties restent fragiles. " +
+        "Côté workflow, je travaille avec plusieurs branches Git, je merge sur la branche principale, je lance les tests à chaque itération. " +
+        "Côté outils, .NET, Visual Studio, Python, Whisper, le shell. " +
+        "Ouais, ça avance bien, même si parfois j'ai un truc cassé et il faut tout reprendre. " +
         "Voilà. Ok.";
 
     // Prepend initial_prompt to every 30s decode window (not just the first).
@@ -320,8 +320,8 @@ public sealed class LlmSettings
         "sortie doit être le dernier mot du texte demandé.\n\n";
 
     // Quatre profils alignés sur les brackets de cleanup (lib/corpus.py:38-47),
-    // tunés par autoresearch nuit 2026-04-25/26 sur Ministral 14B Q4 local
-    // (branche autoresearch/llm-rewrite-nettoyage-20260425). Gradient strict
+    // tunés via une boucle d'optimisation itérative sur Ministral 14B Q4
+    // (Ollama local). Gradient strict
     // d'intervention : relecture (surface) → lissage (disfluences) → affinage
     // (oral → écrit) → arrangement (regroupement thématique). Règle commune :
     // aucune perte de mots, de sens, de nuances. Profil "Prompt" préservé pour
