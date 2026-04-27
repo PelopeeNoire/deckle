@@ -27,7 +27,7 @@ Outputs::
     reports/last_rewrite_run.json   ← structured per-axis details
     reports/last_rewrite_run.txt    ← human-readable side-by-side digest
 
-The pipeline is reusable as-is when Louis enriches the corpus :
+The pipeline is reusable as-is when the corpus gets new samples :
 
     1. python whisper_bench.py --bracket all --slug <new-slug>
     2. python refresh_corpus.py --source-corpus telemetry/<new-slug>/corpus.jsonl

@@ -64,6 +64,9 @@ benchmark/results.tsv
 # Claude Code runtime state (locks, caches) — keep the tracked agent/skill defs
 .claude/scheduled_tasks.lock
 
+# Personal-workflow skills not meant for the public repo
+.claude/skills/benchmark-loop/
+
 # Symlink to Claude auto-memory directory (created locally, never versioned)
 /memory
 

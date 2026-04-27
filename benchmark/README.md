@@ -103,7 +103,8 @@ corpus and bucket to `None` if they somehow do.
 `whisper_bench.py` re-runs `whisper.cpp` on the corpus with a candidate
 parameter set and dumps the transcriptions to
 `reports/last_whisper_run.{json,txt}`. **No automated LLM
-judge** — the agent (or Louis) reads the TXT and judges qualitatively.
+judge** — the agent (or the human reviewer) reads the TXT and judges
+qualitatively.
 
 Quick commands:
 

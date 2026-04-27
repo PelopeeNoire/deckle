@@ -1,6 +1,6 @@
 """Benchmark runner for WhispUI rewrite prompts.
 
-Reads Louis' dictation corpus (produced by WhispUI under
+Reads the user's dictation corpus (produced by WhispUI under
 ``benchmark/telemetry/*/corpus.jsonl``), asks the target Ollama model to
 rewrite each raw transcription with the candidate system prompt, then
 scores the output with the chosen judge (Claude Sonnet by default,
