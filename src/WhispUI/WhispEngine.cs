@@ -18,6 +18,40 @@ namespace WhispUI;
 //                     seconds. This is the safe default when in doubt.
 internal enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
 
+// Pipeline state — single source of truth for the recording lifecycle.
+// Manipulated exclusively via Interlocked.CompareExchange on _state. Each
+// transition is protected by a CAS so that rapid double-presses on the
+// hotkey, or a Stop racing the cap-duration internal stop, all rebound
+// cleanly instead of double-spawning a worker thread or double-calling
+// whisper_full on the same context (whisper.cpp is not thread-safe across
+// concurrent calls on the same context — segfault, not a managed exception).
+//
+// Legal transitions:
+//   Idle         → Starting     (hotkey, RequestToggle entry)
+//   Starting     → Recording    (mic probe ok, worker about to spawn)
+//   Starting     → Idle         (probe fail / warmup gate / disposed — rollback)
+//   Recording    → Stopping     (hotkey Stop OR cap duration hit)
+//   Stopping     → Transcribing (worker, after Record() returns)
+//   Transcribing → Idle         (worker finally, after Transcribe() exits)
+//   *            → Disposed     (Dispose, terminal)
+//
+// See WhispEngine.RequestToggle, TryStartFromIdle, and WorkerRun for the
+// actual CAS sites; the cap-duration branch inside Record() also drives
+// the Recording → Stopping transition when MaxRecordingDurationSeconds hits.
+internal enum PipelineState { Idle, Starting, Recording, Stopping, Transcribing, Disposed }
+
+// Outcome of a hotkey toggle request — returned to App.OnHotkey so the
+// caller can drive HUD/log without ever reading engine state directly
+// (which is what caused the original double-press race).
+internal enum ToggleResult
+{
+    Started,            // CAS Idle → Starting succeeded, worker spawned.
+    Stopped,            // CAS Recording → Stopping succeeded, worker draining.
+    IgnoredBusy,        // State was Starting/Stopping/Transcribing — silent no-op.
+    IgnoredNoProfile,   // Rewrite hotkey with no profile bound, called from Idle.
+    IgnoredDisposed,    // Engine in shutdown — silent no-op.
+}
+
 // ─── Transcription engine ─────────────────────────────────────────────────────
 //
 // Ported from WhispInteropTest (WhispForm) into a standalone class.
@@ -108,9 +142,57 @@ internal sealed class WhispEngine : IDisposable
     // volatile: prevents the compiler from caching these values in CPU registers.
     // Without volatile, a background thread could read a stale value.
     private volatile IntPtr _ctx           = IntPtr.Zero;
-    private volatile bool   _isRecording   = false;
-    private volatile bool   _stopRecording = false;
     private volatile bool   _shouldPaste   = false;
+
+    // Pipeline state — single source of truth, manipulated only via
+    // Interlocked.CompareExchange on _state. Backed by int because Interlocked
+    // doesn't operate on enums directly — cast to/from PipelineState at every
+    // read/write site. See the PipelineState enum above for the legal
+    // transitions and the rationale.
+    //
+    // Invariant: every public entry point (RequestToggle, Dispose, UnloadModel)
+    // reads _state exactly once via Volatile.Read, then either CAS-transitions
+    // it or rebounds with a no-op. The worker thread owns the
+    // Stopping → Transcribing → Idle transitions; no other thread may write
+    // those.
+    private int _state = (int)PipelineState.Idle;
+
+    // Stop signal for the Record() polling loop. 0 = continue, 1 = drain and
+    // exit. Read every iteration via Volatile.Read; written by the Stop path
+    // (RequestToggle after CAS Recording → Stopping) and by the cap-duration
+    // branch inside Record(). Separate from _state so the hot loop doesn't
+    // cast and compare an enum every iteration.
+    //
+    // NOT declared `volatile` — the keyword would conflict with passing the
+    // field by `ref` to Volatile.Read / Volatile.Write (CS0420: "a reference
+    // to a volatile field will not be treated as volatile"). The Volatile.*
+    // API provides the acquire/release semantics we need without the keyword,
+    // which is the pattern Microsoft recommends.
+    private int _stopFlag;
+
+    // Signaled when the engine returns to Idle (worker exits + state reset).
+    // Initialised "set" because no recording is in flight at construction time.
+    // Reset on Idle → Starting, set on the worker's terminal Idle transition
+    // (the same finally that emits "Ready"). Used by Dispose to await the
+    // running pipeline within a bounded timeout — never read from the hotkey
+    // path, which relies on the CAS itself for re-entry refusal.
+    private readonly ManualResetEventSlim _idleEvent = new(initialState: true);
+
+    // Reference to the live worker thread (Record + Transcribe). Held only
+    // for Dispose to call Join with a timeout — no other consumer reads this.
+    // null when Idle.
+    private Thread? _worker;
+
+    // Serialises whisper_full calls on the same _ctx. The state machine
+    // already prevents concurrent transcriptions through the user-driven
+    // pipeline (only one Idle → Recording → Transcribing chain at a time),
+    // but Warmup() also calls Transcribe() at startup on a separate thread,
+    // and a hotkey arriving during the warmup window would race the warmup
+    // whisper_full on the same context. whisper.cpp is not thread-safe across
+    // concurrent calls on a single context — the result is a native segfault
+    // that no managed handler can rescue. This lock makes the invariant local
+    // to the call site.
+    private readonly object _transcribeLock = new();
 
     // Name of the rewrite profile chosen by the hotkey that started this
     // recording (null = no manual rewrite; fall back to AutoRewriteRules
@@ -119,8 +201,10 @@ internal sealed class WhispEngine : IDisposable
     private string?         _manualProfileName = null;
 
     // Model lifecycle: lazy load on first hotkey, unload after idle timeout.
-    // _pipelineActive guards against unloading while Record+Transcribe runs.
-    private volatile bool   _pipelineActive = false;
+    // The "pipeline running, don't unload" guard now reads _state directly
+    // (anything other than Idle / Disposed means a pipeline is in flight),
+    // removing the previous _pipelineActive bool that duplicated the state
+    // machine and could drift out of sync with it.
     private readonly object _modelLock = new();
     private System.Threading.Timer? _idleTimer;
     private const int MODEL_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -248,11 +332,11 @@ internal sealed class WhispEngine : IDisposable
     //                         On a cold run includes _modelLoadMs (load runs on
     //                         the worker thread before the mic opens), plus
     //                         the mic probe and worker thread spin-up.
-    //   _recordDrainSw      — _stopRecording flips → end of Record() (just before
+    //   _recordDrainSw      — _stopFlag flips → end of Record() (just before
     //                         the float[] return). Subset of _stopToPipelineSw —
     //                         shows how much of the stop-to-pipeline cost is
     //                         spent in the mic drain alone.
-    //   _stopToPipelineSw   — entry of StopRecording → first whisper_vad log.
+    //   _stopToPipelineSw   — entry of RequestToggle (Stop branch) → first whisper_vad log.
     //                         Captures Record() drain + Transcribe() entry.
     //   _whisperInitSw      — just before whisper_full() → first whisper_vad log.
     //                         Pre-VAD overhead inside whisper_full (context
@@ -292,8 +376,21 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Observable properties ──────────────────────────────────────────────────
 
-    public bool IsReady     => _ctx != IntPtr.Zero;
-    public bool IsRecording => _isRecording;
+    public bool IsReady => _ctx != IntPtr.Zero;
+
+    // True whenever the pipeline is in any non-Idle, non-Disposed state.
+    // Read by callers that want a coarse "is something going on?" signal —
+    // the hotkey path does NOT consume this (it goes through RequestToggle
+    // which CAS's the transition atomically; reading and then deciding is
+    // exactly the racy pattern this passe was designed to remove).
+    public bool IsBusy
+    {
+        get
+        {
+            var s = (PipelineState)Volatile.Read(ref _state);
+            return s != PipelineState.Idle && s != PipelineState.Disposed;
+        }
+    }
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -663,15 +760,19 @@ internal sealed class WhispEngine : IDisposable
 
     /// <summary>
     /// Frees the whisper context to release VRAM. Called by the idle timer.
-    /// Skipped if a pipeline (Record+Transcribe) is currently active.
+    /// Skipped if a pipeline (Record+Transcribe) is currently active —
+    /// reads _state directly (the previous _pipelineActive bool was a
+    /// duplicate of the state machine and is gone). Also skipped if the
+    /// engine is being disposed; Dispose itself frees the context.
     /// </summary>
     private void UnloadModel()
     {
         lock (_modelLock)
         {
-            if (_pipelineActive)
+            var state = (PipelineState)Volatile.Read(ref _state);
+            if (state != PipelineState.Idle)
             {
-                _log.Verbose(LogSource.Model, "idle unload skipped (pipeline active)");
+                _log.Verbose(LogSource.Model, $"idle unload skipped | state={state}");
                 return;
             }
             if (_ctx == IntPtr.Zero) return;
@@ -680,7 +781,14 @@ internal sealed class WhispEngine : IDisposable
             _ctx = IntPtr.Zero;
             _log.Success(LogSource.Model, "Model unloaded");
             _log.Verbose(LogSource.Model, $"model unloaded | idle_s={MODEL_IDLE_TIMEOUT_MS / 1000} | state=vram-freed");
-            RaiseStatus("Ready");
+            // Re-check state right before RaiseStatus — a hotkey could have
+            // landed during whisper_free (rare, since unload only runs after
+            // the idle timer fires from Idle). If state has moved, defer to
+            // the worker's finally to emit "Ready" at the right moment.
+            if ((PipelineState)Volatile.Read(ref _state) == PipelineState.Idle)
+            {
+                RaiseStatus("Ready");
+            }
         }
     }
 
@@ -893,213 +1001,371 @@ internal sealed class WhispEngine : IDisposable
         thread.Start();
     }
 
-    // ── Start recording ─────────────────────────────────────────────────────
-
-    // manualProfileName: when non-null, rewrite the transcription with that
-    // profile at the end (manual primary/secondary rewrite hotkeys). When
-    // null, fall back to AutoRewriteRules based on recording duration.
-    public void StartRecording(string? manualProfileName, bool shouldPaste)
+    // ── Hotkey toggle entry point ───────────────────────────────────────────
+    //
+    // All hotkey-driven Start/Stop traffic flows through here. The earlier
+    // pattern read engine state from App and branched into StartRecording or
+    // StopRecording — that read-then-branch was the original double-press
+    // race (App.OnHotkey reading IsRecording, then calling Start, while a
+    // second press arrived between the read and the call). The current
+    // contract: the engine atomically CAS-transitions the state machine and
+    // returns the result; the caller only switches on the outcome to drive
+    // HUD and logs, never to decide what to do.
+    //
+    // requireProfile: passed by App for rewrite hotkeys. When a press lands
+    // in Idle but the rewrite slot has no profile bound, refuse with
+    // IgnoredNoProfile so the press doesn't start an empty rewrite session.
+    // Pressed during Recording, requireProfile is silent — the press is a
+    // valid Stop irrespective of profile binding.
+    public ToggleResult RequestToggle(string? manualProfileName, bool shouldPaste, bool requireProfile)
     {
-        // Defense en profondeur : si l'engine a été disposed (QuitApp en cours)
-        // mais qu'un hotkey arrive juste après via la message pump, on évite
-        // d'accéder à un contexte whisper libéré (whisper_full sur ctx mort
-        // = segfault non récupérable). Pas de log : Dispose est l'autorité,
-        // un hotkey post-Dispose est attendu silencieusement.
-        if (_disposed) return;
-        if (_isRecording) return;
+        // _disposed is set before Dispose CAS's the state to Disposed, so it
+        // catches the moment between "Quit clicked" and "Dispose finished".
+        // Either guard reaching this branch means the engine is shutting
+        // down — silent no-op.
+        if (_disposed) return ToggleResult.IgnoredDisposed;
 
-        // Reset per-run latency stage timers. _modelLoadMs is overwritten by
-        // LoadModel() if it runs (cold path); _hotkeySw is stopped after
-        // waveInStart in Record(); _recordDrainSw is started/stopped inside
-        // Record() around the post-stop drain; _stopToPipelineSw and
-        // _whisperInitSw are stopped from the whisper.cpp log hook on the
-        // first whisper_vad line.
-        _modelLoadMs = 0;
-        _hotkeySw = System.Diagnostics.Stopwatch.StartNew();
-        _recordDrainSw = null;
-        _stopToPipelineSw = null;
-        _whisperInitSw = null;
+        var current = (PipelineState)Volatile.Read(ref _state);
+        if (current == PipelineState.Disposed) return ToggleResult.IgnoredDisposed;
 
-        // Consume the warmup flags on the first StartRecording call — surface
-        // any problems detected silently at startup before the recording begins.
-        // Interlocked.Exchange makes the consumption race-free even if two
-        // hotkeys land back-to-back (second caller reads 1 and skips the block).
-        // Subsequent hotkeys rely on the live probes below and on the LLM
-        // rewrite error paths — the warmup flags are an early-warning, not a
-        // permanent gate.
-        if (System.Threading.Interlocked.Exchange(ref _warmupFlagsConsumed, 1) == 0)
+        if (current == PipelineState.Recording)
         {
-            if (!ModelWarmupOk)
+            // Try to claim the Recording → Stopping transition. If we lose
+            // the CAS, another thread already moved the state out of
+            // Recording (cap duration hitting at the same instant, a race
+            // with another Stop press). Treat as busy; no second action.
+            if (Interlocked.CompareExchange(
+                    ref _state,
+                    (int)PipelineState.Stopping,
+                    (int)PipelineState.Recording)
+                != (int)PipelineState.Recording)
             {
-                _log.Error(
-                    LogSource.Init,
-                    "warmup flag | model_ok=false",
-                    new UserFeedback(
-                        "Model not ready",
-                        "Load failed. See in settings.",
-                        UserFeedbackSeverity.Error,
-                        UserFeedbackRole.Replacement));
-                return;
+                return ToggleResult.IgnoredBusy;
             }
-            if (!OllamaWarmupOk)
-            {
-                // Live re-probe avant d'émettre le warning : Ollama peut
-                // être devenu reachable entre warmup et premier hotkey
-                // (cas typique : l'utilisateur a démarré Ollama après
-                // WhispUI, ou le service Windows a fini son init après
-                // les 3 essais retry du warmup). Single-shot 3s, exécuté
-                // sur thread pool pour éviter tout risque de deadlock sur
-                // le UI thread du message host.
-                bool reachableNow = false;
-                try
-                {
-                    var ollama = new Llm.OllamaService(
-                        () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
-                    var probeTask = Task.Run(() => ollama.IsAvailableAsync());
-                    // Wait borné — IsAvailableAsync a son propre timeout 3s,
-                    // 4s lui laisse une marge.
-                    if (probeTask.Wait(TimeSpan.FromSeconds(4)))
-                        reachableNow = probeTask.Result;
-                }
-                catch
-                {
-                    // IsAvailableAsync est fail-soft (catch interne), mais
-                    // filet sur Task.Run / Wait au cas où.
-                }
 
-                if (!reachableNow)
-                {
-                    _log.Warning(
-                        LogSource.Init,
-                        "warmup flag | ollama_ok=false (live re-probe also failed)",
-                        new UserFeedback(
-                            "Rewriter unavailable",
-                            "Ollama wasn't ready at startup. Start it and try again.",
-                            UserFeedbackSeverity.Warning,
-                            UserFeedbackRole.Overlay));
-                }
-                else
-                {
-                    _log.Info(
-                        LogSource.Init,
-                        "warmup flag | ollama_ok=false but live re-probe ok — proceeding without warning");
-                }
-                // Proceed with recording — rewrite is optional, transcription
-                // and clipboard copy still deliver the raw text.
-            }
-            // Mic: the live probe below emits its own UserFeedback, so a
-            // false mic_ok flag only needs a diagnostic line here. If the user
-            // plugged the mic in between warmup and hotkey, the live probe
-            // passes and we proceed normally.
-            if (!MicrophoneWarmupOk)
-            {
-                _log.Warning(LogSource.Init, "warmup flag | mic_ok=false (live probe below)");
-            }
+            // Stop-to-pipeline latency starts here — closed by the
+            // whisper.cpp log hook on the first whisper_vad line. The CAS
+            // above guarantees this runs at most once per recording cycle,
+            // so we don't need the previous "if (_isRecording)" guard.
+            _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
+
+            // Signal the Record() polling loop to drain and return. Volatile
+            // write so the loop's Volatile.Read picks it up on the next
+            // iteration without a memory barrier round-trip.
+            Volatile.Write(ref _stopFlag, 1);
+            return ToggleResult.Stopped;
         }
 
-        // Probe the audio device BEFORE firing StatusChanged("Recording").
-        // If the mic is absent/busy, short-circuit the entire pipeline:
-        // no HUD chrono, no worker thread, no Transcribe(empty).
-        // The UserFeedback payload carries the HUD-visible message through the
-        // LogService pipeline — one channel, no parallel event.
-        if (!TryProbeMicrophone(out uint probeErr))
+        if (current != PipelineState.Idle)
         {
-            var (title, body) = DescribeMicError(probeErr);
-            _log.Error(
-                LogSource.Record,
-                $"probe MMSYSERR={probeErr} — {title}",
-                new UserFeedback(title, body,
-                    UserFeedbackSeverity.Error, UserFeedbackRole.Replacement));
-            return;
+            // Starting / Stopping / Transcribing — the previous pipeline is
+            // still in flight. Silent no-op, only a Verbose telemetry line
+            // for diagnosis when the user reports "I pressed but nothing
+            // happened". Decision: ignore (Settings Win11 voice-typing
+            // semantics). See plan
+            // C:\Users\Louis\.claude\plans\j-ai-un-petit-probl-me-quiet-pebble.md
+            _log.Verbose(LogSource.Hotkey, $"toggle ignored | state={current}");
+            return ToggleResult.IgnoredBusy;
         }
 
-        _isRecording       = true;
-        _stopRecording     = false;
-        _shouldPaste       = shouldPaste;
-        _manualProfileName = manualProfileName;
-        _pipelineActive    = true;
-        lock (_segmentsLock) _segments.Clear();
-
-        // Cancel any pending idle unload — a new pipeline is starting.
-        _idleTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-
-        // Single background thread: EnsureModel → Record → Transcribe.
-        // Model load (if needed) happens here, not on the UI/hotkey thread,
-        // so the app stays responsive during the GPU init (~1-3s).
-        //
-        // The try/catch/finally is the safety net that keeps the UI consistent
-        // when an exception escapes Record() or Transcribe(). Without it, a
-        // crash leaves _isRecording=true and StatusChanged never fires again,
-        // freezing the tray tooltip on "Recording" indefinitely.
-        var worker = new Thread(() =>
+        if (requireProfile && string.IsNullOrWhiteSpace(manualProfileName))
         {
-            try
-            {
-                if (!EnsureModelLoaded())
-                {
-                    RaiseFinished(TranscriptionOutcome.None);
-                    return;
-                }
+            // Rewrite hotkey from Idle without a profile bound — same
+            // semantics as before the refactor: warn and refuse. The press
+            // does NOT take the Idle → Starting CAS, so a subsequent
+            // transcribe-hotkey press will still start cleanly.
+            return ToggleResult.IgnoredNoProfile;
+        }
 
-                _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-                RaiseStatus("Recording…");
-                RaiseNarrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
-
-                float[] audio = Record();
-                _isRecording = false;
-                RaiseStatus("Transcribing…");
-                Transcribe(audio);
-                ResetIdleTimer();
-            }
-            catch (Exception ex)
-            {
-                // Recover the UI status that the normal terminal paths would
-                // have emitted, so the tray tooltip leaves the recording state.
-                _log.Error(
-                    LogSource.Transcribe,
-                    $"pipeline crashed: {ex.GetType().Name}: {ex.Message}",
-                    new UserFeedback(
-                        "Pipeline crashed",
-                        "Try again. Check logs if it persists.",
-                        UserFeedbackSeverity.Error,
-                        UserFeedbackRole.Replacement));
-                RaiseStatus("Ready");
-                RaiseFinished(TranscriptionOutcome.None);
-            }
-            finally
-            {
-                // Flags reset unconditionally — subsequent hotkeys must be able
-                // to start a new pipeline even after a crash.
-                _isRecording = false;
-                _pipelineActive = false;
-            }
-        });
-        worker.IsBackground = true;
-        worker.Start();
+        return TryStartFromIdle(manualProfileName, shouldPaste);
     }
 
-    // ── Stop recording (second hotkey press) ────────────────────────────────
-
-    public void StopRecording()
+    // Idle → Starting → Recording. Called only when RequestToggle has
+    // verified the engine is in Idle and (for rewrite hotkeys) the profile
+    // is bound. CAS Idle → Starting up front so a second hotkey press
+    // arriving inside the warmup gate or the mic probe rebounds immediately.
+    // The entire Starting window is mutually exclusive with any other Start
+    // attempt, even one that fires while TryProbeMicrophone is blocked on
+    // the Win32 audio device (~1-2 ms typical, but can spike on contended
+    // hardware).
+    //
+    // CRITICAL: every early-return path below MUST roll the state back to
+    // Idle and signal _idleEvent, otherwise the engine permanently locks
+    // out future hotkeys. The try/finally with `committed` ensures this.
+    private ToggleResult TryStartFromIdle(string? manualProfileName, bool shouldPaste)
     {
-        if (_disposed) return;
-
-        // Stop-to-pipeline latency starts here — closed by the whisper.cpp
-        // log hook on the first whisper_vad line. Captures Record() drain
-        // (waveInStop + buffer concat) plus Transcribe() entry (params build,
-        // log preamble) before whisper_full hits the VAD module. Only armed
-        // when actually recording: the timer is read once by the LatencyPayload
-        // builder; a spurious start with no recording would never be stopped.
-        if (_isRecording)
+        if (Interlocked.CompareExchange(
+                ref _state,
+                (int)PipelineState.Starting,
+                (int)PipelineState.Idle)
+            != (int)PipelineState.Idle)
         {
-            _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
+            // Lost the CAS — another thread (Dispose, parallel hotkey)
+            // moved the state out of Idle in the small window since
+            // RequestToggle's snapshot read.
+            return ToggleResult.IgnoredBusy;
         }
 
-        // Paste target is whatever the user has focused at Stop time — read
-        // live in PasteFromClipboard. We deliberately don't freeze anything at
-        // Start: the recording + transcription + LLM pipeline takes seconds,
-        // and forcing the user back to the original window would be intrusive.
-        _stopRecording = true;
+        // From here we own the Idle → Starting → (Recording or Idle) edge.
+        // _idleEvent is reset until either RollbackToIdle below, or the
+        // worker's terminal Idle transition.
+        _idleEvent.Reset();
+
+        bool committed = false;
+        try
+        {
+            // Reset per-run latency stage timers. _modelLoadMs is overwritten
+            // by LoadModel() if it runs (cold path); _hotkeySw is stopped
+            // after waveInStart in Record(); _recordDrainSw is started/
+            // stopped inside Record() around the post-stop drain;
+            // _stopToPipelineSw and _whisperInitSw are stopped from the
+            // whisper.cpp log hook on the first whisper_vad line.
+            _modelLoadMs = 0;
+            _hotkeySw = System.Diagnostics.Stopwatch.StartNew();
+            _recordDrainSw = null;
+            _stopToPipelineSw = null;
+            _whisperInitSw = null;
+
+            // Consume the warmup flags on the first start — surface any
+            // problems detected silently at startup before the pipeline runs.
+            // Interlocked.Exchange makes the consumption race-free; the CAS
+            // above already prevents two concurrent Starts, so this is now
+            // belt-and-braces. Kept for documentation value at the call site.
+            if (System.Threading.Interlocked.Exchange(ref _warmupFlagsConsumed, 1) == 0)
+            {
+                if (!ModelWarmupOk)
+                {
+                    _log.Error(
+                        LogSource.Init,
+                        "warmup flag | model_ok=false",
+                        new UserFeedback(
+                            "Model not ready",
+                            "Load failed. See in settings.",
+                            UserFeedbackSeverity.Error,
+                            UserFeedbackRole.Replacement));
+                    return ToggleResult.IgnoredBusy;
+                }
+                if (!OllamaWarmupOk)
+                {
+                    // Live re-probe avant d'émettre le warning : Ollama peut
+                    // être devenu reachable entre warmup et premier hotkey
+                    // (cas typique : l'utilisateur a démarré Ollama après
+                    // WhispUI, ou le service Windows a fini son init après
+                    // les 3 essais retry du warmup). Single-shot 3s, exécuté
+                    // sur thread pool pour éviter tout risque de deadlock
+                    // sur le UI thread du message host.
+                    bool reachableNow = false;
+                    try
+                    {
+                        var ollama = new Llm.OllamaService(
+                            () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
+                        var probeTask = Task.Run(() => ollama.IsAvailableAsync());
+                        if (probeTask.Wait(TimeSpan.FromSeconds(4)))
+                            reachableNow = probeTask.Result;
+                    }
+                    catch
+                    {
+                        // IsAvailableAsync is fail-soft (catch interne), mais
+                        // filet sur Task.Run / Wait au cas où.
+                    }
+
+                    if (!reachableNow)
+                    {
+                        _log.Warning(
+                            LogSource.Init,
+                            "warmup flag | ollama_ok=false (live re-probe also failed)",
+                            new UserFeedback(
+                                "Rewriter unavailable",
+                                "Ollama wasn't ready at startup. Start it and try again.",
+                                UserFeedbackSeverity.Warning,
+                                UserFeedbackRole.Overlay));
+                    }
+                    else
+                    {
+                        _log.Info(
+                            LogSource.Init,
+                            "warmup flag | ollama_ok=false but live re-probe ok — proceeding without warning");
+                    }
+                    // Proceed with recording — rewrite is optional.
+                }
+                if (!MicrophoneWarmupOk)
+                {
+                    _log.Warning(LogSource.Init, "warmup flag | mic_ok=false (live probe below)");
+                }
+            }
+
+            // Probe the audio device BEFORE firing StatusChanged("Recording").
+            // If the mic is absent/busy, short-circuit the entire pipeline:
+            // no HUD chrono, no worker thread, no Transcribe(empty).
+            if (!TryProbeMicrophone(out uint probeErr))
+            {
+                var (title, body) = DescribeMicError(probeErr);
+                _log.Error(
+                    LogSource.Record,
+                    $"probe MMSYSERR={probeErr} — {title}",
+                    new UserFeedback(title, body,
+                        UserFeedbackSeverity.Error, UserFeedbackRole.Replacement));
+                return ToggleResult.IgnoredBusy;
+            }
+
+            _shouldPaste       = shouldPaste;
+            _manualProfileName = manualProfileName;
+            Volatile.Write(ref _stopFlag, 0);
+            lock (_segmentsLock) _segments.Clear();
+
+            // Cancel any pending idle unload — a new pipeline is starting.
+            _idleTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+
+            // CAS Starting → Recording. From this moment the worker thread
+            // owns the state machine — Stop, cap-duration, and the worker's
+            // terminal finally are the only legitimate writers of _state.
+            // The only thread that can compete here is Dispose (which moves
+            // any state to Disposed); guard explicitly.
+            if (Interlocked.CompareExchange(
+                    ref _state,
+                    (int)PipelineState.Recording,
+                    (int)PipelineState.Starting)
+                != (int)PipelineState.Starting)
+            {
+                _log.Warning(LogSource.Hotkey, "starting → recording CAS lost (likely Dispose)");
+                return ToggleResult.IgnoredDisposed;
+            }
+
+            // Spawn the worker thread. WorkerRun owns the Recording →
+            // Stopping → Transcribing → Idle transitions (and the Stopping
+            // → Transcribing CAS in particular — the cap-duration branch
+            // inside Record() does the Recording → Stopping CAS).
+            _worker = new Thread(WorkerRun) { IsBackground = true, Name = "WhispEngine.Worker" };
+            _worker.Start();
+
+            committed = true;
+            return ToggleResult.Started;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                RollbackToIdle();
+            }
+        }
+    }
+
+    // Resets the state machine to Idle from Starting (hotkey-thread early-
+    // return path). Worker-owned terminal Idle transitions live in
+    // WorkerRun's finally — they must NOT call this helper because they
+    // need to also emit "Ready" while skipping if Disposed has won.
+    private void RollbackToIdle()
+    {
+        // Only roll back from Starting — never overwrite Recording (worker
+        // already running) or Disposed. The worker spawn site is the
+        // commit point; if we reach here without committing, _state is
+        // still Starting unless Dispose has intervened.
+        if (Interlocked.CompareExchange(
+                ref _state,
+                (int)PipelineState.Idle,
+                (int)PipelineState.Starting)
+            != (int)PipelineState.Starting)
+        {
+            // Dispose won — leave _state alone, just signal idle for any
+            // Dispose Wait that may be pending.
+            _idleEvent.Set();
+            return;
+        }
+        _idleEvent.Set();
+    }
+
+    // Worker thread body. Runs the full Record → Transcribe pipeline,
+    // performs the worker-owned state transitions, and is the ONLY site
+    // that emits "Ready" on the success path. Any RaiseStatus("Ready")
+    // elsewhere in this file (UnloadModel, Transcribe early-returns) must
+    // also gate on _state == Idle to avoid clobbering this invariant.
+    private void WorkerRun()
+    {
+        try
+        {
+            if (!EnsureModelLoaded())
+            {
+                RaiseFinished(TranscriptionOutcome.None);
+                return;
+            }
+
+            _recordingSw = System.Diagnostics.Stopwatch.StartNew();
+            RaiseStatus("Recording…");
+            RaiseNarrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
+
+            float[] audio = Record();
+
+            // Record() returns either because RequestToggle CAS'd
+            // Recording → Stopping (the user pressed Stop), or because the
+            // cap-duration branch CAS'd it itself. Either way the state
+            // should now be Stopping; transition to Transcribing.
+            // If we lose this CAS, Dispose has won — skip Transcribe.
+            if (Interlocked.CompareExchange(
+                    ref _state,
+                    (int)PipelineState.Transcribing,
+                    (int)PipelineState.Stopping)
+                != (int)PipelineState.Stopping)
+            {
+                _log.Verbose(LogSource.Transcribe,
+                    $"skip transcribe | state={(PipelineState)Volatile.Read(ref _state)}");
+                RaiseFinished(TranscriptionOutcome.None);
+                return;
+            }
+
+            RaiseStatus("Transcribing…");
+            Transcribe(audio);
+            ResetIdleTimer();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                LogSource.Transcribe,
+                $"pipeline crashed: {ex.GetType().Name}: {ex.Message}",
+                new UserFeedback(
+                    "Pipeline crashed",
+                    "Try again. Check logs if it persists.",
+                    UserFeedbackSeverity.Error,
+                    UserFeedbackRole.Replacement));
+            RaiseFinished(TranscriptionOutcome.None);
+        }
+        finally
+        {
+            // Terminal Idle transition — owned by the worker thread, in this
+            // exact order: state, worker reference, idle event, then status.
+            // The status fires last so any subscriber that reads _state from
+            // a StatusChanged handler (tray tooltip, HudWindow) sees Idle by
+            // the time "Ready" arrives.
+            //
+            // ★ THIS IS THE ONLY SITE THAT EMITS "Ready" ON THE SUCCESS PATH.
+            // UnloadModel mirrors it for the cold-load case but also gates
+            // on _state == Idle so the two never race.
+            //
+            // CAS loop instead of Exchange so a concurrent Dispose
+            // transitioning *→Disposed wins cleanly: every CAS attempt re-
+            // reads _state, sees Disposed, and bails out. Disposed must
+            // persist past the worker's exit; a "Ready" emitted post-
+            // Dispose would re-arm the tray on a half-shut-down engine.
+            // The loop terminates in at most 2 iterations under contention
+            // (only Dispose can compete with the worker for _state writes).
+            int prev;
+            while (true)
+            {
+                prev = Volatile.Read(ref _state);
+                if (prev == (int)PipelineState.Disposed) break;
+                if (Interlocked.CompareExchange(
+                        ref _state, (int)PipelineState.Idle, prev) == prev)
+                {
+                    break;
+                }
+            }
+            bool reachedIdle = prev != (int)PipelineState.Disposed;
+            _worker = null;
+            _idleEvent.Set();
+            if (reachedIdle)
+            {
+                RaiseStatus("Ready");
+            }
+        }
     }
 
     // ── Audio device probe (before StartRecording) ─────────────────────────────
@@ -1146,10 +1412,12 @@ internal sealed class WhispEngine : IDisposable
     // ── Audio recording ─────────────────────────────────────────────────────
     //
     // Captures the microphone continuously into a single resizable buffer.
-    // When _stopRecording becomes true, returns all accumulated audio as float[]
-    // (PCM16 → float [-1, 1]) to be passed in a single call to whisper_full().
-    // Whisper handles its own internal windowing (30s + dynamic seek) and
-    // inter-window context propagation via tokens — no chunking here.
+    // When _stopFlag becomes 1 (set by RequestToggle on Recording → Stopping
+    // CAS, or by the cap-duration branch below), returns all accumulated
+    // audio as float[] (PCM16 → float [-1, 1]) to be passed in a single call
+    // to whisper_full(). Whisper handles its own internal windowing
+    // (30s + dynamic seek) and inter-window context propagation via tokens
+    // — no chunking here.
 
     private float[] Record()
     {
@@ -1260,9 +1528,27 @@ internal sealed class WhispEngine : IDisposable
         bool lowAudioWarned            = false;
         bool captureLagWarned          = false;
 
-        while (!_stopRecording)
+        // TEMP DIAG (capture-lag investigation) — strip after collecting
+        // 5–10 occurrences in the wild. Tells us which of GC pause /
+        // CPU preemption / cold-start / heavy inline work caused the
+        // 3-buffer pile-up. Plan:
+        // C:\Users\Louis\.claude\plans\pourquoi-le-ring-buffer-effervescent-ritchie.md
+        long diagIterationCount = 0;
+        long diagLastIterMs     = 0;
+        int  diagGcStart0       = GC.CollectionCount(0);
+        int  diagGcStart1       = GC.CollectionCount(1);
+        int  diagGcStart2       = GC.CollectionCount(2);
+        var  diagWaitWatch      = new System.Diagnostics.Stopwatch();
+        var  diagIterWatch      = new System.Diagnostics.Stopwatch();
+
+        while (Volatile.Read(ref _stopFlag) == 0)
         {
+            diagWaitWatch.Restart();
             NativeMethods.WaitForSingleObject(hEvent, 100);
+            long diagWaitMs = diagWaitWatch.ElapsedMilliseconds;
+
+            diagIterWatch.Restart();
+            diagIterationCount++;
 
             int bufferDoneCount = 0;
             for (int i = 0; i < N_BUFFERS; i++)
@@ -1338,15 +1624,33 @@ internal sealed class WhispEngine : IDisposable
             // really under pressure. With 4 buffers × 50 ms and a 100 ms
             // wait, finding 1-2 buffers WHDR_DONE per iteration is normal;
             // 3+ means the consumer fell at least 150 ms behind the producer.
+            //
+            // TEMP DIAG fields decode the cause:
+            //   iter         — iteration index when the lag fires (low → cold-start)
+            //   wait_ms      — time spent in WaitForSingleObject (high → GC pause / CPU preemption during sleep)
+            //   prev_iter_ms — time the previous scan loop took (high → heavy inline work let buffers pile up)
+            //   gcN          — GC count delta from start of recording (gen1/gen2 bump → STW pause)
             if (!captureLagWarned && bufferDoneCount >= 3)
             {
                 captureLagWarned = true;
-                _log.Warning(LogSource.Record, $"capture lag | buffers_ready={bufferDoneCount}");
+                int diagGcNow0 = GC.CollectionCount(0);
+                int diagGcNow1 = GC.CollectionCount(1);
+                int diagGcNow2 = GC.CollectionCount(2);
+                _log.Warning(LogSource.Record,
+                    $"capture lag | buffers_ready={bufferDoneCount} iter={diagIterationCount} wait_ms={diagWaitMs} prev_iter_ms={diagLastIterMs} gc0={diagGcStart0}->{diagGcNow0} gc1={diagGcStart1}->{diagGcNow1} gc2={diagGcStart2}->{diagGcNow2}");
             }
 
             // Duration cap — forces a stop as if the user had pressed the
             // hotkey. Audio captured so far still flows through the full
             // pipeline. Only triggers once per session.
+            //
+            // We CAS Recording → Stopping ourselves so the state machine
+            // matches the user-driven Stop path: the worker's post-Record
+            // CAS (Stopping → Transcribing) sees a consistent state. If the
+            // user pressed Stop in the very same instant and won the CAS,
+            // we lose ours; the _stopFlag write below still ends the loop
+            // cleanly, and the user-side ArmStopToPipelineLatency already
+            // started the stopwatch.
             double curSec = allBytes.Count / 32000.0;
             if (!capHit && maxDurationSec > 0 && curSec >= maxDurationSec)
             {
@@ -1356,8 +1660,18 @@ internal sealed class WhispEngine : IDisposable
                     $"duration cap reached | audio_sec={curSec:F1} | cap_sec={maxDurationSec}");
                 RaiseNarrative(LogSource.Record,
                     $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
-                _stopRecording = true;
+                if (Interlocked.CompareExchange(
+                        ref _state,
+                        (int)PipelineState.Stopping,
+                        (int)PipelineState.Recording)
+                    == (int)PipelineState.Recording)
+                {
+                    _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
+                }
+                Volatile.Write(ref _stopFlag, 1);
             }
+
+            diagLastIterMs = diagIterWatch.ElapsedMilliseconds;
         }
 
         // Drain phase starts here — measured separately from the in-loop
@@ -1379,7 +1693,7 @@ internal sealed class WhispEngine : IDisposable
                 allBytes.AddRange(data);
                 // Push the drained tail through the same sub-window mill so
                 // _rmsLog covers the full session (the in-loop EmitAudioLevels
-                // path stops as soon as _stopRecording flips, leaving the last
+                // path stops as soon as _stopFlag flips, leaving the last
                 // 1-3 buffers undrained without this explicit pass).
                 EmitAudioLevels(data);
             }
@@ -1829,7 +2143,9 @@ internal sealed class WhispEngine : IDisposable
         if (audio.Length == 0)
         {
             _log.Warning(LogSource.Transcribe, "empty audio buffer, nothing to transcribe");
-            RaiseStatus("Ready");
+            // No RaiseStatus here — WorkerRun's finally is the canonical
+            // emission point for "Ready" on the success path. Emitting it
+            // both here and there would just send the event twice.
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
@@ -1904,7 +2220,19 @@ internal sealed class WhispEngine : IDisposable
         // which measures the VAD module itself.
         _whisperInitSw = System.Diagnostics.Stopwatch.StartNew();
         var sw = _transcribeSw;
-        int result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
+        // ★ whisper.cpp is not thread-safe across concurrent calls on a
+        // single context — two whisper_full on the same _ctx = native
+        // segfault, no managed exception, the process dies. The pipeline
+        // state machine prevents the user-driven path from re-entering
+        // here, but Warmup() also calls Transcribe() at startup on its own
+        // background thread, and that path bypasses the state machine. The
+        // lock makes the invariant local to the call site instead of having
+        // to reason about it across files.
+        int result;
+        lock (_transcribeLock)
+        {
+            result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
+        }
         sw.Stop();
         long transcribeMsTotal = sw.ElapsedMilliseconds;
 
@@ -2455,17 +2783,74 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Dispose ───────────────────────────────────────────────────────────────
 
+    // Tray Quit → App.QuitApp → here. The state machine flips to Disposed
+    // unconditionally so any in-flight worker thread or stray hotkey lands
+    // on a refusal path. Then we wait for the worker to actually exit
+    // before freeing _ctx — whisper_free on a context with active inference
+    // is a native segfault that no managed handler can rescue.
+    //
+    // Timeout: whisper_full on a 60 s recording can take 5-15 s on a GPU
+    // backend, so 30 s is enough for normal cases. If it expires we log a
+    // Warning and leak the worker thread — the process is exiting anyway,
+    // and the alternative (tearing down _ctx underneath a running
+    // whisper_full) is the very crash this method exists to prevent.
+    private const int DISPOSE_WORKER_JOIN_TIMEOUT_MS = 30_000;
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
+        // Capture before transitioning so the Verbose line below records
+        // what the engine was actually doing when Dispose arrived.
+        var prevState = (PipelineState)Volatile.Read(ref _state);
+        Interlocked.Exchange(ref _state, (int)PipelineState.Disposed);
+
+        // Tell the Record() loop to stop, in case the worker is still in
+        // there. WorkerRun's Stopping → Transcribing CAS will lose to our
+        // Disposed write and skip Transcribe entirely, but it still needs
+        // to exit Record() cleanly to release the waveIn handles.
+        Volatile.Write(ref _stopFlag, 1);
+
+        var worker = _worker;
+        if (worker is not null && worker.IsAlive)
+        {
+            _log.Verbose(LogSource.App,
+                $"dispose | waiting on worker | prev_state={prevState} | timeout_ms={DISPOSE_WORKER_JOIN_TIMEOUT_MS}");
+            var swJoin = System.Diagnostics.Stopwatch.StartNew();
+            bool joined = worker.Join(DISPOSE_WORKER_JOIN_TIMEOUT_MS);
+            swJoin.Stop();
+            if (!joined)
+            {
+                _log.Warning(LogSource.App,
+                    $"dispose timeout | join_ms={swJoin.ElapsedMilliseconds} — worker still alive, leaking thread (process exiting)");
+            }
+            else
+            {
+                _log.Verbose(LogSource.App, $"dispose | worker joined | join_ms={swJoin.ElapsedMilliseconds}");
+            }
+        }
+
         _idleTimer?.Dispose();
 
-        if (_ctx != IntPtr.Zero)
+        // _idleEvent is intentionally NOT disposed — if the Join timed out,
+        // the leaked worker may still call _idleEvent.Set() in its finally,
+        // and Dispose'ing the event would turn that into an
+        // ObjectDisposedException. The process is exiting anyway, so the
+        // wait-handle leak doesn't matter; the OS reclaims it on exit.
+
+        // _transcribeLock guarantees no whisper_full is in progress on _ctx
+        // by the time we reach here — either WorkerRun joined (above) and
+        // released the lock, or it timed out and we're shutting down anyway.
+        // Acquiring the lock briefly here serialises against Warmup() if it
+        // somehow outlived the worker join.
+        lock (_transcribeLock)
         {
-            NativeMethods.whisper_free(_ctx);
-            _ctx = IntPtr.Zero;
+            if (_ctx != IntPtr.Zero)
+            {
+                NativeMethods.whisper_free(_ctx);
+                _ctx = IntPtr.Zero;
+            }
         }
     }
 }
