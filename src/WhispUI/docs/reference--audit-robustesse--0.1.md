@@ -124,7 +124,7 @@ Findings classés par catégorie. La colonne **Statut** indique :
 | ID | Fichier:Ligne | Gravité | Risque | Mitigation | Statut |
 |----|---------------|---------|--------|------------|--------|
 | LIF-1 | WhispEngine.cs:718 (`StartRecording`) | Haute | Pas de check `_disposed` dans `StartRecording` / `Transcribe`. Si un hotkey arrive pendant `QuitApp`, accès à un contexte `whisper_free`'d → crash natif fatal. | `if (_disposed) return` au début. | ✅ (StartRecording, StopRecording, Warmup) |
-| LIF-2 | App.xaml.cs:308-318 (`QuitApp`) | Moyenne | Ordre de Dispose : tray puis hotkey puis engine. Un Transcribe en vol peut appeler `RaiseStatus` après tray Dispose → NPE dans la callback. | Appeler `_engine.StopRecording()` **avant** tray/hotkey Dispose, attendre le worker. | 📋 Backlog |
+| LIF-2 | App.xaml.cs:308-318 (`QuitApp`) | Moyenne | Ordre de Dispose : tray puis hotkey puis engine. Un Transcribe en vol peut appeler `RaiseStatus` après tray Dispose → NPE dans la callback. | Appeler `_engine.StopRecording()` **avant** tray/hotkey Dispose, attendre le worker. | ✅ (`Engine.Dispose` flippe `_state→Disposed`, set `_stopFlag`, `Thread.Join(30s)` du worker, `_transcribeLock` autour de `whisper_free` — le worker exit cleanly avant la suite du QuitApp) |
 | LIF-3 | HudOverlayWindow.xaml.cs:47 | Basse | `_subclassDelegate` field d'instance OK, mais pas d'unsubscribe explicite dans `Closed`. Si la window était reused (pas le cas actuel), leak. | Vérifier ; ajouter `RemoveWindowSubclass` si besoin futur. | 📋 Backlog |
 
 ### 3.3 Settings & hot-reload
@@ -165,7 +165,7 @@ Findings classés par catégorie. La colonne **Statut** indique :
 | ID | Fichier:Ligne | Gravité | Risque | Mitigation | Statut |
 |----|---------------|---------|--------|------------|--------|
 | UX-1 | WhispEngine.cs:119 (`_segments` list) | Moyenne | Liste unbounded — enregistrement très long (2h+) → OOM possible à la sérialisation finale. | Cap `_segments.Count > MAX_SEGMENTS` avec arrêt ou warning. | 📋 Backlog |
-| UX-2 | App.xaml.cs:400-467 (`OnHotkey`) | Haute | Lecture de `_engine.IsRecording` ligne 440 = course avec le worker thread qui le modifie ligne 815. Le gate `if (_isRecording) return;` ligne 720 dans `StartRecording` rattrape le double-call mais le check côté `OnHotkey` est racy. | `Interlocked.CompareExchange` pour le gate, ou supprimer la lecture racy si le gate downstream suffit. | 📋 Backlog |
+| UX-2 | App.xaml.cs:400-467 (`OnHotkey`) | Haute | Lecture de `_engine.IsRecording` ligne 440 = course avec le worker thread qui le modifie ligne 815. Le gate `if (_isRecording) return;` ligne 720 dans `StartRecording` rattrape le double-call mais le check côté `OnHotkey` est racy. | `Interlocked.CompareExchange` pour le gate, ou supprimer la lecture racy si le gate downstream suffit. | ✅ (state machine 6 états + `RequestToggle` API unifiée) |
 | UX-3 | WhispEngine.cs:820-833 (pipeline crash) | Moyenne | Si une exception vient d'une delegate native (callback whisper.cpp `OnNewSegment`, `WhisperLogCallback`, SubclassProc), elle peut être levée hors du try/catch principal du pipeline. | Wrapper les delegates natifs dans leurs propres try/catch. | 📋 Backlog |
 
 ---
@@ -239,6 +239,46 @@ ordonné de la table 3) :
 - MWI-3 : CTS de cycle de vie de section dans `LlmModelsSection`,
   recréé au `Loaded`, cancellé au `Unloaded`. Linked CTS pour combiner
   avec timeout 30s. `OperationCanceledException` sur Unload silencieuse.
+
+### Session 2026-04-27 — Passe robustesse pipeline hotkey
+
+**UX-2 + LIF-2 — state machine 6 états sur la pipeline d'enregistrement** ✅ :
+
+- `volatile bool _isRecording` / `_stopRecording` remplacés par
+  `int _state` manipulé via `Interlocked.CompareExchange`. Énum
+  `PipelineState { Idle, Starting, Recording, Stopping, Transcribing,
+  Disposed }`. Toute transition illégale est silencieusement refusée.
+- API publique unifiée `WhispEngine.RequestToggle(manualProfileName,
+  shouldPaste, requireProfile)` retourne `ToggleResult { Started,
+  Stopped, IgnoredBusy, IgnoredNoProfile, IgnoredDisposed }`. App.OnHotkey
+  ne lit plus l'état du moteur pour décider — c'est le moteur qui CAS la
+  transition et rapporte le verdict (élimine la course historique).
+- `StartRecording` / `StopRecording` publics supprimés. Tout passe par
+  `RequestToggle` ; les transitions sont :
+  - Hotkey thread : Idle→Starting→Recording (ou rollback Idle).
+  - Worker thread : Stopping→Transcribing→Idle dans le `finally`.
+  - Cap durée : Recording→Stopping (CAS interne dans `Record()`).
+  - `Dispose` : *→Disposed unconditional, gagne sur tout.
+- Boucle `Record()` migrée de `while(!_stopRecording)` à
+  `while (Volatile.Read(ref _stopFlag) == 0)` ; `_stopFlag` est posé
+  par `RequestToggle` (Stop) ou par le cap durée.
+- `_transcribeLock` autour de `whisper_full` — sérialise les appels
+  natifs sur `_ctx` même si Warmup() reste en parallèle (whisper.cpp
+  pas thread-safe sur un même contexte = segfault non rattrapable).
+- `_pipelineActive` supprimé : `_state != Idle` le remplace dans
+  `UnloadModel`. `RaiseStatus("Ready")` dans `UnloadModel` re-gaté sur
+  `_state == Idle` (no clobber pendant un nouveau Start).
+- `WorkerRun.finally` est désormais le seul site qui émet "Ready" sur
+  le succès path (commentaire-verrou à proximité). `RaiseStatus("Ready")`
+  redondant supprimé du early-return audio-vide de `Transcribe`.
+- `Dispose` (LIF-2) : flippe `_state→Disposed`, set `_stopFlag`, fait
+  `_worker.Join(30_000)` avec log Warning si timeout, puis acquiert
+  `_transcribeLock` avant `whisper_free(_ctx)`. Le worker exit cleanly
+  avant que le contexte natif ne soit libéré, plus de race
+  RaiseStatus-après-tray-Dispose ni de double-free.
+
+Plan détaillé :
+[`C:\Users\Louis\.claude\plans\j-ai-un-petit-probl-me-quiet-pebble.md`](../../../C:%5CUsers%5CLouis%5C.claude%5Cplans%5Cj-ai-un-petit-probl-me-quiet-pebble.md).
 
 ### Sessions suivantes
 
