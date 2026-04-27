@@ -3,9 +3,9 @@
 App WinUI 3 unpackaged, point d'entrée unique du projet transcription
 côté UI.
 
-WhispInteropTest (WinForms) tourne encore via la tâche planifiée
-`Whisp` tant que WhispUI n'est pas packagé. Il doit être tué avant
-tout test runtime de WhispUI — collision `RegisterHotKey` err 1409.
+Avant un test runtime, tuer toute instance déjà en cours (WhispUI ou
+prototype antérieur) — deux processus qui appellent `RegisterHotKey`
+sur la même combinaison se collisionnent (`err 1409`).
 
 Roadmap et état d'avancement : tenus dans la mémoire de session de
 l'agent (Claude Code auto-memory). À relire en début de session.
@@ -60,8 +60,9 @@ setx WHISPUI_MSBUILD "<msbuild-path>"
 
 - **`AllowUnsafeBlocks` obligatoire** dans le csproj — sans, `SYSLIB1062`
   / `CS0227` sur `LibraryImport`.
-- **WhispInteropTest doit être tué** avant tout test — collision
-  `RegisterHotKey` err 1409.
+- **Tuer toute instance précédente** avant tout test — collision
+  `RegisterHotKey` err 1409 si une autre instance tient déjà la
+  combinaison.
 - **Lifetime WinUI 3** : toutes les Windows (HUD, LogWindow,
   SettingsWindow) bloquent leur fermeture via `Closing→Cancel`. Sortie
   unique = menu Quitter du tray → `QuitApp()` qui libère tray, message

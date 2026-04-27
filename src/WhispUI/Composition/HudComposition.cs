@@ -341,7 +341,7 @@ internal static class HudComposition
     // ── DeviceLost hook ──────────────────────────────────────────────────
     // Win2D's CanvasDevice.GetSharedDevice() returns a process-wide D3D11
     // device. If the GPU goes away (driver reset, TDR, Vulkan/D3D contention
-    // with the whisper.cpp Vulkan backend running on the same RX 7900 XT),
+    // with the whisper.cpp Vulkan backend running on the same GPU),
     // every CompositionDrawingSurface we baked onto that device becomes
     // invalid — conic surface, arc mask surface, stroke silhouette surface.
     // The compositor keeps rendering but the brushes sample black, which
