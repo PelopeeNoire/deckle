@@ -40,10 +40,10 @@ internal static class WhisperParamsMapper
 
         public void Free()
         {
-            if (Language != IntPtr.Zero) Marshal.FreeHGlobal(Language);
-            if (InitialPrompt != IntPtr.Zero) Marshal.FreeHGlobal(InitialPrompt);
-            if (SuppressRegex != IntPtr.Zero) Marshal.FreeHGlobal(SuppressRegex);
-            if (VadModelPath != IntPtr.Zero) Marshal.FreeHGlobal(VadModelPath);
+            if (Language != IntPtr.Zero) Marshal.FreeCoTaskMem(Language);
+            if (InitialPrompt != IntPtr.Zero) Marshal.FreeCoTaskMem(InitialPrompt);
+            if (SuppressRegex != IntPtr.Zero) Marshal.FreeCoTaskMem(SuppressRegex);
+            if (VadModelPath != IntPtr.Zero) Marshal.FreeCoTaskMem(VadModelPath);
         }
     }
 
@@ -54,8 +54,8 @@ internal static class WhisperParamsMapper
     public static NativeAllocations Apply(ref WhisperFullParams wparams, AppSettings s)
     {
         // ── Transcription ─────────────────────────────────────────────────
-        IntPtr langPtr = Marshal.StringToHGlobalAnsi(s.Transcription.Language);
-        IntPtr promptPtr = Marshal.StringToHGlobalAnsi(s.Transcription.InitialPrompt);
+        IntPtr langPtr = Marshal.StringToCoTaskMemUTF8(s.Transcription.Language);
+        IntPtr promptPtr = Marshal.StringToCoTaskMemUTF8(s.Transcription.InitialPrompt);
         wparams.language = langPtr;
         wparams.initial_prompt = promptPtr;
         wparams.carry_initial_prompt = (byte)(s.Transcription.CarryInitialPrompt ? 1 : 0);
@@ -85,7 +85,7 @@ internal static class WhisperParamsMapper
         IntPtr regexPtr = IntPtr.Zero;
         if (!string.IsNullOrEmpty(s.OutputFilters.SuppressRegex))
         {
-            regexPtr = Marshal.StringToHGlobalAnsi(s.OutputFilters.SuppressRegex);
+            regexPtr = Marshal.StringToCoTaskMemUTF8(s.OutputFilters.SuppressRegex);
             wparams.suppress_regex = regexPtr;
         }
 
@@ -114,7 +114,7 @@ internal static class WhisperParamsMapper
 
             if (File.Exists(vadModelPath))
             {
-                vadPathPtr = Marshal.StringToHGlobalAnsi(vadModelPath);
+                vadPathPtr = Marshal.StringToCoTaskMemUTF8(vadModelPath);
                 wparams.vad_model_path = vadPathPtr;
                 wparams.vad_threshold = s.SpeechDetection.Threshold;
                 wparams.vad_min_speech_duration_ms = s.SpeechDetection.MinSpeechDurationMs;
