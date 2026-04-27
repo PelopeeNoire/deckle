@@ -62,9 +62,9 @@
                                            Style="{StaticResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <ComboBox MinWidth="160"
-                                          Tag="{x:Bind}"
-                                          Loaded="ProfileComboByWords_Loaded"
-                                          SelectionChanged="ProfileComboByWords_SelectionChanged" />
+                                          ItemsSource="{x:Bind ProfileChoices, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ProfileName, Mode=TwoWay}"
+                                          Loaded="ProfileCombo_Loaded" />
                                 <Button Tag="{x:Bind}"
                                         Click="DeleteRuleByWords_Click">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -108,9 +108,9 @@
                                            Style="{StaticResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <ComboBox MinWidth="160"
-                                          Tag="{x:Bind}"
-                                          Loaded="ProfileCombo_Loaded"
-                                          SelectionChanged="ProfileCombo_SelectionChanged" />
+                                          ItemsSource="{x:Bind ProfileChoices, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ProfileName, Mode=TwoWay}"
+                                          Loaded="ProfileCombo_Loaded" />
                                 <Button Tag="{x:Bind}"
                                         Click="DeleteRule_Click">
                                     <StackPanel Orientation="Horizontal" Spacing="6">

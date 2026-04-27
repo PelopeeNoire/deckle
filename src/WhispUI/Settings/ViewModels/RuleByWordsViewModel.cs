@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace WhispUI.Settings.ViewModels;
@@ -19,6 +20,8 @@ public partial class RuleByWordsViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string ProfileName { get; set; }
+
+    public ObservableCollection<string> ProfileChoices { get; } = new();
 
     public string Description => $"Recordings longer than {(int)MinWordCount} words";
 
@@ -47,6 +50,11 @@ public partial class RuleByWordsViewModel : ObservableObject
         _isSyncing = true;
         RuleIndex = index;
         MinWordCount = rule.MinWordCount;
+
+        ProfileChoices.Clear();
+        foreach (var p in SettingsService.Instance.Current.Llm.Profiles)
+            ProfileChoices.Add(p.Name);
+
         ProfileName = rule.ProfileName;
         _isSyncing = false;
     }

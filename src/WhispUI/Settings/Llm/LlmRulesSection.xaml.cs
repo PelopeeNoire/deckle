@@ -29,6 +29,27 @@ public sealed partial class LlmRulesSection : UserControl
         InitializeComponent();
     }
 
+    // Force the initial selection on each rule's profile combo. The
+    // ComboBox.SelectedItem TwoWay binding can resolve before ItemsSource is
+    // fully populated — when that happens the combo lands blank even though
+    // the VM's ProfileName already holds the correct value. This handler
+    // catches that case once the container is laid out and pushes the value
+    // through. DataContext is the canonical scope inside an ItemsRepeater
+    // DataTemplate (no virtualization race like the previous Tag={x:Bind}
+    // approach had).
+    private void ProfileCombo_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ComboBox combo || combo.SelectedItem != null) return;
+        string? name = combo.DataContext switch
+        {
+            RuleViewModel rvm        => rvm.ProfileName,
+            RuleByWordsViewModel wvm => wvm.ProfileName,
+            _                        => null
+        };
+        if (!string.IsNullOrEmpty(name))
+            combo.SelectedItem = name;
+    }
+
     public void Reload()
     {
         _loading = true;
@@ -77,24 +98,6 @@ public sealed partial class LlmRulesSection : UserControl
 
     // ── Duration list ───────────────────────────────────────────────────────
 
-    private void ProfileCombo_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not ComboBox combo || combo.Tag is not RuleViewModel vm)
-            return;
-        PopulateProfileCombo(combo, vm.ProfileName);
-    }
-
-    private void ProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_loading) return;
-        if (sender is ComboBox combo
-            && combo.Tag is RuleViewModel vm
-            && combo.SelectedItem is ComboBoxItem item)
-        {
-            vm.ProfileName = item.Content?.ToString() ?? "";
-        }
-    }
-
     private void DeleteRule_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.Tag is not RuleViewModel vm)
@@ -124,24 +127,6 @@ public sealed partial class LlmRulesSection : UserControl
     }
 
     // ── Words list ──────────────────────────────────────────────────────────
-
-    private void ProfileComboByWords_Loaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is not ComboBox combo || combo.Tag is not RuleByWordsViewModel vm)
-            return;
-        PopulateProfileCombo(combo, vm.ProfileName);
-    }
-
-    private void ProfileComboByWords_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_loading) return;
-        if (sender is ComboBox combo
-            && combo.Tag is RuleByWordsViewModel vm
-            && combo.SelectedItem is ComboBoxItem item)
-        {
-            vm.ProfileName = item.Content?.ToString() ?? "";
-        }
-    }
 
     private void DeleteRuleByWords_Click(object sender, RoutedEventArgs e)
     {
@@ -184,21 +169,5 @@ public sealed partial class LlmRulesSection : UserControl
         SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
         SettingsService.Instance.Save();
         Reload();
-    }
-
-    // ── Shared combo population ────────────────────────────────────────────
-
-    private static void PopulateProfileCombo(ComboBox combo, string currentName)
-    {
-        combo.Items.Clear();
-        var profiles = SettingsService.Instance.Current.Llm.Profiles;
-        int selectedIdx = -1;
-        for (int i = 0; i < profiles.Count; i++)
-        {
-            combo.Items.Add(new ComboBoxItem { Content = profiles[i].Name });
-            if (string.Equals(profiles[i].Name, currentName, StringComparison.OrdinalIgnoreCase))
-                selectedIdx = i;
-        }
-        combo.SelectedIndex = selectedIdx >= 0 ? selectedIdx : (profiles.Count > 0 ? 0 : -1);
     }
 }
