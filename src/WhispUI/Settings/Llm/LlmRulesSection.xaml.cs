@@ -32,22 +32,48 @@ public sealed partial class LlmRulesSection : UserControl
     // Force the initial selection on each rule's profile combo. The
     // ComboBox.SelectedItem TwoWay binding can resolve before ItemsSource is
     // fully populated — when that happens the combo lands blank even though
-    // the VM's ProfileName already holds the correct value. This handler
-    // catches that case once the container is laid out and pushes the value
-    // through. DataContext is the canonical scope inside an ItemsRepeater
-    // DataTemplate (no virtualization race like the previous Tag={x:Bind}
-    // approach had).
+    // the VM's ProfileName already holds the correct value. DataContext is
+    // the canonical scope inside an ItemsRepeater DataTemplate (no
+    // virtualization race like the previous Tag={x:Bind} approach had).
+    //
+    // Two-pass fix: try once at Loaded time (Items already populated in the
+    // common case), then retry on the next dispatcher tick if the combo
+    // still landed blank. The retry catches the case observed after a Reset
+    // Rules — by the time Loaded fires the ItemsSource binding hasn't
+    // pushed yet, but it has by the next UI tick. Without the retry the
+    // dropdown stays empty until the user opens it manually.
     private void ProfileCombo_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not ComboBox combo || combo.SelectedItem != null) return;
+        if (sender is not ComboBox combo) return;
         string? name = combo.DataContext switch
         {
             RuleViewModel rvm        => rvm.ProfileName,
             RuleByWordsViewModel wvm => wvm.ProfileName,
             _                        => null
         };
-        if (!string.IsNullOrEmpty(name))
-            combo.SelectedItem = name;
+        if (string.IsNullOrEmpty(name)) return;
+
+        if (TrySelectByName(combo, name)) return;
+
+        // Items not populated yet — schedule one retry on the next tick.
+        // Single retry on purpose: if the second pass still fails, the
+        // ItemsSource is genuinely missing the profile (orphan rule), and
+        // the user reads that as a blank intentionally.
+        var dq = combo.DispatcherQueue;
+        dq?.TryEnqueue(() => TrySelectByName(combo, name));
+    }
+
+    private static bool TrySelectByName(ComboBox combo, string name)
+    {
+        foreach (var item in combo.Items)
+        {
+            if (item is string s && string.Equals(s, name, StringComparison.Ordinal))
+            {
+                combo.SelectedItem = item;
+                return true;
+            }
+        }
+        return false;
     }
 
     public void Reload()
