@@ -81,6 +81,19 @@ internal sealed class WhispEngine : IDisposable
         TranscriptionFinished?.Invoke(outcome);
     }
 
+    // Gate user-facing narratives the same way as RaiseStatus/RaiseFinished so
+    // the boot-time warmup doesn't pollute LogWindow with phrases describing a
+    // real transcription. The two warmup-specific narratives (priming start
+    // and pipeline-ready end) are emitted directly through _log.Narrative so
+    // they bypass this gate. `source` is a LogSource constant (string under
+    // the hood — LogSource is a static class of named string constants, not
+    // an enum).
+    private void RaiseNarrative(string source, string msg)
+    {
+        if (_isWarmup) return;
+        _log.Narrative(source, msg);
+    }
+
     // ── Configuration ─────────────────────────────────────────────────────────
 
     const string MODEL_FILE = "ggml-large-v3.bin";
@@ -358,7 +371,7 @@ internal sealed class WhispEngine : IDisposable
                         // moved past its setup phase into actual work.
                         _stopToPipelineSw?.Stop();
                         _whisperInitSw?.Stop();
-                        _log.Narrative(LogSource.Transcribe, "Looking for speech in the recording — a small detector is scanning the audio for spoken segments.");
+                        RaiseNarrative(LogSource.Transcribe, "Looking for speech in the recording — a small detector is scanning the audio for spoken segments.");
                     }
 
                     // Parse-once: ignore later matches in the same window.
@@ -513,15 +526,15 @@ internal sealed class WhispEngine : IDisposable
         // speech duration. Distinguishes "speech found" from "nothing found".
         if (_vadSegments == 0)
         {
-            _log.Narrative(LogSource.Transcribe, "No speech detected in the recording.");
+            RaiseNarrative(LogSource.Transcribe, "No speech detected in the recording.");
         }
         else if (_vadSpeechSec >= 0)
         {
-            _log.Narrative(LogSource.Transcribe, $"Speech detected — {_vadSpeechSec:F1} s of speech. Passing to Whisper for transcription.");
+            RaiseNarrative(LogSource.Transcribe, $"Speech detected — {_vadSpeechSec:F1} s of speech. Passing to Whisper for transcription.");
         }
         else
         {
-            _log.Narrative(LogSource.Transcribe, "Speech detected. Passing to Whisper for transcription.");
+            RaiseNarrative(LogSource.Transcribe, "Speech detected. Passing to Whisper for transcription.");
         }
     }
 
@@ -556,7 +569,7 @@ internal sealed class WhispEngine : IDisposable
         double fileMb = new FileInfo(_modelPath).Length / 1024.0 / 1024.0;
         string basename = Path.GetFileName(_modelPath);
         _log.Info(LogSource.Model, "Loading model");
-        _log.Narrative(LogSource.Model, $"Loading the Whisper model into GPU memory — a {fileMb:F0} MB speech recognizer is being prepared so transcription can run locally.");
+        RaiseNarrative(LogSource.Model, $"Loading the Whisper model into GPU memory — a {fileMb:F0} MB speech recognizer is being prepared so transcription can run locally.");
         _log.Verbose(LogSource.Model, $"load start | file={basename} | file_mb={fileMb:F1} | use_gpu=1");
 
         // Reset the backend before init so a re-load after an idle unload
@@ -596,6 +609,14 @@ internal sealed class WhispEngine : IDisposable
 
         _log.Success(LogSource.Model, $"Model loaded ({_detectedBackend})");
         _log.Verbose(LogSource.Model, $"load complete | load_ms={sw.ElapsedMilliseconds} | backend={_detectedBackend}");
+
+        // Mirror the symmetric "Ready" emitted on the failure paths above so
+        // the tray tooltip transitions Loading model… → Ready as soon as the
+        // model is in VRAM. Without this, the success path returns silently
+        // and the tooltip stays stuck on "Loading model…" through warmup
+        // (Transcribe's own RaiseStatus("Ready") is absorbed by _isWarmup)
+        // and only flips on the first user hotkey.
+        RaiseStatus("Ready");
         return true;
     }
 
@@ -648,21 +669,103 @@ internal sealed class WhispEngine : IDisposable
         _log.Verbose(LogSource.Model, $"idle timer set ({MODEL_IDLE_TIMEOUT_MS / 1000}s)");
     }
 
+    // ── Warmup clip loader ──────────────────────────────────────────────────
+    //
+    // Reads Assets/Sounds/speech.wav (deployed next to the exe via the
+    // Content directive in WhispUI.csproj) and converts the PCM mono 16-bit
+    // 16 kHz body into the float[-1, 1] sample buffer Whisper expects.
+    // Strict format check — the file is shipped pre-converted, anything
+    // unexpected returns null so Warmup falls back to a silent buffer
+    // instead of crashing the boot path.
+    //
+    // Header layout reference (canonical 44-byte PCM WAV):
+    //   00..03  "RIFF"
+    //   04..07  RIFF size (file - 8)
+    //   08..11  "WAVE"
+    //   12..15  "fmt "
+    //   16..19  fmt chunk size (16 for plain PCM)
+    //   20..21  audio format (1 = PCM)
+    //   22..23  num channels
+    //   24..27  sample rate
+    //   28..31  byte rate
+    //   32..33  block align
+    //   34..35  bits per sample
+    //   36..39  "data"
+    //   40..43  data chunk size
+    //   44..    int16 little-endian samples
+    private float[]? TryLoadWarmupClip()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "Sounds", "speech.wav");
+        try
+        {
+            if (!File.Exists(path))
+            {
+                _log.Verbose(LogSource.Init, $"warmup clip missing | path={path}");
+                return null;
+            }
+
+            byte[] bytes = File.ReadAllBytes(path);
+            if (bytes.Length < 44
+                || bytes[0]  != 'R' || bytes[1]  != 'I' || bytes[2]  != 'F' || bytes[3]  != 'F'
+                || bytes[8]  != 'W' || bytes[9]  != 'A' || bytes[10] != 'V' || bytes[11] != 'E'
+                || bytes[12] != 'f' || bytes[13] != 'm' || bytes[14] != 't' || bytes[15] != ' '
+                || bytes[36] != 'd' || bytes[37] != 'a' || bytes[38] != 't' || bytes[39] != 'a')
+            {
+                _log.Warning(LogSource.Init, $"warmup clip header invalid | path={path}");
+                return null;
+            }
+
+            int audioFormat   = BitConverter.ToInt16(bytes, 20);
+            int numChannels   = BitConverter.ToInt16(bytes, 22);
+            int sampleRate    = BitConverter.ToInt32(bytes, 24);
+            int bitsPerSample = BitConverter.ToInt16(bytes, 34);
+            int dataSize      = BitConverter.ToInt32(bytes, 40);
+
+            if (audioFormat != 1 || numChannels != 1 || sampleRate != 16000 || bitsPerSample != 16)
+            {
+                _log.Warning(LogSource.Init,
+                    $"warmup clip format unexpected | format={audioFormat} ch={numChannels} sr={sampleRate} bits={bitsPerSample} (expected PCM mono 16-bit 16 kHz)");
+                return null;
+            }
+
+            int sampleCount = dataSize / 2;
+            float[] samples = new float[sampleCount];
+            int offset = 44;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                short s = BitConverter.ToInt16(bytes, offset);
+                samples[i] = s / 32768f;
+                offset += 2;
+            }
+            return samples;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(LogSource.Init, $"warmup clip load failed | error={ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
     // ── Warmup ──────────────────────────────────────────────────────────────
     //
-    // Runs a silent "first inference" at startup so the real first hotkey
-    // press doesn't pay the cold cost (context alloc + GPU warm + kernel
-    // compile + weight paging). We push 1.6 s of zero samples through the
-    // full Transcribe() path — long enough for Silero VAD to execute at
-    // least one window and for whisper_full to enter. With an all-zero
-    // buffer VAD returns 0 speech segments and whisper_full short-circuits
-    // before any decode, so the cost stays in the low-hundreds-of-ms range.
+    // Runs a real "first inference" at startup so the user's first hotkey
+    // press doesn't pay the cold cost (context alloc + GPU warm + Vulkan
+    // pipeline compile + weight paging). We push a short embedded reference
+    // clip (Assets/Sounds/speech.wav, PCM mono 16 kHz ~2 s) through the full
+    // Transcribe() path so VAD finds speech, whisper_full actually decodes,
+    // and the GPU pipelines are compiled once and for all. Roughly 200–800 ms
+    // on RX 7900 XT with Vulkan ggml — paid here instead of on the user's
+    // first dictation.
     //
-    // StatusChanged / TranscriptionFinished are gated during Transcribe()
-    // via _isWarmup so the HUD never appears and the tray doesn't flash.
-    // LoadModel stays audible ("Loading model" → "Ready") because that's
-    // done before _isWarmup flips — useful signal on the tray that the
-    // engine is warming without any intrusive UI.
+    // StatusChanged / TranscriptionFinished / Narrative are gated during
+    // Transcribe() via _isWarmup (RaiseStatus / RaiseFinished /
+    // RaiseNarrative) so the HUD never appears, the tray doesn't flash, and
+    // LogWindow doesn't surface "Looking for speech…" / "Speech detected —
+    // 2.4 s…" / "Whisper transcribed…" phrases that would confuse the user
+    // at boot. Two warmup-specific narratives are emitted directly — one at
+    // the start ("Priming the recognizer…") and one at the end ("Pipeline
+    // ready"). LoadModel's narrative stays audible because it runs before
+    // _isWarmup flips.
     //
     // Fire-and-forget on a background thread — the call site in
     // App.OnLaunched must not block UI-thread startup. Named Warmup (not
@@ -699,22 +802,32 @@ internal sealed class WhispEngine : IDisposable
                 }
                 _modelWarmupOk = 1;
 
-                // Silent Transcribe through the full pipeline (VAD + whisper_full)
-                // to pay the first-inference cost before the user presses any
-                // hotkey. 1.6 s at 16 kHz = 25 600 samples. Any buffer ≥ one VAD
-                // window works; 1.6 s keeps it well above the min-speech /
-                // min-silence thresholds exposed in Settings so the short-circuit
-                // triggers reliably whatever the user tuned.
-                float[] silentBuffer = new float[25_600];
+                // Real-audio Transcribe through the full pipeline (VAD +
+                // whisper_full + Vulkan kernel compile) to pay the first-
+                // inference cost before any user hotkey. The clip is shipped
+                // alongside the exe under Assets/Sounds/speech.wav (PCM mono
+                // 16-bit 16 kHz). On load failure we fall back to a 1.6 s
+                // silent buffer — the user-visible narratives are gated
+                // either way, so the fallback is invisible beyond the warmup
+                // log line. Length-mismatch scenarios (corrupted file, wrong
+                // format) are rare but should not block startup.
+                float[] warmupBuffer = TryLoadWarmupClip()
+                    ?? new float[25_600];
+
+                _log.Narrative(LogSource.Init,
+                    "Priming the recognizer with a short reference clip — the audio pipeline is being warmed up so your first dictation feels instant.");
+
                 _isWarmup = true;
                 try
                 {
-                    Transcribe(silentBuffer);
+                    Transcribe(warmupBuffer);
                 }
                 finally
                 {
                     _isWarmup = false;
                 }
+
+                _log.Narrative(LogSource.Init, "Pipeline ready.");
 
                 // 3) Ollama health-check. Skipped (and left as OK) when the LLM
                 //    feature is disabled — no rewriter needed, no warning to
@@ -903,7 +1016,7 @@ internal sealed class WhispEngine : IDisposable
 
                 _recordingSw = System.Diagnostics.Stopwatch.StartNew();
                 RaiseStatus("Recording…");
-                _log.Narrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
+                RaiseNarrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
 
                 float[] audio = Record();
                 _isRecording = false;
@@ -1213,7 +1326,7 @@ internal sealed class WhispEngine : IDisposable
                 int minutes = maxDurationSec / 60;
                 _log.Warning(LogSource.Record,
                     $"duration cap reached | audio_sec={curSec:F1} | cap_sec={maxDurationSec}");
-                _log.Narrative(LogSource.Record,
+                RaiseNarrative(LogSource.Record,
                     $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
                 _stopRecording = true;
             }
@@ -1274,7 +1387,7 @@ internal sealed class WhispEngine : IDisposable
         _log.Info(LogSource.Record, $"Recording complete ({totalSec:F1} s)");
         _log.Verbose(LogSource.Record,
             $"capture complete | audio_sec={totalSec:F1} | buffers={buffersReceived} | bytes={allBytes.Count} | rms_avg={rmsAvg:F4} | rms_peak={aggPeak:F4} | dbfs_avg={dbfsAvg:F1}");
-        _log.Narrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
+        RaiseNarrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
 
         // Mic telemetry — distribution + tail summary derived from _rmsLog.
         // Replaces the previous Tail-on-allBytes computation, which was
@@ -1627,7 +1740,7 @@ internal sealed class WhispEngine : IDisposable
                     if (preview.Length > 60) preview = preview[..60] + "…";
                     _log.Warning(LogSource.Transcribe,
                         $"repetition loop detected — {streak} identical segments ('{preview}'); requesting whisper to abort");
-                    _log.Narrative(LogSource.Transcribe,
+                    RaiseNarrative(LogSource.Transcribe,
                         "Whisper got stuck repeating the same segment — stopping transcription early. The text captured so far is preserved.");
                 }
 
@@ -1828,13 +1941,24 @@ internal sealed class WhispEngine : IDisposable
         // transcribed the speech into 0 segments" would be both noisy and silly.
         if (nSeg > 0)
         {
-            _log.Narrative(LogSource.Transcribe, $"Whisper transcribed the speech into {nSeg} segments in {transcribeMsTotal / 1000.0:F1} s.");
+            RaiseNarrative(LogSource.Transcribe, $"Whisper transcribed the speech into {nSeg} segments in {transcribeMsTotal / 1000.0:F1} s.");
         }
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
             RaiseStatus("Ready");
             RaiseFinished(TranscriptionOutcome.None);
+            return;
+        }
+
+        // Warmup short-circuit. The expensive part — VAD + whisper_full +
+        // first-time Vulkan kernel compile — is now paid. Skipping the
+        // clipboard write, the LLM rewrite, and the paste keeps the user's
+        // clipboard untouched at boot, avoids a cold Ollama hit, and prevents
+        // a "Pasted" Narrative from leaking through. The Warmup() caller
+        // logs its own success line.
+        if (_isWarmup)
+        {
             return;
         }
 
@@ -1958,11 +2082,11 @@ internal sealed class WhispEngine : IDisposable
                 // the raw text instead of making a loud noise about a failure
                 // that doesn't hurt the user.
                 CopyToClipboard(fullText);
-                _log.Narrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s with the {profile.Name} profile — the polished text is ready to paste.");
+                RaiseNarrative(LogSource.Llm, $"Rewrite complete in {swLlm.Elapsed.TotalSeconds:F1} s with the {profile.Name} profile — the polished text is ready to paste.");
             }
             else
             {
-                _log.Narrative(LogSource.Llm, $"Rewrite failed after {swLlm.Elapsed.TotalSeconds:F1} s — raw transcript kept. Check the log for the Ollama error.");
+                RaiseNarrative(LogSource.Llm, $"Rewrite failed after {swLlm.Elapsed.TotalSeconds:F1} s — raw transcript kept. Check the log for the Ollama error.");
             }
         }
 
@@ -1985,7 +2109,7 @@ internal sealed class WhispEngine : IDisposable
         if (_shouldPaste && pasteVerified)
         {
             string exeName = Win32Util.GetExeName(NativeMethods.GetForegroundWindow());
-            _log.Narrative(LogSource.Paste, $"Final text pasted into {exeName}.");
+            RaiseNarrative(LogSource.Paste, $"Final text pasted into {exeName}.");
         }
 
         // Split recap into two Info lines (timings / outputs) that land under
@@ -2021,7 +2145,7 @@ internal sealed class WhispEngine : IDisposable
             $"llm_metrics | ollama_load_ms={ollamaLoadMs} | prompt_eval_ms={llmPromptEvalMs} | eval_ms={llmEvalMs} | prompt_tokens={llmPromptTokens} | eval_tokens={llmEvalTokens}");
         _log.Verbose(LogSource.Done,
             $"outputs | n_seg={nSeg} | chars={fullText.Length} | words={finalWordCount} | strategy={_strategyLabel} | profile={profile?.Name ?? "(none)"} | outcome={outcome}");
-        _log.Narrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
+        RaiseNarrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
 
         RaiseStatus("Ready");
         _recordingSw?.Stop();
@@ -2201,7 +2325,7 @@ internal sealed class WhispEngine : IDisposable
         }
 
         _log.Info(LogSource.Clipboard, "Copied to clipboard");
-        _log.Narrative(LogSource.Clipboard, $"The transcription is now on the clipboard — {text.Length} characters ready to paste anywhere.");
+        RaiseNarrative(LogSource.Clipboard, $"The transcription is now on the clipboard — {text.Length} characters ready to paste anywhere.");
         _log.Verbose(LogSource.Clipboard, $"copy complete | chars={text.Length} | bytes={byteCount}");
         return true;
     }

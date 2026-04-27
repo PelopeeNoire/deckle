@@ -69,6 +69,10 @@
     <Content Include="Assets\Fonts\**\*.ttf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Warm-up audio (PCM 16-bit mono 16 kHz, lu par WhispEngine.Warmup) -->
+    <Content Include="Assets\Sounds\**\*.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- Native DLLs — whisper.cpp (Vulkan) -->
     <Content Include="..\..\native\whisper\*.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
