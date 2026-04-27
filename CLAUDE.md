@@ -26,6 +26,20 @@ résumé des changements et laisser le maintainer builder puis valider
 runtime.
 </rules>
 
+<observability>
+Logging et télémétrie : **source unique** dans
+`src/WhispUI/Logging/TelemetryService.Instance`. Tout passe par ce hub —
+fenêtre LogWindow et fichiers JSONL (`{app,latency,microphone,corpus}.jsonl`)
+sont des sinks de la même source. Jamais de `File.AppendAllText`,
+`Console.WriteLine`, `Debug.WriteLine`, ni de `*Logger.cs` parallèle dans
+le code métier. Avant d'écrire le moindre code de log ou de mesure, lire
+`src/WhispUI/CLAUDE.md` § « Télémétrie — source unique » et l'inventaire
+canonique `src/WhispUI/docs/reference--logging-inventory--0.1.md`.
+Exception unique et subordonnée : helper `DebugLog` file-based pour
+crash natif non rattrapable, instrumentation **temporaire** jamais
+commitée en l'état.
+</observability>
+
 <doctrine>
 Avant d'écrire ou modifier du code non trivial, les questions suivantes
 sont verbalisées dans la réponse, pour celles pertinentes à la demande.
