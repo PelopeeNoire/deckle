@@ -6,7 +6,7 @@ namespace WhispUI.Settings.ViewModels;
 
 // ViewModel for a single rewrite profile — used inside an ItemsRepeater
 // DataTemplate in LlmProfilesSection. Auto-saves on every change, aligning
-// with RuleViewModel and WhisperViewModel. No Save/Cancel surface.
+// with WhisperViewModel. No Save/Cancel surface.
 //
 // Temperature and CtxIndex are doubles (Slider.Value type).
 // TopP and RepeatPenalty use NaN to represent "not set" (null in POCO).
