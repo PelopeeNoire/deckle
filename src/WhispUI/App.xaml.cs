@@ -442,39 +442,55 @@ public partial class App : Microsoft.UI.Xaml.Application
             _                                         => null,
         };
 
-        // Rewrite hotkeys with no profile assigned → no-op (user left the
-        // shortcut unbound). We don't start recording at all: no mic probe,
-        // no HUD, no transcription. The warning makes it visible in logs.
+        // Rewrite hotkeys with no profile assigned: from Idle the engine
+        // refuses with IgnoredNoProfile (no recording starts); during
+        // Recording the press is still a valid Stop, profile or not. We
+        // signal the requirement to the engine so it can sort it out
+        // atomically — this layer no longer reads engine state directly.
         bool isRewriteHotkey = hotkeyId == NativeMethods.HOTKEY_ID_PRIMARY_REWRITE
                             || hotkeyId == NativeMethods.HOTKEY_ID_SECONDARY_REWRITE;
-        if (isRewriteHotkey &&
-            string.IsNullOrWhiteSpace(manualProfile) &&
-            !_engine.IsRecording)
-        {
-            _log.Warning(LogSource.Hotkey, $"{hotkeyName} pressed — no profile bound, ignoring");
-            return;
-        }
 
-        if (!_engine.IsRecording)
-        {
-            _log.Success(LogSource.Hotkey,
-                $"Start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
+        // Show the HUD eagerly: if RequestToggle ends up Started, the user
+        // gets feedback from the first millisecond. If it returns anything
+        // else we hide the HUD again below — net cost is one extra
+        // ShowPreparing/Hide round-trip on the rejected path, which is
+        // cheap and the user never sees it (the press was rejected fast).
+        // We only do this for what would have been a Start — no point
+        // showing Preparing on a Stop press where the HUD is already up.
+        // We can't know "would have been a Start" without reading state,
+        // and that read is what we're trying to remove. Compromise: ask
+        // the engine first, then show.
+        var result = _engine.RequestToggle(
+            manualProfileName: manualProfile,
+            shouldPaste: Settings.SettingsService.Instance.Current.Paste.AutoPasteEnabled,
+            requireProfile: isRewriteHotkey);
 
-            // Show the HUD immediately in its "Preparing" state so the user
-            // gets visual feedback from the very first millisecond after the
-            // hotkey press, before the mic probe and any model load that
-            // might be needed. ShowRecording() later replaces the neutral
-            // digits with the recording accent when StatusChanged fires.
-            _hudWindow?.ShowPreparing();
-
-            _engine.StartRecording(
-                manualProfileName: manualProfile,
-                shouldPaste: Settings.SettingsService.Instance.Current.Paste.AutoPasteEnabled);
-        }
-        else
+        switch (result)
         {
-            _log.Success(LogSource.Hotkey, "Stop");
-            _engine.StopRecording();
+            case ToggleResult.Started:
+                _log.Success(LogSource.Hotkey,
+                    $"Start ({hotkeyName}{(manualProfile is null ? "" : $", LLM: {manualProfile}")})");
+                _hudWindow?.ShowPreparing();
+                break;
+
+            case ToggleResult.Stopped:
+                _log.Success(LogSource.Hotkey, "Stop");
+                break;
+
+            case ToggleResult.IgnoredNoProfile:
+                _log.Warning(LogSource.Hotkey, $"{hotkeyName} pressed — no profile bound, ignoring");
+                break;
+
+            case ToggleResult.IgnoredBusy:
+                // Engine already logged a Verbose line with the exact state
+                // — no second log needed, this is the "user double-pressed"
+                // case we are explicitly handling silently.
+                break;
+
+            case ToggleResult.IgnoredDisposed:
+                // Engine in shutdown. Silent — Quit is the authoritative
+                // signal; a stray hotkey arriving after it is expected.
+                break;
         }
     }
 }
