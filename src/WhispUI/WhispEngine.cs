@@ -1469,6 +1469,13 @@ internal sealed class WhispEngine : IDisposable
         // correct way to combine RMS samples (NOT a plain mean of RMS).
         // -50 dBFS keeps the active/silent threshold from the previous
         // diagnostic so existing log readers stay calibrated.
+        //
+        // The line is user-facing in the Activity selector: it tells you
+        // whether you stopped after a silence (the natural case) or while
+        // still speaking (often a hotkey hit too early — last words may be
+        // clipped). The dBFS measurement stays in the line as a check for
+        // anyone calibrating the gate, but the leading clause speaks plain
+        // English.
         int tailCount = Math.Min(12, n);
         double tailSumSq = 0;
         for (int i = _rmsLog.Count - tailCount; i < _rmsLog.Count; i++)
@@ -1479,9 +1486,13 @@ internal sealed class WhispEngine : IDisposable
         double tailRms = Math.Sqrt(tailSumSq / tailCount);
         double tailDbfs = ToDbfs((float)tailRms);
         int tailMs = tailCount * 50;
-        string tailState = tailDbfs > -50 ? "active" : "silent";
+        bool tailActive = tailDbfs > -50;
+        string tailState = tailActive ? "active" : "silent";
+        string tailHeadline = tailActive
+            ? "You were still speaking at Stop — the last words may be clipped."
+            : "You stopped after a silence — capture ends cleanly.";
         _log.Info(LogSource.Record,
-            $"Tail {tailMs}ms RMS={tailRms:F4} ({tailDbfs:F1} dBFS) — signal {tailState} at Stop");
+            $"{tailHeadline} (last {tailMs} ms at {tailDbfs:F1} dBFS)");
 
         // ── Distribution payload (always computed) ─────────────────────────
         //
