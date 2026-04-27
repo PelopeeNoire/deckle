@@ -19,13 +19,13 @@ using WhispUI.Shell;
 namespace WhispUI;
 
 // SelectorBar mode — single active at a time (native exclusive selection).
-internal enum LogFilterMode { Narrative, All, Activity, Alerts }
+internal enum LogFilterMode { All, Activity, Alerts }
 
 // ─── Log window ──────────────────────────────────────────────────────────────
 //
 // Custom title bar (ExtendsContentIntoTitleBar) with centered search field.
 // Mica + system theme (light/dark auto, no forced RequestedTheme).
-// SelectorBar All/Activity/Errors.
+// SelectorBar All/Activity/Alerts (default = All).
 // CommandBar: Copy/Save/Clear (buttons) + Auto-scroll/Word wrap (toggles).
 // Live search via AutoSuggestBox.
 //
@@ -51,7 +51,7 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     private ScrollViewer? _listScrollViewer;
     private ItemsStackPanel? _itemsPanel;
 
-    private LogFilterMode _filterMode = LogFilterMode.Narrative;
+    private LogFilterMode _filterMode = LogFilterMode.All;
     private string _currentSearch = "";
     private bool _isRecording;
 
@@ -107,9 +107,13 @@ public sealed partial class LogWindow : Window, ITelemetrySink
         // Win11 required (OK here); falls back to transparent otherwise.
         SystemBackdrop = new MicaBackdrop();
 
-        // Initial SelectorBar selection: Narrative view, the user-facing pipeline
-        // narration. All / Activity / Alerts remain one click away.
-        LevelSelector.SelectedItem = LevelNarrative;
+        // Initial SelectorBar selection: All — the broadest view by default.
+        // Activity / Alerts remain one click away when the user wants to narrow
+        // down. Narrative entries (white, full-strength text) sit alongside the
+        // other levels in Activity rather than in their own dedicated tab —
+        // they read as natural milestones inside the broader stream instead
+        // of feeling cut off from context.
+        LevelSelector.SelectedItem = LevelFull;
 
         Title = "WhispUI Logs";
         // ~1:2 aspect ratio (vertical) — two stacked squares. Fits on a 4K display.
@@ -248,19 +252,18 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     private bool Matches(TelemetryEvent e)
     {
         // Progressive kind + level filter (All > Activity > Alerts):
-        //   Narrative → user-facing narration only (log-kind Narrative)
-        //   All       → everything passes (log, latency, corpus, narrative)
-        //   Activity  → log-kind Info + Success + Warning + Error only
-        //               (hide Verbose, Narrative, Latency, Corpus)
+        //   All       → everything passes (log of any level, latency, corpus)
+        //   Activity  → log-kind Info + Success + Warning + Error + Narrative
+        //               (hide Verbose, Latency, Corpus). Narrative reads as a
+        //               primary-text milestone inside the broader stream —
+        //               kept here rather than carved into its own tab where
+        //               it lost the surrounding context.
         //   Alerts    → log-kind Warning + Error only
         bool modeOk = _filterMode switch
         {
-            LogFilterMode.Narrative => e.Kind == TelemetryKind.Log
-                                    && e.Level == LogLevel.Narrative,
             LogFilterMode.All      => true,
             LogFilterMode.Activity => e.Kind == TelemetryKind.Log
-                                   && e.Level != LogLevel.Verbose
-                                   && e.Level != LogLevel.Narrative,
+                                   && e.Level != LogLevel.Verbose,
             LogFilterMode.Alerts   => e.Kind == TelemetryKind.Log
                                    && (e.Level == LogLevel.Warning
                                     || e.Level == LogLevel.Error),
@@ -338,9 +341,8 @@ public sealed partial class LogWindow : Window, ITelemetrySink
     private void OnLevelSelectorChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         var sel = sender.SelectedItem;
-        _filterMode = sel == LevelNarrative ? LogFilterMode.Narrative
-                    : sel == LevelFiltered  ? LogFilterMode.Activity
-                    : sel == LevelCritical  ? LogFilterMode.Alerts
+        _filterMode = sel == LevelFiltered ? LogFilterMode.Activity
+                    : sel == LevelCritical ? LogFilterMode.Alerts
                     : LogFilterMode.All;
         ApplyFilter();
     }

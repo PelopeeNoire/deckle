@@ -714,28 +714,30 @@ public sealed partial class HudChrono : UserControl
     // SwipeCycleSeconds   full head-sweep duration (seconds).
     //                     Lower = faster wave, higher = contemplative.
     // SwipeEaseP1/P2      cubic-bezier control points for the head's
-    //                     progress curve. Defaults mirror HudComposition's
-    //                     ArcEase (0.5, 0) → (0.2, 1) for a sharp ease-out.
+    //                     progress curve. Defaults (0.7, 0) → (0.1, 1)
+    //                     for a hard ease-out — the head lingers near
+    //                     the start, then snaps through the digits.
     // SwipeRiseAlpha      per-frame lerp factor toward the active target
-    //                     (head on digit = 1). 0.22 ≈ ~9 frames to reach
-    //                     90 % at 60 Hz → ~150 ms ramp-up; slow enough
-    //                     to read as a fade rather than a snap, fast
-    //                     enough that the digit is still "catching up"
-    //                     when the head has already moved on.
+    //                     (head on digit = 1). 0.05 ≈ ~45 frames to reach
+    //                     90 % at 60 Hz → ~750 ms ramp-up; soft enough
+    //                     that the pic never feels punchy, slow enough
+    //                     that the digit is still "catching up" when the
+    //                     head has already moved on.
     // SwipeDecayAlpha     per-frame lerp factor back to 0 when the head
-    //                     is elsewhere. 0.06 ≈ ~37 frames to drop below
-    //                     10 % at 60 Hz → ~620 ms trail — longer than
-    //                     rise so heat accumulates into a trailing
-    //                     comet. Keep DecayAlpha < RiseAlpha / 3 for
-    //                     the wave character; otherwise the trail reads
-    //                     as "tremblement" rather than "vague".
+    //                     is elsewhere. 0.015 ≈ ~150 frames to drop below
+    //                     10 % at 60 Hz → ~2.5 s trail — much longer than
+    //                     rise so heat accumulates into a long, soft
+    //                     comet that bleeds across cycles. Keep
+    //                     DecayAlpha < RiseAlpha / 3 for the wave
+    //                     character; otherwise the trail reads as
+    //                     "tremblement" rather than "vague".
     // `public static` (not const / readonly) so HudPlayground can tune
     // the cadence, easing, and rise/decay alphas live.
-    public static float   SwipeCycleSeconds = 1.6f;
-    public static Vector2 SwipeEaseP1       = new(0.5f, 0f);
-    public static Vector2 SwipeEaseP2       = new(0.2f, 1f);
-    public static float   SwipeRiseAlpha    = 0.1f;
-    public static float   SwipeDecayAlpha   = 0.05f;
+    public static float   SwipeCycleSeconds = 2.0f;
+    public static Vector2 SwipeEaseP1       = new(0.7f, 0f);
+    public static Vector2 SwipeEaseP2       = new(0.1f, 1f);
+    public static float   SwipeRiseAlpha    = 0.05f;
+    public static float   SwipeDecayAlpha   = 0.015f;
 
     // Digit count — structural, mirrors _digitHeat.Length and the 6 accent
     // overlays declared in HudChrono.xaml. Not a tunable.

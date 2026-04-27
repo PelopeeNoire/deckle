@@ -188,6 +188,23 @@ public sealed partial class LlmPage : Page
         // exception (Save IO, hydration UI) remonte au dispatcher.
         try
         {
+            var dialog = new ContentDialog
+            {
+                Title = "Reset all rewriting settings?",
+                Content =
+                    "This wipes the Ollama endpoint, profiles, rules, and " +
+                    "shortcut bindings, then puts the three default profiles " +
+                    "(Lissage, Affinage, Arrangement) and the matching " +
+                    "duration / word-count rules back. Your custom prompts " +
+                    "and parameters will be lost.",
+                PrimaryButtonText = "Reset all",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.XamlRoot
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return;
+
             SettingsService.Instance.Current.Llm = new LlmSettings();
             SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
             SettingsService.Instance.Save();

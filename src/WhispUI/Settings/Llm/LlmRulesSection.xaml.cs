@@ -32,22 +32,48 @@ public sealed partial class LlmRulesSection : UserControl
     // Force the initial selection on each rule's profile combo. The
     // ComboBox.SelectedItem TwoWay binding can resolve before ItemsSource is
     // fully populated — when that happens the combo lands blank even though
-    // the VM's ProfileName already holds the correct value. This handler
-    // catches that case once the container is laid out and pushes the value
-    // through. DataContext is the canonical scope inside an ItemsRepeater
-    // DataTemplate (no virtualization race like the previous Tag={x:Bind}
-    // approach had).
+    // the VM's ProfileName already holds the correct value. DataContext is
+    // the canonical scope inside an ItemsRepeater DataTemplate (no
+    // virtualization race like the previous Tag={x:Bind} approach had).
+    //
+    // Two-pass fix: try once at Loaded time (Items already populated in the
+    // common case), then retry on the next dispatcher tick if the combo
+    // still landed blank. The retry catches the case observed after a Reset
+    // Rules — by the time Loaded fires the ItemsSource binding hasn't
+    // pushed yet, but it has by the next UI tick. Without the retry the
+    // dropdown stays empty until the user opens it manually.
     private void ProfileCombo_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not ComboBox combo || combo.SelectedItem != null) return;
+        if (sender is not ComboBox combo) return;
         string? name = combo.DataContext switch
         {
             RuleViewModel rvm        => rvm.ProfileName,
             RuleByWordsViewModel wvm => wvm.ProfileName,
             _                        => null
         };
-        if (!string.IsNullOrEmpty(name))
-            combo.SelectedItem = name;
+        if (string.IsNullOrEmpty(name)) return;
+
+        if (TrySelectByName(combo, name)) return;
+
+        // Items not populated yet — schedule one retry on the next tick.
+        // Single retry on purpose: if the second pass still fails, the
+        // ItemsSource is genuinely missing the profile (orphan rule), and
+        // the user reads that as a blank intentionally.
+        var dq = combo.DispatcherQueue;
+        dq?.TryEnqueue(() => TrySelectByName(combo, name));
+    }
+
+    private static bool TrySelectByName(ComboBox combo, string name)
+    {
+        foreach (var item in combo.Items)
+        {
+            if (item is string s && string.Equals(s, name, StringComparison.Ordinal))
+            {
+                combo.SelectedItem = item;
+                return true;
+            }
+        }
+        return false;
     }
 
     public void Reload()
@@ -156,11 +182,30 @@ public sealed partial class LlmRulesSection : UserControl
         Reload();
     }
 
-    // Scope: both rule lists + the metric pivot. Profile references are left
-    // as-is in the defaults (they point to the default profile names) —
-    // SettingsService.MigrateProfileIds resolves them to current IDs on save.
-    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    // Scope: both rule lists + the metric pivot. The default rules point at
+    // profile names ("Lissage", "Affinage", "Arrangement") — MigrateProfileIds
+    // re-pairs them against the live Profiles list on save. If those profile
+    // names don't exist yet, the rules sit with a blank ComboBox until the
+    // user reassigns or until matching profiles are created — that's by
+    // design (see MigrateProfileIds for why we never silently drop rules).
+    private async void ResetSection_Click(object sender, RoutedEventArgs e)
     {
+        var dialog = new ContentDialog
+        {
+            Title = "Reset rules to defaults?",
+            Content =
+                "Every auto-rewrite rule will be replaced with the three " +
+                "defaults (60 s / 300 s / 600 s for duration, 150 / 600 / " +
+                "1200 words for word count). Your custom thresholds will " +
+                "be lost.",
+            PrimaryButtonText = "Reset",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
         var defaults = new LlmSettings();
         var s = SettingsService.Instance.Current.Llm;
         s.AutoRewriteRules         = defaults.AutoRewriteRules;
