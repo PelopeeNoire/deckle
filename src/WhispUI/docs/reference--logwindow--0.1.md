@@ -15,7 +15,7 @@ La recherche (`AutoSuggestBox`) est dans `TitleBar.Content`, pas dans un slot cu
 ## Command bar
 
 Sous la title bar, 2 zones :
-- **Gauche** — `SelectorBar` Narrative / All / Activity / Alerts. Selection initiale = **Narrative** (vue par defaut, narration UX du pipeline).
+- **Gauche** — `SelectorBar` All / Activity / Alerts. Selection initiale = **All** (vue par defaut, tout passe). Narrative n'a plus de tab dedie : ses lignes sortent en blanc plein-contraste dans Activity et All, posant des jalons UX au milieu du flux contextuel plutot que d'etre isolees.
 - **Droite** — `CommandBar` avec `IsDynamicOverflowEnabled` (true par defaut) + `DynamicOverflowOrder` pour l'overflow responsif. Groupe 2 (Copy/Save/Clear/Sep) migre en premier, puis groupe 1 (AutoScroll/Wrap).
 
 Actions : Copy (E8C8) / Save (E74E) / Clear (E74D) + Auto scroll (EC8F toggle, on par defaut) / Wrap (E751 toggle).
@@ -31,9 +31,8 @@ Deux collections :
 - `_visible` — `ObservableCollection<LogEntry>` bindee a `LogItems.ItemsSource`
 
 Filtre = `Matches()` qui combine selector + recherche live (`IndexOf` case-insensitive). `ApplyFilter()` rebuild `_visible`. Hierarchie selector :
-- **Narrative** — `Narrative` uniquement (vue par defaut)
-- **All** — tout passe (y compris Verbose et Narrative)
-- **Activity** — Info + Success + Warning + Error (Verbose ET Narrative masques)
+- **All** — tout passe (y compris Verbose, Narrative, Latency, Corpus). Vue par defaut.
+- **Activity** — Info + Success + Warning + Error + Narrative (Verbose, Latency, Corpus masques). Narrative reste visible ici comme jalon plein-contraste au milieu du flux.
 - **Alerts** — Warning + Error uniquement (label "Alerts" mais les deux LogLevel restent distincts cote code)
 
 Cap 5000 entrees. Sur overflow, retire la plus vieille des deux collections (ref equality, `LogEntry` est une classe). Copy/Save operent sur `_visible` — l'utilisateur copie ce qu'il voit.
