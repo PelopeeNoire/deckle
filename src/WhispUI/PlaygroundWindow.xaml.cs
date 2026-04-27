@@ -666,9 +666,9 @@ public sealed partial class PlaygroundWindow : Window
             v => HudChrono.SwipeEaseP2 = new Vector2((float)v, HudChrono.SwipeEaseP2.Y));
         AddFloatRow(stack, "SwipeEaseP2.Y", -0.5, 1.5, 0.05, HudChrono.SwipeEaseP2.Y,
             v => HudChrono.SwipeEaseP2 = new Vector2(HudChrono.SwipeEaseP2.X, (float)v));
-        AddFloatRow(stack, "SwipeRiseAlpha", 0.05, 1.0, 0.05, HudChrono.SwipeRiseAlpha,
+        AddFloatRow(stack, "SwipeRiseAlpha", 0.01, 1.0, 0.01, HudChrono.SwipeRiseAlpha,
             v => HudChrono.SwipeRiseAlpha = (float)v);
-        AddFloatRow(stack, "SwipeDecayAlpha", 0.05, 0.5, 0.05, HudChrono.SwipeDecayAlpha,
+        AddFloatRow(stack, "SwipeDecayAlpha", 0.005, 0.5, 0.005, HudChrono.SwipeDecayAlpha,
             v => HudChrono.SwipeDecayAlpha = (float)v);
         AddToggleRow(stack, "Simulate changed digits",
             _simulateChangedDigits,
@@ -677,11 +677,11 @@ public sealed partial class PlaygroundWindow : Window
 
     private void ResetSwipe()
     {
-        HudChrono.SwipeCycleSeconds = 1.6f;
-        HudChrono.SwipeEaseP1       = new Vector2(0.5f, 0f);
-        HudChrono.SwipeEaseP2       = new Vector2(0.2f, 1f);
-        HudChrono.SwipeRiseAlpha    = 0.1f;
-        HudChrono.SwipeDecayAlpha   = 0.05f;
+        HudChrono.SwipeCycleSeconds = 2.0f;
+        HudChrono.SwipeEaseP1       = new Vector2(0.7f, 0f);
+        HudChrono.SwipeEaseP2       = new Vector2(0.1f, 1f);
+        HudChrono.SwipeRiseAlpha    = 0.05f;
+        HudChrono.SwipeDecayAlpha   = 0.015f;
         _simulateChangedDigits      = true;
         RebuildTuningPanel();
         ApplyTarget();
