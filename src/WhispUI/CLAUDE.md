@@ -101,7 +101,7 @@ Window WinUI 3, ~320×64, bas-centre via `DisplayArea.Primary.WorkArea`,
   `WhispEngine` viennent de threads de fond).
 
 Détails (coloration progressive, fade proximité, ombre layered,
-régressions notification) dans [docs/hud.md](docs/hud.md).
+régressions notification) dans [docs/reference--hud--0.1.md](docs/reference--hud--0.1.md).
 
 ---
 
@@ -222,25 +222,27 @@ demande, uniquement quand je touche au sous-système concerné — pas
 chargés en contexte par défaut. Avant modification d'un sous-système,
 lire son fichier `docs/*.md`.
 
-- [docs/hud.md](docs/hud.md) — spec HudWindow (positioning, backdrop
-  Acrylic, DPI), coloration progressive chrono, fade proximité souris
-  (Raw Input + alpha layered + smoothstep), contrainte ombre layered.
-- [docs/logwindow.md](docs/logwindow.md) — TitleBar natif + SearchBox,
-  SelectorBar + CommandBar responsive, modèle de données (5 niveaux,
-  cap 5000), couleurs `ThemeDictionaries`, templates/selector, piège
-  wrap/scroll.
-- [docs/pipeline-transcription.md](docs/pipeline-transcription.md) —
+- [docs/reference--hud--0.1.md](docs/reference--hud--0.1.md) — spec HudWindow
+  (positioning, backdrop Acrylic, DPI), coloration progressive chrono,
+  fade proximité souris (Raw Input + alpha layered + smoothstep),
+  contrainte ombre layered.
+- [docs/reference--logwindow--0.1.md](docs/reference--logwindow--0.1.md) —
+  TitleBar natif + SearchBox, SelectorBar + CommandBar responsive,
+  modèle de données (5 niveaux, cap 5000), couleurs `ThemeDictionaries`,
+  templates/selector, piège wrap/scroll.
+- [docs/reference--pipeline-transcription--0.1.md](docs/reference--pipeline-transcription--0.1.md) —
   pipeline monobloc (`new_segment_callback`, plus de chunking externe),
   instrumentation par segment, defaults whisper.cpp restaurés (piège
   `entropy_thold` inversé), hot-reload via `SettingsService`.
-- [docs/paste.md](docs/paste.md) — re-capture cible au Stop avec filet
-  PID, fix race `HideSync` (rendez-vous synchrone via
-  `ManualResetEventSlim`), refus explicites de `PasteFromClipboard`,
-  bug paste fantôme intermittent.
-- [docs/settings.md](docs/settings.md) — NavigationView Auto (natif, 3
-  modes), TitleBar natif Standard, Frame+Page, SettingsCard
-  CommunityToolkit, GeneralPage 4 sections câblées, WhisperPage 6
-  sections, persistance JSON portable, restart ciblé.
+- [docs/reference--paste-behavior--0.1.md](docs/reference--paste-behavior--0.1.md) —
+  re-capture cible au Stop avec filet PID, fix race `HideSync`
+  (rendez-vous synchrone via `ManualResetEventSlim`), refus explicites
+  de `PasteFromClipboard`, bug paste fantôme intermittent.
+- [docs/reference--settings-architecture--0.1.md](docs/reference--settings-architecture--0.1.md) —
+  NavigationView Auto (natif, 3 modes), TitleBar natif Standard,
+  Frame+Page, SettingsCard CommunityToolkit, GeneralPage 4 sections
+  câblées, WhisperPage 6 sections, persistance JSON portable,
+  restart ciblé.
 - [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md)
   — inventaire normatif des mesures par étape (vocabulaire d'unités,
   niveaux de sévérité, gabarits standards, recap UserFeedback). Référence
