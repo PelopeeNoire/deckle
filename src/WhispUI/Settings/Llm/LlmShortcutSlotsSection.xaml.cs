@@ -103,8 +103,23 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
     // Scope: Primary/Secondary rewrite slot bindings only. The Profiles list
     // itself stays untouched — resetting the shortcut picks should not wipe
     // user-authored profiles.
-    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    private async void ResetSection_Click(object sender, RoutedEventArgs e)
     {
+        var dialog = new ContentDialog
+        {
+            Title = "Reset shortcuts to (None)?",
+            Content =
+                "Both rewrite shortcuts will be unbound. The hotkeys keep " +
+                "working — they'll just trigger a transcription without a " +
+                "rewrite until you assign a profile again.",
+            PrimaryButtonText = "Reset",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
         var defaults = new LlmSettings();
         var s = SettingsService.Instance.Current.Llm;
         s.PrimaryRewriteProfileName   = defaults.PrimaryRewriteProfileName;

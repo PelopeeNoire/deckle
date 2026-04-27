@@ -156,11 +156,30 @@ public sealed partial class LlmRulesSection : UserControl
         Reload();
     }
 
-    // Scope: both rule lists + the metric pivot. Profile references are left
-    // as-is in the defaults (they point to the default profile names) —
-    // SettingsService.MigrateProfileIds resolves them to current IDs on save.
-    private void ResetSection_Click(object sender, RoutedEventArgs e)
+    // Scope: both rule lists + the metric pivot. The default rules point at
+    // profile names ("Lissage", "Affinage", "Arrangement") — MigrateProfileIds
+    // re-pairs them against the live Profiles list on save. If those profile
+    // names don't exist yet, the rules sit with a blank ComboBox until the
+    // user reassigns or until matching profiles are created — that's by
+    // design (see MigrateProfileIds for why we never silently drop rules).
+    private async void ResetSection_Click(object sender, RoutedEventArgs e)
     {
+        var dialog = new ContentDialog
+        {
+            Title = "Reset rules to defaults?",
+            Content =
+                "Every auto-rewrite rule will be replaced with the three " +
+                "defaults (60 s / 300 s / 600 s for duration, 150 / 600 / " +
+                "1200 words for word count). Your custom thresholds will " +
+                "be lost.",
+            PrimaryButtonText = "Reset",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
         var defaults = new LlmSettings();
         var s = SettingsService.Instance.Current.Llm;
         s.AutoRewriteRules         = defaults.AutoRewriteRules;
