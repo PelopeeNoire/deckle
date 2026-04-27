@@ -219,11 +219,12 @@ public sealed partial class LlmProfilesSection : UserControl
     }
 
     // Scope: the Profiles list only. Replaces user-authored profiles with
-    // the three defaults (Lissage / Affinage / Arrangement) — empty
-    // SystemPrompt, pre-set Temperature and NumCtxK. MigrateProfileIds
-    // re-pairs slot and rule references so anything still pointing at
-    // "Lissage" / "Affinage" / "Arrangement" by name picks up the fresh
-    // ids. ProfilesChanged triggers the host to reload Rules + ShortcutSlots.
+    // the three defaults (Lissage / Affinage / Arrangement) — pre-written
+    // prompts tuned via autoresearch, Temperature 0.30, NumCtxK 8/16/16.
+    // MigrateProfileIds re-pairs slot and rule references so anything
+    // still pointing at "Lissage" / "Affinage" / "Arrangement" by name
+    // picks up the fresh ids. ProfilesChanged triggers the host to
+    // reload Rules + ShortcutSlots.
     private async void ResetSection_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new ContentDialog
@@ -231,8 +232,9 @@ public sealed partial class LlmProfilesSection : UserControl
             Title = "Reset profiles to defaults?",
             Content =
                 "Every profile will be replaced with the three defaults " +
-                "(Lissage, Affinage, Arrangement) — your custom names, " +
-                "prompts, and parameters will be lost.",
+                "(Lissage, Affinage, Arrangement), each with its full " +
+                "pre-written prompt and parameters. Your custom profiles " +
+                "and any prompts you've written will be lost.",
             PrimaryButtonText = "Reset",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
