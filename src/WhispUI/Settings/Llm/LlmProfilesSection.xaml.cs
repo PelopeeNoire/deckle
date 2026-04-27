@@ -204,11 +204,11 @@ public sealed partial class LlmProfilesSection : UserControl
     }
 
     // Scope: the Profiles list only. Replaces user-authored profiles with
-    // the defaults (4 brackets — Relecture, Lissage, Affinage, Arrangement —
-    // plus Prompt for the Primary Rewrite shortcut). MigrateProfileIds
-    // rewires slot/rule references to the new default IDs so the related
-    // sections don't end up pointing at orphan profiles. ProfilesChanged
-    // triggers the host to reload Rules + ShortcutSlots.
+    // the defaults (3 brackets — Lissage, Affinage, Arrangement — with empty
+    // SystemPrompt). MigrateProfileIds rewires slot/rule references to the
+    // new default IDs so the related sections don't end up pointing at
+    // orphan profiles. ProfilesChanged triggers the host to reload Rules +
+    // ShortcutSlots.
     private async void ResetSection_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new ContentDialog
