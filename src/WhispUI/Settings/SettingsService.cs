@@ -192,10 +192,33 @@ public sealed class SettingsService
         return (json, false);
     }
 
-    // Fills stable ids where missing: each RewriteProfile gets a 12-char Guid
-    // suffix, and AutoRewriteRules / shortcut slots get their ProfileId resolved
-    // from ProfileName. Returns true if anything was mutated so the caller can
-    // flush the rewritten config to disk on first launch after upgrade.
+    // Reconciles profile references across the LlmSettings graph. Two jobs:
+    //
+    //   1. Fill missing stable ids — each RewriteProfile gets a 12-char Guid
+    //      suffix on first encounter (legacy configs, freshly-instantiated
+    //      defaults).
+    //   2. Re-pair ProfileId/ProfileName on rules and slots when the live
+    //      Profiles list still contains a match. Three legitimate cases:
+    //        - id resolves → sync the cached name in case the profile was
+    //          renamed since the rule was last saved
+    //        - id is empty but name resolves → fill id from name (post-
+    //          migration of an older config that never had ids)
+    //        - id is stale but name resolves → rewire id from name
+    //
+    // **Never deletes a rule and never clears a slot.** Orphan references
+    // (id+name both unresolvable) are left untouched: the UI surfaces them
+    // as a blank ComboBox SelectedItem, and the user picks a replacement
+    // or deletes the rule manually. This is intentional — Reset Rules with
+    // no Profiles in the list still shows three placeholder rules to fill
+    // in, which would silently disappear if we swept orphans here.
+    //
+    // The delete-cascade for "remove a profile, drop its dependants" lives
+    // in LlmProfilesSection.DeleteProfile_Click, which clears references
+    // explicitly **before** the profile is removed.
+    //
+    // Returns true if anything was mutated so the caller can flush the
+    // rewritten config to disk on first launch after upgrade.
+    //
     // Internal (not private) so page-level resets can re-run the migration
     // against a freshly-instantiated LlmSettings block.
     internal static bool MigrateProfileIds(AppSettings s)
@@ -217,46 +240,97 @@ public sealed class SettingsService
                 : s.Llm.Profiles.Find(p =>
                     string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Id;
 
+        string? NameForId(string? id) =>
+            string.IsNullOrEmpty(id)
+                ? null
+                : s.Llm.Profiles.Find(p => p.Id == id)?.Name;
+
+        // Re-pair (id, name) against the live Profiles list. Mutates the
+        // ref arguments only when a live profile matches; leaves them
+        // untouched (orphan kept as-is) otherwise. Returns true if anything
+        // changed so the caller can flag the parent as mutated.
+        bool RepairPair(ref string id, ref string name)
+        {
+            string? nameFromId = NameForId(id);
+            if (nameFromId is not null)
+            {
+                if (name == nameFromId) return false;
+                name = nameFromId;
+                return true;
+            }
+
+            string? idFromName = IdForName(name);
+            if (idFromName is not null)
+            {
+                if (id == idFromName) return false;
+                id = idFromName;
+                return true;
+            }
+
+            // Neither resolves — orphan, leave both alone for the UI to
+            // surface and the user to fix.
+            return false;
+        }
+
         foreach (var rule in s.Llm.AutoRewriteRules)
         {
-            if (!string.IsNullOrEmpty(rule.ProfileId)) continue;
-            string? resolved = IdForName(rule.ProfileName);
-            if (resolved is not null)
+            string id = rule.ProfileId ?? "";
+            string name = rule.ProfileName ?? "";
+            if (RepairPair(ref id, ref name))
             {
-                rule.ProfileId = resolved;
+                rule.ProfileId = id;
+                rule.ProfileName = name;
                 mutated = true;
             }
         }
 
         foreach (var rule in s.Llm.AutoRewriteRulesByWords)
         {
-            if (!string.IsNullOrEmpty(rule.ProfileId)) continue;
-            string? resolved = IdForName(rule.ProfileName);
-            if (resolved is not null)
+            string id = rule.ProfileId ?? "";
+            string name = rule.ProfileName ?? "";
+            if (RepairPair(ref id, ref name))
             {
-                rule.ProfileId = resolved;
+                rule.ProfileId = id;
+                rule.ProfileName = name;
                 mutated = true;
             }
         }
 
-        if (s.Llm.PrimaryRewriteProfileId is null)
+        // Slots: same re-pair logic, but the storage uses nullable strings
+        // (null = "(None)"). A repair flips empty strings back to null so
+        // the JSON stays clean, and an orphan slot is left as-is — the user
+        // sees the stale name in the ComboBox and reassigns or clears it.
+        bool RepairSlot(ref string? id, ref string? name)
         {
-            string? resolved = IdForName(s.Llm.PrimaryRewriteProfileName);
-            if (resolved is not null)
+            string idVal = id ?? "";
+            string nameVal = name ?? "";
+            // Nothing set: nothing to do.
+            if (idVal.Length == 0 && nameVal.Length == 0) return false;
+            if (RepairPair(ref idVal, ref nameVal))
             {
-                s.Llm.PrimaryRewriteProfileId = resolved;
-                mutated = true;
+                id = string.IsNullOrEmpty(idVal) ? null : idVal;
+                name = string.IsNullOrEmpty(nameVal) ? null : nameVal;
+                return true;
             }
+            return false;
         }
 
-        if (s.Llm.SecondaryRewriteProfileId is null)
+        string? primaryId = s.Llm.PrimaryRewriteProfileId;
+        string? primaryName = s.Llm.PrimaryRewriteProfileName;
+        if (RepairSlot(ref primaryId, ref primaryName))
         {
-            string? resolved = IdForName(s.Llm.SecondaryRewriteProfileName);
-            if (resolved is not null)
-            {
-                s.Llm.SecondaryRewriteProfileId = resolved;
-                mutated = true;
-            }
+            s.Llm.PrimaryRewriteProfileId = primaryId;
+            s.Llm.PrimaryRewriteProfileName = primaryName;
+            mutated = true;
+        }
+
+        string? secondaryId = s.Llm.SecondaryRewriteProfileId;
+        string? secondaryName = s.Llm.SecondaryRewriteProfileName;
+        if (RepairSlot(ref secondaryId, ref secondaryName))
+        {
+            s.Llm.SecondaryRewriteProfileId = secondaryId;
+            s.Llm.SecondaryRewriteProfileName = secondaryName;
+            mutated = true;
         }
 
         return mutated;

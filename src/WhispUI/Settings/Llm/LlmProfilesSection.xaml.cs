@@ -76,12 +76,22 @@ public sealed partial class LlmProfilesSection : UserControl
         if (sender is not FrameworkElement fe || fe.Tag is not ProfileViewModel vm)
             return;
 
+        // Profiles and rules are independent: removing a profile leaves any
+        // rule that referenced it intact, with a now-orphan ProfileName the
+        // user can re-point or delete manually. Same for shortcut slots —
+        // they keep their stale name until the user reassigns. This trade
+        // protects rule thresholds (which are real work to redefine) at the
+        // cost of a temporarily blank ComboBox SelectedItem until the user
+        // notices and picks a replacement.
         var dialog = new ContentDialog
         {
-            Title = "Remove profile",
-            Content = $"Remove \"{vm.Name}\"? This cannot be undone.",
+            Title = "Remove this profile?",
+            Content =
+                $"\"{vm.Name}\" will be removed. Any rule or shortcut that " +
+                "pointed to it will need a new profile picked — they're not " +
+                "deleted, they go blank until you reassign them.",
             PrimaryButtonText = "Remove",
-            CloseButtonText = "Cancel",
+            CloseButtonText = "Keep",
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };
@@ -92,6 +102,11 @@ public sealed partial class LlmProfilesSection : UserControl
             if (vm.ProfileIndex < profiles.Count)
             {
                 profiles.RemoveAt(vm.ProfileIndex);
+                // Surviving rules whose ids drifted (e.g. the deleted
+                // profile shared a name with another one — unlikely, but
+                // harmless to re-pair) get reconciled against the remaining
+                // Profiles list. Migrate never deletes a rule on its own.
+                SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
                 SettingsService.Instance.Save();
             }
             Reload();
@@ -204,17 +219,20 @@ public sealed partial class LlmProfilesSection : UserControl
     }
 
     // Scope: the Profiles list only. Replaces user-authored profiles with
-    // the defaults (3 brackets — Lissage, Affinage, Arrangement — with empty
-    // SystemPrompt). MigrateProfileIds rewires slot/rule references to the
-    // new default IDs so the related sections don't end up pointing at
-    // orphan profiles. ProfilesChanged triggers the host to reload Rules +
-    // ShortcutSlots.
+    // the three defaults (Lissage / Affinage / Arrangement) — empty
+    // SystemPrompt, pre-set Temperature and NumCtxK. MigrateProfileIds
+    // re-pairs slot and rule references so anything still pointing at
+    // "Lissage" / "Affinage" / "Arrangement" by name picks up the fresh
+    // ids. ProfilesChanged triggers the host to reload Rules + ShortcutSlots.
     private async void ResetSection_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new ContentDialog
         {
-            Title = "Reset profiles",
-            Content = "Replace all profiles with the defaults? Your custom profiles and prompts will be lost.",
+            Title = "Reset profiles to defaults?",
+            Content =
+                "Every profile will be replaced with the three defaults " +
+                "(Lissage, Affinage, Arrangement) — your custom names, " +
+                "prompts, and parameters will be lost.",
             PrimaryButtonText = "Reset",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
