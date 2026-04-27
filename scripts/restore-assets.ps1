@@ -18,7 +18,10 @@ $WhisperDir  = Join-Path $NativeDir 'whisper'
 $MingwDir    = Join-Path $NativeDir 'mingw'
 $ModelsDir   = Join-Path $Repo 'models'
 $WhisperBin  = Join-Path $Repo 'whisper.cpp\build\bin'
-$ScoopMingw  = 'D:\bin\scoop\apps\mingw\current\bin'
+# Scoop respects the SCOOP env var when installed in a non-default location;
+# fall back to the per-user default %USERPROFILE%\scoop otherwise.
+$ScoopRoot   = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 'scoop' }
+$ScoopMingw  = Join-Path $ScoopRoot 'apps\mingw\current\bin'
 
 function Step($msg) { Write-Host "`n[restore] $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "         $msg" -ForegroundColor Green }

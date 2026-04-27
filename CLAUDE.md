@@ -22,8 +22,9 @@ officielle ? » Si la réponse est non, c'est le mauvais choix, recommencer.
 
 <rules>
 Ne jamais lancer de build ni de publish WhispUI — ni `build-run.ps1`, ni
-`MSBuild.exe`, aucune variante. Louis s'en charge. S'arrêter au résumé
-des changements, laisser Louis builder et valider runtime.
+`MSBuild.exe`, aucune variante. Le maintainer s'en charge. S'arrêter au
+résumé des changements et laisser le maintainer builder puis valider
+runtime.
 </rules>
 
 <doctrine>
@@ -115,9 +116,9 @@ En cas de doute sur un rendu ou un pattern :
 
 Strings user-facing en anglais d'emblée : labels UI, messages d'erreur
 visibles, tooltips, statuts tray, chrono HUD, placeholders, copy
-Settings, status keys moteur. Même quand la conversation avec Louis est
-en français. Le code (commentaires, noms, logs techniques) est en
-anglais.
+Settings, status keys moteur. Même quand la conversation avec le
+maintainer se déroule en français. Le code (commentaires, noms, logs
+techniques) est en anglais.
 
 Traduction FR éventuelle : passe de localization dédiée plus tard. On
 pense en anglais, pas en français avec une intention de traduction.
@@ -139,13 +140,12 @@ Types valides : `architecture`, `reference`, `nomenclature`,
 - OS : Windows 11
 - Shell : PowerShell
 - .NET : 10 uniquement (pas de .NET 9 installé)
-- Compilateur C++ : GCC 15.2.0 via MinGW (Scoop) —
-  `D:\bin\scoop\apps\mingw\current\bin\`
+- Compilateur C++ : GCC 15.2.0 via MinGW (Scoop) — typiquement sous
+  `<scoop-root>\apps\mingw\current\bin\`
 - CMake 4.3.1 / Ninja 1.13.2 (Scoop)
 - IDE édition : VSCodium avec extension Claude Code
-- IDE build : Visual Studio 2026 Community dans
-  `D:\bin\visual-studio\visual-studio-2026` (workload *WinUI application
-  development*)
+- IDE build : Visual Studio 2026 Community (workload *WinUI application
+  development*) — chemin d'install variable selon la machine
 - Vulkan SDK : 1.4.341.1 (Scoop), variable `VULKAN_SDK` définie
 - `Microsoft.WindowsAppSDK` : `1.8.260317003` (stable officielle)
 
@@ -174,8 +174,8 @@ condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
 
 <repository>
 ```
-D:\projects\ai\transcription\
-├── src\
+<repo-root>/
+├── src/
 │   └── WhispUI\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
 │       └── docs\             — journal d'implémentation détaillé, lu à la demande
 ├── scripts\                  — build-run.ps1, publish.ps1 (versionnés)

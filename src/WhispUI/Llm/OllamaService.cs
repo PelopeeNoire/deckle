@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WhispUI.Logging;
 
 namespace WhispUI.Llm;
 
@@ -286,14 +287,52 @@ internal sealed class OllamaService
 
     // ── Interne ─────────────────────────────────────────────────────────────
 
+    // Default fallback when the user-configured endpoint cannot be parsed
+    // or is rejected by validation. Matches the Ollama out-of-the-box bind.
+    const string DefaultBaseUrl = "http://localhost:11434";
+
+    // Schemes whose use is allowed for the Ollama endpoint. Anything else
+    // (file://, ftp://, custom schemes) is rejected to avoid handing weird
+    // URIs to HttpClient. Loopback validation is a soft warn (some users
+    // legitimately run Ollama on a separate LAN machine).
+    static readonly HashSet<string> AllowedSchemes =
+        new(StringComparer.OrdinalIgnoreCase) { "http", "https" };
+
+    // Ensure the "non-loopback host" warning fires only once per distinct
+    // host so the log isn't spammed on every request.
+    static string? _lastNonLoopbackHostWarned;
+
     string BaseUrl
     {
         get
         {
             string endpoint = _getEndpoint();
-            if (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
-                return $"{uri.Scheme}://{uri.Authority}";
-            return "http://localhost:11434";
+            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+                return DefaultBaseUrl;
+
+            if (!AllowedSchemes.Contains(uri.Scheme))
+            {
+                LogService.Instance.Warning(LogSource.Llm,
+                    $"Ollama endpoint scheme \"{uri.Scheme}\" is not allowed. " +
+                    $"Falling back to {DefaultBaseUrl}.");
+                return DefaultBaseUrl;
+            }
+
+            string host = uri.Host;
+            bool isLoopback =
+                uri.IsLoopback ||
+                host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                host == "127.0.0.1" || host == "::1";
+
+            if (!isLoopback && _lastNonLoopbackHostWarned != host)
+            {
+                LogService.Instance.Warning(LogSource.Llm,
+                    $"Ollama endpoint host \"{host}\" is not loopback. " +
+                    "Requests will leave this machine. Make sure that is intended.");
+                _lastNonLoopbackHostWarned = host;
+            }
+
+            return $"{uri.Scheme}://{uri.Authority}";
         }
     }
 

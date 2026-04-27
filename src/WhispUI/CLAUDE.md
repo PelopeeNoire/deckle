@@ -7,9 +7,8 @@ WhispInteropTest (WinForms) tourne encore via la tâche planifiée
 `Whisp` tant que WhispUI n'est pas packagé. Il doit être tué avant
 tout test runtime de WhispUI — collision `RegisterHotKey` err 1409.
 
-Roadmap : source unique en mémoire `project_roadmap.md`
-(`C:\Users\Louis\.claude\projects\d--projects-ai-transcription\memory\`).
-À relire en début de session.
+Roadmap et état d'avancement : tenus dans la mémoire de session de
+l'agent (Claude Code auto-memory). À relire en début de session.
 
 ---
 
@@ -19,10 +18,13 @@ Roadmap : source unique en mémoire `project_roadmap.md`
 détail dans le CLAUDE.md racine). Builder via `MSBuild.exe` de VS 2026
 (MSBuild Framework, `MSBuildRuntimeType=Full`).
 
-Depuis `src/WhispUI/`, PowerShell sans admin :
+Depuis `src/WhispUI/`, PowerShell sans admin (remplacer
+`<msbuild-path>` par le chemin local du `MSBuild.exe` Framework livré
+avec Visual Studio 2026, par défaut sous
+`<vs-install>\MSBuild\Current\Bin\amd64\MSBuild.exe`) :
 
 ```
-& "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe" `
+& "<msbuild-path>" `
     -t:Restore,Build -p:Configuration=Release -p:Platform=x64
 ```
 
@@ -44,8 +46,13 @@ Scripts `scripts/build-run.ps1` et `scripts/publish.ps1` (versionnés).
 l'exe — switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`,
 `-MsBuild`. `publish` : target `Restore;Publish` vers `publish/`
 (racine repo). MSBuild résolu via `-MsBuild` > `$env:WHISPUI_MSBUILD`
-> `vswhere`. Chez Louis :
-`setx WHISPUI_MSBUILD "D:\bin\visual-studio\visual-studio-2026\MSBuild\Current\Bin\amd64\MSBuild.exe"`.
+> `vswhere`. Pour court-circuiter `vswhere` (et accélérer le démarrage
+du script), définir une fois pour toutes la variable d'environnement
+utilisateur :
+
+```
+setx WHISPUI_MSBUILD "<msbuild-path>"
+```
 
 ---
 

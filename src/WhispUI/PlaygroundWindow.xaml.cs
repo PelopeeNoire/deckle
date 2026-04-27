@@ -30,8 +30,9 @@ namespace WhispUI;
 // Layout is deliberately flat and always-visible: a sticky preview column
 // on the left (target SelectorBar + Play/Pause + HudChrono / naked host)
 // and a single scrollable column of Expanders on the right — everything
-// fixed, no concept-level tabs. A draggable sash between the two lets Louis
-// trade preview footprint for tuning width when a slider block gets tight.
+// fixed, no concept-level tabs. A draggable sash between the two lets the
+// developer trade preview footprint for tuning width when a slider block
+// gets tight.
 //
 // Tuning is driven by TuningModel (mutable shadow of ConicArcStrokeConfig).
 // Paint-time slider changes flag _rebuildPending and the debounced timer
@@ -84,7 +85,7 @@ public sealed partial class PlaygroundWindow : Window
 
     // Simulate "digit changed during Recording" flags for the swipe reveal
     // preview on Transcribing / Rewriting. ON by default because observing
-    // the swipe wave is the main reason Louis selects those targets here.
+    // the swipe wave is the main reason these targets are selected here.
     private bool _simulateChangedDigits = true;
 
     private Target _currentTarget = Target.Transcribing;
@@ -122,7 +123,7 @@ public sealed partial class PlaygroundWindow : Window
     // every rebuild leaks two Forever ScalarKeyFrameAnimations on the
     // compositor — after enough slider moves the compositor saturates and
     // the rotation freezes mid-animation (the Conic preview regression
-    // Louis reported). See NakedPreview class comment in HudComposition.
+    // that was reported). See NakedPreview class comment in HudComposition.
     private HudComposition.NakedPreview? _nakedPreview;
 
     public PlaygroundWindow()
@@ -523,8 +524,8 @@ public sealed partial class PlaygroundWindow : Window
     // any conic/arc/recording variant. InsetDip lives on HudComposition
     // (paint-time, baked into the stroke geometry on creation), so the
     // slider must trigger a stroke rebuild on change. Range covers a
-    // generous tuning band around the shipping default (-6) so Louis can
-    // explore both "stroke flush with edge" and "stroke pulled well
+    // generous tuning band around the shipping default (-6) so the
+    // developer can explore both "stroke flush with edge" and "stroke pulled well
     // outward" without re-touching the slider bounds.
     private void AddHudGeometryExpander()
     {
@@ -952,8 +953,8 @@ public sealed partial class PlaygroundWindow : Window
     // Layout: 3-column Grid [label 160 | slider * | NumberBox 120].
     // NumberBox MinWidth 120 dip fits "-99.99" + spin buttons without
     // clipping; the label column is narrower than before because the
-    // tuning column is resizable now — if Louis wants more label room
-    // he drags the sash.
+    // tuning column is resizable now — if the user wants more label room
+    // they drag the sash.
 
     private void AddFloatRow(
         StackPanel stack, string label,
