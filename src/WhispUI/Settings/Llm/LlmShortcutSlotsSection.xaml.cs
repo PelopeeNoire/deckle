@@ -10,8 +10,8 @@ namespace WhispUI.Settings.Llm;
 //   Primary rewrite   (Shift+Win+`)  — optional, "(None)" leaves the shortcut unbound
 //   Secondary rewrite (Ctrl+Win+`)   — optional, "(None)" leaves the shortcut unbound
 //
-// Both slots are symmetric: opt-in by default. The four bracket profiles
-// (Relecture/Lissage/Affinage/Arrangement) are picked automatically by
+// Both slots are symmetric: opt-in by default. The three bracket profiles
+// (Lissage/Affinage/Arrangement) are picked automatically by
 // AutoRewriteRules on the plain transcribe shortcut, so the manual slots
 // only matter when the user wants a specific override on a dedicated hotkey.
 //

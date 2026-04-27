@@ -51,7 +51,7 @@ Bug Slider `Minimum` en XAML release : tout Slider dont la range exclut 0 doit e
 
 - **General** — toggle Enabled + Ollama endpoint (auto-save).
 - **Models** — état de la connexion Ollama (reachable + liste de modèles présents) avec refresh manuel.
-- **Profiles** — liste éditable de profils de réécriture (`RewriteProfile` : name, model, system prompt, temperature, num_ctx_k, top_p, repeat_penalty). Add / Delete / Reset section. Auto-save via `ProfileViewModel`. Quatre profils par défaut alignés sur les 4 brackets de cleanup (Relecture / Lissage / Affinage / Arrangement) tunés par autoresearch nuit 26→27 avril.
+- **Profiles** — liste éditable de profils de réécriture (`RewriteProfile` : name, model, system prompt, temperature, num_ctx_k, top_p, repeat_penalty). Add / Delete / Reset section. Auto-save via `ProfileViewModel`. Trois profils par défaut alignés sur les brackets de cleanup (Lissage / Affinage / Arrangement) avec `SystemPrompt` vide — l'utilisateur écrit le sien. Temperature et NumCtxK pré-réglés par bracket.
 - **Auto-rewrite rules** — pivot RuleMetric (Word count par défaut / Duration). Deux listes mutuellement exclusives, par seuil. Chaque rule pointe vers un profil via `ProfileChoices` collection portée par `RuleViewModel` / `RuleByWordsViewModel` (binding direct ItemsSource/SelectedItem — refactor 2026-04-27 pour fix une race ItemsRepeater virtualization).
 - **Shortcut slots** — Primary (Shift+Win+`) et Secondary (Ctrl+Win+`), tous deux opt-in avec sentinel "(None)" stocké comme null. Utilisés par les hotkeys de réécriture manuelle.
 
