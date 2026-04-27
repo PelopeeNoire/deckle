@@ -294,9 +294,9 @@ public sealed class LlmSettings
 
     // Profile used by the Primary Rewrite shortcut (Shift+Win+`).
     // null = primary rewrite disabled (hotkey fires but rewriting is skipped).
-    // Symmetric with Secondary — both slots are opt-in by default; the four
-    // bracket profiles (Relecture/Lissage/Affinage/Arrangement) are picked
-    // by AutoRewriteRules on the plain transcribe shortcut.
+    // Symmetric with Secondary — both slots are opt-in by default; the three
+    // bracket profiles (Lissage/Affinage/Arrangement) are picked by
+    // AutoRewriteRules on the plain transcribe shortcut.
     public string? PrimaryRewriteProfileName { get; set; }
 
     // Profile used by the Secondary Rewrite shortcut (Ctrl+Win+`).
@@ -309,51 +309,29 @@ public sealed class LlmSettings
     public string? PrimaryRewriteProfileId { get; set; }
     public string? SecondaryRewriteProfileId { get; set; }
 
-    // Quatre profils alignés sur les brackets de cleanup (lib/corpus.py:38-47),
+    // Trois profils alignés sur les brackets de cleanup (lib/corpus.py:38-47),
     // tunés via une boucle d'optimisation itérative sur Ministral 14B Q4
-    // (Ollama local). Gradient strict
-    // d'intervention : relecture (surface) → lissage (disfluences) → affinage
-    // (oral → écrit) → arrangement (regroupement thématique). Règle commune :
-    // aucune perte de mots, de sens, de nuances.
+    // (Ollama local). Gradient d'intervention : lissage (disfluences) →
+    // affinage (oral → écrit) → arrangement (regroupement thématique). Règle
+    // commune : aucune perte de mots, de sens, de nuances.
+    //
+    // Les SystemPrompt livrés ici sont l'exemple par défaut — la façon dont
+    // Louis utilise le pipeline. L'utilisateur peut tout réécrire ou
+    // supprimer dans les Settings, mais le bouton Reset Profiles ramène
+    // exactement cet exemple complet (3 profils nommés, prompts tunés,
+    // Temperature 0.30, NumCtxK 8/16/16). Model laissé vide : à choisir
+    // une fois Ollama configuré.
     public List<RewriteProfile> Profiles { get; set; } = new()
     {
-        new()
-        {
-            Name = "Relecture",
-            Model = "",
-            Temperature = 0.30,
-            NumCtxK = 8,
-            // Bracket ≤ 60 s. Surface fixes only (orthographe, ponctuation,
-            // accents, capitalisation). Aucune suppression de mot. **Gras**
-            // autorisé avec parcimonie sur termes techniques / noms propres.
-            SystemPrompt =
-                """
-                Tu corriges la surface d'une transcription orale française. Tu commences par le premier mot du contenu — pas d'introduction, pas d'annonce, pas de "Voici". Pas de markdown structurel, pas de listes, pas de séparateurs.
-
-                Tu interviens UNIQUEMENT sur :
-                - l'orthographe française (mots mal écrits par Whisper),
-                - la ponctuation (virgules, points, points d'interrogation et d'exclamation),
-                - les accents (à, é, è, ê, ç, ï, ô, û…),
-                - la majuscule en début de phrase et sur les noms propres.
-
-                Tu n'enlèves AUCUN mot. Tu n'ajoutes AUCUN mot. Tu ne reformules pas. Tu ne déplaces pas. Tu ne corriges pas la grammaire orale (faux accord, anacoluthe…) si elle est intelligible. Hésitations, répétitions, faux départs, fragments inachevés : tout reste.
-
-                Le registre, le ton, le vocabulaire sont strictement ceux du locuteur. Si le locuteur dit "enlever", tu écris "enlever".
-
-                Format. Une seule ligne ou plusieurs paragraphes, selon le rythme du locuteur. Tu peux utiliser **gras** Markdown avec parcimonie pour souligner un terme technique ou un nom propre central, jamais comme titre. Dernier caractère = dernier mot du contenu.
-
-                En cas de doute entre corriger ou laisser, laisse.
-                """
-        },
         new()
         {
             Name = "Lissage",
             Model = "",
             Temperature = 0.30,
             NumCtxK = 8,
-            // Bracket 60–300 s. Relecture + suppression des disfluences /
-            // tics / répétitions exactes / faux départs. Conservation stricte
-            // des modaux d'incertitude et des transitions porteuses. Aucun
+            // Bracket 60–300 s. Suppression des disfluences / tics /
+            // répétitions exactes / faux départs. Conservation stricte des
+            // modaux d'incertitude et des transitions porteuses. Aucun
             // regroupement thématique — l'ordre du locuteur reste préservé.
             SystemPrompt =
                 """
@@ -501,17 +479,16 @@ public sealed class LlmSettings
 
     // Auto-rules alignées sur les bornes des brackets cleanup. Évaluées
     // par WhispEngine en ordre décroissant de seuil — le plus haut qui
-    // matche gagne. Plancher Relecture à 20 s : en dessous, aucune règle
-    // ne matche, le profil reste null et la réécriture LLM est skipée
-    // (comportement no-op, le texte brut Whisper part au clipboard tel
-    // quel — utile sur les dictées de quelques mots où un cycle Ollama
+    // matche gagne. Plancher à 60 s : en dessous, aucune règle ne matche,
+    // le profil reste null et la réécriture LLM est skipée (comportement
+    // no-op, le texte brut Whisper part au clipboard tel quel — Whisper
+    // sort déjà du texte propre sur les dictées courtes, un cycle Ollama
     // serait gratuit).
     public List<AutoRewriteRule> AutoRewriteRules { get; set; } = new()
     {
         new() { MinDurationSeconds = 600, ProfileName = "Arrangement" },
         new() { MinDurationSeconds = 300, ProfileName = "Affinage"    },
-        new() { MinDurationSeconds = 60,  ProfileName = "Lissage"     },
-        new() { MinDurationSeconds = 20,  ProfileName = "Relecture"   }
+        new() { MinDurationSeconds = 60,  ProfileName = "Lissage"     }
     };
 
     // Which metric drives auto-rule selection. Default "Duration" — the
@@ -523,15 +500,14 @@ public sealed class LlmSettings
     // Word-based equivalents — calibrated on 88 corpus samples (median
     // 115 wpm globally, range 47–205). The bracket boundaries 1/5/10 min
     // map to ~115/575/1150 words at that median, rounded to multiples of
-    // 50: 150/600/1200. Plancher Relecture à 50 mots — symétrique avec
-    // la règle duration de 20 s : en dessous, aucune règle ne matche,
-    // pas de cycle Ollama gratuit sur une dictée de quelques mots.
+    // 50: 150/600/1200. Plancher à 150 mots — symétrique avec la règle
+    // duration de 60 s : en dessous, aucune règle ne matche, pas de
+    // cycle Ollama gratuit sur une dictée courte.
     public List<AutoRewriteRuleByWords> AutoRewriteRulesByWords { get; set; } = new()
     {
         new() { MinWordCount = 1200, ProfileName = "Arrangement" },
         new() { MinWordCount = 600,  ProfileName = "Affinage"    },
-        new() { MinWordCount = 150,  ProfileName = "Lissage"     },
-        new() { MinWordCount = 50,   ProfileName = "Relecture"   }
+        new() { MinWordCount = 150,  ProfileName = "Lissage"     }
     };
 }
 

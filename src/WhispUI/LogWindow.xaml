@@ -216,7 +216,6 @@
                                   Margin="4,0,0,0"
                                   VerticalAlignment="Center"
                                   SelectionChanged="OnLevelSelectorChanged">
-                <controls:SelectorBarItem x:Name="LevelNarrative" Text="Narrative" />
                 <controls:SelectorBarItem x:Name="LevelFull" Text="All" />
                 <controls:SelectorBarItem x:Name="LevelFiltered" Text="Activity" />
                 <controls:SelectorBarItem x:Name="LevelCritical" Text="Alerts" />
