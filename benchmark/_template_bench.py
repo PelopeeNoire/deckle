@@ -10,8 +10,8 @@ Conventions a real benchmark must follow:
     - Filename ends in ``_bench.py`` (e.g. ``translate_bench.py``).
     - Outputs go to ``reports/last_<name>_run.{json,txt}``
       where ``<name>`` matches the script (without ``_bench`` suffix).
-    - No automated LLM judge calls. The agent (Claude session, Louis)
-      reads the JSON/TXT and judges qualitatively. Never put an API key
+    - No automated LLM judge calls. The agent and the human reviewer
+      read the JSON/TXT and judge qualitatively. Never put an API key
       in this file or in any sibling.
     - Optional ``--bracket`` flag if the bench filters by audio duration
       tier (relecture / lissage / affinage / arrangement).
@@ -61,7 +61,7 @@ def run(*, prompt: str, limit: int | None, verbose: bool) -> dict:
         - for each, run the system under test, record the outcome
         - aggregate runtime stats (duration, RTF, token counts, …)
         - dump a structured JSON + a human-readable TXT companion under
-          ``reports/`` so the agent (and Louis) can read it
+          ``reports/`` so the agent and the human reviewer can read it
     """
     items = ["alpha", "beta", "gamma"]  # ← replace with real iteration
     if limit is not None:

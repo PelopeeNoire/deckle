@@ -26,7 +26,7 @@ $ScriptDir  = $PSScriptRoot                                  # scripts/
 # -----------------------------------------------------------------------------
 # Default: build the repo containing this script copy — the VS Code "Run"
 # flow (PowerShell extension on the open file) naturally picks the
-# worktree Louis is editing in.
+# worktree currently being edited.
 #
 # Override: -Target "<path>" picks any path. -Pick lists the worktrees
 # and prompts. Both are for terminal use; VS Code Run should stay no-arg.

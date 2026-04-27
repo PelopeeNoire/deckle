@@ -45,7 +45,7 @@ public sealed partial class HudChrono : UserControl
     // Per-digit heat 0..1 driving the accent overlay's Opacity. Rises fast
     // when the swipe head is on a changed digit, decays slowly afterwards.
     // The asymmetric rise/decay (see SwipeRiseAlpha / SwipeDecayAlpha below)
-    // gives the wave effect Louis described: a digit keeps glowing for a
+    // gives the wave effect described in the spec: a digit keeps glowing for a
     // moment after the head has moved on, so several digits are partially
     // lit at once — a trailing comet instead of a single moving pixel.
     private readonly float[] _digitHeat = new float[6];
@@ -342,7 +342,7 @@ public sealed partial class HudChrono : UserControl
     //   rms = 0.063 (-24 dBFS)  → t=0.89  → y=0.79   assertive speech
     //   rms = 0.079 (-22 dBFS)  → t=1.00  → y=1.00   emphatic ceiling
     //
-    // Calibration — Louis's voice peaks around -18 dBFS but the 50 ms
+    // Calibration — typical voice peaks around -18 dBFS but the 50 ms
     // RMS average sits 6-10 dB below peak, landing in -28..-24 dBFS
     // for normal speech and brushing -22 dBFS only on emphatic
     // stress. Previous ceiling at -18 dBFS was unreachable in
@@ -483,7 +483,7 @@ public sealed partial class HudChrono : UserControl
     // HudPlayground — shipping WhispUI never passes one, so the null-
     // conditional invocations collapse to zero cost. Each anchor lets
     // the playground log panel show the exact lifecycle order when
-    // Louis observes a stroke freezing mid-run; the try/catch wraps
+    // a stroke is observed freezing mid-run; the try/catch wraps
     // the whole teardown + rebuild + apply sequence so a Composition
     // exception thrown deep inside any of the factories surfaces as a
     // visible ERROR line instead of freezing silently.
@@ -582,7 +582,7 @@ public sealed partial class HudChrono : UserControl
             // Without this catch the exception bubbles to the UI thread
             // and either crashes the playground or — worse — silently
             // kills the visual's animations, which is exactly the
-            // "freeze mid-run" symptom Louis is chasing.
+            // "freeze mid-run" symptom we are tracking down.
             log?.Invoke("ERROR", $"RebuildStroke threw {ex.GetType().Name}: {ex.Message}");
             throw;
         }
@@ -615,7 +615,7 @@ public sealed partial class HudChrono : UserControl
     // `index`, flags the digit as "changed" for the downstream swipe,
     // and bumps its heat to 1 so the accent overlay is visible
     // immediately — the Recording-time "each change flashes red" UX
-    // Louis has been iterating on. Returns early if the text didn't
+    // we have been iterating on. Returns early if the text didn't
     // actually change (no-op on every vsync for stationary digits).
     // Index order matches the `_digitChanged` / `_digitHeat` arrays:
     // 0 Min1, 1 Min2, 2 Sec1, 3 Sec2, 4 Cs1, 5 Cs2.
@@ -686,7 +686,7 @@ public sealed partial class HudChrono : UserControl
     // rises, the overlay (SystemFillColorCriticalBrush) cross-fades in
     // over the primary; at heat=1 the digit reads as pure red.
     //
-    // The key property (what Louis calls "l'effet de vague") is
+    // The key property (the "wave effect") is
     // *asymmetric rise and decay*. When the wave's head lands on a
     // changed digit, its heat target becomes 1 and heat rises at
     // SwipeRiseAlpha per frame. When the head moves on, the target drops

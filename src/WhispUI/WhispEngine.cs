@@ -184,8 +184,8 @@ internal sealed class WhispEngine : IDisposable
     //   - the Tail-600 ms diagnostic at Stop (last 12 samples — sidesteps the
     //     bytes-buffer ordering ambiguity of the old re-computation path),
     //   - the per-recording mic telemetry summary (min / percentiles / max
-    //     in dBFS) Louis uses to calibrate MinDbfs / MaxDbfs / EmaAlpha
-    //     against his actual hardware response.
+    //     in dBFS) used to calibrate MinDbfs / MaxDbfs / EmaAlpha against
+    //     the actual hardware response.
     // Pre-reserved for ~10 minutes at 20 Hz; the List grows past that without
     // a resize allocation explosion thanks to standard doubling.
     private readonly List<float> _rmsLog = new(capacity: 20 * 60 * 10);
@@ -299,8 +299,7 @@ internal sealed class WhispEngine : IDisposable
 
     public WhispEngine()
     {
-        _modelPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH")
-            ?? Path.Combine(SettingsService.Instance.ResolveModelsDirectory(), MODEL_FILE);
+        _modelPath = ResolveModelPath();
 
         _llm = new LlmService();
 
@@ -311,6 +310,34 @@ internal sealed class WhispEngine : IDisposable
 
         // Model loaded on-demand at first hotkey press (see EnsureModelLoaded).
         // Unloaded after MODEL_IDLE_TIMEOUT_MS of inactivity to free VRAM.
+    }
+
+    // Resolves the model path. Order of precedence:
+    //   1. WHISP_MODEL_PATH environment variable, only if it points to an
+    //      absolute path that exists on disk. Anything else is rejected
+    //      with a warning so the user notices the misconfiguration instead
+    //      of silently falling back. Validation is cheap and avoids handing
+    //      a relative or non-existent path to the native whisper layer.
+    //   2. The path resolved by SettingsService (configured models dir +
+    //      default model filename).
+    private static string ResolveModelPath()
+    {
+        string fallback = Path.Combine(
+            SettingsService.Instance.ResolveModelsDirectory(), MODEL_FILE);
+
+        string? envPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH");
+        if (string.IsNullOrWhiteSpace(envPath))
+            return fallback;
+
+        if (!Path.IsPathRooted(envPath) || !File.Exists(envPath))
+        {
+            _log.Warning(LogSource.Engine,
+                $"WHISP_MODEL_PATH ignored (not an existing absolute path): \"{envPath}\". " +
+                $"Falling back to \"{fallback}\".");
+            return fallback;
+        }
+
+        return envPath;
     }
 
     // Redirects whisper.cpp internal logs (ggml_log) to LogVerbose.
@@ -1219,8 +1246,9 @@ internal sealed class WhispEngine : IDisposable
         //
         // Threshold chosen by observation: modern condenser/USB mics at
         // typing distance produce normal conversation around -35 to -45
-        // dBFS. The old -35 dBFS threshold rejected Louis's mic even during
-        // active speech. -45 dBFS leaves headroom for quieter setups while
+        // dBFS. The old -35 dBFS threshold rejected typical condenser
+        // mics even during active speech. -45 dBFS leaves headroom for
+        // quieter setups while
         // still catching the broken-mic / unplugged / miles-away scenarios
         // (those sit below -55 dBFS).
         const double NormalVoiceDbfsThreshold = -45.0;

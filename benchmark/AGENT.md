@@ -1,6 +1,6 @@
 # Benchmark — agent guide
 
-This folder holds Louis's iterative benchmarking suite for the WhispUI
+This folder holds the iterative benchmarking suite for the WhispUI
 transcription stack. Any LLM agent working here should read this file
 first; everything below is intentionally model-agnostic (no Claude-only
 shortcuts), so the same instructions apply whether you're Claude,
@@ -111,7 +111,7 @@ flags live alongside.
 
 ### Reusable pipeline (when corpus is enriched)
 
-When Louis records new samples in the missing duration brackets (<60 s
+When the maintainer records new samples in the missing duration brackets (<60 s
 native, >10 min native with audio preserved), the same four commands
 reproduce a full evaluation cycle:
 

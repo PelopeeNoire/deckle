@@ -12,7 +12,7 @@
         <StackPanel Spacing="8">
             <TextBox x:Name="PathBox"
                      Header="GGUF file path"
-                     PlaceholderText="D:\models\model.gguf"
+                     PlaceholderText="Click Browse to pick a .gguf file"
                      IsReadOnly="True"
                      HorizontalAlignment="Stretch" />
             <Button x:Name="BrowseButton"

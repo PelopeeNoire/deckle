@@ -7,13 +7,13 @@ Two source flavours, mixable in a single run :
    envelope, bucketed by ``payload.duration_seconds``.
 
 2. **Exemples ``.txt`` corpus** (``--from-exemples-txt PATH``) —
-   Louis-style historical transcript files where blocks are separated
-   by either ``---`` on a line by itself (independent samples) or
-   blank-line runs (legacy format without explicit dashes). Within a
-   ``---`` block, ``+++`` on a line by itself joins fragments of the
-   same recording (concatenated with a blank line). No audio file is
+   historical transcript files where blocks are separated by either
+   ``---`` on a line by itself (independent samples) or blank-line
+   runs (legacy format without explicit dashes). Within a ``---``
+   block, ``+++`` on a line by itself joins fragments of the same
+   recording (concatenated with a blank line). No audio file is
    recorded — duration is estimated from word count at 1.85 wps (≈
-   slow-paced French dictation, calibrated on Louis' style).
+   slow-paced French dictation pace).
 
 Both modes write to the same ``telemetry/corpus-<bracket>/corpus.jsonl``
 buckets. ``rewrite_bench.py`` reads those four files directly.
@@ -69,8 +69,9 @@ BRACKETS: tuple[tuple[str, float, float], ...] = (
 )
 
 # Words-per-second used to estimate duration on text-only sources
-# (no audio file behind). Calibrated on Louis' typical pace —
-# ~111 wpm. Same convention as the prior build_exemples_corpus.py.
+# (no audio file behind). Calibrated on the project's typical
+# dictation pace — ~111 wpm. Same convention as the prior
+# build_exemples_corpus.py.
 WPS_ESTIMATE = 1.85
 
 # Patterns for the exemples .txt format (anchored on whole lines).
@@ -109,7 +110,7 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def parse_exemples_txt(path: Path) -> list[str]:
-    """Parse a Louis-style exemples .txt into a list of text blocks.
+    """Parse an exemples .txt into a list of text blocks.
 
     Two flavours:
 
@@ -239,7 +240,7 @@ def main() -> None:
     parser.add_argument(
         "--from-exemples-txt", action="append", default=[],
         dest="from_exemples_txt",
-        help="Source exemples .txt (Louis format with --- between blocks "
+        help="Source exemples .txt (project format with --- between blocks "
              "and +++ joining fragments of the same recording). Duration "
              "is estimated at 1.85 wps. Repeat to merge several .txt sources.",
     )

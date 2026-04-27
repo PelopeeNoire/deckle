@@ -1,8 +1,8 @@
 """Ollama-backed judge — kept as a local fallback for the Claude judge.
 
 Used when ``judge_backend = ollama`` in config.ini, typically when the
-Anthropic API key is unavailable or when Louis wants a fully local run
-for comparison.
+Anthropic API key is unavailable or when the user wants a fully local
+run for comparison.
 """
 
 from __future__ import annotations
