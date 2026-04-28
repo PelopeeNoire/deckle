@@ -59,7 +59,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         };
     }
 
-    protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
         // Cold-start instrumentation. Milestones accumulate into a local
         // list during construction and get flushed as a single aggregate
@@ -88,6 +88,31 @@ public partial class App : Microsoft.UI.Xaml.Application
             $" | telemetry={AppPaths.TelemetryDirectory}" +
             $" | models={AppPaths.ModelsDirectory}" +
             $" | native={AppPaths.NativeDirectory}");
+
+        // First-run gate — the engine ctor below loads the model immediately
+        // and would throw DllNotFoundException without the native runtime
+        // (libwhisper + ggml backends). There's no graceful degradation:
+        // either the dependencies are in place, or we open the wizard, or
+        // the user quits. The wizard handles both natives (Browse...) and
+        // the speech model (HuggingFace download).
+        if (!Setup.NativeRuntime.IsInstalled() ||
+            !Setup.SpeechModels.IsDefaultInstalled())
+        {
+            _log.Info(LogSource.Setup,
+                $"first-run gate | natives_installed={Setup.NativeRuntime.IsInstalled()}" +
+                $" | default_model_installed={Setup.SpeechModels.IsDefaultInstalled()}");
+            var setup = new Shell.Setup.SetupWindow();
+            setup.Body.Navigate(typeof(Shell.Setup.ChoicesPage), setup);
+            setup.Activate();
+            bool success = await setup.Completion;
+            if (!success)
+            {
+                _log.Info(LogSource.Setup, "wizard cancelled — exiting");
+                Environment.Exit(0);
+                return;
+            }
+            Milestone("wizard");
+        }
 
         _engine = new WhispEngine();
         Milestone("engine");

@@ -455,6 +455,14 @@
                     </StackPanel>
                 </controls:SettingsCard>
 
+                <controls:SettingsCard Header="First-run setup"
+                                       Description="Re-open the setup wizard to swap the speech model or replace the native runtime."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9F5;}">
+                    <Button x:Name="ReRunSetupButton"
+                            Content="Run setup..."
+                            Click="ReRunSetupButton_Click" />
+                </controls:SettingsCard>
+
             </StackPanel>
         </Grid>
     </ScrollViewer>
