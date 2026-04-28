@@ -4,7 +4,6 @@ using System.Linq;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WhispUI.Logging;
 
 namespace WhispUI.Settings.Llm;
 
@@ -50,8 +49,6 @@ namespace WhispUI.Settings.Llm;
 
 public sealed partial class LlmRulesSection : UserControl
 {
-    private static readonly LogService _log = LogService.Instance;
-
     // Suppresses event handlers during programmatic mutations — Reload sets
     // SelectedIndex on every combo, which fires SelectionChanged. Without
     // this gate every Reload would rewrite Settings to its current state and
