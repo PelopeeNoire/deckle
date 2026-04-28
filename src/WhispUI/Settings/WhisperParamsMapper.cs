@@ -109,8 +109,11 @@ internal static class WhisperParamsMapper
             // Modèle Silero cherché dans le dossier de modèles résolu par le
             // SettingsService (ModelsDirectory utilisateur ou fallback shared/).
             // Si absent, VAD désactivé avec log warning — pas de crash natif.
+            // VAD filename + download URL sourced from the Setup catalog so
+            // the engine and the wizard agree on which Silero version to ship.
             string vadModelPath = Path.Combine(
-                SettingsService.Instance.ResolveModelsDirectory(), "ggml-silero-v6.2.0.bin");
+                SettingsService.Instance.ResolveModelsDirectory(),
+                Setup.SpeechModels.VadModelFileName);
 
             if (File.Exists(vadModelPath))
             {
@@ -128,7 +131,7 @@ internal static class WhisperParamsMapper
                 wparams.vad = 0;
                 _log.Warning(LogSource.Whisper,
                     $"Silero VAD model not found at {vadModelPath} — VAD disabled. " +
-                    $"Download from https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin");
+                    $"Download from {Setup.SpeechModels.VadModel.Url}");
             }
         }
 
