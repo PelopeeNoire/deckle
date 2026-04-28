@@ -84,7 +84,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // that resolves <UserDataRoot> and creates the writable directories.
         _log.Info(LogSource.App,
             $"AppPaths initialized | root={AppPaths.UserDataRoot}" +
-            $" | settings={AppPaths.SettingsDirectory}" +
+            $" | settings={AppPaths.SettingsFilePath}" +
             $" | telemetry={AppPaths.TelemetryDirectory}" +
             $" | models={AppPaths.ModelsDirectory}" +
             $" | native={AppPaths.NativeDirectory}");

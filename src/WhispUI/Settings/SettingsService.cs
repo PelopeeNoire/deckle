@@ -13,8 +13,8 @@ namespace WhispUI.Settings;
 // l'instance courante, et écrit le fichier sur demande avec un léger
 // debounce (300 ms) pour ne pas réécrire à chaque tick de slider.
 //
-// Emplacement résolu via AppPaths.SettingsDirectory : sous-dossier
-// `settings/` du UserDataRoot (par défaut %LOCALAPPDATA%\<AppFolderName>\,
+// Emplacement résolu via AppPaths.SettingsFilePath : settings.json à la
+// racine du UserDataRoot (par défaut %LOCALAPPDATA%\<AppFolderName>\,
 // override via WHISP_DATA_ROOT en dev). Le binaire reste read-only et
 // Program Files-friendly ; la config vit dans le profil utilisateur.
 //
@@ -44,9 +44,8 @@ public sealed class SettingsService
     }
 
     // Exposed read-only so SettingsBackupService can locate the live file
-    // without duplicating the AppPaths.SettingsDirectory + "settings.json"
-    // resolution. Internal callers only — this is not part of any
-    // settings-changing surface.
+    // without re-resolving AppPaths.SettingsFilePath. Internal callers
+    // only — this is not part of any settings-changing surface.
     internal string ConfigPath => _configPath;
 
     // Levé après une écriture disque réussie. Les consommateurs (UI, engine)
@@ -58,10 +57,10 @@ public sealed class SettingsService
 
     private SettingsService()
     {
-        // SettingsDirectory is created by AppPaths static ctor; redundant
+        // UserDataRoot is created by AppPaths static ctor; redundant
         // CreateDirectory left out on purpose so this constructor reads
         // as "AppPaths owns the location, we just consume it".
-        _configPath = Path.Combine(AppPaths.SettingsDirectory, "settings.json");
+        _configPath = AppPaths.SettingsFilePath;
 
         _current = Load(out bool migrated);
         _debounceTimer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
@@ -367,7 +366,7 @@ public sealed class SettingsService
         if (!string.IsNullOrWhiteSpace(user))
             return user;
 
-        return Path.Combine(AppPaths.SettingsDirectory, "backups");
+        return AppPaths.SettingsBackupDirectory;
     }
 
     // Re-reads settings.json from disk and replaces the in-memory snapshot.
