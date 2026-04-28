@@ -141,7 +141,8 @@ public sealed partial class PlaygroundWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
 
-        SystemBackdrop = new MicaBackdrop();
+        // Mica disabled — see SettingsWindow for the rationale.
+        // SystemBackdrop = new MicaBackdrop();
 
         Title = "WhispUI Playground";
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 880));

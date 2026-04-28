@@ -103,9 +103,10 @@ public sealed partial class LogWindow : Window, ITelemetrySink
         // AppWindow.TitleBar.PreferredHeightOption.
         AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
 
-        // Mica: translucent backdrop that follows system theme colors.
-        // Win11 required (OK here); falls back to transparent otherwise.
-        SystemBackdrop = new MicaBackdrop();
+        // Mica disabled — see SettingsWindow for the rationale (cumulative
+        // DWM compositing cost across multiple Mica windows hypothesised
+        // to cause the 1-2 s drag/resize lag).
+        // SystemBackdrop = new MicaBackdrop();
 
         // Initial SelectorBar selection: All — the broadest view by default.
         // Activity / Alerts remain one click away when the user wants to narrow
