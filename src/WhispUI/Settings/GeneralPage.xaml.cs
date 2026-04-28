@@ -64,6 +64,7 @@ public sealed partial class GeneralPage : Page
         SyncOverlayPositionCombo();
         SyncThemeCombo();
         SyncCorpusFolderPlaceholder();
+        DataFolderPathText.Text = AppPaths.UserDataRoot;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low,
             () => _initializing = false);
     }
@@ -169,13 +170,12 @@ public sealed partial class GeneralPage : Page
     //
     // Show the default resolver's path as the TextBox placeholder rather than
     // a generic "(auto)" — lets the user see where logs will land without
-    // opening File Explorer. Empty fallback "(auto)" only when the dev layout
-    // resolver can't find a benchmark/ folder.
+    // opening File Explorer. The default resolver always returns a concrete
+    // path under <UserDataRoot>\telemetry\.
 
     private void SyncCorpusFolderPlaceholder()
     {
-        string? defaultPath = CorpusPaths.GetDefaultDirectoryPath();
-        TelemetryFolderBox.PlaceholderText = string.IsNullOrEmpty(defaultPath) ? "(auto)" : defaultPath;
+        TelemetryFolderBox.PlaceholderText = CorpusPaths.GetDefaultDirectoryPath();
     }
 
     // ── Corpus logging handlers ─────────────────────────────────────────────
@@ -341,15 +341,9 @@ public sealed partial class GeneralPage : Page
 
     private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        // GetDirectoryPath() already falls back to the default resolver when
-        // Telemetry.StorageDirectory is empty.
-        string? path = CorpusPaths.GetDirectoryPath();
-
-        if (string.IsNullOrEmpty(path))
-        {
-            _log.Warning(LogSource.SetGeneral, "telemetry folder unresolved | action=cannot-open");
-            return;
-        }
+        // GetDirectoryPath() falls back to <UserDataRoot>\telemetry\ when
+        // Telemetry.StorageDirectory is empty — always returns a usable path.
+        string path = CorpusPaths.GetDirectoryPath();
 
         try
         {
@@ -364,6 +358,28 @@ public sealed partial class GeneralPage : Page
         {
             _log.Error(LogSource.SetGeneral,
                 $"Open telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // Opens the UserDataRoot in File Explorer — entry point for users who
+    // want to inspect, back up, or wipe everything mutable the app stores.
+    private void OpenDataFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        string path = AppPaths.UserDataRoot;
+
+        try
+        {
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetGeneral,
+                $"Open data folder failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

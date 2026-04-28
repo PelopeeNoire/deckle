@@ -41,14 +41,16 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe`
   sont injoignables et l'app démarre sans fenêtre. Cf.
   `microsoft/WindowsAppSDK#3451`.
 
-Scripts `scripts/build-run.ps1` et `scripts/publish.ps1` (versionnés).
-`build-run` tue WhispUI s'il tourne, build via MSBuild VS, lance
-l'exe — switches `-Restore`, `-NoRun`, `-Wait`, `-Configuration`,
-`-MsBuild`. `publish` : target `Restore;Publish` vers `publish/`
-(racine repo). MSBuild résolu via `-MsBuild` > `$env:WHISPUI_MSBUILD`
-> `vswhere`. Pour court-circuiter `vswhere` (et accélérer le démarrage
-du script), définir une fois pour toutes la variable d'environnement
-utilisateur :
+Scripts `scripts/build-run.ps1` et `scripts/publish-unpackaged.ps1`
+(versionnés). `build-run` tue WhispUI s'il tourne, build via MSBuild
+VS, lance l'exe — switches `-Restore`, `-NoRun`, `-Wait`,
+`-Configuration`, `-MsBuild`. `publish-unpackaged` : target
+`Restore;Publish` vers `publish/` (racine repo) — sortie folder
+unpackaged sans installer ni MSIX, modèles et DLLs natives non
+embarqués (téléchargés au first run). MSBuild résolu via `-MsBuild`
+> `$env:WHISPUI_MSBUILD` > `vswhere`. Pour court-circuiter `vswhere`
+(et accélérer le démarrage du script), définir une fois pour toutes
+la variable d'environnement utilisateur :
 
 ```
 setx WHISPUI_MSBUILD "<msbuild-path>"
