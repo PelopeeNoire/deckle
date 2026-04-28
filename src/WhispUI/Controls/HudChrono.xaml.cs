@@ -733,10 +733,10 @@ public sealed partial class HudChrono : UserControl
     //                     "tremblement" rather than "vague".
     // `public static` (not const / readonly) so HudPlayground can tune
     // the cadence, easing, and rise/decay alphas live.
-    public static float   SwipeCycleSeconds = 3.0f;
-    public static Vector2 SwipeEaseP1       = new(0.7f, 0f);
-    public static Vector2 SwipeEaseP2       = new(0.1f, 1f);
-    public static float   SwipeRiseAlpha    = 0.05f;
+    public static float   SwipeCycleSeconds = 4.0f;
+    public static Vector2 SwipeEaseP1       = new(0.8f, 0f);
+    public static Vector2 SwipeEaseP2       = new(0.4f, 1f);
+    public static float   SwipeRiseAlpha    = 0.1f;
     public static float   SwipeDecayAlpha   = 0.05f;
 
     // Digit count — structural, mirrors _digitHeat.Length and the 6 accent

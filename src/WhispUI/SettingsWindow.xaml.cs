@@ -60,7 +60,14 @@ public sealed partial class SettingsWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
 
-        SystemBackdrop = new MicaBackdrop();
+        // Mica disabled across all windows — investigating a 1-2 s lag on
+        // move/resize affecting Settings, Log, Setup, and even other apps
+        // (VS, etc.) when WhispUI is running. Hypothesis: cumulative DWM
+        // compositing cost across multiple Mica surfaces (we instantiate
+        // 4 Mica windows at boot). With backdrop=null the window keeps
+        // its system theme background; visual polish loss is the trade-off
+        // until we identify the root cause. Cf. WinUI issue #5148, #10820.
+        // SystemBackdrop = new MicaBackdrop();
 
         // NavigationView : quand le mode bascule en Minimal (hamburger visible),
         // le pane toggle button occupe ~48 px en haut de la zone contenu.
