@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using WhispUI.Setup;
 
 namespace WhispUI.Interop;
 
@@ -16,15 +17,22 @@ internal static class NativeMethods
     // load order: directory of the loaded DLL first).
     //
     // Runs on first access to any NativeMethods member, before any
-    // [DllImport("libwhisper")] P/Invoke is executed — guaranteed by the
+    // [DllImport(PInvokeKey)] P/Invoke is executed — guaranteed by the
     // CLR's static-constructor contract.
+    //
+    // The PInvokeKey constant below MUST stay in sync with the literal
+    // in every [DllImport("libwhisper")] attribute in this file. C# requires
+    // a constant literal in the attribute, so the duplication is unavoidable
+    // — keep PInvokeKey here as the documented match-target.
     //
     // Falls through to default resolution when NativeDirectory doesn't hold
     // the DLLs yet: the first-run wizard catches the missing-deps state via
-    // AppPaths.HasNativeDlls() and prompts for download before the engine
-    // boots, so we never reach a DllNotFoundException in practice. The
+    // NativeRuntime.IsInstalled() and prompts the user before the engine
+    // boots, so a DllNotFoundException shouldn't happen in practice. The
     // fallback exists for the edge case where the wizard is bypassed (env
     // var override, manual DLL placement next to the exe in dev).
+    private const string PInvokeKey = "libwhisper";
+
     static NativeMethods()
     {
         NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, ResolveNativeLibrary);
@@ -32,9 +40,9 @@ internal static class NativeMethods
 
     private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
-        if (libraryName != "libwhisper") return IntPtr.Zero;
+        if (libraryName != PInvokeKey) return IntPtr.Zero;
 
-        string candidate = Path.Combine(AppPaths.NativeDirectory, "libwhisper.dll");
+        string candidate = Path.Combine(AppPaths.NativeDirectory, NativeRuntime.EntryDll);
         if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out IntPtr handle))
             return handle;
 
