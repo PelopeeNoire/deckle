@@ -38,6 +38,15 @@ internal static class Downloader
 {
     private const int BufferSize = 81920; // 80 KB, matches Stream.CopyToAsync default
 
+    // Throttle progress reporting so a 3 GB download doesn't dispatch 39 000
+    // callbacks at the UI thread. IProgress<T>.Report posts on the captured
+    // SyncContext (the UI dispatcher when the page wired up the Progress
+    // instance), and posting every 80 KB saturates the message pump enough
+    // to freeze the window. 200 ms gives ~5 reports per second — smooth
+    // perceived progress, no flood. The final position is always reported
+    // outside the loop so the bar lands at 100% regardless of throttling.
+    private const int ProgressReportThrottleMs = 200;
+
     private static readonly HttpClient _http = CreateHttpClient();
 
     public sealed record DownloadProgress(long BytesDownloaded, long? TotalBytes)
@@ -83,21 +92,32 @@ internal static class Downloader
 
             using var network = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            long downloaded = 0;
             using (var file = new FileStream(partialPath,
                 FileMode.Create, FileAccess.Write, FileShare.None,
                 BufferSize, useAsync: true))
             {
                 byte[] buffer = new byte[BufferSize];
-                long downloaded = 0;
+                long lastReportTicks = Environment.TickCount64;
                 int read;
                 while ((read = await network.ReadAsync(buffer.AsMemory(0, BufferSize), ct).ConfigureAwait(false)) > 0)
                 {
                     await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                     hash.AppendData(buffer, 0, read);
                     downloaded += read;
-                    progress?.Report(new DownloadProgress(downloaded, total));
+
+                    long now = Environment.TickCount64;
+                    if (now - lastReportTicks >= ProgressReportThrottleMs)
+                    {
+                        progress?.Report(new DownloadProgress(downloaded, total));
+                        lastReportTicks = now;
+                    }
                 }
             }
+
+            // Final tick — bar lands at 100% even if the last loop iteration
+            // didn't cross the throttle threshold.
+            progress?.Report(new DownloadProgress(downloaded, total));
 
             string actualSha = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
 
