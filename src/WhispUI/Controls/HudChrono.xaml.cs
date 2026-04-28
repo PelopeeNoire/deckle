@@ -737,7 +737,7 @@ public sealed partial class HudChrono : UserControl
     public static Vector2 SwipeEaseP1       = new(0.7f, 0f);
     public static Vector2 SwipeEaseP2       = new(0.1f, 1f);
     public static float   SwipeRiseAlpha    = 0.05f;
-    public static float   SwipeDecayAlpha   = 0.025f;
+    public static float   SwipeDecayAlpha   = 0.05f;
 
     // Digit count — structural, mirrors _digitHeat.Length and the 6 accent
     // overlays declared in HudChrono.xaml. Not a tunable.
