@@ -13,10 +13,10 @@ namespace WhispUI.Settings;
 // l'instance courante, et écrit le fichier sur demande avec un léger
 // debounce (300 ms) pour ne pas réécrire à chaque tick de slider.
 //
-// Emplacement résolu via AppPaths.ConfigDirectory : à côté de l'exe en mode
-// unpackaged (dev), sous ApplicationData.Current.LocalFolder en packagé MSIX
-// (Program Files devient read-only en sandbox MSIX, et LocalState est l'emplacement
-// standard pour les données utilisateur côté Windows moderne).
+// Emplacement résolu via AppPaths.SettingsDirectory : sous-dossier
+// `settings/` du UserDataRoot (par défaut %LOCALAPPDATA%\<AppFolderName>\,
+// override via WHISP_DATA_ROOT en dev). Le binaire reste read-only et
+// Program Files-friendly ; la config vit dans le profil utilisateur.
 //
 // Thread-safety : toutes les mutations de Current doivent passer par Save().
 // Les lecteurs (WhispEngine côté thread de transcription) prennent une
@@ -44,7 +44,7 @@ public sealed class SettingsService
     }
 
     // Exposed read-only so SettingsBackupService can locate the live file
-    // without duplicating the AppPaths.ConfigDirectory + "settings.json"
+    // without duplicating the AppPaths.SettingsDirectory + "settings.json"
     // resolution. Internal callers only — this is not part of any
     // settings-changing surface.
     internal string ConfigPath => _configPath;
@@ -58,10 +58,10 @@ public sealed class SettingsService
 
     private SettingsService()
     {
-        // ConfigDirectory is created by AppPaths static ctor; redundant
+        // SettingsDirectory is created by AppPaths static ctor; redundant
         // CreateDirectory left out on purpose so this constructor reads
         // as "AppPaths owns the location, we just consume it".
-        _configPath = Path.Combine(AppPaths.ConfigDirectory, "settings.json");
+        _configPath = Path.Combine(AppPaths.SettingsDirectory, "settings.json");
 
         _current = Load(out bool migrated);
         _debounceTimer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
@@ -345,9 +345,9 @@ public sealed class SettingsService
 
     // Resolves the directory containing .bin files (Whisper models + VAD
     // Silero). If the user has configured a custom path, that wins. Otherwise
-    // delegates to AppPaths.ModelsDirectory (which handles packaged vs dev
-    // walk-up). Layered this way so the user override stays reachable from
-    // the Settings UI without leaking the resolution policy into AppPaths.
+    // delegates to AppPaths.ModelsDirectory (= <UserDataRoot>\models\).
+    // Layered this way so the user override stays reachable from the
+    // Settings UI without leaking the resolution policy into AppPaths.
     public string ResolveModelsDirectory()
     {
         string user = Current.Paths.ModelsDirectory;
@@ -367,7 +367,7 @@ public sealed class SettingsService
         if (!string.IsNullOrWhiteSpace(user))
             return user;
 
-        return Path.Combine(AppPaths.ConfigDirectory, "backups");
+        return Path.Combine(AppPaths.SettingsDirectory, "backups");
     }
 
     // Re-reads settings.json from disk and replaces the in-memory snapshot.
@@ -393,20 +393,20 @@ public sealed class SettingsService
         Changed?.Invoke();
     }
 
-    // Mutex inter-process : si une autre instance de WhispUI tourne en
+    // Mutex inter-process : si une autre instance de l'app tourne en
     // parallèle (double-clic accidentel, login script qui relance), évite
     // les écritures concurrentes sur settings.json qui causeraient une
     // perte de configuration silencieuse (dernier writer gagne sans
     // warning, modifs de l'instance "perdante" effacées). Scope local
     // (per-session Terminal Services) — pas besoin de Global\, settings
-    // est per-user. Nom unique au projet.
-    private const string SettingsMutexName = "WhispUI-Settings-Save";
+    // est per-user. Nom dérivé de AppPaths.AppFolderName pour suivre le
+    // rename du Lot C en un seul endroit.
 
     // Public pour permettre un flush synchrone avant un arrêt du process
     // (RestartApp, QuitApp) — le debounce timer ne survivrait pas à Environment.Exit.
     public void Flush()
     {
-        using var processMutex = new Mutex(initiallyOwned: false, SettingsMutexName);
+        using var processMutex = new Mutex(initiallyOwned: false, AppPaths.SettingsMutexName);
         bool acquired = false;
         try
         {

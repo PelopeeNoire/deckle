@@ -16,12 +16,10 @@ namespace WhispUI.Logging.Sinks;
 //   kind=corpus      → <telemetry>/<slug>/corpus.jsonl — gated
 //   kind=microphone  → <telemetry>/microphone.jsonl    — gated
 //
-// Everything produced at runtime lives under <benchmark>/telemetry/. The
-// <benchmark>/logs/ folder is reserved for the benchmark script's own
-// step-by-step execution log, so a crashed Python run can be resumed
-// without scrolling through WhispUI telemetry.
+// <telemetry> resolves to AppPaths.TelemetryDirectory (= <UserDataRoot>\
+// telemetry\) by default, or the user-configured StorageDirectory when set.
 //
-// All three streams are opt-in: toggles are read at write time, so flipping
+// All four streams are opt-in: toggles are read at write time, so flipping
 // a toggle off stops new writes immediately without rebuilding the sink
 // graph. This is the confidentiality-first posture — nothing lands on disk
 // unless the user explicitly enabled that stream through the Settings UI
@@ -108,8 +106,7 @@ internal sealed class JsonlFileSink : ITelemetrySink
 
     private static string? ResolvePath(TelemetryEvent ev)
     {
-        string? root = CorpusPaths.GetDirectoryPath();
-        if (root is null) return null;
+        string root = CorpusPaths.GetDirectoryPath();
 
         switch (ev.Kind)
         {
@@ -247,8 +244,7 @@ internal sealed class JsonlFileSink : ITelemetrySink
     {
         try
         {
-            string? root = CorpusPaths.GetDirectoryPath();
-            if (root is null) return;
+            string root = CorpusPaths.GetDirectoryPath();
 
             string? csv = FindLegacyCsv(root);
             if (csv is null) return;

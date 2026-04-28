@@ -6,119 +6,113 @@ namespace WhispUI;
 
 // ── AppPaths ───────────────────────────────────────────────────────────────
 //
-// Centralized path resolution for WhispUI.
+// Centralized path resolution. Single source of truth for where the app
+// reads and writes user data on disk. All mutable per-user state lives
+// under <UserDataRoot>:
 //
-// Single source of truth for where the app reads and writes user data on
-// disk. Branches by IsPackaged so the same call sites work in both modes:
+//   • settings/   — settings.json + backups
+//   • telemetry/  — JSONL files (app, latency, microphone) + per-profile corpus
+//   • models/     — Whisper ggml-*.bin
+//   • native/     — libwhisper.dll, ggml*.dll
+//   • benchmark/  — optional, installed on demand from Settings
 //
-//   • Packaged MSIX: paths under ApplicationData.Current.LocalFolder,
-//     which Windows wipes cleanly on uninstall and exposes per-package
-//     under %LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalState\.
-//   • Unpackaged dev: paths next to the exe (config) and walked-up from
-//     there (models/, benchmark/telemetry/) — preserves the dev layout
-//     that existed before this refactor.
+// Default <UserDataRoot> = %LOCALAPPDATA%\<AppFolderName>\, the canonical
+// per-user data root on Windows (Settings Win11, PowerToys, every
+// first-party Microsoft desktop app). Override with the WHISP_DATA_ROOT
+// env var to keep %LOCALAPPDATA% clean during development.
 //
-// IsPackaged is detected once at first access via Package.Current — the
-// documented Microsoft Learn pattern for code that wants to behave
-// differently with or without package identity. Memoized for the rest of
-// process lifetime; identity cannot change at runtime.
-//
-// User overrides (PathsSettings.ModelsDirectory,
-// TelemetrySettings.StorageDirectory) are intentionally NOT applied here
-// — this class returns the *default* roots only. The services that own
-// those settings (SettingsService.ResolveModelsDirectory,
-// CorpusPaths.GetDirectoryPath) layer their own override logic on top of
-// these defaults. Same goes for WHISP_MODEL_PATH which lives in WhispEngine.
+// The application binary itself stays read-only and Program Files-friendly:
+// it ships with Assets but no models, no native DLLs, no config. The
+// first-run wizard populates <UserDataRoot>\models\ and \native\ on the
+// first launch (see Shell/WelcomeWizardWindow).
 public static class AppPaths
 {
-    // True when the process runs under a packaged identity (MSIX side-load
-    // or Microsoft Store). False when running as a plain Win32 exe (dev
-    // build, publish ZIP, etc.). Used as a routing flag throughout the
-    // app for any decision that differs across the two modes (paths,
-    // autostart mechanism, update channel, etc.).
-    public static bool IsPackaged { get; }
+    // Filesystem-safe folder name. Single source of truth for filesystem
+    // paths and the inter-process settings mutex. Swapped to the final
+    // user-facing brand in Lot C; until then the working title doubles as
+    // the folder name.
+    public const string AppFolderName = "WhispUI";
 
-    // Where settings.json lives. Always non-null and the directory is
-    // created on first access — safe to write to without a separate
-    // existence check.
-    public static string ConfigDirectory { get; }
+    // Inter-process mutex name used by SettingsService to serialize writes
+    // across concurrent app instances. Derived from AppFolderName so the
+    // single rename in Lot C carries through.
+    public const string SettingsMutexName = $"{AppFolderName}-Settings-Save";
 
-    // Default location for Whisper .bin and Silero VAD .bin files.
-    // Callers that support a user override (SettingsService) consult
-    // their own setting first and fall back to this.
-    public static string ModelsDirectory { get; }
+    // Override env var. Pointed at a freshly-organized dev folder so
+    // user data ends up there instead of polluting %LOCALAPPDATA%.
+    // Empty/unset → default location.
+    public const string DataRootEnvVar = "WHISP_DATA_ROOT";
 
-    // Default root for app.jsonl, latency.jsonl, microphone.jsonl, and
-    // per-profile corpus folders. May be null in dev when no benchmark/
-    // sibling exists in the walk-up — telemetry persistence is then
-    // disabled silently (matches the pre-refactor behaviour). Always
-    // non-null in packaged mode (LocalFolder is guaranteed to exist).
-    public static string? TelemetryDirectory { get; }
+    public static string UserDataRoot       { get; }
+    public static string SettingsDirectory  { get; }
+    public static string TelemetryDirectory { get; }
+    public static string ModelsDirectory    { get; }
+    public static string NativeDirectory    { get; }
+    public static string BenchmarkDirectory { get; }
 
     static AppPaths()
     {
-        IsPackaged = DetectPackaged();
+        UserDataRoot       = ResolveUserDataRoot();
+        SettingsDirectory  = Path.Combine(UserDataRoot, "settings");
+        TelemetryDirectory = Path.Combine(UserDataRoot, "telemetry");
+        ModelsDirectory    = ResolveModelsDirectory();
+        NativeDirectory    = Path.Combine(UserDataRoot, "native");
+        BenchmarkDirectory = Path.Combine(UserDataRoot, "benchmark");
 
-        if (IsPackaged)
-        {
-            // ApplicationData.Current.LocalFolder is per-package, owned
-            // by the user's profile, and removed on package uninstall.
-            // Standard Windows location for any app data that should not
-            // roam (large files, caches, models).
-            string localState = Windows.Storage.ApplicationData.Current.LocalFolder.Path;
-            ConfigDirectory     = Path.Combine(localState, "config");
-            ModelsDirectory     = Path.Combine(localState, "models");
-            TelemetryDirectory  = Path.Combine(localState, "telemetry");
-
-            Directory.CreateDirectory(ConfigDirectory);
-            Directory.CreateDirectory(ModelsDirectory);
-            Directory.CreateDirectory(TelemetryDirectory);
-        }
-        else
-        {
-            string baseDir = AppContext.BaseDirectory;
-            ConfigDirectory    = Path.Combine(baseDir, "config");
-            ModelsDirectory    = ResolveDevModelsDirectory(baseDir);
-            TelemetryDirectory = ResolveDevTelemetryDirectory(baseDir);
-
-            // Only ConfigDirectory is guaranteed creatable here. Models
-            // and Telemetry are passive lookups in dev — the walk-up
-            // either finds an existing folder or returns a path that
-            // doesn't exist (callers validate before writing).
-            Directory.CreateDirectory(ConfigDirectory);
-        }
+        // Settings + telemetry are the two dirs the app writes to during
+        // normal operation — created eagerly so call sites don't need
+        // existence checks. Models, native, and benchmark are populated
+        // by the wizard or the user; creating them empty here would mask
+        // the "missing dependencies" detection used by HasNativeDlls /
+        // HasModel.
+        Directory.CreateDirectory(SettingsDirectory);
+        Directory.CreateDirectory(TelemetryDirectory);
     }
 
-    // Identity check via Package.Current. The CsWinRT projection throws
-    // InvalidOperationException ("The process has no package identity")
-    // when called from an unpackaged process. Documented Microsoft Learn
-    // pattern: catch and return false. Once Windows App SDK exposes a
-    // first-class IsPackaged check (Microsoft.Windows.ApplicationModel),
-    // this can be swapped without changing the public surface.
-    private static bool DetectPackaged()
+    // <UserDataRoot> resolution order:
+    //   1. WHISP_DATA_ROOT env var (dev override)
+    //   2. %LOCALAPPDATA%\<AppFolderName>\        ← canonical Windows location
+    //   3. <exeDir>\<AppFolderName>\              ← portable fallback
+    //
+    // Step 3 covers sandboxed runs where LOCALAPPDATA isn't available
+    // (rare, but a USB-stick portable mode is a plausible future use).
+    private static string ResolveUserDataRoot()
     {
-        try
-        {
-            var pkg = Windows.ApplicationModel.Package.Current;
-            return pkg?.Id is not null;
-        }
-        catch
-        {
-            return false;
-        }
+        string? overrideRoot = Environment.GetEnvironmentVariable(DataRootEnvVar);
+        if (!string.IsNullOrWhiteSpace(overrideRoot))
+            return Path.GetFullPath(overrideRoot);
+
+        string localAppData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData,
+            Environment.SpecialFolderOption.Create);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+            return Path.Combine(localAppData, AppFolderName);
+
+        return Path.Combine(AppContext.BaseDirectory, AppFolderName);
     }
 
-    // Walk up from the exe directory (max 8 levels) looking for a
-    // `models/` folder containing at least one .bin. Covers both:
-    //   • publish layout: exe in publish/, models 1-2 levels up
-    //   • dev layout: exe in bin/x64/Release/net10.0-*/, models 5-6 up
-    // Falls back to <baseDir>/../../models so callers always get a
-    // resolvable path even when nothing is found — they validate
-    // existence themselves and surface the missing-model case via the
-    // Settings UI / first-run wizard.
-    private static string ResolveDevModelsDirectory(string baseDir)
+    // ModelsDirectory resolution:
+    //   1. Canonical: <UserDataRoot>\models\ if it holds at least one .bin
+    //      (= the user — or the future wizard — has populated it).
+    //   2. Dev fallback: walk up from the exe (max 8 levels) looking for a
+    //      `models/` folder with .bin files. Lets a fresh dev build run
+    //      against the in-repo `models/` without copying anything to
+    //      <UserDataRoot> first.
+    //   3. Default: the canonical path even when empty, so the wizard has
+    //      somewhere consistent to write into and HasModel() sees the
+    //      missing state.
+    //
+    // TODO (wizard): drop the dev fallback once the first-run wizard
+    // populates <UserDataRoot>\models\ from a known source on first launch.
+    private static string ResolveModelsDirectory()
     {
-        var dir = new DirectoryInfo(baseDir);
+        string canonical = Path.Combine(UserDataRoot, "models");
+
+        if (Directory.Exists(canonical) &&
+            Directory.EnumerateFiles(canonical, "*.bin").Any())
+            return canonical;
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (int i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
         {
             string candidate = Path.Combine(dir.FullName, "models");
@@ -126,36 +120,20 @@ public static class AppPaths
                 Directory.EnumerateFiles(candidate, "*.bin").Any())
                 return candidate;
         }
-        return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "models"));
+
+        return canonical;
     }
 
-    // Walk up looking for a `benchmark/` sibling, then return its
-    // `telemetry/` subfolder (creating it on the way so the first write
-    // doesn't race). Returns null when no benchmark/ ancestor exists —
-    // telemetry persistence is then disabled (pre-refactor behaviour:
-    // callers null-check and skip writes silently).
-    private static string? ResolveDevTelemetryDirectory(string baseDir)
-    {
-        try
-        {
-            var dir = new DirectoryInfo(baseDir);
-            while (dir is not null)
-            {
-                string bench = Path.Combine(dir.FullName, "benchmark");
-                if (Directory.Exists(bench))
-                {
-                    string telemetry = Path.Combine(bench, "telemetry");
-                    Directory.CreateDirectory(telemetry);
-                    return telemetry;
-                }
-                dir = dir.Parent;
-            }
-        }
-        catch
-        {
-            // Filesystem error during walk-up — treat as "not found",
-            // matches the pre-refactor swallow behaviour in CorpusPaths.
-        }
-        return null;
-    }
+    // True iff the whisper native runtime is present in NativeDirectory.
+    // Used by the first-run wizard gate (App.OnLaunched) to decide whether
+    // to show the dependency installer or boot straight into the app.
+    public static bool HasNativeDlls() =>
+        Directory.Exists(NativeDirectory) &&
+        File.Exists(Path.Combine(NativeDirectory, "libwhisper.dll"));
+
+    // True iff a specific model file is present in ModelsDirectory. The
+    // caller passes the filename only (e.g. "ggml-base.bin"); models can
+    // hold multiple .bin files installed side by side.
+    public static bool HasModel(string modelFileName) =>
+        File.Exists(Path.Combine(ModelsDirectory, modelFileName));
 }
