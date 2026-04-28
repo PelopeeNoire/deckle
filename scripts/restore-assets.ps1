@@ -107,4 +107,4 @@ Step 'done'
 Write-Host "         native/whisper/ : $(Get-ChildItem $WhisperDir | Measure-Object).Count DLL(s)"
 Write-Host "         native/mingw/   : $(Get-ChildItem $MingwDir | Measure-Object).Count DLL(s)"
 Write-Host "         models/         : $(Get-ChildItem $ModelsDir | Measure-Object).Count file(s)"
-Write-Host "`nNext : scripts\publish.ps1" -ForegroundColor Cyan
+Write-Host "`nNext : scripts\publish-unpackaged.ps1" -ForegroundColor Cyan
