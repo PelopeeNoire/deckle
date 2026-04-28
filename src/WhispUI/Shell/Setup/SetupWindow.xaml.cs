@@ -63,10 +63,10 @@ internal sealed partial class SetupWindow : Window
         InitializeComponent();
         Context = new SetupContext();
 
-        // Mica disabled — see SettingsWindow for the rationale (cumulative
-        // DWM compositing cost across multiple Mica windows hypothesised
-        // to cause the 1-2 s drag/resize lag).
-        // SystemBackdrop = new MicaBackdrop();
+        // Mica on long-lived windows — same primitive as Settings, Logs,
+        // and the rest of the app's persistent surfaces. DWM applies the
+        // shell rounded corners and shadow.
+        SystemBackdrop = new MicaBackdrop();
 
         ConfigureWindow();
 
