@@ -63,8 +63,8 @@ public static class AppPaths
         // normal operation — created eagerly so call sites don't need
         // existence checks. Models, native, and benchmark are populated
         // by the wizard or the user; creating them empty here would mask
-        // the "missing dependencies" detection used by HasNativeDlls /
-        // HasModel.
+        // the "missing dependencies" detection done by Setup/NativeRuntime
+        // and (later) Setup/SpeechModels.
         Directory.CreateDirectory(SettingsDirectory);
         Directory.CreateDirectory(TelemetryDirectory);
     }
@@ -99,8 +99,8 @@ public static class AppPaths
     //      against the in-repo `models/` without copying anything to
     //      <UserDataRoot> first.
     //   3. Default: the canonical path even when empty, so the wizard has
-    //      somewhere consistent to write into and HasModel() sees the
-    //      missing state.
+    //      somewhere consistent to write into and Setup/SpeechModels can
+    //      surface the missing state.
     //
     // TODO (wizard): drop the dev fallback once the first-run wizard
     // populates <UserDataRoot>\models\ from a known source on first launch.
@@ -123,17 +123,4 @@ public static class AppPaths
 
         return canonical;
     }
-
-    // True iff the whisper native runtime is present in NativeDirectory.
-    // Used by the first-run wizard gate (App.OnLaunched) to decide whether
-    // to show the dependency installer or boot straight into the app.
-    public static bool HasNativeDlls() =>
-        Directory.Exists(NativeDirectory) &&
-        File.Exists(Path.Combine(NativeDirectory, "libwhisper.dll"));
-
-    // True iff a specific model file is present in ModelsDirectory. The
-    // caller passes the filename only (e.g. "ggml-base.bin"); models can
-    // hold multiple .bin files installed side by side.
-    public static bool HasModel(string modelFileName) =>
-        File.Exists(Path.Combine(ModelsDirectory, modelFileName));
 }
