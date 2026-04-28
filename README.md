@@ -94,7 +94,7 @@ The `scripts/build-run.ps1` helper resolves `MSBuild.exe` automatically
 <repo-root>/
 ├── src/WhispUI/        WinUI 3 app — single entry point. Per-subsystem
 │                       documentation in docs/reference--*.md.
-├── scripts/            build-run.ps1, publish.ps1, restore-assets.ps1
+├── scripts/            build-run.ps1, publish-unpackaged.ps1, restore-assets.ps1
 ├── benchmark/          Python benchmark suite for prompt tuning. Optional.
 ├── docs/               Top-level docs (security review, etc.)
 ├── native/             whisper.cpp + MinGW runtime DLLs (gitignored, see
