@@ -21,7 +21,7 @@ namespace WhispUI.Settings;
 //                            subscribed page refreshes.
 //
 // Where snapshots live:
-//   • Default: <AppPaths.SettingsDirectory>/backups/. Created on first write.
+//   • Default: AppPaths.SettingsBackupDirectory (= <UserDataRoot>\backups\). Created on first write.
 //   • Override: PathsSettings.BackupDirectory (absolute). Pattern PowerToys —
 //     point it at OneDrive / Drive to carry settings across machines.
 //
