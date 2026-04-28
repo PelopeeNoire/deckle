@@ -64,6 +64,7 @@ public sealed partial class GeneralPage : Page
         SyncOverlayPositionCombo();
         SyncThemeCombo();
         SyncCorpusFolderPlaceholder();
+        DataFolderPathText.Text = AppPaths.UserDataRoot;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low,
             () => _initializing = false);
     }
@@ -357,6 +358,28 @@ public sealed partial class GeneralPage : Page
         {
             _log.Error(LogSource.SetGeneral,
                 $"Open telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // Opens the UserDataRoot in File Explorer — entry point for users who
+    // want to inspect, back up, or wipe everything mutable the app stores.
+    private void OpenDataFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        string path = AppPaths.UserDataRoot;
+
+        try
+        {
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetGeneral,
+                $"Open data folder failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
