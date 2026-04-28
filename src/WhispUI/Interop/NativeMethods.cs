@@ -1,9 +1,46 @@
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace WhispUI.Interop;
 
 internal static class NativeMethods
 {
+    // ── libwhisper resolver ───────────────────────────────────────────────────
+    //
+    // libwhisper.dll and its transitive ggml-*.dll dependencies live under
+    // AppPaths.NativeDirectory (= <UserDataRoot>\native\), NOT alongside the
+    // application binary. This static initializer wires a managed resolver
+    // that loads libwhisper from that directory; Windows then resolves the
+    // ggml-*.dll dependencies from the same directory automatically (DLL
+    // load order: directory of the loaded DLL first).
+    //
+    // Runs on first access to any NativeMethods member, before any
+    // [DllImport("libwhisper")] P/Invoke is executed — guaranteed by the
+    // CLR's static-constructor contract.
+    //
+    // Falls through to default resolution when NativeDirectory doesn't hold
+    // the DLLs yet: the first-run wizard catches the missing-deps state via
+    // AppPaths.HasNativeDlls() and prompts for download before the engine
+    // boots, so we never reach a DllNotFoundException in practice. The
+    // fallback exists for the edge case where the wizard is bypassed (env
+    // var override, manual DLL placement next to the exe in dev).
+    static NativeMethods()
+    {
+        NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, ResolveNativeLibrary);
+    }
+
+    private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+    {
+        if (libraryName != "libwhisper") return IntPtr.Zero;
+
+        string candidate = Path.Combine(AppPaths.NativeDirectory, "libwhisper.dll");
+        if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out IntPtr handle))
+            return handle;
+
+        return IntPtr.Zero;
+    }
+
     // ── Hotkey ────────────────────────────────────────────────────────────────
 
     public const int WM_HOTKEY = 0x0312;

@@ -79,15 +79,15 @@ public partial class App : Microsoft.UI.Xaml.Application
         Milestone("filesink");
 
         // Resolved paths logged once at boot — useful for support: tells us
-        // immediately whether the user's app is running packaged or not, and
-        // where it's looking for settings, models, and telemetry. Touching
-        // any AppPaths member triggers the static ctor that runs the
-        // detection and creates the directories if needed.
+        // where the app is looking for settings, models, native DLLs, and
+        // telemetry. Touching any AppPaths member triggers the static ctor
+        // that resolves <UserDataRoot> and creates the writable directories.
         _log.Info(LogSource.App,
-            $"AppPaths initialized | packaged={AppPaths.IsPackaged}" +
-            $" | config={AppPaths.ConfigDirectory}" +
+            $"AppPaths initialized | root={AppPaths.UserDataRoot}" +
+            $" | settings={AppPaths.SettingsDirectory}" +
+            $" | telemetry={AppPaths.TelemetryDirectory}" +
             $" | models={AppPaths.ModelsDirectory}" +
-            $" | telemetry={AppPaths.TelemetryDirectory ?? "(none)"}");
+            $" | native={AppPaths.NativeDirectory}");
 
         _engine = new WhispEngine();
         Milestone("engine");
