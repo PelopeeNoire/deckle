@@ -71,7 +71,7 @@ internal sealed partial class SetupWindow : Window
         ConfigureWindow();
 
         Closed += OnWindowClosed;
-        _log.Info(LogSource.App, "setup window opened");
+        _log.Info(LogSource.Setup, "setup window opened");
     }
 
     // ── Public surface for pages ───────────────────────────────────────────
@@ -90,7 +90,7 @@ internal sealed partial class SetupWindow : Window
 
     public void Complete(bool success)
     {
-        _log.Info(LogSource.App, $"setup window closing | success={success}");
+        _log.Info(LogSource.Setup, $"setup window closing | success={success}");
         if (!_completion.Task.IsCompleted) _completion.TrySetResult(success);
         Close();
     }
