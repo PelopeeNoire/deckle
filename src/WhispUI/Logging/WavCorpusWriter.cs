@@ -34,8 +34,7 @@ internal static class WavCorpusWriter
         if (audio is null || audio.Length == 0) return null;
         if (string.IsNullOrWhiteSpace(slugPrefix)) return null;
 
-        string? root = CorpusPaths.GetDirectoryPath();
-        if (root is null) return null;
+        string root = CorpusPaths.GetDirectoryPath();
 
         try
         {

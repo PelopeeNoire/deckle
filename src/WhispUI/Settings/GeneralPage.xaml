@@ -301,6 +301,14 @@
                     <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
+                <controls:SettingsCard Header="Application log"
+                                       Description="Mirror every in-app log line to app.jsonl to diagnose a specific issue across restarts. Verbose — around 2 MB per 30 min of active use. Rotates every 5000 lines (app-1.jsonl, app-2.jsonl, …)."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9A4;}">
+                    <ToggleSwitch x:Name="ApplicationLogToggle"
+                                  IsOn="{x:Bind ViewModel.ApplicationLogToDisk, Mode=TwoWay}"
+                                  Toggled="ApplicationLogToggle_Toggled" />
+                </controls:SettingsCard>
+
                 <controls:SettingsExpander Header="Corpus"
                                            Description="Save every transcription as a JSONL line under a per-profile subfolder (one corpus.jsonl per rewrite profile). Text only — for offline prompt tuning and analysis."
                                            HeaderIcon="{ui:FontIcon Glyph=&#xEFA9;}">
@@ -319,18 +327,10 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <controls:SettingsCard Header="Application log"
-                                       Description="Mirror every in-app log line to app.jsonl to diagnose a specific issue across restarts. Verbose — around 2 MB per 30 min of active use. Rotates every 5000 lines (app-1.jsonl, app-2.jsonl, …)."
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9A4;}">
-                    <ToggleSwitch x:Name="ApplicationLogToggle"
-                                  IsOn="{x:Bind ViewModel.ApplicationLogToDisk, Mode=TwoWay}"
-                                  Toggled="ApplicationLogToggle_Toggled" />
-                </controls:SettingsCard>
-
                 <controls:SettingsCard x:Name="TelemetryFolderCard"
                                        ContentAlignment="Vertical"
                                        Header="Storage folder"
-                                       Description="Shared root for every telemetry stream enabled above. Leave empty to use the default benchmark\telemetry\ folder next to the application.">
+                                       Description="Shared root for every telemetry stream enabled above. Leave empty to use the default %LOCALAPPDATA%\WhispUI\telemetry\.">
                     <!-- Grid + "*" column lets the TextBox shrink when the
                          Settings window is narrow. A StackPanel Horizontal
                          would keep children at their natural width and
@@ -430,6 +430,30 @@
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
+
+                <!-- ── Application data ────────────────────────────────────── -->
+                <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
+                           Text="Application data" />
+
+                <controls:SettingsCard Header="Data folder"
+                                       Description="Settings, telemetry, models, and native libraries — everything mutable lives here. Defaults to %LOCALAPPDATA%\WhispUI\."
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock x:Name="DataFolderPathText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="380" />
+                        <Button x:Name="OpenDataFolderButton"
+                                Click="OpenDataFolderButton_Click"
+                                ToolTipService.ToolTip="Open in File Explorer">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Open" />
+                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
 
             </StackPanel>
         </Grid>

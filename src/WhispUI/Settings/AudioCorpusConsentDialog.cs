@@ -20,10 +20,8 @@ internal static class AudioCorpusConsentDialog
 {
     public static async Task<bool> ShowAsync(XamlRoot root)
     {
-        string? textRoot = CorpusPaths.GetDirectoryPath();
-        string where = string.IsNullOrEmpty(textRoot)
-            ? "an \"audio\" subfolder inside each per-profile corpus folder (auto-resolved next to the app)"
-            : Path.Combine(textRoot, "<profile>", "audio");
+        string textRoot = CorpusPaths.GetDirectoryPath();
+        string where = Path.Combine(textRoot, "<profile>", "audio");
 
         var body = new StackPanel { Spacing = 12 };
 

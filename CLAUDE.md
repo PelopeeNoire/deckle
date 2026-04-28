@@ -191,7 +191,7 @@ condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
 ├── src/
 │   └── WhispUI\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
 │       └── docs\             — journal d'implémentation détaillé, lu à la demande
-├── scripts\                  — build-run.ps1, publish.ps1 (versionnés)
+├── scripts\                  — build-run.ps1, publish-unpackaged.ps1 (versionnés)
 ├── native\                   — DLLs pré-compilées whisper + MinGW (git-ignored)
 ├── models\                   — modèles Whisper (ggml-base.bin, ggml-large-v3.bin)
 ├── benchmark/                — suite de benchmark Python

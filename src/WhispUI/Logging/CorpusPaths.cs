@@ -17,15 +17,11 @@ namespace WhispUI.Logging;
 // Resolution order:
 //   1. User-configured TelemetrySettings.StorageDirectory (absolute path),
 //      when non-empty.
-//   2. AppPaths.TelemetryDirectory: in packaged mode this is
-//      LocalState/telemetry/; in dev unpackaged this is the walk-up to
-//      <repo>/benchmark/telemetry/.
-//
-// Returns null when both paths are absent (dev outside the repo with no
-// benchmark/ ancestor) — callers skip persistence silently.
+//   2. AppPaths.TelemetryDirectory (= <UserDataRoot>\telemetry\), always
+//      present and writable.
 public static class CorpusPaths
 {
-    public static string? GetDirectoryPath()
+    public static string GetDirectoryPath()
     {
         string custom = "";
         try
@@ -43,7 +39,7 @@ public static class CorpusPaths
         return AppPaths.TelemetryDirectory;
     }
 
-    public static string? GetDefaultDirectoryPath() => AppPaths.TelemetryDirectory;
+    public static string GetDefaultDirectoryPath() => AppPaths.TelemetryDirectory;
 
     // Lowercase ASCII, hyphen-separated slug. Accented characters are
     // transliterated via Unicode normalization (NFD + non-spacing-mark

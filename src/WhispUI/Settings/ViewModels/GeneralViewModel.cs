@@ -268,7 +268,7 @@ public partial class GeneralViewModel : ObservableObject
     // ── Backup ───────────────────────────────────────────────────────────────
     //
     // BackupDirectory is the user override for where snapshots live (empty =
-    // <AppPaths.ConfigDirectory>/backups/, see SettingsService.ResolveBackupDirectory).
+    // <AppPaths.SettingsDirectory>/backups/, see SettingsService.ResolveBackupDirectory).
     // Backups is the live list refilled by RefreshBackups() — called on Load,
     // after CreateBackup, and any time BackupDirectory changes. The PowerToys-
     // style UI only surfaces the latest snapshot (file name + created at);
