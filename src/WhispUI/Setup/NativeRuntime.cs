@@ -52,15 +52,21 @@ internal static class NativeRuntime
         "libwinpthread-1.dll",
     };
 
-    // True when libwhisper.dll exists in NativeDirectory. The full catalog
-    // isn't checked file-by-file: if the entry point is there, the
-    // wizard either copied the whole bundle (CopyFromFolder honors the
-    // catalog) or the user dropped the files in by hand. The first call
-    // into a [DllImport("libwhisper")] would fail loudly if a transitive
-    // ggml-*.dll were missing, which surfaces the issue clearly enough.
+    // True when libwhisper.dll is reachable by the loader — either in
+    // NativeDirectory (the canonical place once the wizard has installed
+    // it) or alongside the application EXE (dev builds that still ship
+    // the DLLs as csproj Content, or any deployment that placed them
+    // beside the binary).
+    //
+    // The full catalog isn't checked file-by-file: if the entry point
+    // is there, NativeMethods.SetDllImportResolver loads it and Windows
+    // resolves the transitive ggml-*.dll dependencies from the same
+    // directory automatically. A missing transitive dep would surface
+    // as a DllNotFoundException on the first whisper_* call — clear
+    // enough without a redundant catalog sweep here.
     public static bool IsInstalled() =>
-        Directory.Exists(AppPaths.NativeDirectory) &&
-        File.Exists(Path.Combine(AppPaths.NativeDirectory, EntryDll));
+        File.Exists(Path.Combine(AppPaths.NativeDirectory, EntryDll)) ||
+        File.Exists(Path.Combine(AppContext.BaseDirectory, EntryDll));
 
     // Copies every catalog DLL found in `sourcePath` into NativeDirectory,
     // overwriting existing files. Returns the count of DLLs actually copied.
