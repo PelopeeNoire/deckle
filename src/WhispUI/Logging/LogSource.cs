@@ -40,4 +40,7 @@ public static class LogSource
 
     // ── Shell infrastructure ────────────────────────────────────────────────
     public const string MsgHost = "MSGHOST";
+
+    // ── First-run setup wizard ──────────────────────────────────────────────
+    public const string Setup = "SETUP";
 }

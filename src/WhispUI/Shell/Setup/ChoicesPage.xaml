@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="WhispUI.Shell.Setup.ChoicesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16" MaxWidth="640" HorizontalAlignment="Stretch">
+
+            <controls:SettingsCard Header="Install location"
+                                   Description="Where the app stores its data. Pick a custom location later from Settings."
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
+                <TextBlock x:Name="LocationPathText"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="380" />
+            </controls:SettingsCard>
+
+            <controls:SettingsCard Header="Speech runtime"
+                                   Description="Native whisper.cpp libraries the engine loads at start-up."
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock x:Name="NativeStatusText"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <Button x:Name="BrowseNativeButton"
+                            Content="Browse..."
+                            Click="OnBrowseNativeClick" />
+                </StackPanel>
+            </controls:SettingsCard>
+
+            <controls:SettingsCard Header="Speech model"
+                                   Description="Pick the Whisper model the engine will run. You can swap it later from Settings."
+                                   HeaderIcon="{ui:FontIcon Glyph=&#xE720;}"
+                                   ContentAlignment="Vertical">
+                <RadioButtons x:Name="ModelRadio"
+                              SelectionChanged="OnModelSelectionChanged" />
+            </controls:SettingsCard>
+
+            <InfoBar x:Name="TotalEstimateBar"
+                     IsOpen="True"
+                     IsClosable="False"
+                     Severity="Informational"
+                     Title="Total install size" />
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

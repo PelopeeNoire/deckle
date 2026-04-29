@@ -85,11 +85,17 @@ public sealed partial class SettingsWindow : Window
         presenter.PreferredMinimumHeight = 400;
         AppWindow.SetPresenter(presenter);
 
-        // Close → cache, ne détruit pas. Réutilisée via le tray.
+        // Close → hide, ne détruit pas. Réutilisée via le tray.
+        // SW_HIDE Win32 plutôt que AppWindow.Hide() : test diagnostic
+        // pour le lag move/resize global. AppWindow.Hide() ne suspend
+        // pas systématiquement le swap chain DComp côté DWM, ce qui
+        // garde la fenêtre dans le visual tree compositeur même
+        // cachée. SW_HIDE force la voie Win32 que DWM honore.
         AppWindow.Closing += (_, args) =>
         {
             args.Cancel = true;
-            AppWindow.Hide();
+            var hwnd = WindowNative.GetWindowHandle(this);
+            NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
         };
     }
 

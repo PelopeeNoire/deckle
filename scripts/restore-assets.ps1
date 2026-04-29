@@ -94,11 +94,6 @@ Download `
 
 Step 'download Silero VAD'
 Download `
-    'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin' `
-    (Join-Path $ModelsDir 'ggml-silero-v5.1.2.bin') `
-    700KB
-
-Download `
     'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin' `
     (Join-Path $ModelsDir 'ggml-silero-v6.2.0.bin') `
     700KB
