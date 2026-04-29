@@ -91,7 +91,7 @@
                      trap we want to avoid. -->
                 <RadioButtons Grid.Row="1"
                               x:Name="PlayPauseGroup"
-                              SelectedIndex="0"
+                              SelectedIndex="1"
                               SelectionChanged="OnPlayPauseSelectionChanged"
                               MaxColumns="2"
                               HorizontalAlignment="Center"

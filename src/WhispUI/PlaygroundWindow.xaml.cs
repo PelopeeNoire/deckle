@@ -89,7 +89,11 @@ public sealed partial class PlaygroundWindow : Window
     private bool _simulateChangedDigits = true;
 
     private Target _currentTarget = Target.Transcribing;
-    private bool   _isPlaying     = true;
+    // Pause par défaut : la fenêtre s'ouvre sans animation, l'utilisateur
+    // appuie sur Play pour démarrer. Cohérent avec la consigne "au départ
+    // il ne doit y avoir rien" et la mise en pause systématique forcée à
+    // chaque ShowAndActivate (cf. ce constructeur de classe).
+    private bool   _isPlaying     = false;
 
     // ── Rebuild debounce ────────────────────────────────────────────────
     //
@@ -224,6 +228,14 @@ public sealed partial class PlaygroundWindow : Window
         {
             op.Restore();
         }
+
+        // Reset to Pause systematically on each show — état connu et
+        // prévisible à chaque réouverture, indépendant de ce que
+        // l'utilisateur a laissé en quittant. Le SelectionChanged
+        // déclenche OnPlayPauseSelectionChanged → _isPlaying = false →
+        // ApplyTarget() collapse la preview. Si déjà sur 1, no-op.
+        if (PlayPauseGroup.SelectedIndex != 1)
+            PlayPauseGroup.SelectedIndex = 1;
 
         AppWindow.Show();
         this.Activate();
