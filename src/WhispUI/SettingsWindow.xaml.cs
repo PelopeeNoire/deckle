@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
 using WhispUI.Interop;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Shell;
 
@@ -72,7 +73,7 @@ public sealed partial class SettingsWindow : Window
         // GeneralPage. Un seul chemin de navigation, pas de double-nav.
         Nav.SelectedItem = Nav.MenuItems[0];
 
-        Title = "WhispUI Settings";
+        Title = Loc.Get("Settings_WindowTitle");
         AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
         var presenter = OverlappedPresenter.Create();

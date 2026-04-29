@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Setup;
 
@@ -49,8 +51,8 @@ internal sealed partial class InstallingPage : Page
         _dispatcher  = DispatcherQueue.GetForCurrentThread();
 
         setup.SetStepHeader(
-            "Installing",
-            "Downloading the speech model and VAD. This can take a while on a slow link.");
+            Loc.Get("Setup_StepTitle_Installing"),
+            Loc.Get("Setup_StepSubtitle_Installing"));
         setup.SetBackEnabled(false);
         setup.SetNextEnabled(false);
         setup.SetNextVisible(false);
@@ -98,8 +100,8 @@ internal sealed partial class InstallingPage : Page
                 Success:     true,
                 ErrorMessage: null,
                 Bytes:        new FileInfo(Path.Combine(AppPaths.ModelsDirectory, SpeechModels.VadModelFileName)).Length));
-            UpdateGlobalStep(2, "Silero VAD already installed.");
-            SetItemDone(VadIcon, VadProgress, VadStatus, "Already installed");
+            UpdateGlobalStep(2, Loc.Get("Setup_Install_VadAlreadyInstalledStatus"));
+            SetItemDone(VadIcon, VadProgress, VadStatus, Loc.Get("Setup_Install_AlreadyInstalled"));
         }
         else
         {
@@ -109,7 +111,7 @@ internal sealed partial class InstallingPage : Page
                 ct);
         }
 
-        UpdateGlobalStep(2, "Done.");
+        UpdateGlobalStep(2, Loc.Get("Setup_Install_Done"));
 
         // Hand off to the summary page. Frame.Navigate is UI-thread-safe
         // when invoked from an awaited continuation that resumed on the
@@ -132,10 +134,10 @@ internal sealed partial class InstallingPage : Page
         FontIcon    icon  = isFirst ? WhisperIcon : VadIcon;
 
         UpdateGlobalStep(isFirst ? 0 : 1,
-            isFirst ? $"Step 1 of 2 — downloading {entry.DisplayName}..."
-                    : $"Step 2 of 2 — downloading {entry.DisplayName}...");
+            Loc.Format(isFirst ? "Setup_Install_Step1Of2_Format" : "Setup_Install_Step2Of2_Format",
+                       entry.DisplayName));
 
-        SetItemRunning(icon, bar, status, "Connecting...");
+        SetItemRunning(icon, bar, status, Loc.Get("Setup_Install_Connecting"));
 
         long startTicks = Environment.TickCount64;
         var progress = new Progress<Downloader.DownloadProgress>(p => OnDownloadProgress(p, bar, status));
@@ -162,7 +164,7 @@ internal sealed partial class InstallingPage : Page
                     Bytes:        bytes));
                 _log.Info(LogSource.Setup,
                     $"setup item ok | id={entry.Id} | bytes={bytes} | dur_ms={durMs} | sha256={result.ActualSha256}");
-                SetItemDone(icon, bar, status, $"Done — {FormatBytes(bytes)}");
+                SetItemDone(icon, bar, status, Loc.Format("Setup_Install_Done_Format", FormatBytes(bytes)));
             }
             else
             {
@@ -174,7 +176,7 @@ internal sealed partial class InstallingPage : Page
                     Bytes:        null));
                 _log.Warning(LogSource.Setup,
                     $"setup item failed | id={entry.Id} | error={result.ErrorMessage}");
-                SetItemFailed(icon, bar, status, result.ErrorMessage ?? "unknown error");
+                SetItemFailed(icon, bar, status, result.ErrorMessage ?? Loc.Get("Setup_Install_UnknownError"));
             }
         }
         catch (OperationCanceledException)
@@ -186,7 +188,7 @@ internal sealed partial class InstallingPage : Page
                 ErrorMessage: "cancelled",
                 Bytes:        null));
             _log.Info(LogSource.Setup, $"setup item cancelled | id={entry.Id}");
-            SetItemFailed(icon, bar, status, "Cancelled.");
+            SetItemFailed(icon, bar, status, Loc.Get("Setup_Install_Cancelled"));
         }
     }
 
@@ -204,13 +206,16 @@ internal sealed partial class InstallingPage : Page
                 bar.Minimum = 0;
                 bar.Maximum = 1;
                 bar.Value   = pct;
-                status.Text =
-                    $"{FormatBytes(p.BytesDownloaded)} / {FormatBytes(p.TotalBytes ?? 0)}  ({pct:P0})";
+                status.Text = Loc.Format(
+                    "Setup_Install_Progress_WithTotal_Format",
+                    FormatBytes(p.BytesDownloaded),
+                    FormatBytes(p.TotalBytes ?? 0),
+                    pct.ToString("P0", CultureInfo.CurrentCulture));
             }
             else
             {
                 bar.IsIndeterminate = true;
-                status.Text = $"{FormatBytes(p.BytesDownloaded)} downloaded";
+                status.Text = Loc.Format("Setup_Install_Progress_NoTotal_Format", FormatBytes(p.BytesDownloaded));
             }
         });
     }

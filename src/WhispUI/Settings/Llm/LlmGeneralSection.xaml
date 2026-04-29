@@ -11,26 +11,23 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0"
-                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                       Text="General" />
-            <HyperlinkButton Grid.Column="1"
+            <TextBlock x:Uid="LlmGeneralHeader"
+                       Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+            <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                             Grid.Column="1"
                              VerticalAlignment="Bottom"
                              Margin="0,0,0,2"
-                             Content="Reset"
-                             ToolTipService.ToolTip="Reset this section to defaults"
                              Click="ResetSection_Click" />
         </Grid>
 
-        <controls:SettingsCard Header="Enable rewriting"
-                               Description="Master switch for all LLM rewriting. When off, transcriptions are never sent to Ollama."
+        <controls:SettingsCard x:Uid="LlmEnableCard"
                                HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
             <ToggleSwitch x:Name="EnabledToggle"
                           Toggled="EnabledToggle_Toggled" />
         </controls:SettingsCard>
 
-        <controls:SettingsExpander Header="Ollama endpoint"
-                                   Description="The URL of your local Ollama instance."
+        <controls:SettingsExpander x:Uid="LlmEndpointExpander"
                                    HeaderIcon="{ui:FontIcon Glyph=&#xE968;}"
                                    IsEnabled="{x:Bind IsRewritingEnabled, Mode=OneWay}">
             <controls:SettingsExpander.Items>

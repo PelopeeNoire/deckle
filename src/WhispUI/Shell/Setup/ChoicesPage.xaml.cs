@@ -2,6 +2,7 @@ using System;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.Storage.Pickers;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Setup;
 
@@ -42,10 +43,10 @@ internal sealed partial class ChoicesPage : Page
         _context = setup.Context;
 
         setup.SetStepHeader(
-            "Setup",
-            "Tell the app where to install everything, and pick the speech model you want.");
+            Loc.Get("Setup_StepTitle_Choices"),
+            Loc.Get("Setup_StepSubtitle_Choices"));
         setup.SetBackEnabled(false);
-        setup.SetNextLabel("Install");
+        setup.SetNextLabel(Loc.Get("Setup_NextLabel_Install"));
         setup.SetNextVisible(true);
         setup.SetCancelVisible(true);
         setup.NextRequested += OnNextRequested;
@@ -90,7 +91,7 @@ internal sealed partial class ChoicesPage : Page
         {
             _log.Error(LogSource.Setup,
                 $"setup browse native failed: {ex.GetType().Name}: {ex.Message}");
-            NativeStatusText.Text = $"Could not import: {ex.Message}";
+            NativeStatusText.Text = Loc.Format("Setup_Native_ImportFailed_Format", ex.Message);
         }
     }
 
@@ -98,14 +99,14 @@ internal sealed partial class ChoicesPage : Page
     {
         if (NativeRuntime.IsInstalled())
         {
-            NativeStatusText.Text = "Installed";
-            BrowseNativeButton.Content = "Replace...";
+            NativeStatusText.Text = Loc.Get("Setup_Native_Installed");
+            BrowseNativeButton.Content = Loc.Get("Setup_Native_Replace");
         }
         else
         {
             int missing = NativeRuntime.GetMissing().Count;
-            NativeStatusText.Text = $"Missing {missing} file(s)";
-            BrowseNativeButton.Content = "Browse...";
+            NativeStatusText.Text = Loc.Format("Setup_Native_Missing_Format", missing);
+            BrowseNativeButton.Content = Loc.Get("Common_Browse");
         }
     }
 
@@ -156,9 +157,12 @@ internal sealed partial class ChoicesPage : Page
     {
         if (_context is null) return;
         long totalBytes = _context.SelectedModel.SizeBytes + SpeechModels.VadModel.SizeBytes;
-        TotalEstimateBar.Message =
-            $"~{FormatBytes(totalBytes)} to download for the model and VAD. " +
-            $"Native runtime is {(NativeRuntime.IsInstalled() ? "already installed." : "not yet installed.")}";
+        TotalEstimateBar.Message = Loc.Format(
+            "Setup_TotalEstimate_Format",
+            FormatBytes(totalBytes),
+            Loc.Get(NativeRuntime.IsInstalled()
+                ? "Setup_TotalEstimate_NativeAlreadyInstalled"
+                : "Setup_TotalEstimate_NativeNotInstalled"));
     }
 
     private void UpdateNextEnabled()

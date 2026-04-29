@@ -9,8 +9,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="16" MaxWidth="640" HorizontalAlignment="Stretch">
 
-            <controls:SettingsCard Header="Install location"
-                                   Description="Where the app stores its data. Pick a custom location later from Settings."
+            <controls:SettingsCard x:Uid="SetupChoicesInstallLocation"
                                    HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
                 <TextBlock x:Name="LocationPathText"
                            VerticalAlignment="Center"
@@ -19,21 +18,18 @@
                            MaxWidth="380" />
             </controls:SettingsCard>
 
-            <controls:SettingsCard Header="Speech runtime"
-                                   Description="Native whisper.cpp libraries the engine loads at start-up."
+            <controls:SettingsCard x:Uid="SetupChoicesSpeechRuntime"
                                    HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <TextBlock x:Name="NativeStatusText"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <Button x:Name="BrowseNativeButton"
-                            Content="Browse..."
                             Click="OnBrowseNativeClick" />
                 </StackPanel>
             </controls:SettingsCard>
 
-            <controls:SettingsCard Header="Speech model"
-                                   Description="Pick the Whisper model the engine will run. You can swap it later from Settings."
+            <controls:SettingsCard x:Uid="SetupChoicesSpeechModel"
                                    HeaderIcon="{ui:FontIcon Glyph=&#xE720;}"
                                    ContentAlignment="Vertical">
                 <RadioButtons x:Name="ModelRadio"
@@ -41,10 +37,10 @@
             </controls:SettingsCard>
 
             <InfoBar x:Name="TotalEstimateBar"
+                     x:Uid="SetupChoicesTotalEstimateBar"
                      IsOpen="True"
                      IsClosable="False"
-                     Severity="Informational"
-                     Title="Total install size" />
+                     Severity="Informational" />
 
         </StackPanel>
     </ScrollViewer>

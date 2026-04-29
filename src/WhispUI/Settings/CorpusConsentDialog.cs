@@ -36,7 +36,7 @@ internal static class CorpusConsentDialog
 
         body.Children.Add(new TextBlock
         {
-            Text = Loc.Get("CorpusConsent_Body_WhatHeader"),
+            Text = Loc.Get("Common_Consent_WhatHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
@@ -48,7 +48,7 @@ internal static class CorpusConsentDialog
 
         body.Children.Add(new TextBlock
         {
-            Text = Loc.Get("CorpusConsent_Body_WhereHeader"),
+            Text = Loc.Get("Common_Consent_WhereHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
@@ -60,7 +60,7 @@ internal static class CorpusConsentDialog
 
         body.Children.Add(new TextBlock
         {
-            Text = Loc.Get("CorpusConsent_Body_RemindHeader"),
+            Text = Loc.Get("Common_Consent_RemindHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 

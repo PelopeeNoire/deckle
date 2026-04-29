@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using WhispUI.Interop;
+using WhispUI.Localization;
 
 namespace WhispUI.Shell;
 
@@ -56,7 +57,7 @@ public sealed class TrayIconManager : IDisposable
         // replaces this moments later. Keeping the string aligned with
         // UpdateStatus avoids flashing a stale "loading" message since the
         // model is lazy-loaded on first hotkey, not at boot.
-        var data = BuildNotifyIconData("Whisp — Ready", _hIconIdle);
+        var data = BuildNotifyIconData(Loc.Format("Tray_Tooltip_Format", Loc.Get("Status_Ready")), _hIconIdle);
         bool ok = NativeMethods.Shell_NotifyIcon(NativeMethods.NIM_ADD, ref data);
         if (!ok)
             throw new InvalidOperationException(
@@ -84,7 +85,7 @@ public sealed class TrayIconManager : IDisposable
         bool isRecording = status.StartsWith("Recording");
         IntPtr icon = isRecording ? _hIconRecording : _hIconIdle;
 
-        string tip = $"Whisp — {status}";
+        string tip = Loc.Format("Tray_Tooltip_Format", status);
         if (tip.Length > 127) tip = tip[..127];
 
         var data = BuildNotifyIconData(tip, icon);

@@ -170,7 +170,7 @@
              height, and exposes a Content slot where we place the SearchBox. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
-                  Title="WhispUI Logs">
+                  x:Uid="LogWindowTitleBar">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
@@ -183,20 +183,20 @@
                       VerticalAlignment="Center"
                       Margin="8,0">
                     <AutoSuggestBox x:Name="SearchBox"
+                                    x:Uid="LogWindowSearchBox"
                                     QueryIcon="Find"
-                                    PlaceholderText="Search logs"
                                     Width="320"
                                     VerticalAlignment="Center"
                                     TextChanged="OnSearchTextChanged"
                                     LostFocus="OnSearchBoxLostFocus" />
                     <Button x:Name="SearchIconButton"
+                            x:Uid="LogWindowSearchIconButton"
                             Style="{StaticResource SubtleButtonStyle}"
                             Visibility="Collapsed"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center"
                             MinWidth="36"
                             Padding="8,4"
-                            ToolTipService.ToolTip="Search logs"
                             Click="OnSearchIconClick">
                         <FontIcon Glyph="&#xE721;" FontSize="16" />
                     </Button>
@@ -216,9 +216,9 @@
                                   Margin="4,0,0,0"
                                   VerticalAlignment="Center"
                                   SelectionChanged="OnLevelSelectorChanged">
-                <controls:SelectorBarItem x:Name="LevelFull" Text="All" />
-                <controls:SelectorBarItem x:Name="LevelFiltered" Text="Activity" />
-                <controls:SelectorBarItem x:Name="LevelCritical" Text="Alerts" />
+                <controls:SelectorBarItem x:Name="LevelFull" x:Uid="LogWindowLevelFull" />
+                <controls:SelectorBarItem x:Name="LevelFiltered" x:Uid="LogWindowLevelFiltered" />
+                <controls:SelectorBarItem x:Name="LevelCritical" x:Uid="LogWindowLevelCritical" />
             </controls:SelectorBar>
 
             <!-- Native overflow via IsDynamicOverflowEnabled (true by default)
@@ -232,19 +232,19 @@
                         HorizontalAlignment="Right"
                         Background="Transparent"
                         IsOpen="False">
-                <AppBarButton x:Name="CopyButton" Label="Copy"
+                <AppBarButton x:Name="CopyButton" x:Uid="LogWindowCopyButton"
                               Click="OnCopyClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE8C8;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="SaveButton" Label="Save"
+                <AppBarButton x:Name="SaveButton" x:Uid="LogWindowSaveButton"
                               Click="OnSaveClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE74E;" />
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton x:Name="ClearButton" Label="Clear"
+                <AppBarButton x:Name="ClearButton" x:Uid="LogWindowClearButton"
                               Click="OnClearClick">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE74D;" />
@@ -252,14 +252,14 @@
                 </AppBarButton>
                 <CommandBar.SecondaryCommands>
                     <AppBarToggleButton x:Name="AutoScrollToggle"
-                                        Label="Auto-scroll"
+                                        x:Uid="LogWindowAutoScrollToggle"
                                         IsChecked="True">
                         <AppBarToggleButton.Icon>
                             <FontIcon Glyph="&#xEC8F;" />
                         </AppBarToggleButton.Icon>
                     </AppBarToggleButton>
                     <AppBarToggleButton x:Name="WrapToggle"
-                                        Label="Word wrap"
+                                        x:Uid="LogWindowWrapToggle"
                                         IsChecked="False"
                                         Click="OnWrapToggleClick">
                         <AppBarToggleButton.Icon>
@@ -316,7 +316,7 @@
                     <TranslateTransform x:Name="CopyBadgeTransform" />
                 </Border.RenderTransform>
                 <TextBlock x:Name="CopyBadgeText"
-                           Text="Copy"
+                           x:Uid="LogWindowCopyBadgeText"
                            FontSize="11"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </Border>

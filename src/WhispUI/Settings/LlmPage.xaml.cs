@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Llm;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Settings.Llm;
 
@@ -147,7 +148,7 @@ public sealed partial class LlmPage : Page
         _context.Models = models;
 
         string ep = SettingsService.Instance.Current.Llm.OllamaEndpoint;
-        OllamaStatusBar.Message = $"Start Ollama or check the endpoint setting ({ep}).";
+        OllamaStatusBar.Message = Loc.Format("Settings_OllamaStatusMessage_Format", ep);
         OllamaStatusBar.IsOpen = !available;
 
         _context.RaiseStateChanged();
@@ -190,15 +191,10 @@ public sealed partial class LlmPage : Page
         {
             var dialog = new ContentDialog
             {
-                Title = "Reset all rewriting settings?",
-                Content =
-                    "This wipes the Ollama endpoint, profiles, rules, and " +
-                    "shortcut bindings, then puts the three default profiles " +
-                    "(Lissage, Affinage, Arrangement) and the matching " +
-                    "duration / word-count rules back. Your custom prompts " +
-                    "and parameters will be lost.",
-                PrimaryButtonText = "Reset all",
-                CloseButtonText = "Cancel",
+                Title = Loc.Get("Settings_ResetLlmDialog_Title"),
+                Content = Loc.Get("Settings_ResetLlmDialog_Content"),
+                PrimaryButtonText = Loc.Get("LlmPageResetAllLabel.Text"),
+                CloseButtonText = Loc.Get("Common_Cancel"),
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = this.XamlRoot
             };

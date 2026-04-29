@@ -4,6 +4,7 @@ using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WhispUI.Llm;
+using WhispUI.Localization;
 using WhispUI.Settings.Llm.GgufImport;
 
 namespace WhispUI.Settings.Llm;
@@ -103,7 +104,7 @@ public sealed partial class LlmModelsSection : UserControl
                     Children =
                     {
                         new FontIcon { Glyph = "\uE74D", FontSize = 14 },
-                        new TextBlock { Text = "Remove" }
+                        new TextBlock { Text = Loc.Get("Settings_RemoveLabel") }
                     }
                 }
             };
@@ -112,10 +113,10 @@ public sealed partial class LlmModelsSection : UserControl
             {
                 var dialog = new ContentDialog
                 {
-                    Title = "Remove model",
-                    Content = $"Remove \"{modelName}\" from Ollama? This cannot be undone.",
-                    PrimaryButtonText = "Remove",
-                    CloseButtonText = "Cancel",
+                    Title = Loc.Get("Settings_RemoveModelDialog_Title"),
+                    Content = Loc.Format("Settings_RemoveModelDialog_Content_Format", modelName),
+                    PrimaryButtonText = Loc.Get("Common_Remove"),
+                    CloseButtonText = Loc.Get("Common_Cancel"),
                     DefaultButton = ContentDialogButton.Close,
                     XamlRoot = this.XamlRoot
                 };
@@ -147,7 +148,7 @@ public sealed partial class LlmModelsSection : UserControl
                     catch (Exception ex)
                     {
                         if (_sectionCts.IsCancellationRequested) return;
-                        ErrorBar.Title = "Error removing model";
+                        ErrorBar.Title = Loc.Get("Settings_ErrorRemovingModel_Title");
                         ErrorBar.Message = ex.Message;
                         ErrorBar.IsOpen = true;
                     }

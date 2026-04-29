@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Localization;
 using WhispUI.Settings.ViewModels;
 
 namespace WhispUI.Settings.Llm;
@@ -85,13 +86,10 @@ public sealed partial class LlmProfilesSection : UserControl
         // notices and picks a replacement.
         var dialog = new ContentDialog
         {
-            Title = "Remove this profile?",
-            Content =
-                $"\"{vm.Name}\" will be removed. Any rule or shortcut that " +
-                "pointed to it will need a new profile picked — they're not " +
-                "deleted, they go blank until you reassign them.",
-            PrimaryButtonText = "Remove",
-            CloseButtonText = "Keep",
+            Title = Loc.Get("Settings_RemoveProfileDialog_Title"),
+            Content = Loc.Format("Settings_RemoveProfileDialog_Content_Format", vm.Name),
+            PrimaryButtonText = Loc.Get("Common_Remove"),
+            CloseButtonText = Loc.Get("Settings_RemoveProfileDialog_CloseButton"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };
@@ -229,14 +227,10 @@ public sealed partial class LlmProfilesSection : UserControl
     {
         var dialog = new ContentDialog
         {
-            Title = "Reset profiles to defaults?",
-            Content =
-                "Every profile will be replaced with the three defaults " +
-                "(Lissage, Affinage, Arrangement), each with its full " +
-                "pre-written prompt and parameters. Your custom profiles " +
-                "and any prompts you've written will be lost.",
-            PrimaryButtonText = "Reset",
-            CloseButtonText = "Cancel",
+            Title = Loc.Get("Settings_ResetProfilesDialog_Title"),
+            Content = Loc.Get("Settings_ResetProfilesDialog_Content"),
+            PrimaryButtonText = Loc.Get("Common_Reset"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };

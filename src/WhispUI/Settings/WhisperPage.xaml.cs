@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Settings.ViewModels;
 
@@ -491,10 +492,10 @@ public sealed partial class WhisperPage : Page
     {
         var dialog = new ContentDialog
         {
-            Title = "Reset all settings?",
-            Content = "This will restore every transcription setting on this page to its default value.",
-            PrimaryButtonText = "Reset all",
-            CloseButtonText = "Cancel",
+            Title = Loc.Get("Settings_ResetWhisperDialog_Title"),
+            Content = Loc.Get("Settings_ResetWhisperDialog_Content"),
+            PrimaryButtonText = Loc.Get("WhisperPageResetAllLabel.Text"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };

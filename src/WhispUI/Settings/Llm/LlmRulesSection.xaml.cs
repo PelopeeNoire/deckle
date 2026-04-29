@@ -4,6 +4,7 @@ using System.Linq;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Localization;
 
 namespace WhispUI.Settings.Llm;
 
@@ -113,7 +114,7 @@ public sealed partial class LlmRulesSection : UserControl
         for (int i = 0; i < s.AutoRewriteRulesByWords.Count; i++)
             WordsRulesPanel.Children.Add(BuildWordsRuleCard(s.AutoRewriteRulesByWords[i], i, profileNames));
 
-        var addBtn = new Button { Content = "Add rule", Margin = new Thickness(0, 4, 0, 0) };
+        var addBtn = new Button { Content = Loc.Get("Settings_AddRuleButton"), Margin = new Thickness(0, 4, 0, 0) };
         addBtn.Click += AddRuleByWords_Click;
         WordsRulesPanel.Children.Add(addBtn);
     }
@@ -239,7 +240,7 @@ public sealed partial class LlmRulesSection : UserControl
         for (int i = 0; i < s.AutoRewriteRules.Count; i++)
             DurationRulesPanel.Children.Add(BuildDurationRuleCard(s.AutoRewriteRules[i], i, profileNames));
 
-        var addBtn = new Button { Content = "Add rule", Margin = new Thickness(0, 4, 0, 0) };
+        var addBtn = new Button { Content = Loc.Get("Settings_AddRuleButton"), Margin = new Thickness(0, 4, 0, 0) };
         addBtn.Click += AddRule_Click;
         DurationRulesPanel.Children.Add(addBtn);
     }
@@ -363,14 +364,10 @@ public sealed partial class LlmRulesSection : UserControl
     {
         var dialog = new ContentDialog
         {
-            Title = "Reset rules to defaults?",
-            Content =
-                "Every auto-rewrite rule will be replaced with the three " +
-                "defaults (60 s / 300 s / 600 s for duration, 150 / 600 / " +
-                "1200 words for word count). Your custom thresholds will " +
-                "be lost.",
-            PrimaryButtonText = "Reset",
-            CloseButtonText   = "Cancel",
+            Title = Loc.Get("Settings_ResetRulesDialog_Title"),
+            Content = Loc.Get("Settings_ResetRulesDialog_Content"),
+            PrimaryButtonText = Loc.Get("Common_Reset"),
+            CloseButtonText   = Loc.Get("Common_Cancel"),
             DefaultButton     = ContentDialogButton.Close,
             XamlRoot          = this.XamlRoot
         };
@@ -434,7 +431,7 @@ public sealed partial class LlmRulesSection : UserControl
         var stack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         // Segoe Fluent Icons — Delete glyph U+E74D (same as the previous XAML).
         stack.Children.Add(new FontIcon { Glyph = "", FontSize = 14 });
-        stack.Children.Add(new TextBlock { Text = "Remove" });
+        stack.Children.Add(new TextBlock { Text = Loc.Get("Settings_RemoveLabel") });
         btn.Content = stack;
         return btn;
     }

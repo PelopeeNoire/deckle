@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Data;
 using WinRT.Interop;
 using WhispUI.Interop;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Shell;
 
@@ -115,7 +116,7 @@ public sealed partial class LogWindow : Window, ITelemetrySink
         // of feeling cut off from context.
         LevelSelector.SelectedItem = LevelFull;
 
-        Title = "WhispUI Logs";
+        Title = Loc.Get("LogWindow_WindowTitle");
         // ~1:2 aspect ratio (vertical) — two stacked squares. Fits on a 4K display.
         AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 1440));
 
@@ -473,12 +474,12 @@ public sealed partial class LogWindow : Window, ITelemetrySink
                 LogItems.DeselectRange(new ItemIndexRange(0, (uint)_visible.Count));
                 LogItems.SelectRange(new ItemIndexRange(start, (uint)(end - start + 1)));
 
-                CopyBadgeText.Text = (end > start) ? "Copy selection" : "Copy";
+                CopyBadgeText.Text = Loc.Get((end > start) ? "LogWindow_CopyBadge_Selection" : "LogWindow_CopyBadge_Single");
             }
         }
         else if (!_isDragging)
         {
-            if (CopyBadgeText.Text != "Copied") CopyBadgeText.Text = "Copy";
+            if (CopyBadgeText.Text != Loc.Get("LogWindow_CopyBadge_Copied")) CopyBadgeText.Text = Loc.Get("LogWindow_CopyBadge_Single");
         }
     }
 
@@ -543,11 +544,11 @@ public sealed partial class LogWindow : Window, ITelemetrySink
 
     private async void ShowCopiedFeedback()
     {
-        CopyBadgeText.Text = "Copied";
+        CopyBadgeText.Text = Loc.Get("LogWindow_CopyBadge_Copied");
         CopyBadge.Visibility = Visibility.Visible;
         await Task.Delay(800);
-        if (CopyBadgeText.Text == "Copied")
-            CopyBadgeText.Text = "Copy";
+        if (CopyBadgeText.Text == Loc.Get("LogWindow_CopyBadge_Copied"))
+            CopyBadgeText.Text = Loc.Get("LogWindow_CopyBadge_Single");
     }
 
     // ── Copy button (CommandBar) ─────────────────────────────────────────────
