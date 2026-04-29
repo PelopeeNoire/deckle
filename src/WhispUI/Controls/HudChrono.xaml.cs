@@ -750,6 +750,14 @@ public sealed partial class HudChrono : UserControl
     public static float   SwipeRiseAlpha    = 0.1f;
     public static float   SwipeDecayAlpha   = 0.05f;
 
+    // Virtual head domain. The head walks `SwipeHeadDomain` slots per cycle;
+    // only slots [0, DigitCount) map to a real digit, the rest are silent
+    // — target=0 everywhere — so the easing's tail decelerates "into the
+    // void" instead of pinning the last digit while progress crawls toward
+    // the seam. Tune > DigitCount to gain breathing room before the next
+    // cycle's snap; equal to DigitCount reproduces the pre-fix stall.
+    public static int     SwipeHeadDomain   = 8;
+
     // Digit count — structural, mirrors _digitHeat.Length and the 6 accent
     // overlays declared in HudChrono.xaml. Not a tunable.
     private const int DigitCount = 6;
@@ -796,14 +804,17 @@ public sealed partial class HudChrono : UserControl
         float t = (float)((elapsed / SwipeCycleSeconds) % 1.0);
         float progress = CubicBezierEase(t, SwipeEaseP1, SwipeEaseP2);
 
-        // Head index in [0, DigitCount-1]. The head sweeps only the 6
-        // digits — dots are not swept (they have no heat, no overlay).
-        // progress is eased so the head lingers near the extremes
-        // (cubic-bezier ease-out) — that's the "accelerate then slow
-        // down" cadence at the seam between cycles.
-        int headIndex = (int)MathF.Floor(progress * DigitCount);
-        if (headIndex >= DigitCount) headIndex = DigitCount - 1;
-        if (headIndex < 0)           headIndex = 0;
+        // Head slot in [0, SwipeHeadDomain). Only the first DigitCount
+        // slots map to a real digit; slots >= DigitCount are silent (head
+        // is "off-screen"), which lets the eased tail run out before the
+        // next cycle's snap — the fix for the last-digit stall.
+        // Sentinel -1 means "no digit is the head this frame", so the
+        // i==headIndex test below is false everywhere and every digit
+        // decays toward 0.
+        int domain = SwipeHeadDomain > 0 ? SwipeHeadDomain : DigitCount;
+        int headIndex = (int)MathF.Floor(progress * domain);
+        if (headIndex >= DigitCount) headIndex = -1;
+        else if (headIndex < 0)      headIndex = 0;
 
         for (int i = 0; i < DigitCount; i++)
         {

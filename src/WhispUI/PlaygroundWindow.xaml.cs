@@ -473,6 +473,7 @@ public sealed partial class PlaygroundWindow : Window
         HudChrono.SwipeEaseP2       = new Vector2(0.2f, 1f);
         HudChrono.SwipeRiseAlpha    = 0.1f;
         HudChrono.SwipeDecayAlpha   = 0.025f;
+        HudChrono.SwipeHeadDomain   = 8;
         HudChrono.EmaAlpha          = 0.25f;
         HudChrono.MinDbfs           = -55f;
         HudChrono.MaxDbfs           = -32f;
@@ -682,6 +683,8 @@ public sealed partial class PlaygroundWindow : Window
             v => HudChrono.SwipeRiseAlpha = (float)v);
         AddFloatRow(stack, "SwipeDecayAlpha", 0.005, 0.5, 0.005, HudChrono.SwipeDecayAlpha,
             v => HudChrono.SwipeDecayAlpha = (float)v);
+        AddIntRow(stack, "SwipeHeadDomain", 6, 12, HudChrono.SwipeHeadDomain,
+            v => HudChrono.SwipeHeadDomain = v);
         AddToggleRow(stack, "Simulate changed digits",
             _simulateChangedDigits,
             v => { _simulateChangedDigits = v; ApplyTarget(); });
@@ -694,6 +697,7 @@ public sealed partial class PlaygroundWindow : Window
         HudChrono.SwipeEaseP2       = new Vector2(0.1f, 1f);
         HudChrono.SwipeRiseAlpha    = 0.05f;
         HudChrono.SwipeDecayAlpha   = 0.025f;
+        HudChrono.SwipeHeadDomain   = 8;
         _simulateChangedDigits      = true;
         RebuildTuningPanel();
         ApplyTarget();
