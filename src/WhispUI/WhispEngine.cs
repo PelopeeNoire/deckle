@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using WhispUI.Interop;
 using WhispUI.Llm;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Settings;
 
@@ -676,7 +677,7 @@ internal sealed class WhispEngine : IDisposable
     /// </summary>
     private bool LoadModel()
     {
-        RaiseStatus("Loading model…");
+        RaiseStatus(Loc.Get("Status_LoadingModel"));
 
         if (!File.Exists(_modelPath))
         {
@@ -684,11 +685,11 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Model,
                 $"load aborted | reason=file_not_found | path={_modelPath}",
                 new UserFeedback(
-                    "Whisper model not found",
-                    "See in settings.",
+                    Loc.Get("Engine_WhisperModelNotFound_Title"),
+                    Loc.Get("Engine_WhisperModelNotFound_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
-            RaiseStatus("Ready");
+            RaiseStatus(Loc.Get("Status_Ready"));
             return false;
         }
 
@@ -720,11 +721,11 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Init,
                 $"load failed | path={_modelPath}",
                 new UserFeedback(
-                    "Failed to load model",
-                    "Low GPU memory or corrupt file.",
+                    Loc.Get("Engine_ModelLoadFailed_Title"),
+                    Loc.Get("Engine_ModelLoadFailed_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
-            RaiseStatus("Ready");
+            RaiseStatus(Loc.Get("Status_Ready"));
             return false;
         }
 
@@ -740,9 +741,9 @@ internal sealed class WhispEngine : IDisposable
         // the tray tooltip transitions Loading model… → Ready as soon as the
         // model is in VRAM. Without this, the success path returns silently
         // and the tooltip stays stuck on "Loading model…" through warmup
-        // (Transcribe's own RaiseStatus("Ready") is absorbed by _isWarmup)
+        // (Transcribe's own RaiseStatus(Loc.Get("Status_Ready")) is absorbed by _isWarmup)
         // and only flips on the first user hotkey.
-        RaiseStatus("Ready");
+        RaiseStatus(Loc.Get("Status_Ready"));
         return true;
     }
 
@@ -789,7 +790,7 @@ internal sealed class WhispEngine : IDisposable
             // the worker's finally to emit "Ready" at the right moment.
             if ((PipelineState)Volatile.Read(ref _state) == PipelineState.Idle)
             {
-                RaiseStatus("Ready");
+                RaiseStatus(Loc.Get("Status_Ready"));
             }
         }
     }
@@ -1141,8 +1142,8 @@ internal sealed class WhispEngine : IDisposable
                         LogSource.Init,
                         "warmup flag | model_ok=false",
                         new UserFeedback(
-                            "Model not ready",
-                            "Load failed. See in settings.",
+                            Loc.Get("Engine_ModelNotReady_Title"),
+                            Loc.Get("Engine_ModelNotReady_Body"),
                             UserFeedbackSeverity.Error,
                             UserFeedbackRole.Replacement));
                     return ToggleResult.IgnoredBusy;
@@ -1177,8 +1178,8 @@ internal sealed class WhispEngine : IDisposable
                             LogSource.Init,
                             "warmup flag | ollama_ok=false (live re-probe also failed)",
                             new UserFeedback(
-                                "Rewriter unavailable",
-                                "Ollama wasn't ready at startup. Start it and try again.",
+                                Loc.Get("Engine_RewriterUnavailable_Title"),
+                                Loc.Get("Engine_RewriterUnavailable_Body"),
                                 UserFeedbackSeverity.Warning,
                                 UserFeedbackRole.Overlay));
                     }
@@ -1278,7 +1279,7 @@ internal sealed class WhispEngine : IDisposable
 
     // Worker thread body. Runs the full Record → Transcribe pipeline,
     // performs the worker-owned state transitions, and is the ONLY site
-    // that emits "Ready" on the success path. Any RaiseStatus("Ready")
+    // that emits "Ready" on the success path. Any RaiseStatus(Loc.Get("Status_Ready"))
     // elsewhere in this file (UnloadModel, Transcribe early-returns) must
     // also gate on _state == Idle to avoid clobbering this invariant.
     private void WorkerRun()
@@ -1292,7 +1293,7 @@ internal sealed class WhispEngine : IDisposable
             }
 
             _recordingSw = System.Diagnostics.Stopwatch.StartNew();
-            RaiseStatus("Recording…");
+            RaiseStatus(Loc.Get("Status_Recording"));
             RaiseNarrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
 
             float[] audio = Record();
@@ -1314,7 +1315,7 @@ internal sealed class WhispEngine : IDisposable
                 return;
             }
 
-            RaiseStatus("Transcribing…");
+            RaiseStatus(Loc.Get("Status_Transcribing"));
             Transcribe(audio);
             ResetIdleTimer();
         }
@@ -1324,8 +1325,8 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Transcribe,
                 $"pipeline crashed: {ex.GetType().Name}: {ex.Message}",
                 new UserFeedback(
-                    "Pipeline crashed",
-                    "Try again. Check logs if it persists.",
+                    Loc.Get("Engine_PipelineCrashed_Title"),
+                    Loc.Get("Engine_PipelineCrashed_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
             RaiseFinished(TranscriptionOutcome.None);
@@ -1365,7 +1366,7 @@ internal sealed class WhispEngine : IDisposable
             _idleEvent.Set();
             if (reachedIdle)
             {
-                RaiseStatus("Ready");
+                RaiseStatus(Loc.Get("Status_Ready"));
             }
         }
     }
@@ -1405,10 +1406,10 @@ internal sealed class WhispEngine : IDisposable
     // — no Win32 jargon. Raw code is logged elsewhere for debug.
     private static (string Title, string Body) DescribeMicError(uint err) => err switch
     {
-        2 => ("No microphone detected", "Plug in a mic. See in settings."),
-        6 => ("No microphone detected", "Plug in a mic. See in settings."),
-        4 => ("Microphone in use",      "Another app is using it. Try again."),
-        _ => ("Microphone unavailable", $"Audio device open failed (MMSYSERR {err}).")
+        2 => (Loc.Get("MicError_NotDetected_Title"), Loc.Get("MicError_NotDetected_Body")),
+        6 => (Loc.Get("MicError_NotDetected_Title"), Loc.Get("MicError_NotDetected_Body")),
+        4 => (Loc.Get("MicError_InUse_Title"),      Loc.Get("MicError_InUse_Body")),
+        _ => (Loc.Get("MicError_Unavailable_Title"), Loc.Format("MicError_Unavailable_Body_Format", err))
     };
 
     // ── Audio recording ─────────────────────────────────────────────────────
@@ -1609,8 +1610,8 @@ internal sealed class WhispEngine : IDisposable
                                 LogSource.Record,
                                 $"low audio detected | recording_ms={recordingMs} | no healthy voice ≥{NormalVoiceSustainedMs} ms above {NormalVoiceDbfsThreshold} dBFS",
                                 new UserFeedback(
-                                    "Low audio detected",
-                                    "Your mic is picking up very little sound.",
+                                    Loc.Get("Engine_LowAudio_Title"),
+                                    Loc.Get("Engine_LowAudio_Body"),
                                     UserFeedbackSeverity.Warning,
                                     UserFeedbackRole.Overlay));
                         }
@@ -2137,7 +2138,7 @@ internal sealed class WhispEngine : IDisposable
         IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
         {
-            RaiseStatus("Model not ready");
+            RaiseStatus(Loc.Get("Status_ModelNotReady"));
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
@@ -2279,11 +2280,11 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Transcribe,
                 $"whisper_full failed | result={result}",
                 new UserFeedback(
-                    "Transcription failed",
-                    "Whisper could not decode the audio.",
+                    Loc.Get("Engine_TranscriptionFailed_Title"),
+                    Loc.Get("Engine_TranscriptionFailed_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
-            RaiseStatus("Transcription failed");
+            RaiseStatus(Loc.Get("Status_TranscriptionFailed"));
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
@@ -2315,7 +2316,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (string.IsNullOrWhiteSpace(fullText))
         {
-            RaiseStatus("Ready");
+            RaiseStatus(Loc.Get("Status_Ready"));
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
@@ -2347,7 +2348,7 @@ internal sealed class WhispEngine : IDisposable
         swClip.Stop();
         if (!rawCopyOk)
         {
-            RaiseStatus("Ready");
+            RaiseStatus(Loc.Get("Status_Ready"));
             RaiseFinished(TranscriptionOutcome.None);
             return;
         }
@@ -2423,7 +2424,7 @@ internal sealed class WhispEngine : IDisposable
 
         if (profile is not null)
         {
-            RaiseStatus($"Rewriting ({profile.Name})…");
+            RaiseStatus(Loc.Format("Status_Rewriting_Format", profile.Name));
             // Narrative only after the call settles — on success we know it
             // landed, on failure we say so explicitly. The previous pre-call
             // "is now rewriting" line lied on failure by implying completion
@@ -2516,7 +2517,7 @@ internal sealed class WhispEngine : IDisposable
             $"outputs | n_seg={nSeg} | chars={fullText.Length} | words={finalWordCount} | strategy={_strategyLabel} | profile={profile?.Name ?? "(none)"} | outcome={outcome}");
         RaiseNarrative(LogSource.Done, $"Done — {recDurationSec:F1} s of dictation processed. Ready for the next.");
 
-        RaiseStatus("Ready");
+        RaiseStatus(Loc.Get("Status_Ready"));
         _recordingSw?.Stop();
 
         Logging.TelemetryService.Instance.Latency(new Logging.LatencyPayload(
@@ -2612,8 +2613,8 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Clipboard,
                 $"GlobalAlloc failed | bytes={byteCount}",
                 new UserFeedback(
-                    "Clipboard copy failed",
-                    "Memory allocation failed. Try again.",
+                    Loc.Get("Engine_ClipboardCopyFailed_Memory_Title"),
+                    Loc.Get("Engine_ClipboardCopyFailed_Memory_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
             return false;
@@ -2632,8 +2633,8 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Clipboard,
                 "OpenClipboard failed",
                 new UserFeedback(
-                    "Clipboard unavailable",
-                    "Another app is holding it. Try again.",
+                    Loc.Get("Engine_ClipboardUnavailable_Title"),
+                    Loc.Get("Engine_ClipboardUnavailable_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
             return false;
@@ -2648,8 +2649,8 @@ internal sealed class WhispEngine : IDisposable
                 LogSource.Clipboard,
                 "SetClipboardData failed | handle=0",
                 new UserFeedback(
-                    "Clipboard copy failed",
-                    "Windows refused the write. Try again.",
+                    Loc.Get("Engine_ClipboardCopyFailed_Refused_Title"),
+                    Loc.Get("Engine_ClipboardCopyFailed_Refused_Body"),
                     UserFeedbackSeverity.Error,
                     UserFeedbackRole.Replacement));
             return false;
@@ -2668,8 +2669,8 @@ internal sealed class WhispEngine : IDisposable
                     LogSource.Clipboard,
                     "verify failed | reason=no_unicode_data",
                     new UserFeedback(
-                        "Clipboard may be incomplete",
-                        "Text is copied but unverified.",
+                        Loc.Get("Engine_ClipboardIncomplete_Unverified_Title"),
+                        Loc.Get("Engine_ClipboardIncomplete_Unverified_Body"),
                         UserFeedbackSeverity.Warning,
                         UserFeedbackRole.Overlay));
             }
@@ -2684,8 +2685,8 @@ internal sealed class WhispEngine : IDisposable
                         LogSource.Clipboard,
                         $"verify failed | expected_chars={text.Length} | actual_chars={back?.Length ?? -1}",
                         new UserFeedback(
-                            "Clipboard may be incomplete",
-                            "Length mismatch on read-back.",
+                            Loc.Get("Engine_ClipboardIncomplete_LengthMismatch_Title"),
+                            Loc.Get("Engine_ClipboardIncomplete_LengthMismatch_Body"),
                             UserFeedbackSeverity.Warning,
                             UserFeedbackRole.Overlay));
                 }

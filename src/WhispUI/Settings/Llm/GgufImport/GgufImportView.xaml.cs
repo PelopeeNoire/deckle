@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 using WhispUI.Llm;
+using WhispUI.Localization;
 
 namespace WhispUI.Settings.Llm.GgufImport;
 
@@ -81,21 +82,19 @@ public sealed partial class GgufImportView : UserControl
 
         if (string.IsNullOrWhiteSpace(modelName) || string.IsNullOrWhiteSpace(ggufPath))
         {
-            ShowError("Missing fields", "Model name and GGUF file path are required.");
+            ShowError(Loc.Get("Gguf_Error_MissingFields_Title"), Loc.Get("Gguf_Error_MissingFields_Body"));
             return false;
         }
 
         if (!Regex.IsMatch(modelName, @"^[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+)?$"))
         {
-            ShowError("Invalid model name",
-                "Use only letters, digits, dots, dashes, and underscores. "
-                + "Optional :tag suffix (e.g. my-model:latest).");
+            ShowError(Loc.Get("Gguf_Error_InvalidName_Title"), Loc.Get("Gguf_Error_InvalidName_Body"));
             return false;
         }
 
         if (!File.Exists(ggufPath))
         {
-            ShowError("File not found", $"GGUF file not found: {ggufPath}");
+            ShowError(Loc.Get("Gguf_Error_FileNotFound_Title"), Loc.Format("Gguf_Error_FileNotFound_Body_Format", ggufPath));
             return false;
         }
 
@@ -107,7 +106,7 @@ public sealed partial class GgufImportView : UserControl
         ProgressBarControl.IsIndeterminate = true;
         ProgressBarControl.Value = 0;
         ProgressBarControl.Visibility = Visibility.Visible;
-        StatusText.Text = "Preparing...";
+        StatusText.Text = Loc.Get("Gguf_StatusPreparing");
         StatusText.Visibility = Visibility.Visible;
         ErrorBar.IsOpen = false;
 
@@ -142,7 +141,7 @@ public sealed partial class GgufImportView : UserControl
             _importing = false;
             ProgressBarControl.Visibility = Visibility.Collapsed;
             StatusText.Visibility = Visibility.Collapsed;
-            ShowError("Import failed", ex.Message);
+            ShowError(Loc.Get("Gguf_Error_ImportFailed_Title"), ex.Message);
             UpdateCreateEnabled();
             return false;
         }

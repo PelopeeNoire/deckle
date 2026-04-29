@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using WhispUI.Llm;
+using WhispUI.Localization;
 using WhispUI.Logging;
 
 namespace WhispUI.Settings.Llm.GgufImport;
@@ -26,10 +27,10 @@ internal static class GgufImportDialog
 
         var dialog = new ContentDialog
         {
-            Title = "Import GGUF model",
+            Title = Loc.Get("Gguf_DialogTitle"),
             Content = view,
-            PrimaryButtonText = "Create",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.Get("Gguf_PrimaryButton"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root
         };

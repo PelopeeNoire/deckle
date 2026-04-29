@@ -19,28 +19,28 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="Rewriting"
+                    <TextBlock x:Uid="LlmPageTitleLabel"
                                Style="{StaticResource TitleTextBlockStyle}" />
-                    <Button Grid.Column="1"
+                    <Button x:Uid="LlmPage_ResetAll"
+                            Grid.Column="1"
                             VerticalAlignment="Center"
                             Style="{StaticResource SubtleButtonStyle}"
-                            ToolTipService.ToolTip="Reset all rewriting settings to defaults"
                             Click="ResetAll_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE777;" FontSize="14" />
-                            <TextBlock Text="Reset all" />
+                            <TextBlock x:Uid="LlmPageResetAllLabel" />
                         </StackPanel>
                     </Button>
                 </Grid>
 
-                <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+                <TextBlock x:Uid="LlmPageSubtitleLabel"
+                           Style="{StaticResource BodyTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            TextWrapping="Wrap"
-                           Margin="0,0,0,12"
-                           Text="Clean up and restructure your transcriptions through a local language model via Ollama. Configure rewrite profiles with different models and prompts, then assign them to duration-based rules or the manual shortcut." />
+                           Margin="0,0,0,12" />
 
                 <InfoBar x:Name="OllamaStatusBar"
-                         Title="Ollama is not reachable"
+                         x:Uid="LlmPage_OllamaStatusBar"
                          Severity="Warning"
                          IsOpen="False"
                          IsClosable="False"

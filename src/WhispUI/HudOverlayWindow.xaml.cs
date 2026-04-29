@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using WinRT.Interop;
 using WhispUI.Controls;
 using WhispUI.Interop;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Shell;
 
@@ -57,7 +58,7 @@ public sealed partial class HudOverlayWindow : Window
         _hwnd = WindowNative.GetWindowHandle(this);
 
         SystemBackdrop = null;
-        Title = "WhispUI Overlay";
+        Title = Loc.Get("HudOverlay_WindowTitle");
         IconAssets.ApplyToWindow(AppWindow);
 
         var presenter = OverlappedPresenter.Create();

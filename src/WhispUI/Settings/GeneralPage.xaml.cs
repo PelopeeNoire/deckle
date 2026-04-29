@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using WhispUI.Interop;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Settings.ViewModels;
 using Windows.Storage.Pickers;
@@ -78,7 +79,7 @@ public sealed partial class GeneralPage : Page
     private void PopulateAudioInputDevices()
     {
         AudioInputCombo.Items.Clear();
-        AudioInputCombo.Items.Add("System default");
+        AudioInputCombo.Items.Add(Loc.Get("Settings_AudioInput_SystemDefault"));
 
         uint numDevs = NativeMethods.waveInGetNumDevs();
         for (uint i = 0; i < numDevs; i++)
@@ -86,7 +87,7 @@ public sealed partial class GeneralPage : Page
             var caps = new NativeMethods.WAVEINCAPSW();
             uint err = NativeMethods.waveInGetDevCapsW(i, ref caps,
                 (uint)System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.WAVEINCAPSW>());
-            string name = err == 0 ? caps.szPname : $"Device {i}";
+            string name = err == 0 ? caps.szPname : Loc.Format("Settings_AudioInput_Device_Format", i);
             AudioInputCombo.Items.Add(name);
         }
 
@@ -431,10 +432,10 @@ public sealed partial class GeneralPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = this.XamlRoot,
-            Title = "Restore settings?",
-            Content = $"This will overwrite your current settings with the snapshot from {latest.DisplayName}. Your current settings will not be saved unless you back them up first.",
-            PrimaryButtonText = "Restore",
-            CloseButtonText = "Cancel",
+            Title = Loc.Get("Settings_RestoreDialog_Title"),
+            Content = Loc.Format("Settings_RestoreDialog_Content_Format", latest.DisplayName),
+            PrimaryButtonText = Loc.Get("Settings_RestoreDialog_PrimaryButton"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
 

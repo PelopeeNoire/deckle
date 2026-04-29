@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Setup;
 
@@ -38,21 +39,20 @@ internal sealed partial class SummaryPage : Page
         bool ok = _context.AllSucceeded;
 
         setup.SetStepHeader(
-            ok ? "All set" : "Some items could not be installed",
-            ok ? "Dependencies installed. The app is ready to use."
-               : "Review the issues below and either retry or quit.");
+            Loc.Get(ok ? "Setup_StepTitle_Summary_Success"    : "Setup_StepTitle_Summary_Failure"),
+            Loc.Get(ok ? "Setup_StepSubtitle_Summary_Success" : "Setup_StepSubtitle_Summary_Failure"));
         setup.SetBackEnabled(false);
         setup.SetNextVisible(true);
         setup.SetNextEnabled(true);
-        setup.SetNextLabel(ok ? "Get started" : "Retry");
+        setup.SetNextLabel(Loc.Get(ok ? "Setup_NextLabel_GetStarted" : "Setup_NextLabel_Retry"));
         setup.SetCancelVisible(!ok);
         setup.NextRequested += OnNextRequested;
 
         ResultBar.Severity = ok ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
-        ResultBar.Title    = ok ? "Installation complete" : "Installation incomplete";
+        ResultBar.Title    = Loc.Get(ok ? "Setup_Result_CompleteTitle" : "Setup_Result_IncompleteTitle");
         ResultBar.Message  = ok
-            ? $"Stored under {_context.Location}."
-            : $"{CountFailed(_context)} of {_context.Results.Count} item(s) failed.";
+            ? Loc.Format("Setup_Result_StoredUnder_Format", _context.Location)
+            : Loc.Format("Setup_Result_FailedCount_Format", CountFailed(_context), _context.Results.Count);
 
         RenderResults();
 
@@ -115,8 +115,10 @@ internal sealed partial class SummaryPage : Page
         });
 
         string detail = r.Success
-            ? (r.Bytes is long b ? FormatBytes(b) + " installed" : "installed")
-            : r.ErrorMessage ?? "unknown error";
+            ? (r.Bytes is long b
+                ? Loc.Format("Setup_Result_Detail_BytesInstalled_Format", FormatBytes(b))
+                : Loc.Get("Setup_Result_Detail_Installed"))
+            : r.ErrorMessage ?? Loc.Get("Setup_Install_UnknownError");
 
         stack.Children.Add(new TextBlock
         {

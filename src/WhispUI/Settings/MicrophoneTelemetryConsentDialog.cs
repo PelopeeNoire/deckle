@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Localization;
 using WhispUI.Logging;
 
 namespace WhispUI.Settings;
@@ -15,10 +16,9 @@ namespace WhispUI.Settings;
 // "Don't show again", no severity icon. The user is explicitly authorizing
 // a diagnostic capture to their own filesystem.
 //
-// Copy stays direct: the JSONL row is dense enough to look intimidating
-// and the feature is a calibration tool, not a permanent capture. Users
-// usually flip it on for a few sessions, find their dBFS window, then
-// turn it back off.
+// Wording: all strings via Loc.Get / Resources.resw. The where path stays
+// hardcoded with the literal microphone.jsonl filename — both are
+// filesystem identifiers, not copy.
 
 internal static class MicrophoneTelemetryConsentDialog
 {
@@ -31,30 +31,24 @@ internal static class MicrophoneTelemetryConsentDialog
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "WhispUI will log your microphone level distribution after " +
-                "every recording, so you can calibrate the HUD level window " +
-                "against the dBFS range your microphone actually produces."
+            Text = Loc.Get("MicrophoneTelemetryConsent_Body_Intro")
         });
 
         body.Children.Add(new TextBlock
         {
-            Text = "What gets captured",
+            Text = Loc.Get("Common_Consent_WhatHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "Only level statistics — minimum, percentiles (p10, p25, p50, " +
-                "p75, p90), maximum, and mean RMS — in dBFS. No audio. No " +
-                "transcription. No words. Nothing is sent over the network."
+            Text = Loc.Get("MicrophoneTelemetryConsent_Body_What")
         });
 
         body.Children.Add(new TextBlock
         {
-            Text = "Where it's stored",
+            Text = Loc.Get("Common_Consent_WhereHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
@@ -66,25 +60,22 @@ internal static class MicrophoneTelemetryConsentDialog
 
         body.Children.Add(new TextBlock
         {
-            Text = "Keep in mind",
+            Text = Loc.Get("Common_Consent_RemindHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "One short JSON line per recording — small file. Useful when " +
-                "calibrating, then turn it off. The same data also appears " +
-                "in the LogWindow under [RECORD] for live inspection."
+            Text = Loc.Get("MicrophoneTelemetryConsent_Body_Remind")
         });
 
         var dialog = new ContentDialog
         {
-            Title = "Enable microphone telemetry",
+            Title = Loc.Get("MicrophoneTelemetryConsent_Title"),
             Content = body,
-            PrimaryButtonText = "Enable",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.Get("Common_Enable"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root
         };
