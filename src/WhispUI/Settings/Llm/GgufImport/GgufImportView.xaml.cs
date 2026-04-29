@@ -29,6 +29,13 @@ public sealed partial class GgufImportView : UserControl
     public GgufImportView()
     {
         InitializeComponent();
+
+        // Common_* keys are flat (no .Property suffix) by convention so they
+        // can be consumed via Loc.Get from C# without colliding with x:Uid
+        // scope rules. PRI rejects a key being both a value and a scope, so
+        // we don't expose Common_Browse via x:Uid — the button label is set
+        // here at construction time.
+        BrowseButton.Content = Loc.Get("Common_Browse");
     }
 
     internal void Initialize(OllamaService service, ContentDialog dialog)
