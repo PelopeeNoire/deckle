@@ -11,27 +11,24 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0"
-                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                       Text="Rewrite shortcuts" />
-            <HyperlinkButton Grid.Column="1"
+            <TextBlock x:Uid="LlmShortcutsHeader"
+                       Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+            <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                             Grid.Column="1"
                              VerticalAlignment="Bottom"
                              Margin="0,0,0,2"
-                             Content="Reset"
-                             ToolTipService.ToolTip="Reset this section to defaults"
                              Click="ResetSection_Click" />
         </Grid>
 
-        <controls:SettingsCard Header="Primary rewrite profile"
-                               Description="Profile triggered by Shift + Win + `."
+        <controls:SettingsCard x:Uid="LlmPrimarySlotCard"
                                HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
             <ComboBox x:Name="PrimaryRewriteProfileCombo"
                       MinWidth="200"
                       SelectionChanged="PrimaryRewriteProfileCombo_SelectionChanged" />
         </controls:SettingsCard>
 
-        <controls:SettingsCard Header="Secondary rewrite profile"
-                               Description="Profile triggered by Ctrl + Win + `. Pick (None) to leave this shortcut unbound."
+        <controls:SettingsCard x:Uid="LlmSecondarySlotCard"
                                HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
             <ComboBox x:Name="SecondaryRewriteProfileCombo"
                       MinWidth="200"

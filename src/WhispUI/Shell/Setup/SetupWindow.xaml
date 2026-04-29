@@ -45,19 +45,19 @@
             </Grid.ColumnDefinitions>
 
             <Button x:Name="CancelButton"
+                    x:Uid="SetupCancelButton"
                     Grid.Column="0"
-                    Content="Cancel"
                     Click="OnCancelClick" />
 
             <StackPanel Grid.Column="1"
                         Orientation="Horizontal"
                         Spacing="8">
                 <Button x:Name="BackButton"
-                        Content="Back"
+                        x:Uid="SetupBackButton"
                         Click="OnBackClick"
                         IsEnabled="False" />
                 <Button x:Name="NextButton"
-                        Content="Next"
+                        x:Uid="SetupNextButton"
                         Style="{ThemeResource AccentButtonStyle}"
                         Click="OnNextClick" />
             </StackPanel>
