@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Setup;
 
@@ -108,7 +109,7 @@ internal sealed partial class SetupWindow : Window
         ExtendsContentIntoTitleBar = true;
         if (AppWindow is { } appWindow)
         {
-            appWindow.Title = "WhispUI Setup";
+            appWindow.Title = Loc.Get("Setup_WindowTitle");
 
             var area = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Primary);
             if (area is not null)

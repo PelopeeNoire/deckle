@@ -1,6 +1,7 @@
 using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Localization;
 
 namespace WhispUI.Settings.Llm;
 
@@ -107,13 +108,10 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
     {
         var dialog = new ContentDialog
         {
-            Title = "Reset shortcuts to (None)?",
-            Content =
-                "Both rewrite shortcuts will be unbound. The hotkeys keep " +
-                "working — they'll just trigger a transcription without a " +
-                "rewrite until you assign a profile again.",
-            PrimaryButtonText = "Reset",
-            CloseButtonText = "Cancel",
+            Title = Loc.Get("Settings_ResetShortcutsDialog_Title"),
+            Content = Loc.Get("Settings_ResetShortcutsDialog_Content"),
+            PrimaryButtonText = Loc.Get("Common_Reset"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = this.XamlRoot
         };

@@ -4,14 +4,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
-        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                   Text="Models" />
+        <TextBlock x:Uid="LlmModelsHeader"
+                   Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
-        <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+        <TextBlock x:Uid="LlmModelsBody"
+                   Style="{StaticResource BodyTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
-                   Margin="1,0,0,8"
-                   Text="Models available in your local Ollama instance. Use the import button to create a model from a GGUF file with the correct chat template." />
+                   Margin="1,0,0,8" />
 
         <InfoBar x:Name="ErrorBar"
                  Severity="Error"
@@ -27,13 +27,13 @@
                     Spacing="8"
                     Margin="0,4,0,0">
             <Button x:Name="ImportGgufButton"
-                    Content="Import GGUF"
+                    x:Uid="LlmImportGgufButton"
                     Click="ImportGguf_Click" />
             <Button x:Name="RefreshModelsButton"
                     Click="RefreshModels_Click">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE72C;" FontSize="14" />
-                    <TextBlock Text="Refresh" />
+                    <TextBlock x:Uid="LlmRefreshLabel" />
                 </StackPanel>
             </Button>
         </StackPanel>

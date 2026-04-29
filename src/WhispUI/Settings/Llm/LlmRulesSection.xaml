@@ -10,25 +10,23 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0"
-                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                       Text="Auto-rewrite rules" />
-            <HyperlinkButton Grid.Column="1"
+            <TextBlock x:Uid="LlmRulesHeader"
+                       Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+            <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                             Grid.Column="1"
                              VerticalAlignment="Bottom"
                              Margin="0,0,0,2"
-                             Content="Reset"
-                             ToolTipService.ToolTip="Reset this section to defaults"
                              Click="ResetSection_Click" />
         </Grid>
 
-        <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+        <TextBlock x:Uid="LlmRulesBody"
+                   Style="{StaticResource BodyTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
-                   Margin="1,0,0,8"
-                   Text="When you use the plain transcription shortcut (Alt+`), long recordings are automatically rewritten. Pick the metric that drives the rule below, then define thresholds." />
+                   Margin="1,0,0,8" />
 
-        <controls:SettingsCard Header="Rule metric"
-                               Description="Word count reflects LLM context load more directly than wall-clock duration.">
+        <controls:SettingsCard x:Uid="LlmRulesMetricCard">
             <RadioButtons x:Name="MetricRadios"
                           SelectionChanged="MetricRadios_SelectionChanged"
                           MaxColumns="2">

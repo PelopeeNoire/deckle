@@ -17,22 +17,21 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0"
-                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}"
-                       Text="Profiles" />
-            <HyperlinkButton Grid.Column="1"
+            <TextBlock x:Uid="LlmProfilesHeader"
+                       Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+            <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                             Grid.Column="1"
                              VerticalAlignment="Bottom"
                              Margin="0,0,0,2"
-                             Content="Reset"
-                             ToolTipService.ToolTip="Reset this section to defaults"
                              Click="ResetSection_Click" />
         </Grid>
 
-        <TextBlock Style="{StaticResource BodyTextBlockStyle}"
+        <TextBlock x:Uid="LlmProfilesBody"
+                   Style="{StaticResource BodyTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
-                   Margin="1,0,0,8"
-                   Text="Each profile pairs an Ollama model with a system prompt tailored to a specific rewriting style. Expand a profile to edit its prompt." />
+                   Margin="1,0,0,8" />
 
         <ItemsRepeater ItemsSource="{x:Bind Profiles}">
             <ItemsRepeater.Layout>
@@ -169,7 +168,7 @@
             </ItemsRepeater.ItemTemplate>
         </ItemsRepeater>
 
-        <Button Content="Add profile"
+        <Button x:Uid="LlmAddProfileButton"
                 Click="AddProfile_Click"
                 Margin="0,4,0,0" />
     </StackPanel>

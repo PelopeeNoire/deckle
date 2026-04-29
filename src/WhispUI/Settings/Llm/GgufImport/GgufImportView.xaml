@@ -5,23 +5,21 @@
 
     <StackPanel Spacing="12" MinWidth="450">
         <TextBox x:Name="NameBox"
-                 Header="Model name"
-                 PlaceholderText="my-model:latest"
+                 x:Uid="GgufNameBox"
                  HorizontalAlignment="Stretch" />
 
         <StackPanel Spacing="8">
             <TextBox x:Name="PathBox"
-                     Header="GGUF file path"
-                     PlaceholderText="Click Browse to pick a .gguf file"
+                     x:Uid="GgufPathBox"
                      IsReadOnly="True"
                      HorizontalAlignment="Stretch" />
             <Button x:Name="BrowseButton"
-                    Content="Browse..."
+                    x:Uid="Common_Browse"
                     Click="BrowseButton_Click" />
         </StackPanel>
 
         <TextBox x:Name="TemplateBox"
-                 Header="Template (optional)"
+                 x:Uid="GgufTemplateBox"
                  AcceptsReturn="True"
                  TextWrapping="Wrap"
                  MinHeight="80"
@@ -30,26 +28,25 @@
                  PlaceholderText="{}{{ if .System }}...{{ end }}{{ .Prompt }}..."
                  HorizontalAlignment="Stretch" />
 
-        <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+        <TextBlock x:Uid="GgufTemplateBody"
+                   Style="{StaticResource CaptionTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
-                   Margin="0,-4,0,0"
-                   Text="Go template that structures messages for the model. Copy from the model's page on HuggingFace or ollama.com. Leave empty to use the model's built-in template if available." />
+                   Margin="0,-4,0,0" />
 
         <TextBox x:Name="SystemPromptBox"
-                 Header="System prompt (optional)"
+                 x:Uid="GgufSystemPromptBox"
                  AcceptsReturn="True"
                  TextWrapping="Wrap"
                  MinHeight="60"
                  MaxHeight="150"
-                 PlaceholderText="Default behavior for this model..."
                  HorizontalAlignment="Stretch" />
 
-        <TextBlock Style="{StaticResource CaptionTextBlockStyle}"
+        <TextBlock x:Uid="GgufSystemPromptBody"
+                   Style="{StaticResource CaptionTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    TextWrapping="Wrap"
-                   Margin="0,-4,0,0"
-                   Text="Embedded in the model. Overridden by the profile's system prompt if one is set." />
+                   Margin="0,-4,0,0" />
 
         <ProgressBar x:Name="ProgressBarControl"
                      IsIndeterminate="True"

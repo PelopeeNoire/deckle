@@ -15,7 +15,7 @@
              "NavigationView → Pane" : slot dédié AutoSuggestBox). -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
-                  Title="WhispUI Settings">
+                  x:Uid="SettingsTitleBar">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
@@ -34,19 +34,19 @@
                         ItemInvoked="OnNavItemInvoked">
 
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="General"
+                <NavigationViewItem x:Uid="SettingsNavGeneral"
                                     Tag="WhispUI.Settings.GeneralPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Transcription"
+                <NavigationViewItem x:Uid="SettingsNavTranscription"
                                     Tag="WhispUI.Settings.WhisperPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF61F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Rewriting"
+                <NavigationViewItem x:Uid="SettingsNavRewriting"
                                     Tag="WhispUI.Settings.LlmPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF6C7;" />
@@ -59,7 +59,7 @@
                      SelectsOnInvoked=False → pas de sélection persistante,
                      pas de navigation Frame, on récupère le clic via
                      ItemInvoked. -->
-                <NavigationViewItem Content="Logs"
+                <NavigationViewItem x:Uid="SettingsNavLogs"
                                     Tag="logs"
                                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>

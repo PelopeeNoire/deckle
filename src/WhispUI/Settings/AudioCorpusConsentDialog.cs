@@ -2,6 +2,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Localization;
 using WhispUI.Logging;
 
 namespace WhispUI.Settings;
@@ -15,6 +16,10 @@ namespace WhispUI.Settings;
 //
 // Cancelling reverts the toggle. Same pattern as CorpusConsentDialog, just
 // different copy.
+//
+// Wording: all strings via Loc.Get / Resources.resw. The where path stays
+// hardcoded — it's a filesystem path with a literal <profile> placeholder
+// for the user, not copy that should ever be translated.
 
 internal static class AudioCorpusConsentDialog
 {
@@ -28,32 +33,24 @@ internal static class AudioCorpusConsentDialog
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "WhispUI will save the raw microphone audio of every " +
-                "transcription as a 16 kHz mono WAV file, next to the " +
-                "JSONL text corpus under an audio/ subfolder per profile. " +
-                "Useful for replaying a past session against a different " +
-                "Whisper model or prompt."
+            Text = Loc.Get("AudioCorpusConsent_Body_Intro")
         });
 
         body.Children.Add(new TextBlock
         {
-            Text = "What gets captured",
+            Text = Loc.Get("Common_Consent_WhatHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "The exact audio passed to whisper.cpp — including any " +
-                "silence and background noise picked up by the microphone. " +
-                "One WAV per transcription. Nothing is sent over the network."
+            Text = Loc.Get("AudioCorpusConsent_Body_What")
         });
 
         body.Children.Add(new TextBlock
         {
-            Text = "Where it's stored",
+            Text = Loc.Get("Common_Consent_WhereHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
@@ -65,26 +62,22 @@ internal static class AudioCorpusConsentDialog
 
         body.Children.Add(new TextBlock
         {
-            Text = "Keep in mind",
+            Text = Loc.Get("Common_Consent_RemindHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "Voice recordings are biometric-adjacent and the files can " +
-                "be replayed verbatim. Review and purge the folder " +
-                "regularly, and exclude it from any backup target you " +
-                "don't control."
+            Text = Loc.Get("AudioCorpusConsent_Body_Remind")
         });
 
         var dialog = new ContentDialog
         {
-            Title = "Enable audio corpus",
+            Title = Loc.Get("AudioCorpusConsent_Title"),
             Content = body,
-            PrimaryButtonText = "Enable",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.Get("Common_Enable"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root
         };

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using WinRT.Interop;
 using WhispUI.Controls;
 using WhispUI.Interop;
+using WhispUI.Localization;
 using WhispUI.Logging;
 using WhispUI.Shell;
 
@@ -91,7 +92,7 @@ public sealed partial class HudWindow : Window
 
         // Title + icon kept consistent with the other windows. Title is not
         // visible (no title bar) but surfaces in alt-tab / Task View / debug.
-        Title = "WhispUI Recording";
+        Title = Loc.Get("Hud_WindowTitle");
         IconAssets.ApplyToWindow(AppWindow);
 
         var presenter = OverlappedPresenter.Create();
@@ -196,7 +197,7 @@ public sealed partial class HudWindow : Window
 
     public void ShowPasted() =>
         EnqueueUI(() => SetState(HudState.Message,
-            new MessagePayload(MessageKind.Success, "Pasted", string.Empty,
+            new MessagePayload(MessageKind.Success, Loc.Get("Hud_Pasted_Title"), string.Empty,
                 UserFeedbackDurations.Success)));
 
     // "Copied to clipboard" is a *success* outcome — the transcription
@@ -207,7 +208,7 @@ public sealed partial class HudWindow : Window
     public void ShowCopied() =>
         EnqueueUI(() => SetState(HudState.Message,
             new MessagePayload(MessageKind.Success,
-                "Copied to clipboard", "Ctrl+V where you want it.",
+                Loc.Get("Hud_Copied_Title"), Loc.Get("Hud_Copied_Hint"),
                 UserFeedbackDurations.Success)));
 
     public void ShowUserFeedback(UserFeedback fb)

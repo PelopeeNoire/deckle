@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using WhispUI.Localization;
 using WhispUI.Logging;
 
 namespace WhispUI.Settings;
@@ -15,8 +16,8 @@ namespace WhispUI.Settings;
 // "Don't show again", no severity icon. The user is explicitly authorizing
 // a diagnostic capture to their own filesystem.
 //
-// Copy is kept direct: the log is chatty, it grows fast in steady-state, and
-// the feature exists to chase a specific problem — not to run permanently.
+// Wording: all strings via Loc.Get / Resources.resw. The where path stays
+// hardcoded — it's a filesystem path, not copy.
 
 internal static class ApplicationLogConsentDialog
 {
@@ -29,32 +30,24 @@ internal static class ApplicationLogConsentDialog
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "WhispUI will mirror every in-app log line to a local JSONL " +
-                "file (app.jsonl) so you can diagnose a specific issue " +
-                "across restarts."
+            Text = Loc.Get("ApplicationLogConsent_Body_Intro")
         });
 
         body.Children.Add(new TextBlock
         {
-            Text = "What gets captured",
+            Text = Loc.Get("Common_Consent_WhatHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "Every log line from every subsystem — capture, VAD, Whisper, " +
-                "rewriting, clipboard, paste, UI — at every verbosity level. " +
-                "Log messages can include partial transcription text when a " +
-                "pipeline step logs what it just produced. Nothing is sent " +
-                "over the network."
+            Text = Loc.Get("ApplicationLogConsent_Body_What")
         });
 
         body.Children.Add(new TextBlock
         {
-            Text = "Where it's stored",
+            Text = Loc.Get("Common_Consent_WhereHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
@@ -66,26 +59,22 @@ internal static class ApplicationLogConsentDialog
 
         body.Children.Add(new TextBlock
         {
-            Text = "Keep in mind",
+            Text = Loc.Get("Common_Consent_RemindHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
         });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "The log is chatty — expect roughly 2 MB per 30 minutes of " +
-                "active use. It rotates every 5000 lines (app-1.jsonl, " +
-                "app-2.jsonl, …) with no cap on archives, so turn it off " +
-                "once you have what you need and prune the archives by hand."
+            Text = Loc.Get("ApplicationLogConsent_Body_Remind")
         });
 
         var dialog = new ContentDialog
         {
-            Title = "Enable application log",
+            Title = Loc.Get("ApplicationLogConsent_Title"),
             Content = body,
-            PrimaryButtonText = "Enable",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.Get("Common_Enable"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root
         };
