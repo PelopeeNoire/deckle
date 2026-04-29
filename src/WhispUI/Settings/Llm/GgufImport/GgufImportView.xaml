@@ -14,7 +14,6 @@
                      IsReadOnly="True"
                      HorizontalAlignment="Stretch" />
             <Button x:Name="BrowseButton"
-                    x:Uid="Common_Browse"
                     Click="BrowseButton_Click" />
         </StackPanel>
 
