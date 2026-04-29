@@ -147,6 +147,15 @@ espaces ni accents. `--` entre segments, `-` à l'intérieur. Version :
 
 Types valides : `architecture`, `reference`, `nomenclature`,
 `specification`, `ressource`, `astuce`.
+
+**Piège XML.** Ces noms contiennent `--`, séquence interdite dans un
+commentaire XML par la spec XML 1.0 (parser MSBuild lève `MSB4025` au
+build). Conséquence : ne jamais citer un nom de fichier doc tel quel
+dans un commentaire `<!-- ... -->` d'un csproj, d'un manifest, d'un
+`.xaml` ou d'un `.resw`. Paraphraser sans `--` (« voir la référence
+localisation sous `docs/` ») plutôt que mettre le nom exact. Même
+règle pour toute autre chaîne contenant `--` (séparateur d'option CLI,
+flag de diff, etc.).
 </conventions>
 
 <environment>
