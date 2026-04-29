@@ -29,6 +29,15 @@ public sealed class TelemetryService
     private readonly List<ITelemetrySink> _sinks = new();
     private readonly object _sinkLock = new();
 
+    // Rolling history buffer — every emitted event is appended here under
+    // the same lock as the sink list. Lets a sink registered late (e.g.
+    // LogWindow created lazily on first user open) replay the boot history
+    // via Replay(sink). Cap is FIFO; oldest events drop when exceeded.
+    // Source unique : LogWindow's own _entries buffer (5000) is for UI
+    // filtering after the fact, this one is the canonical replay source.
+    private readonly List<TelemetryEvent> _history = new(capacity: HistoryCap);
+    private const int HistoryCap = 5000;
+
     public string SessionId { get; }
 
     private TelemetryService()
@@ -50,6 +59,23 @@ public sealed class TelemetryService
     public void RemoveSink(ITelemetrySink sink)
     {
         lock (_sinkLock) _sinks.Remove(sink);
+    }
+
+    // Replays the buffered history into a single sink. Intended for sinks
+    // registered after the boot — the canonical use case is LogWindow's
+    // lazy creation on first user open: AddSink then Replay so the
+    // viewer shows everything since process start, not just events
+    // arriving after the open. Snapshots under lock, dispatches outside —
+    // same posture as Emit, a slow sink can't block other emissions.
+    public void Replay(ITelemetrySink sink)
+    {
+        TelemetryEvent[] snapshot;
+        lock (_sinkLock) snapshot = _history.ToArray();
+        foreach (var ev in snapshot)
+        {
+            try { sink.Write(ev); }
+            catch { /* A sink must never crash the caller. */ }
+        }
     }
 
     // ── Log ────────────────────────────────────────────────────────────────
@@ -139,7 +165,15 @@ public sealed class TelemetryService
     private void Emit(TelemetryEvent ev)
     {
         ITelemetrySink[] snapshot;
-        lock (_sinkLock) snapshot = _sinks.ToArray();
+        lock (_sinkLock)
+        {
+            // History append under the same lock as the sink snapshot —
+            // guarantees that a Replay() called concurrently sees a
+            // consistent view (no event split across snapshot/append).
+            _history.Add(ev);
+            if (_history.Count > HistoryCap) _history.RemoveAt(0);
+            snapshot = _sinks.ToArray();
+        }
 
         foreach (var sink in snapshot)
         {

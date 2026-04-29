@@ -89,7 +89,11 @@ public sealed partial class PlaygroundWindow : Window
     private bool _simulateChangedDigits = true;
 
     private Target _currentTarget = Target.Transcribing;
-    private bool   _isPlaying     = true;
+    // Pause par défaut : la fenêtre s'ouvre sans animation, l'utilisateur
+    // appuie sur Play pour démarrer. Cohérent avec la consigne "au départ
+    // il ne doit y avoir rien" et la mise en pause systématique forcée à
+    // chaque ShowAndActivate (cf. ce constructeur de classe).
+    private bool   _isPlaying     = false;
 
     // ── Rebuild debounce ────────────────────────────────────────────────
     //
@@ -224,6 +228,14 @@ public sealed partial class PlaygroundWindow : Window
         {
             op.Restore();
         }
+
+        // Reset to Pause systematically on each show — état connu et
+        // prévisible à chaque réouverture, indépendant de ce que
+        // l'utilisateur a laissé en quittant. Le SelectionChanged
+        // déclenche OnPlayPauseSelectionChanged → _isPlaying = false →
+        // ApplyTarget() collapse la preview. Si déjà sur 1, no-op.
+        if (PlayPauseGroup.SelectedIndex != 1)
+            PlayPauseGroup.SelectedIndex = 1;
 
         AppWindow.Show();
         this.Activate();
@@ -456,11 +468,11 @@ public sealed partial class PlaygroundWindow : Window
 
         // HudChrono static mutables tuned via the Swipe + Audio mapping
         // expanders — the same values the individual Reset* methods use.
-        HudChrono.SwipeCycleSeconds = 1.6f;
+        HudChrono.SwipeCycleSeconds = 3.0f;
         HudChrono.SwipeEaseP1       = new Vector2(0.5f, 0f);
         HudChrono.SwipeEaseP2       = new Vector2(0.2f, 1f);
         HudChrono.SwipeRiseAlpha    = 0.1f;
-        HudChrono.SwipeDecayAlpha   = 0.05f;
+        HudChrono.SwipeDecayAlpha   = 0.025f;
         HudChrono.EmaAlpha          = 0.25f;
         HudChrono.MinDbfs           = -55f;
         HudChrono.MaxDbfs           = -32f;
@@ -677,11 +689,11 @@ public sealed partial class PlaygroundWindow : Window
 
     private void ResetSwipe()
     {
-        HudChrono.SwipeCycleSeconds = 2.0f;
+        HudChrono.SwipeCycleSeconds = 3.0f;
         HudChrono.SwipeEaseP1       = new Vector2(0.7f, 0f);
         HudChrono.SwipeEaseP2       = new Vector2(0.1f, 1f);
         HudChrono.SwipeRiseAlpha    = 0.05f;
-        HudChrono.SwipeDecayAlpha   = 0.015f;
+        HudChrono.SwipeDecayAlpha   = 0.025f;
         _simulateChangedDigits      = true;
         RebuildTuningPanel();
         ApplyTarget();

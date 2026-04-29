@@ -132,11 +132,17 @@ public sealed partial class LogWindow : Window, ITelemetrySink
         AppWindow.SetPresenter(presenter);
 
         // Close → hide, don't destroy. The instance is reused via tray.
+        // SW_HIDE Win32 plutôt que AppWindow.Hide() : l'API haut niveau
+        // ne suspend pas systématiquement le swap chain DComp côté DWM,
+        // ce qui maintient la fenêtre dans le visual tree compositeur
+        // même cachée. SW_HIDE force la voie Win32 que DWM honore.
+        // Pattern aligné avec SettingsWindow.
         AppWindow.Closing += (_, args) =>
         {
             args.Cancel = true;
             _isVisible = false;
-            AppWindow.Hide();
+            var hwnd = WindowNative.GetWindowHandle(this);
+            NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
         };
 
         // Responsive TitleBar search (Task Manager pattern).

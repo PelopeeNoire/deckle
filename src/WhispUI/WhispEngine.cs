@@ -130,7 +130,9 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Configuration ─────────────────────────────────────────────────────────
 
-    const string MODEL_FILE = "ggml-large-v3.bin";
+    // Default model filename — sourced from the Setup catalog so the engine
+    // and the first-run wizard agree on which file the engine targets.
+    private const string MODEL_FILE = Setup.SpeechModels.DefaultModelFileName;
 
     // ── Internal state ───────────────────────────────────────────────────────
 

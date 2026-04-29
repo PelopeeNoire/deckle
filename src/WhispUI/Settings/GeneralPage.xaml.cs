@@ -383,6 +383,26 @@ public sealed partial class GeneralPage : Page
         }
     }
 
+    // Re-opens the first-run wizard on demand. Used to swap the Whisper
+    // model (Browse + download) or replace the native runtime without
+    // wiping <UserDataRoot>. The wizard runs detached from the Settings
+    // window — Settings stays open behind it.
+    private void ReRunSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var setup = new Shell.Setup.SetupWindow();
+            setup.Body.Navigate(typeof(Shell.Setup.ChoicesPage), setup);
+            setup.Activate();
+            _log.Info(LogSource.SetGeneral, "setup window opened from Settings");
+        }
+        catch (Exception ex)
+        {
+            _log.Error(LogSource.SetGeneral,
+                $"open setup window failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     // ── Backup ──────────────────────────────────────────────────────────────
     //
     // PowerToys-style: a single SettingsExpander, two header actions
