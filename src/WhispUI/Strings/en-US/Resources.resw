@@ -143,9 +143,6 @@
   <data name="Common_Browse" xml:space="preserve">
     <value>Browse...</value>
   </data>
-  <data name="Common_Browse.Content" xml:space="preserve">
-    <value>Browse...</value>
-  </data>
 
   <!-- ─── Consent dialogs ────────────────────────────────────────────
        Opt-in prompts for local data capture. Each dialog follows the
