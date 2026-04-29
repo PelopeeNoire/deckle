@@ -85,7 +85,10 @@ public sealed class SettingsService
                 var defaults = new AppSettings();
                 MigrateProfileIds(defaults);
                 File.WriteAllText(_configPath, JsonSerializer.Serialize(defaults, _jsonOptions));
-                LogService.Instance.Info(LogSource.Settings,
+                // Doctrine logging : Info = jalon en phrase Capital courte ;
+                // détails techniques (path, source) en Verbose miroir.
+                LogService.Instance.Info(LogSource.Settings, "Settings initialized (defaults)");
+                LogService.Instance.Verbose(LogSource.Settings,
                     $"load complete | source=defaults | path={_configPath} | reason=file_missing");
                 return defaults;
             }
@@ -103,7 +106,11 @@ public sealed class SettingsService
 
             var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
             if (MigrateProfileIds(parsed)) migrated = true;
+            // Doctrine logging : Info = jalon en phrase Capital courte ;
+            // détails techniques (path, bytes, migration flag) en Verbose miroir.
             LogService.Instance.Info(LogSource.Settings,
+                migrated ? "Settings loaded (migrated)" : "Settings loaded");
+            LogService.Instance.Verbose(LogSource.Settings,
                 $"load complete | source=disk | path={_configPath} | bytes={json.Length} | migrated={migrated}");
             return parsed;
         }
