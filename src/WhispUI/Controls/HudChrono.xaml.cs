@@ -63,6 +63,17 @@ public sealed partial class HudChrono : UserControl
     {
         InitializeComponent();
 
+        // Pre-init des tableaux _digitPrimary / _digitAccent dès le ctor.
+        // Sans ça, ClearDigitHeat() (appelé par ApplyCharging au cold boot
+        // pendant le chargement modèle) early-return sur le null check
+        // l. ~226-233 et ne reset pas les opacités → rendu blanc/vide au
+        // lieu de "00.00.00" en couleur tertiaire (régression introduite
+        // par 7707f09 "fix(hud): complementary digit opacities", qui
+        // ajoute les accès sans garantir l'init préalable). EnsureSwipeInfra
+        // est idempotent (guard `if (_digitPrimary is null)` l. 751), donc
+        // l'appel ici n'a aucun coût quand StartSwipe() le rappelle.
+        EnsureSwipeInfra();
+
         ChronoRoot.ActualThemeChanged += (_, _) =>
         {
             // Accent TextBlocks bind Foreground via {ThemeResource …} in
@@ -734,8 +745,8 @@ public sealed partial class HudChrono : UserControl
     // `public static` (not const / readonly) so HudPlayground can tune
     // the cadence, easing, and rise/decay alphas live.
     public static float   SwipeCycleSeconds = 4.0f;
-    public static Vector2 SwipeEaseP1       = new(0.8f, 0f);
-    public static Vector2 SwipeEaseP2       = new(0.4f, 1f);
+    public static Vector2 SwipeEaseP1       = new(0f, 2f);
+    public static Vector2 SwipeEaseP2       = new(1f, -1f);
     public static float   SwipeRiseAlpha    = 0.1f;
     public static float   SwipeDecayAlpha   = 0.05f;
 
