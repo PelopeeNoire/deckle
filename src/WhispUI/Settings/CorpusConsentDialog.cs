@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
+using WhispUI.Localization;
 using WhispUI.Logging;
 
 namespace WhispUI.Settings;
@@ -14,6 +15,10 @@ namespace WhispUI.Settings;
 // This is a consent prompt, not a warning: no "Don't show again", no
 // severity icon. The user is explicitly authorizing data capture to their
 // own filesystem.
+//
+// Wording: all user-facing strings are loaded from Resources.resw via
+// Loc.Get. The corpus.jsonl path (`where`) stays hardcoded — it's a
+// filesystem path, not copy. See docs/reference--localization--0.1.md.
 
 internal static class CorpusConsentDialog
 {
@@ -26,34 +31,26 @@ internal static class CorpusConsentDialog
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "WhispUI will append every transcription to a local JSONL " +
-                "file — one folder per rewrite profile, one corpus.jsonl " +
-                "inside each — so you can iterate on your rewrite prompts " +
-                "offline."
+            Text = Loc.Get("CorpusConsent_Body_Intro")
         });
 
-        var whatHeader = new TextBlock
+        body.Children.Add(new TextBlock
         {
-            Text = "What gets captured",
+            Text = Loc.Get("CorpusConsent_Body_WhatHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
-        };
-        body.Children.Add(whatHeader);
+        });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "Raw transcription text, rewritten text, timing, model " +
-                "and prompt identifiers. Nothing is sent over the network."
+            Text = Loc.Get("CorpusConsent_Body_What")
         });
 
-        var whereHeader = new TextBlock
+        body.Children.Add(new TextBlock
         {
-            Text = "Where it's stored",
+            Text = Loc.Get("CorpusConsent_Body_WhereHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
-        };
-        body.Children.Add(whereHeader);
+        });
 
         body.Children.Add(new TextBlock
         {
@@ -61,28 +58,24 @@ internal static class CorpusConsentDialog
             Text = where
         });
 
-        var reminderHeader = new TextBlock
+        body.Children.Add(new TextBlock
         {
-            Text = "Keep in mind",
+            Text = Loc.Get("CorpusConsent_Body_RemindHeader"),
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"]
-        };
-        body.Children.Add(reminderHeader);
+        });
 
         body.Children.Add(new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
-            Text =
-                "Transcriptions may contain sensitive content. Review and " +
-                "purge the files periodically, and exclude them from any " +
-                "backup target you don't control."
+            Text = Loc.Get("CorpusConsent_Body_Remind")
         });
 
         var dialog = new ContentDialog
         {
-            Title = "Enable corpus logging",
+            Title = Loc.Get("CorpusConsent_Title"),
             Content = body,
-            PrimaryButtonText = "Enable",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Loc.Get("Common_Enable"),
+            CloseButtonText = Loc.Get("Common_Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root
         };
