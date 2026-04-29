@@ -5,6 +5,12 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>WhispUI</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Neutral language for the MRT/PRI resource resolver. Without
+         this, Strings/en-US/Resources.resw is found at runtime but no
+         language is declared as fallback, which can leave x:Uid
+         lookups empty when the system display language doesn't match
+         en-US. See the localization reference under docs/. -->
+    <DefaultLanguage>en-US</DefaultLanguage>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWinUI>true</UseWinUI>
