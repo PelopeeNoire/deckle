@@ -246,8 +246,11 @@ public sealed partial class HudWindow : Window
     // also be cold-free.
     //
     // No off-screen relocation : per project memory the warm appears at the
-    // real position. The brief boot flash is accepted as the price of a
-    // cold-free first hotkey.
+    // real position. Visibility is suppressed via WS_EX_LAYERED alpha=0 so the
+    // composition runs (DComp swap chain, font shaping, visual tree) but
+    // nothing reaches the screen — the user sees no flash. SetState(Hidden)
+    // resets alpha to MAX_ALPHA via SetAlphaImmediate, so the next real Show
+    // starts with a fully opaque layered window.
     public void PrimeAndHide()
     {
         if (!DispatcherQueue.HasThreadAccess)
@@ -256,7 +259,7 @@ public sealed partial class HudWindow : Window
             return;
         }
 
-        SetState(HudState.Charging, bypassGate: true);
+        SetState(HudState.Charging, bypassGate: true, alphaOverride: 0);
 
         // Low priority fires after the next render pass — by the time it
         // runs the first frame has been presented and the cold-path costs
@@ -311,7 +314,10 @@ public sealed partial class HudWindow : Window
     // forwards to the control's ApplyState / Show, shows the (fixed-size)
     // window, and arms the auto-hide timer for messages.
 
-    private void SetState(HudState next, MessagePayload? msg = null, bool bypassGate = false)
+    // alphaOverride lets the warm pass force alpha=0 so the boot composition
+    // pass is invisible to the user (PrimeAndHide). Real shows leave it null
+    // and use MAX_ALPHA, exactly like before.
+    private void SetState(HudState next, MessagePayload? msg = null, bool bypassGate = false, byte? alphaOverride = null)
     {
         // Overlay disabled in Settings → no-op for any *visible* state. Hidden
         // still runs so an in-flight HUD gets cleared if the user toggles.
@@ -353,9 +359,15 @@ public sealed partial class HudWindow : Window
                 Message.Show(msg);
                 IconAssets.ApplyToWindow(AppWindow, recording: false);
                 ShowNoActivate();
-                SetAlphaImmediate(MAX_ALPHA);
-                _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
-                if (_proximityActive) UpdateProximity();
+                SetAlphaImmediate(alphaOverride ?? MAX_ALPHA);
+                // Warm pass (alphaOverride.HasValue) skips proximity: the
+                // cursor could be near the HUD region at boot, and an alpha
+                // recompute would defeat the alpha=0 invisibility.
+                if (!alphaOverride.HasValue)
+                {
+                    _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
+                    if (_proximityActive) UpdateProximity();
+                }
                 ArmMessageHideTimer(msg.Duration);
                 return;
 
@@ -368,9 +380,12 @@ public sealed partial class HudWindow : Window
                 Chrono.Visibility  = Visibility.Visible;
                 IconAssets.ApplyToWindow(AppWindow, recording: next == HudState.Recording);
                 ShowNoActivate();
-                SetAlphaImmediate(MAX_ALPHA);
-                _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
-                if (_proximityActive) UpdateProximity();
+                SetAlphaImmediate(alphaOverride ?? MAX_ALPHA);
+                if (!alphaOverride.HasValue)
+                {
+                    _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
+                    if (_proximityActive) UpdateProximity();
+                }
                 return;
         }
     }
