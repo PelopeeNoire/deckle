@@ -30,11 +30,11 @@ Plus `MessageKind { Success, Critical, Warning, Informational }` et `MessagePayl
 
 Toutes les transitions passent par `HudWindow.SetState(next, msg = null)`. Une seule source de verite — chaque appel public (`ShowPreparing`, `ShowRecording`, `SwitchToTranscribing`, `SwitchToRewriting`, `ShowError/Pasted/Copied/UserFeedback`, `Hide`) marshale un appel a `SetState`. Le dispatcher :
 
-1. Coupe les timers (auto-hide message + retract).
+1. Coupe les timers (auto-hide message + retract, et fade-in en cours).
 2. Toggle `Chrono.Visibility` / `Message.Visibility`.
 3. Forward au control concerne (`Chrono.ApplyState(state)` ou `Message.Show(payload)`).
 4. Recalcule la taille et la position via `ShowNoActivate` (DPI-aware).
-5. Reset alpha + arme la proximite si applicable.
+5. Applique l'alpha via `ApplyShowAlpha` : warm pass force, sinon fade-in 150 ms si on passe de Hidden a visible et que `Overlay.Animations` est on, sinon alpha instant. Active la proximite a la fin de la transition.
 6. Pour Message : arme `_messageHideTimer` (duration totale) et `_messageRetractTimer` (~800 ms si duration > 1 s).
 
 `HideSync` : variante bloquante via `ManualResetEventSlim` rendezvous, appelee juste avant `PasteFromClipboard` pour garantir que `SW_HIDE` est effectif avant que `SendInput` envoie le Ctrl+V (sinon la redistribution d'activation peut detourner le paste).
@@ -169,6 +169,39 @@ Note Message state : `_proximityActive = false` pendant un message, le fade est 
 - Creee une fois dans `OnLaunched`, jamais detruite (Closing->Cancel).
 - Handlers marshales via `DispatcherQueue.TryEnqueue` (events `WhispEngine` viennent de threads de fond).
 - Overlay desactivable dans Settings (`Overlay.Enabled`), verifie en tete de `SetState`.
+
+## Boot warm — invisible via layered alpha
+
+`PrimeAndHide()` est appelee une fois dans `App.OnLaunched` apres la creation de la `HudWindow`. Le but : payer le cout de la premiere composition (DComp swap chain, font shaping Bitcount, visual tree DWM) au boot plutot qu'au premier hotkey, pour que le first show reel soit cold-path-free.
+
+Forme actuelle (suivant le pattern propre alpha=0) :
+
+```csharp
+SetState(HudState.Charging, bypassGate: true, alphaOverride: 0);
+DispatcherQueue.TryEnqueue(Low, () => SetState(HudState.Hidden));
+```
+
+Mecanique :
+1. `SetState(Charging, alphaOverride: 0)` -> `ShowNoActivate()` (la fenetre est presentee, le compositor tourne) puis `SetAlphaImmediate(0)` -> couche layered transparente, rien n'arrive a l'ecran.
+2. Low priority dispatch -> `SetState(Hidden)` -> `SW_HIDE` + `SetAlphaImmediate(MAX_ALPHA)` -> alpha resette pour le prochain show reel.
+
+Effet : aucun flash visible au boot (cf. ancienne note "le flash boot est accepte" — caduque), aucun risque de premiere frame partielle (contour DWM sans contenu) qui aurait pu signaler un demarrage casse. Le warm fait son travail en silence.
+
+Le warm pass active `bypassGate: true` (le Settings `Overlay.Enabled` desactive ne doit pas court-circuiter le warm) et `alphaOverride.HasValue` empeche `ApplyShowAlpha` d'activer la proximite (un curseur present dans la zone HUD au boot pourrait sinon ecraser alpha=0 par smoothstep).
+
+Pas de relocation off-screen — le warm paye le cout de la composition exactement a la position reelle (DPI, work area, ancrage Settings).
+
+## Show real — fade-in 150ms
+
+Tout `Hidden -> visible` (Charging, Recording, Transcribing, Rewriting, Message) declenche un fade-in 150ms cubic ease-out (`1 - (1-t)^3`), aligne avec `WindowSlideAnimator` / `LayeredAlphaAnimator` du sous-systeme overlay. La transition centralisee dans `ApplyShowAlpha` :
+
+- `alphaOverride.HasValue` -> warm pass, alpha force, proximite skippee.
+- `!wasShown && AnimationSystemSetting.AreClientAreaAnimationsEnabled()` -> `StartFadeIn(MAX_ALPHA)`. Pendant le fade : `_proximityActive = false`. A la fin : reactivation proximite + appel immediat de `UpdateProximity`.
+- Sinon (state switch en deja-visible, ou animations off) -> `SetAlphaImmediate(MAX_ALPHA)` instant + proximite immediate.
+
+Implementation inline (timer dedie `_fadeInTimer`, ~60 fps) plutot que via `LayeredAlphaAnimator` pour conserver `_currentAlpha` comme source de verite unique cote `HudWindow` — l'instance partagee evite les desyncs avec le proximity fade.
+
+Gating via `Settings.Overlay.Animations` (et non `SPI_GETCLIENTAREAANIMATION`) pour la meme raison que le reste du sous-systeme HUD : les transitions HUD sont load-bearing pour suivre quel etat vient de remplacer quel autre, on ne se cale pas automatiquement sur la pref reduce-motion globale Windows.
 
 **Backdrop** : `DesktopAcrylicBackdrop` (materiau canonique des fenetres transient Win11). Signal DWM `DWMSBT_TRANSIENTWINDOW` pose explicitement (intention correcte cote doc, meme si l'ombre Shell riche des menus systeme n'est pas accessible aux WinUI 3 unpackaged — valide runtime 2026-04-09).
 

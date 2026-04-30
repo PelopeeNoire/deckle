@@ -113,11 +113,6 @@
                     <ToggleSwitch IsOn="{x:Bind ViewModel.AutostartEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
-                <controls:SettingsCard x:Uid="GeneralStartMinimizedCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
                 <controls:SettingsCard x:Uid="GeneralWarmupCard"
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
