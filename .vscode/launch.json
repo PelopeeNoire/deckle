@@ -1,14 +1,27 @@
 {
-    // WhispUI build profiles. Select from the Run and Debug panel (Ctrl+Shift+D),
+    // WhispUI launch profiles. Select from the Run and Debug panel (Ctrl+Shift+D),
     // then F5. Uses the PowerShell extension (ms-vscode.powershell).
     //
-    // Le profil "Pick" ouvre un menu flèches dans le terminal et liste tous
-    // les worktrees. VSCodium reste ouvert sur main, on choisit la branche
-    // à builder sans switcher.
+    // Le profil par défaut "Launcher" ouvre le menu deux étapes :
+    //   1) pick worktree (auto-skip si un seul)
+    //   2) pick action  : Build & run Debug/Release, Build only,
+    //                     Setup assets, Quit.
+    // VSCodium reste ouvert sur main, on choisit la branche et l'action
+    // sans switcher. Voir scripts/launcher.ps1 et scripts/_menu.psm1.
+    //
+    // Le profil "Quick build" garde le raccourci 1-step pour le cas
+    // courant (build & run Release sur le worktree choisi).
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Build: pick worktree (arrow keys)",
+            "name": "Launcher: pick worktree -> pick action",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/scripts/launcher.ps1",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Quick build: pick worktree (Release)",
             "type": "PowerShell",
             "request": "launch",
             "script": "${workspaceFolder}/scripts/build-run.ps1",
