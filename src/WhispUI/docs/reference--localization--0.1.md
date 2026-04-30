@@ -248,6 +248,20 @@ Quand le moment vient (FR, ES, ...) :
 - **`x:Uid` invalide en XAML** : génère un avertissement `WMC*` au
   build mais n'empêche pas la compilation. Surveiller la sortie MSBuild
   pour rattraper les Uids cassés tôt.
+- **Partage d'`x:Uid` entre éléments hétérogènes** — pas un avertissement
+  build, **plante au runtime** dans `InitializeComponent` avec
+  `XamlParseException: Unable to resolve property '<Prop>' while
+  processing properties for Uid '<Uid>'`. Cause : MRT applique chaque
+  propriété déclarée dans la `.resw` à **chaque** élément qui porte
+  cet `x:Uid`. Si l'un des éléments n'expose pas la propriété (un
+  `Button` n'a pas de `.Text`, il a `.Content`), tout le chargement
+  XAML de la page tombe. Pattern correct : un `x:Uid` distinct par
+  type d'élément, suffixe de rôle explicite (`*Button` pour le
+  conteneur interactif, `*Label` pour le `TextBlock` interne). Cas
+  toléré : plusieurs éléments du **même type** partageant un même
+  Uid (huit `HyperlinkButton x:Uid="Settings_SectionResetLink"` dans
+  les sections Settings, tous résolus sur `.Content` et
+  `.ToolTipService.ToolTip` — aucun n'a de propriété manquante).
 
 ---
 
