@@ -5,10 +5,10 @@ using System.ComponentModel;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WhispUI.Localization;
-using WhispUI.Settings.ViewModels;
+using Deckle.Localization;
+using Deckle.Settings.ViewModels;
 
-namespace WhispUI.Settings.Llm;
+namespace Deckle.Settings.Llm;
 
 // ─── Section Profiles de LlmPage ───────────────────────────────────────────
 //

@@ -1,7 +1,7 @@
 using Microsoft.UI.Dispatching;
-using WhispUI.Logging;
+using Deckle.Logging;
 
-namespace WhispUI.Shell;
+namespace Deckle.Shell;
 
 // ─── DispatcherQueueExtensions ─────────────────────────────────────────────
 //

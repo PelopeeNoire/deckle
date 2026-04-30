@@ -6,12 +6,12 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
-using WhispUI.Interop;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Shell;
+using Deckle.Interop;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Shell;
 
-namespace WhispUI;
+namespace Deckle;
 
 // ─── Fenêtre Settings ─────────────────────────────────────────────────────────
 //

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace WhispUI.Interop;
+namespace Deckle.Interop;
 
 // ── POINT ─────────────────────────────────────────────────────────────────────
 [StructLayout(LayoutKind.Sequential)]

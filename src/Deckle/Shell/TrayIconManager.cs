@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
-using WhispUI.Interop;
-using WhispUI.Localization;
+using Deckle.Interop;
+using Deckle.Localization;
 
-namespace WhispUI.Shell;
+namespace Deckle.Shell;
 
 // ─── Icône dans la zone de notification système ───────────────────────────────
 //

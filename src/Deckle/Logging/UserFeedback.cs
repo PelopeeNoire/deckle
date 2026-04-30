@@ -1,4 +1,4 @@
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // Severity for user-facing feedback surfaced in the HUD.
 // Distinct from LogLevel: a Verbose/Info/Warning/Error entry can optionally

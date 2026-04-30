@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // Whitespace-tolerant word counter. Every maximal run of non-whitespace
 // counts as one word — resilient to multiple spaces, tabs, CRLFs, mixed

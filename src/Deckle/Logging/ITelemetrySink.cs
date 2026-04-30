@@ -1,4 +1,4 @@
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // Sink contract for TelemetryService. A sink is anything that wants to
 // observe every emitted event. Sinks decide on their own which kinds they

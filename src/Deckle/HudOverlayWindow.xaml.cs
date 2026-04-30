@@ -2,13 +2,13 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using WinRT.Interop;
-using WhispUI.Controls;
-using WhispUI.Interop;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Shell;
+using Deckle.Controls;
+using Deckle.Interop;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Shell;
 
-namespace WhispUI;
+namespace Deckle;
 
 // Overlay card Window used by HudOverlayManager. Each enqueued overlay creates
 // one HudOverlayWindow; the manager owns its position and life timer, the

@@ -4,9 +4,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using WhispUI.Logging;
+using Deckle.Logging;
 
-namespace WhispUI.Llm;
+namespace Deckle.Llm;
 
 // ─── Service d'administration Ollama ─────────────────────────────────────────
 //

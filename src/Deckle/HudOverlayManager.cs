@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.UI.Dispatching;
-using WhispUI.Interop;
-using WhispUI.Logging;
-using WhispUI.Settings;
-using WhispUI.Shell;
+using Deckle.Interop;
+using Deckle.Logging;
+using Deckle.Settings;
+using Deckle.Shell;
 
-namespace WhispUI;
+namespace Deckle;
 
 // Owns the stack of transient overlay cards displayed alongside the main
 // HudWindow. Each enqueued UserFeedback with Role=Overlay creates one

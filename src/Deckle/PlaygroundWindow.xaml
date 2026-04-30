@@ -1,8 +1,8 @@
 <Window
-    x:Class="WhispUI.PlaygroundWindow"
+    x:Class="Deckle.PlaygroundWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:WhispUI.Controls"
+    xmlns:controls="using:Deckle.Controls"
     Title="WhispUI Playground">
 
     <!-- RootGrid is hit-testable (Background="Transparent") + focusable

@@ -1,11 +1,11 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Setup;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Setup;
 
-namespace WhispUI.Shell.Setup;
+namespace Deckle.Shell.Setup;
 
 // ── SummaryPage ──────────────────────────────────────────────────────────────
 //

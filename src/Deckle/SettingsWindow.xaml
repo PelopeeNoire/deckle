@@ -1,5 +1,5 @@
 <Window
-    x:Class="WhispUI.SettingsWindow"
+    x:Class="Deckle.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="WhispUI Settings">
@@ -35,19 +35,19 @@
 
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Uid="SettingsNavGeneral"
-                                    Tag="WhispUI.Settings.GeneralPage">
+                                    Tag="Deckle.Settings.GeneralPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavTranscription"
-                                    Tag="WhispUI.Settings.WhisperPage">
+                                    Tag="Deckle.Settings.WhisperPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF61F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavRewriting"
-                                    Tag="WhispUI.Settings.LlmPage">
+                                    Tag="Deckle.Settings.LlmPage">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xF6C7;" />
                     </NavigationViewItem.Icon>

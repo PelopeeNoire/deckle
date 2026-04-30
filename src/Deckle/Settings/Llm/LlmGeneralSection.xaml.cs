@@ -2,7 +2,7 @@ using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
-namespace WhispUI.Settings.Llm;
+namespace Deckle.Settings.Llm;
 
 // ─── Section General de LlmPage ────────────────────────────────────────────
 //

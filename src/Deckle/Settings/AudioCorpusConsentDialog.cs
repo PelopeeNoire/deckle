@@ -2,10 +2,10 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WhispUI.Localization;
-using WhispUI.Logging;
+using Deckle.Localization;
+using Deckle.Logging;
 
-namespace WhispUI.Settings;
+namespace Deckle.Settings;
 
 // ─── AudioCorpusConsentDialog ──────────────────────────────────────────────
 //

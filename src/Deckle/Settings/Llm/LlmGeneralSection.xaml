@@ -1,5 +1,5 @@
 <UserControl
-    x:Class="WhispUI.Settings.Llm.LlmGeneralSection"
+    x:Class="Deckle.Settings.Llm.LlmGeneralSection"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"

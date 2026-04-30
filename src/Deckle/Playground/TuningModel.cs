@@ -1,10 +1,10 @@
 // `using static` gives us unqualified access to HudComposition's nested
-// `ConicArcStrokeConfig` struct. A plain `using WhispUI.Composition;`
+// `ConicArcStrokeConfig` struct. A plain `using Deckle.Composition;`
 // would only import the outer HudComposition class, not its nested
 // types — C# nested-type resolution stops at the containing class.
-using static WhispUI.Composition.HudComposition;
+using static Deckle.Composition.HudComposition;
 
-namespace WhispUI.Playground;
+namespace Deckle.Playground;
 
 // Mutable shadow of HudComposition.ConicArcStrokeConfig.
 //

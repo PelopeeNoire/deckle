@@ -1,11 +1,11 @@
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WhispUI.Llm;
-using WhispUI.Localization;
-using WhispUI.Logging;
+using Deckle.Llm;
+using Deckle.Localization;
+using Deckle.Logging;
 
-namespace WhispUI.Settings.Llm.GgufImport;
+namespace Deckle.Settings.Llm.GgufImport;
 
 // ─── Wrapper ContentDialog autour de GgufImportView ────────────────────────
 //

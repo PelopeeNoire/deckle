@@ -2,7 +2,7 @@ using System;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml.Data;
 
-namespace WhispUI.Settings.ViewModels;
+namespace Deckle.Settings.ViewModels;
 
 // ViewModel for a single rewrite profile — used inside an ItemsRepeater
 // DataTemplate in LlmProfilesSection. Auto-saves on every change, aligning

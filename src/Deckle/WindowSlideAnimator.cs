@@ -1,9 +1,9 @@
 using System;
 using Microsoft.UI.Dispatching;
-using WhispUI.Interop;
-using WhispUI.Settings;
+using Deckle.Interop;
+using Deckle.Settings;
 
-namespace WhispUI;
+namespace Deckle;
 
 // Window-level animators used by HudOverlayManager to slide and fade overlay
 // cards. Both run on a DispatcherQueueTimer ticking at ~60 fps, 150 ms total,

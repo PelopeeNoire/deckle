@@ -1,8 +1,8 @@
 using System;
 using Microsoft.Win32;
-using WhispUI.Logging;
+using Deckle.Logging;
 
-namespace WhispUI.Shell;
+namespace Deckle.Shell;
 
 // ── AutostartService ─────────────────────────────────────────────────────────
 //

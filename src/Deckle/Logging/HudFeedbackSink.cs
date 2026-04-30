@@ -1,4 +1,4 @@
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // Forwards TelemetryEvents that carry a UserFeedback payload to the right
 // HUD surface, picked from UserFeedback.Role:

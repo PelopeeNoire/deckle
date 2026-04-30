@@ -3,11 +3,11 @@ using System.Threading;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WhispUI.Llm;
-using WhispUI.Localization;
-using WhispUI.Settings.Llm.GgufImport;
+using Deckle.Llm;
+using Deckle.Localization;
+using Deckle.Settings.Llm.GgufImport;
 
-namespace WhispUI.Settings.Llm;
+namespace Deckle.Settings.Llm;
 
 // ─── Section Models de LlmPage ─────────────────────────────────────────────
 //

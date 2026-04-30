@@ -1,4 +1,4 @@
-namespace WhispUI.Llm;
+namespace Deckle.Llm;
 
 // ─── Templates de prompt par famille de modèle ────────────────────────────────
 //

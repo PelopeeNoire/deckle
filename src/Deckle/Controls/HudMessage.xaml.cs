@@ -1,9 +1,9 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using WhispUI.Composition;
+using Deckle.Composition;
 
-namespace WhispUI.Controls;
+namespace Deckle.Controls;
 
 // Message card used for Pasted / Copied / Error / UserFeedback feedback.
 //

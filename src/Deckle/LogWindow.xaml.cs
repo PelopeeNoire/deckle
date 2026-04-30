@@ -12,12 +12,12 @@ using Windows.Storage.Pickers;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Data;
 using WinRT.Interop;
-using WhispUI.Interop;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Shell;
+using Deckle.Interop;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Shell;
 
-namespace WhispUI;
+namespace Deckle;
 
 // SelectorBar mode — single active at a time (native exclusive selection).
 internal enum LogFilterMode { All, Activity, Alerts }

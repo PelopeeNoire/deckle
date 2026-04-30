@@ -1,6 +1,6 @@
 using Microsoft.UI.Windowing;
 
-namespace WhispUI.Shell;
+namespace Deckle.Shell;
 
 // ─── Icon asset resolution ───────────────────────────────────────────────────
 //

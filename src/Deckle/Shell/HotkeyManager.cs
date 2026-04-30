@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
-using WhispUI.Interop;
-using WhispUI.Logging;
+using Deckle.Interop;
+using Deckle.Logging;
 
-namespace WhispUI.Shell;
+namespace Deckle.Shell;
 
 // Registers the 3 global hotkeys and intercepts WM_HOTKEY via SetWindowSubclass.
 // SetWindowSubclass chains into the existing message pump of the host window

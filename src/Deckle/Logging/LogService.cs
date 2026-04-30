@@ -1,4 +1,4 @@
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // ── LogService ──────────────────────────────────────────────────────────────
 //

@@ -5,14 +5,14 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using WhispUI.Interop;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Settings.ViewModels;
+using Deckle.Interop;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Settings.ViewModels;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
-namespace WhispUI.Settings;
+namespace Deckle.Settings;
 
 public sealed partial class GeneralPage : Page
 {
