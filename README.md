@@ -56,17 +56,13 @@ dependency, no account, no telemetry leaving the machine.
   workload — the build relies on its `MSBuild.exe` (Framework runtime). The
   Build CLI in `dotnet build` currently breaks WinUI 3 XAML compilation, see
   the *Build* section in [`CLAUDE.md`](CLAUDE.md) for the technical detail.
-- **whisper.cpp DLLs** in `native/whisper/` and **MinGW runtime DLLs** in
-  `native/mingw/`. These are not redistributed in this repo. Rebuild
-  whisper.cpp locally with the Vulkan backend and copy
-  `libwhisper.dll`, `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`,
-  `ggml-vulkan.dll` from its `build/bin/` into `native/whisper/`. Copy the
-  three MinGW runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
-  `libwinpthread-1.dll`) into `native/mingw/`. The script
-  `scripts/restore-assets.ps1` automates this once you have whisper.cpp
-  cloned and built next to the repo.
-- **A Whisper model** in `models/`. Download `ggml-base.bin` from
-  HuggingFace (`ggerganov/whisper.cpp`) for a small starting model.
+- **whisper.cpp** cloned next to this repo and built locally with the
+  Vulkan backend. The required DLLs (`libwhisper.dll`, `ggml.dll`,
+  `ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`) and the three MinGW
+  runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
+  `libwinpthread-1.dll`) are pulled in by `scripts/setup-assets.ps1`.
+- **MinGW** via Scoop (`scoop install mingw`) for the C++ runtime DLLs the
+  Vulkan backend links against.
 - **Vulkan SDK** for GPU acceleration. Optional — whisper.cpp falls back to
   CPU if no Vulkan runtime is present.
 - **Ollama** for LLM rewrite. Optional — the rewrite feature is off by
@@ -77,29 +73,31 @@ dependency, no account, no telemetry leaving the machine.
 For a brand new clone, in this order :
 
 1. Install the prerequisites above (Windows 11, .NET 10 SDK, Visual Studio
-   2026 with the WinUI workload, optionally Vulkan SDK and Ollama).
+   2026 with the WinUI workload, MinGW via Scoop, optionally Vulkan SDK
+   and Ollama).
 2. Clone whisper.cpp **next to this repo** and build it with the Vulkan
    backend, so its `build/bin/` contains the DLLs.
-3. From the repo root, run `scripts/restore-assets.ps1` to copy the
-   whisper and MinGW DLLs into `native/`.
-4. Drop a Whisper model file (e.g. `ggml-base.bin`) into `models/`, or
-   wait for the first-run wizard inside the app to download one for you.
-5. Build & run from PowerShell with `scripts/build-run.ps1`, or open the
-   solution in Visual Studio 2026 and press F5.
+3. From the repo root, run `scripts/setup-assets.ps1`. It copies the
+   whisper and MinGW DLLs into `%LOCALAPPDATA%\WhispUI\native\` and
+   downloads `ggml-base.bin` + Silero VAD into `%LOCALAPPDATA%\WhispUI\models\`.
+   Add `-WithLarge` to also fetch `ggml-large-v3.bin` (~3 GB).
+4. Build & run via `scripts/launcher.ps1` (interactive picker), or open
+   the solution in Visual Studio 2026 and press F5.
 
 ### Build & run
 
-From `src/WhispUI/`, in PowerShell (no admin needed) :
+The recommended entry point is `scripts/launcher.ps1` — interactive
+two-step picker (worktree → action). For direct CLI use,
+`scripts/build-run.ps1` resolves `MSBuild.exe` automatically (via
+`$env:WHISPUI_MSBUILD` or `vswhere`), builds via VS MSBuild Framework
+(working around the `dotnet build` XamlCompiler bug), and launches the
+resulting exe.
 
 ```powershell
-& "<msbuild-path>" -t:Restore,Build -p:Configuration=Release -p:Platform=x64
+scripts/build-run.ps1 -Configuration Release
 ```
 
-The output is a self-contained executable at
-`src/WhispUI/bin/x64/Release/net10.0-windows10.0.19041.0/WhispUI.exe`.
-
-The `scripts/build-run.ps1` helper resolves `MSBuild.exe` automatically
-(via `$env:WHISPUI_MSBUILD` or `vswhere`) and launches the resulting exe.
+Output: `src/WhispUI/bin/x64/Release/net10.0-windows10.0.19041.0/WhispUI.exe`.
 
 ### Publish — installable build
 
@@ -107,16 +105,17 @@ The `scripts/build-run.ps1` helper resolves `MSBuild.exe` automatically
 unpackaged build under `publish/` (≈ 50–100 MB) that can be copied
 anywhere — for example `%LOCALAPPDATA%\Programs\WhispUI\` — and launched
 directly. The script wraps `MSBuild -t:Restore;Publish` (Framework
-runtime, to avoid a known XamlCompiler bug in `dotnet publish`).
+runtime, to avoid the same XamlCompiler bug).
 
 ```powershell
 scripts/publish-unpackaged.ps1 -Configuration Release
 ```
 
-The published folder contains `WhispUI.exe`, the whisper / MinGW native
-DLLs, and the WinUI resource index. Whisper models are not bundled — the
-first-run wizard downloads the chosen model into the per-user data
-folder on first launch.
+The published folder contains `WhispUI.exe`, the WinUI resource index,
+and the Windows App SDK runtime. Native DLLs and Whisper models are
+**not** bundled — they live in `%LOCALAPPDATA%\WhispUI\native\` and
+`\models\`, populated by `scripts/setup-assets.ps1` (and replaced
+later by an in-app first-run wizard).
 
 ---
 
