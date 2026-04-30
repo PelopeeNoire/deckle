@@ -124,40 +124,6 @@ En cas de doute sur un rendu ou un pattern :
   NavView responsive.
 </doctrine>
 
-<conventions>
-### Langue du code et de l'UI : anglais
-
-Strings user-facing en anglais d'emblée : labels UI, messages d'erreur
-visibles, tooltips, statuts tray, chrono HUD, placeholders, copy
-Settings, status keys moteur. Même quand la conversation avec le
-maintainer se déroule en français. Le code (commentaires, noms, logs
-techniques) est en anglais.
-
-Traduction FR éventuelle : passe de localization dédiée plus tard. On
-pense en anglais, pas en français avec une intention de traduction.
-
-Dette héritée : quand du FR subsiste dans le code, basculer au passage.
-Sweeps opportunistes au fil de l'eau.
-
-### Documentation
-
-Nom de fichier : `[type]--[sujet]--[version].md`. ASCII simple, sans
-espaces ni accents. `--` entre segments, `-` à l'intérieur. Version :
-`0.1` première, `1.0` stable.
-
-Types valides : `architecture`, `reference`, `nomenclature`,
-`specification`, `ressource`, `astuce`.
-
-**Piège XML.** Ces noms contiennent `--`, séquence interdite dans un
-commentaire XML par la spec XML 1.0 (parser MSBuild lève `MSB4025` au
-build). Conséquence : ne jamais citer un nom de fichier doc tel quel
-dans un commentaire `<!-- ... -->` d'un csproj, d'un manifest, d'un
-`.xaml` ou d'un `.resw`. Paraphraser sans `--` (« voir la référence
-localisation sous `docs/` ») plutôt que mettre le nom exact. Même
-règle pour toute autre chaîne contenant `--` (séparateur d'option CLI,
-flag de diff, etc.).
-</conventions>
-
 <environment>
 - OS : Windows 11
 - Shell : PowerShell
