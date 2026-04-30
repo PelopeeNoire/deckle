@@ -52,11 +52,9 @@ internal static class NativeRuntime
         "libwinpthread-1.dll",
     };
 
-    // True when libwhisper.dll is reachable by the loader — either in
-    // NativeDirectory (the canonical place once the wizard has installed
-    // it) or alongside the application EXE (dev builds that still ship
-    // the DLLs as csproj Content, or any deployment that placed them
-    // beside the binary).
+    // True when libwhisper.dll is present in NativeDirectory — the
+    // canonical install location populated by scripts/setup-assets.ps1
+    // (or the future first-run wizard).
     //
     // The full catalog isn't checked file-by-file: if the entry point
     // is there, NativeMethods.SetDllImportResolver loads it and Windows
@@ -65,8 +63,7 @@ internal static class NativeRuntime
     // as a DllNotFoundException on the first whisper_* call — clear
     // enough without a redundant catalog sweep here.
     public static bool IsInstalled() =>
-        File.Exists(Path.Combine(AppPaths.NativeDirectory, EntryDll)) ||
-        File.Exists(Path.Combine(AppContext.BaseDirectory, EntryDll));
+        File.Exists(Path.Combine(AppPaths.NativeDirectory, EntryDll));
 
     // Copies every catalog DLL found in `sourcePath` into NativeDirectory,
     // overwriting existing files. Returns the count of DLLs actually copied.
