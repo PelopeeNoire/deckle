@@ -629,12 +629,6 @@
   <data name="GeneralAutostartCard.Description" xml:space="preserve">
     <value>Launch Deckle automatically when you sign in.</value>
   </data>
-  <data name="GeneralStartMinimizedCard.Header" xml:space="preserve">
-    <value>Start minimized</value>
-  </data>
-  <data name="GeneralStartMinimizedCard.Description" xml:space="preserve">
-    <value>Open straight to the system tray, without any visible window. Default: on.</value>
-  </data>
   <data name="GeneralWarmupCard.Header" xml:space="preserve">
     <value>Warm up Whisper at launch</value>
   </data>

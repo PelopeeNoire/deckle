@@ -149,9 +149,6 @@ public partial class GeneralViewModel : ObservableObject
     public partial bool AutostartEnabled { get; set; }
 
     [ObservableProperty]
-    public partial bool StartMinimized { get; set; }
-
-    [ObservableProperty]
     public partial bool WarmupOnLaunch { get; set; }
 
     partial void OnAutostartEnabledChanged(bool value)
@@ -169,13 +166,6 @@ public partial class GeneralViewModel : ObservableObject
         _isSyncing = true;
         try { AutostartEnabled = !value; }
         finally { _isSyncing = false; }
-    }
-
-    partial void OnStartMinimizedChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Start minimized ← {value}");
-        PushToSettings();
     }
 
     partial void OnWarmupOnLaunchChanged(bool value)
@@ -340,7 +330,6 @@ public partial class GeneralViewModel : ObservableObject
         OverlayAnimations = true;
         OverlayPosition = "BottomCenter";
         AutostartEnabled = false;
-        StartMinimized = true;
         WarmupOnLaunch = true;
         Theme = "System";
         TelemetryLatencyEnabled = false;
@@ -371,7 +360,6 @@ public partial class GeneralViewModel : ObservableObject
             OverlayAnimations = s.Overlay.Animations;
             OverlayPosition = s.Overlay.Position;
             AutostartEnabled = AutostartService.IsEnabled();
-            StartMinimized = s.Startup.StartMinimized;
             WarmupOnLaunch = s.Startup.WarmupOnLaunch;
             Theme = s.Appearance.Theme;
             TelemetryLatencyEnabled = s.Telemetry.LatencyEnabled;
@@ -405,7 +393,6 @@ public partial class GeneralViewModel : ObservableObject
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
         s.Overlay.Animations = OverlayAnimations;
         s.Overlay.Position = OverlayPosition;
-        s.Startup.StartMinimized = StartMinimized;
         s.Startup.WarmupOnLaunch = WarmupOnLaunch;
         s.Appearance.Theme = Theme;
         s.Telemetry.LatencyEnabled = TelemetryLatencyEnabled;
@@ -456,7 +443,6 @@ public partial class GeneralViewModel : ObservableObject
         try
         {
             AutostartEnabled = AutostartService.IsEnabled();
-            StartMinimized = true;
             WarmupOnLaunch = true;
         }
         finally { _isSyncing = false; }
