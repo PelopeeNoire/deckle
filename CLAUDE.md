@@ -34,7 +34,7 @@ sont des sinks de la même source. Jamais de `File.AppendAllText`,
 `Console.WriteLine`, `Debug.WriteLine`, ni de `*Logger.cs` parallèle dans
 le code métier. Avant d'écrire le moindre code de log ou de mesure, lire
 `src/Deckle/CLAUDE.md` § « Télémétrie — source unique » et l'inventaire
-canonique `src/Deckle/docs/reference--logging-inventory--0.1.md`.
+canonique `src/Deckle/docs/reference--logging-inventory--1.0.md`.
 Exception unique et subordonnée : helper `DebugLog` file-based pour
 crash natif non rattrapable, instrumentation **temporaire** jamais
 commitée en l'état.
@@ -165,18 +165,21 @@ condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
 <repo-root>/
 ├── src/
 │   └── Deckle\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
-│       └── docs\             — journal d'implémentation détaillé, lu à la demande
-├── scripts\                  — build-run.ps1, publish-unpackaged.ps1 (versionnés)
-├── native\                   — DLLs pré-compilées whisper + MinGW (git-ignored)
-├── models\                   — modèles Whisper (ggml-base.bin, ggml-large-v3.bin)
-├── benchmark/                — suite de benchmark Python
-├── whisper.cpp/              — dépôt whisper.cpp cloné (git-ignored)
+│       └── docs\             — fiches reference--*--1.0.md, lues à la demande
+├── scripts\                  — build-run, publish-unpackaged, setup-assets, publish-native-runtime
+├── benchmark/                — suite de benchmark Python (à extraire dans son repo plus tard)
 └── CLAUDE.md                 — ce fichier
 ```
 
-DLLs whisper dans `native/whisper/` : `libwhisper.dll`, `ggml.dll`,
-`ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`. Compilées avec le
-backend Vulkan (toute carte compatible Vulkan suffit ; sur AMD,
-ROCm n'est pas supporté côté Windows donc Vulkan est la voie de
-choix). Source : `whisper.cpp/build/bin/`.
+Pas de `whisper.cpp/` dans le repo : le source upstream est cloné à
+l'extérieur (workspace dev, ex.
+`<scoop-root>/persist/whisper.cpp/` ou `D:\workspace\whisper.cpp\`)
+quand on veut recompiler les DLLs natives. Voir
+[src/Deckle/docs/reference--native-runtime--1.0.md](src/Deckle/docs/reference--native-runtime--1.0.md)
+pour la recette de recompilation.
+
+Pas de `native/` ni `models/` dans le repo : tout vit dans
+`%LOCALAPPDATA%\Deckle\` côté runtime. Le first-run wizard auto-télécharge
+le bundle natif depuis la release `native-vX.Y.Z` du repo Deckle, et
+les modèles Whisper depuis HuggingFace.
 </repository>

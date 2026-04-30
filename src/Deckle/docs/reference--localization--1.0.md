@@ -19,8 +19,11 @@ itération produit uniquement le fichier `en-US`. Pas de FR, pas de
 dropdown de sélection de langue dans Settings — le runtime résout sur la
 langue d'affichage Windows et tombe sur `en-US` par défaut.
 
-Version `0.1` : état initial après migration intégrale des 15 surfaces
-décrites ci-dessous.
+Version `1.0` : 15 surfaces user-facing migrées en `.resw` + `Loc.Get` /
+`x:Uid`, ~200 strings au total. Le wizard couvre les trois étapes
+(Choices, Installing, Summary) avec auto-download du runtime natif
+inclus (clés `Setup_Native_*`, `Setup_Install_Step{1,2,3}Of3_Format`,
+`SetupInstallNativeLabel.Text`).
 
 ---
 
@@ -222,7 +225,7 @@ Quand le moment vient (FR, ES, ...) :
    un `ResourceContext` avec
    `QualifierValues["Language"] = "<lang>"` ou
    `Languages = new[] { "<lang>" }` et le câbler à un setting persistant.
-   Hors scope `0.1`.
+   Hors scope `1.0`.
 
 ---
 
@@ -265,7 +268,7 @@ Quand le moment vient (FR, ES, ...) :
 
 ---
 
-## Surfaces couvertes en `0.1`
+## Surfaces couvertes en `1.0`
 
 15 surfaces user-facing, ~200 strings au total. Liste de référence pour
 les futures itérations.
