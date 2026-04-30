@@ -1,9 +1,9 @@
-# Reference — Dependencies & layout pour publication
+# Reference — Dependencies & layout
 
-Carte des artefacts dont l'app a besoin pour tourner, où ils vivent au build,
-au publish, et au runtime, et qui les produit. Pivot pour piloter la
-réorganisation pré-publication. `<AppName>` = nom user-facing final
-(placeholder — voir `AppPaths.AppFolderName`).
+Carte des artefacts dont Deckle a besoin pour tourner, où ils vivent au
+build, au publish, et au runtime, et qui les produit. Source unique
+pour comprendre ce qui ship dans le binaire vs ce qui descend au first
+run vs ce qui est créé runtime.
 
 ## 1. Inventaire des artefacts
 
@@ -12,12 +12,12 @@ volume typique, mutabilité.
 
 | Famille | Contenu | Volume | Mutable | Produit par | Consommé par |
 |---|---|---|---|---|---|
-| **Binaire app** | `<AppName>.exe`, `.deps.json`, `.runtimeconfig.json`, WinAppSDK runtime DLLs, `.pri`, `Assets/` (icônes, fonts, sons warmup) | ~50-100 MB | Non | `publish-unpackaged.ps1` | OS / utilisateur |
+| **Binaire app** | `Deckle.exe`, `.deps.json`, `.runtimeconfig.json`, WinAppSDK runtime DLLs, `.pri`, `Assets/` (icônes, fonts, sons warmup) | ~50-100 MB | Non | `publish-unpackaged.ps1` | OS / utilisateur |
 | **Runtime natif whisper** | `libwhisper.dll` + `ggml.dll` + `ggml-base.dll` + `ggml-cpu.dll` + `ggml-vulkan.dll` + MinGW C++ runtime (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`) | ~50 MB | Non (versionné) | Build whisper.cpp via CMake/Ninja+MinGW (Vulkan backend) | `NativeMethods.cs` via `[DllImport("libwhisper")]` |
 | **Modèles Whisper** | `ggml-large-v3.bin` (par défaut) ou `ggml-base.bin` ; plus `ggml-silero-v6.2.0.bin` (VAD) | 700 KB → 3 GB | Oui (utilisateur peut swap) | HuggingFace `ggerganov/whisper.cpp` + `ggml-org/whisper-vad` | `WhispEngine.LoadModel` |
 | **Settings** | `settings.json` + `backups/settings-YYYYMMDD-HHmmss.json` | < 100 KB | Oui (chaque modif UI) | `SettingsService.Flush` | Toute l'app au boot |
 | **Télémétrie** | `app.jsonl` (+ rotations `app-1`, `app-2`…), `latency.jsonl`, `microphone.jsonl`, `<slug>/corpus.jsonl`, `<slug>/audio/<ts>.wav`, `legacy/` | 0 → quelques GB selon l'usage | Oui (append-only sauf rotation) | `JsonlFileSink`, `WavCorpusWriter` | Outils benchmark, debug humain |
-| **Benchmark suite** | Scripts Python (`benchmark.py`, `rewrite_bench.py`, `segment_corpus.py`, `autoresearch.py`), `reports/` | ~quelques MB scripts + variable reports | Oui | Repo séparé `<AppName>-benchmark` (à créer) | Outil offline, jamais lu par l'app au runtime |
+| **Benchmark suite** | Scripts Python (`benchmark.py`, `rewrite_bench.py`, `segment_corpus.py`, `autoresearch.py`), `reports/` | ~quelques MB scripts + variable reports | Oui | Repo séparé `Deckle-benchmark` (à créer) | Outil offline, jamais lu par l'app au runtime |
 
 ## 2. Sources externes
 
@@ -28,9 +28,9 @@ D'où vient chaque artefact qui n'est pas produit dans le repo principal.
 | `ggml-base.bin` | `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin` | Très stable (dépôt officiel ggerganov) | À ajouter : SHA-256 fixe |
 | `ggml-large-v3.bin` | `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin` | Idem | Idem |
 | `ggml-silero-v6.2.0.bin` | `https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin` | Versionné par tag `v6.2.0` | Idem |
-| Runtime natif whisper | **À héberger** : repo GitHub `<AppName>-redist` à créer, releases avec ZIP des DLLs précompilées Vulkan x64 + checksums | Tu contrôles | SHA-256 calculé à la release |
+| Runtime natif whisper | GitHub Releases du repo Deckle taggées `native-vX.Y.Z`. Asset unique `deckle-native-X.Y.Z.zip` (8 DLLs flat + `PROVENANCE.txt` + `SHA256SUMS`). Produit par `scripts/publish-native-runtime.ps1`. | Tu contrôles | SHA-256 du zip hardcodé dans `NativeRuntime.CurrentBundle.Sha256` |
 | `whisper.cpp` source | `https://github.com/ggerganov/whisper.cpp` | Très stable | Tag whisper.cpp pinné dans la doc build |
-| Suite benchmark | **À héberger** : repo GitHub `<AppName>-benchmark` à extraire de `benchmark/` actuel | Tu contrôles | n/a |
+| Suite benchmark | **À héberger** : repo GitHub `Deckle-benchmark` à extraire de `benchmark/` actuel | Tu contrôles | n/a |
 | Vulkan SDK runtime | LunarG ou drivers GPU AMD/Intel/NVIDIA | Externe | n/a — vérification "Vulkan dispo" au runtime |
 | WinAppSDK runtime | Bundled via `WindowsAppSDKSelfContained=true` dans le csproj | Pin sur `1.8.260317003` dans `<PackageReference>` | n/a |
 | .NET 10 runtime | Bundled via `SelfContained=true` au publish | Pin via `global.json` (`10.0.104`) | n/a |
@@ -39,14 +39,14 @@ D'où vient chaque artefact qui n'est pas produit dans le repo principal.
 
 Deux racines, séparation stricte read-only / writable.
 
-### 3a. `%PROGRAMFILES%\<AppName>\` — read-only, idem folder portable
+### 3a. `%PROGRAMFILES%\Deckle\` — read-only, idem folder portable
 
 ```
-%PROGRAMFILES%\<AppName>\
-├── <AppName>.exe                           # bundled managed (PublishSingleFile)
-├── <AppName>.deps.json
-├── <AppName>.runtimeconfig.json
-├── <AppName>.pri                           # XAML resources compilées (cf. EnableMsixTooling)
+%PROGRAMFILES%\Deckle\
+├── Deckle.exe                           # bundled managed (PublishSingleFile)
+├── Deckle.deps.json
+├── Deckle.runtimeconfig.json
+├── Deckle.pri                           # XAML resources compilées (cf. EnableMsixTooling)
 ├── Microsoft.WindowsAppRuntime.*.dll       # WinAppSDK self-contained
 ├── Microsoft.UI.Xaml.dll
 ├── …d'autres DLLs WinAppSDK / .NET self-contained…
@@ -59,13 +59,13 @@ Deux racines, séparation stricte read-only / writable.
 Contenu produit par `publish-unpackaged.ps1`. Aucun fichier mutable, aucune
 DLL whisper, aucun modèle.
 
-### 3b. `%LOCALAPPDATA%\<AppName>\` — writable, racine UserDataRoot
+### 3b. `%LOCALAPPDATA%\Deckle\` — writable, racine UserDataRoot
 
 Définie par `AppPaths.UserDataRoot`, override en dev via env var
 `DECKLE_DATA_ROOT`.
 
 ```
-%LOCALAPPDATA%\<AppName>\
+%LOCALAPPDATA%\Deckle\
 ├── settings\
 │   ├── settings.json
 │   └── backups\
@@ -93,7 +93,7 @@ Définie par `AppPaths.UserDataRoot`, override en dev via env var
 Settings (Lot B.5 reporté). Si installé, suit le même pattern :
 
 ```
-%LOCALAPPDATA%\<AppName>\benchmark\
+%LOCALAPPDATA%\Deckle\benchmark\
 ├── benchmark.py, rewrite_bench.py, segment_corpus.py, autoresearch.py
 ├── README.md, AGENT.md
 └── reports\
@@ -116,8 +116,8 @@ Comment chaque artefact arrive sur la machine cible.
 
 | Artefact | Ship dans publish ? | Téléchargé first-run ? | Créé runtime ? |
 |---|:---:|:---:|:---:|
-| `<AppName>.exe` + WinAppSDK + Assets | Oui | Non | Non |
-| Runtime natif whisper (8 DLLs) | **Non** | **Oui** (browse local V1, download depuis `<AppName>-redist` plus tard) | Non |
+| `Deckle.exe` + WinAppSDK + Assets | Oui | Non | Non |
+| Runtime natif whisper (8 DLLs) | **Non** | **Oui** (auto-download de la release `native-vX.Y.Z`, fallback Browse local) | Non |
 | Modèle par défaut `ggml-large-v3.bin` | **Non** | **Oui** (HuggingFace) | Non |
 | Modèles secondaires + Silero VAD | **Non** | Oui (à la demande, Settings) | Non |
 | `settings\settings.json` | Non | Non | Oui (créé vide au premier `Save`) |
@@ -150,20 +150,26 @@ Pour mémoire, où ces artefacts vivent actuellement dans le repo de dev :
 
 ```
 D:\projects\ai\transcription\
-├── src\Deckle\                       # binaire app (versionné)
-├── native\whisper\*.dll               # runtime natif (git-ignored)
-├── native\mingw\*.dll                 # MinGW runtime (git-ignored)
-├── models\ggml-*.bin                  # modèles (git-ignored, taille)
-├── whisper.cpp\                       # source whisper.cpp clonée (git-ignored)
-├── benchmark\                         # suite benchmark (versionné — à extraire)
+├── src\Deckle\                          # binaire app (versionné)
+├── benchmark\                            # suite benchmark (versionné — à extraire dans son propre repo)
 └── scripts\
-    ├── build-run.ps1                  # build + launch dev
-    ├── publish-unpackaged.ps1         # produit publish/<AppName>.exe
-    └── restore-assets.ps1             # télécharge whisper.cpp + modèles dans native/ et models/
+    ├── _menu.psm1                        # picker interactif partagé
+    ├── launcher.ps1                      # menu deux étapes worktree → action
+    ├── build-run.ps1                     # build + launch dev (MSBuild VS)
+    ├── publish-unpackaged.ps1            # produit publish/Deckle.exe self-contained
+    ├── setup-assets.ps1                  # provisionne <UserDataRoot>\native\ et \models\
+    └── publish-native-runtime.ps1        # maintainer-only : zippe + publie native-vX.Y.Z
 ```
 
-`restore-assets.ps1` est aujourd'hui la "voie d'install" en dev (clone
-whisper.cpp, build les DLLs, télécharge les modèles depuis HuggingFace).
-Le first-run wizard reproduira ce flux côté utilisateur final, mais
-sans build local — il pointera sur les artefacts déjà compilés du repo
-`<AppName>-redist`.
+Pas de `whisper.cpp\` dans le repo — clone externe au choix du dev qui
+veut recompiler les DLLs. Pas de `native\` ni `models\` dans le repo non
+plus : runtime résout exclusivement depuis `<UserDataRoot>` (cf.
+`AppPaths.cs`).
+
+`setup-assets.ps1` est la voie d'install en dev :
+`-FromRelease X.Y.Z` télécharge le bundle publié (même source que le
+wizard utilisateur), `-WhisperRepo <path>` copie depuis un build local
+de whisper.cpp pour les rebuilders. Le first-run wizard reproduit le
+même flux côté utilisateur final via
+`NativeRuntime.InstallFromZipAsync` + le bundle référencé dans
+`NativeRuntime.CurrentBundle`.

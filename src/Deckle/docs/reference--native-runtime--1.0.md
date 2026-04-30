@@ -198,7 +198,7 @@ MinGW C++ runtime  : GPL-3 with runtime exception (libgcc, libstdc++) /
 
 Reproduction
 ------------
-See src/Deckle/docs/reference--native-runtime--0.1.md in the Deckle
+See src/Deckle/docs/reference--native-runtime--1.0.md in the Deckle
 repository for the full recompilation recipe.
 ```
 

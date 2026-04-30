@@ -13,7 +13,7 @@ namespace Deckle.Localization;
 // UserFeedback, HUD, tray, setup wizard pages) goes through Loc.
 //
 // Key naming conventions live in
-// docs/reference--localization--0.1.md. Summary:
+// docs/reference--localization--1.0.md. Summary:
 //
 //   x:Uid in XAML       UidValue.Property        e.g. "LogWindowSearchBox.PlaceholderText"
 //   C# direct lookup    Surface_Purpose          e.g. "CorpusConsent_Title"
