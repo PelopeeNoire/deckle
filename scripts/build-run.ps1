@@ -29,119 +29,12 @@ $ScriptDir  = $PSScriptRoot                                  # scripts/
 # worktree currently being edited.
 #
 # Override: -Target "<path>" picks any path. -Pick lists the worktrees
-# and prompts. Both are for terminal use; VS Code Run should stay no-arg.
+# via the shared interactive picker (scripts/_menu.psm1) and prompts.
+# Both are for terminal use; VS Code Run should stay no-arg.
 # =============================================================================
-function Select-WorktreeInteractive {
-    param([string]$ContextDir)
-
-    Push-Location $ContextDir
-    try {
-        $raw = git worktree list --porcelain 2>$null
-    } finally {
-        Pop-Location
-    }
-    if (-not $raw) { throw "git worktree list failed - not a git repo?" }
-
-    # Parse porcelain output into (path, branch) tuples.
-    $entries = @()
-    $curPath = $null
-    $curBranch = $null
-    foreach ($line in $raw) {
-        if ($line -like 'worktree *') {
-            if ($curPath) {
-                $entries += [pscustomobject]@{ Path = $curPath; Branch = ($curBranch ?? '(detached)') }
-            }
-            $curPath = $line.Substring(9)
-            $curBranch = $null
-        } elseif ($line -like 'branch *') {
-            $curBranch = ($line.Substring(7)) -replace '^refs/heads/', ''
-        }
-    }
-    if ($curPath) {
-        $entries += [pscustomobject]@{ Path = $curPath; Branch = ($curBranch ?? '(detached)') }
-    }
-    if ($entries.Count -eq 0) { throw "No worktrees found" }
-
-    # Pre-format each line with branch badge + path. We MUST truncate so the
-    # rendered line fits on a single terminal row — the cursor math below
-    # assumes 1 label = 1 physical line, and a wrapped line pushes CursorTop
-    # by 2, which poisons `$top = $bottom - $labels.Count` and causes the
-    # previous selection to stay visible above the new one (ghost entries).
-    # Elide the path's prefix so the tail (worktree folder name, usually the
-    # distinctive part) stays legible.
-    $maxLineLen = [Console]::WindowWidth - 5  # "  > " prefix + trailing gap
-    $labels = foreach ($e in $entries) {
-        $branch  = "{0,-28}" -f "[$($e.Branch)]"
-        $path    = $e.Path
-        $budget  = $maxLineLen - $branch.Length - 1  # -1 for the separating space
-        if ($budget -lt 4) {
-            $path = [char]0x2026  # single ellipsis char, path blown by a huge branch label
-        } elseif ($path.Length -gt $budget) {
-            $path = ([char]0x2026) + $path.Substring($path.Length - ($budget - 1))
-        }
-        "$branch $path"
-    }
-
-    $selected = 0
-    $header   = "Pick a worktree (Up/Down, Enter = confirm, Esc = cancel):"
-
-    Write-Host ""
-    Write-Host $header -ForegroundColor Cyan
-
-    # Render each line once so the buffer grows naturally, then capture the
-    # final cursor position. Going the other way (capture then reserve via
-    # Write-Host "") breaks when the buffer scrolls on near-bottom terminals.
-    for ($i = 0; $i -lt $labels.Count; $i++) {
-        $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
-        if ($i -eq $selected) {
-            Write-Host ($prefix + $labels[$i]) -ForegroundColor Green
-        } else {
-            Write-Host ($prefix + $labels[$i])
-        }
-    }
-    $bottom = [Console]::CursorTop
-    $top    = [Math]::Max(0, $bottom - $labels.Count)
-
-    [Console]::CursorVisible = $false
-    try {
-        while ($true) {
-            $key = [Console]::ReadKey($true)
-            $prev = $selected
-            switch ($key.Key) {
-                'UpArrow'   { if ($selected -gt 0)                   { $selected-- } }
-                'DownArrow' { if ($selected -lt $entries.Count - 1)  { $selected++ } }
-                'Enter'     {
-                    [Console]::SetCursorPosition(0, $bottom)
-                    return $entries[$selected].Path
-                }
-                'Escape'    {
-                    [Console]::SetCursorPosition(0, $bottom)
-                    throw "Cancelled"
-                }
-            }
-            if ($selected -eq $prev) { continue }
-
-            # Repaint just the two lines that changed (prev and new).
-            foreach ($i in @($prev, $selected)) {
-                [Console]::SetCursorPosition(0, $top + $i)
-                $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
-                $line   = $prefix + $labels[$i]
-                $pad    = [Console]::WindowWidth - $line.Length - 1
-                if ($pad -gt 0) { $line += (' ' * $pad) }
-                if ($i -eq $selected) {
-                    Write-Host $line -ForegroundColor Green -NoNewline
-                } else {
-                    Write-Host $line -NoNewline
-                }
-            }
-        }
-    } finally {
-        [Console]::CursorVisible = $true
-    }
-}
-
 if ($Pick) {
-    $RepoRoot = Select-WorktreeInteractive -ContextDir $ScriptDir
+    Import-Module (Join-Path $ScriptDir '_menu.psm1') -Force
+    $RepoRoot = Select-Worktree -ContextDir $ScriptDir
 } elseif ($Target) {
     if (-not (Test-Path $Target)) { throw "Target not found: $Target" }
     $RepoRoot = (Get-Item $Target).FullName
@@ -156,59 +49,6 @@ $Csproj     = Join-Path $ProjectDir 'WhispUI.csproj'
 $ExePath    = Join-Path $ProjectDir "bin\x64\$Configuration\net10.0-windows10.0.19041.0\WhispUI.exe"
 
 if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$RepoRoot' a WhispUI repo?" }
-
-# =============================================================================
-# Worktree junctions for gitignored folders
-# -----------------------------------------------------------------------------
-# `native/` (whisper.cpp DLLs, MinGW runtime) and `models/` (Whisper .bin)
-# are gitignored, so a fresh git worktree doesn't have them. The csproj
-# references `..\..\native\*.dll` with PreserveNewest, so an empty path
-# silently produces an exe without the transcription engine.
-#
-# When running from a worktree, resolve the main repo via
-# `git rev-parse --git-common-dir` and junction the missing folders.
-# No-op when running from the main repo or when git is unavailable.
-# =============================================================================
-function Sync-WorktreeJunctions {
-    param([string]$RepoRoot)
-
-    $needed = @('native', 'models')
-    $missing = @($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })
-    if ($missing.Count -eq 0) { return }
-
-    Push-Location $RepoRoot
-    try {
-        $commonDir = git rev-parse --git-common-dir 2>$null
-    } catch {
-        return
-    } finally {
-        Pop-Location
-    }
-    if (-not $commonDir) { return }
-
-    if (-not [System.IO.Path]::IsPathRooted($commonDir)) {
-        $commonDir = Join-Path $RepoRoot $commonDir
-    }
-    $mainRepo = (Get-Item (Split-Path $commonDir)).FullName
-
-    if ($mainRepo -eq (Get-Item $RepoRoot).FullName) {
-        # Main repo — the folders are genuinely missing, not a worktree gap.
-        return
-    }
-
-    foreach ($folder in $missing) {
-        $source = Join-Path $mainRepo $folder
-        $target = Join-Path $RepoRoot $folder
-        if (-not (Test-Path $source)) {
-            Write-Host "Worktree junction skipped ($folder not in main repo): $source" -ForegroundColor Yellow
-            continue
-        }
-        Write-Host "Creating junction: $target -> $source" -ForegroundColor Cyan
-        New-Item -ItemType Junction -Path $target -Value $source | Out-Null
-    }
-}
-
-Sync-WorktreeJunctions -RepoRoot $RepoRoot
 
 # =============================================================================
 # MSBuild configuration
