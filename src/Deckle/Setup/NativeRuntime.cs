@@ -83,16 +83,9 @@ internal static class NativeRuntime
 
     public static NativeRuntimeBundle CurrentBundle { get; } = new(
         Version:     "1.0.0",
-        // TODO(native-runtime): replace with the actual GitHub Release asset URL
-        // once `gh release create native-v1.0.0 deckle-native-1.0.0.zip` has
-        // been run. Until then BundleUrlIsPlaceholder returns true and the
-        // wizard keeps the manual Browse... flow as the only install path.
-        Url:         "https://PLACEHOLDER.example.com/deckle-native-1.0.0.zip",
-        // TODO(native-runtime): replace with the SHA256 emitted by
-        // publish-native-runtime.ps1 on stdout (zip-level hash, lowercased).
-        Sha256:      "0000000000000000000000000000000000000000000000000000000000000000",
-        // Approximate — refine to the exact byte count from the published zip.
-        SizeBytes:   19_131_110L,
+        Url:         "https://github.com/PelopeeNoire/deckle/releases/download/native-v1.0.0/deckle-native-1.0.0.zip",
+        Sha256:      "c7304be24ccca1255b2bdd6d10609d87fe806590704a07e20b9af233b1d6e4cc",
+        SizeBytes:   19_131_111L,
         DisplayName: "Whisper.cpp + Vulkan runtime");
 
     // True while CurrentBundle.Url has not been wired to the actual published
