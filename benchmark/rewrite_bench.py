@@ -63,7 +63,7 @@ DEFAULT_NUM_CTX_K   = 16
 DEFAULT_ENDPOINT    = "http://localhost:11434/api/generate"
 
 # Per-bracket corpus glob — corpora are produced by ``refresh_corpus.py``
-# from the WhispUI dictation telemetry, then segmented by bracket.
+# from the Deckle dictation telemetry, then segmented by bracket.
 def corpus_glob_for(bracket: str) -> str:
     return f"telemetry/corpus-{bracket}/corpus.jsonl"
 

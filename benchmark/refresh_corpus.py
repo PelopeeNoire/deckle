@@ -1,6 +1,6 @@
 """Fuse a corpus.jsonl with a whisper_bench report into corpus.refreshed.jsonl.
 
-The original ``corpus.jsonl`` is the WhispUI telemetry source of truth and
+The original ``corpus.jsonl`` is the Deckle telemetry source of truth and
 must stay immutable. When the Whisper initial prompt changes, the LLM
 rewrite bench should run on the *new* raw text — but the rest of the
 envelope (timestamp, session, audio_file, duration, profile, slug,

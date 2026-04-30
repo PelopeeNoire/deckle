@@ -1,0 +1,85 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Deckle</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Neutral language for the MRT/PRI resource resolver. Without
+         this, Strings/en-US/Resources.resw is found at runtime but no
+         language is declared as fallback, which can leave x:Uid
+         lookups empty when the system display language doesn't match
+         en-US. See the localization reference under docs/. -->
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Platforms>x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Version>0.1.0</Version>
+    <!-- Forces the Publish pipeline to generate/copy Deckle.pri into PublishDir.
+         Without this, in unpackaged + WindowsAppSDK 1.8, the .pri doesn't land in
+         publish\ and all compiled XAML resources (.xbf embedded in .pri since 1.8)
+         become unreachable. Cf. microsoft/WindowsAppSDK#3451. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+  </PropertyGroup>
+
+  <!-- Publish-only options. Gated on _IsPublishing (MSBuild-internal flag
+       set exclusively by the Publish target) so a plain `MSBuild /t:Build`
+       in Release doesn't trigger the WinAppSDK "SingleFile without
+       SelfContained" warning nor pay single-file costs at every iteration.
+
+       PublishSingleFile bundles the managed assemblies into Deckle.exe.
+       Native DLLs (libwhisper + ggml backends + MinGW runtime) and Whisper
+       models are NOT shipped — they live in <UserDataRoot>\native\ and
+       <UserDataRoot>\models\, populated by scripts/setup-assets.ps1 (or
+       the future first-run wizard) on a per-user basis.
+
+       SelfContained pairs with PublishSingleFile per WinAppSDK's SingleFile
+       target requirements, and it's what the distribution ZIP wants anyway
+       (no dependency on a system-wide .NET runtime install).
+
+       PublishTrimmed is NOT enabled: WinUI 3 + XAML compilation + x:Bind
+       generated code rely on reflection paths the IL linker can't prove
+       safe. We already hit one trimming crash in the wild (Slider with a
+       range excluding 0 — see project_winui3_slider_bug.md). Trimming stays
+       off until there's a concrete size/perf motive AND a runtime test
+       matrix proves it safe. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <!-- MVVM Toolkit — source generators [ObservableProperty], ObservableObject, [RelayCommand].
+         Eliminates INotifyPropertyChanged boilerplate in ViewModels. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- SettingsCard / SettingsExpander — canonical Windows 11 pattern for settings pages
+         (spacing, section headers, animations documented on Microsoft Learn). -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
+    <!-- Win2D — Direct2D-backed drawing on CompositionDrawingSurface. Used by the HUD
+         Rewriting stroke to paint a true angular-gradient rainbow; CompositionLinearGradientBrush
+         only supports bbox-linear mapping, so a rotating gradient around a rounded rect
+         perimeter requires Win2D + a surface brush. -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Tray icons -->
+    <Content Include="Assets\Icons\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Fonts (Bitcount Single, etc.) -->
+    <Content Include="Assets\Fonts\**\*.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Warm-up audio (PCM 16-bit mono 16 kHz, lu par WhispEngine.Warmup) -->
+    <Content Include="Assets\Sounds\**\*.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

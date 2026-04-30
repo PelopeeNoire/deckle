@@ -29,7 +29,7 @@ are reproduced from the upstream projects.
 
 ## .NET / NuGet packages
 
-The following packages are referenced via `src/WhispUI/WhispUI.csproj`.
+The following packages are referenced via `src/Deckle/Deckle.csproj`.
 Each ships under its own license — see the package metadata on
 nuget.org or the upstream repository for the full text.
 

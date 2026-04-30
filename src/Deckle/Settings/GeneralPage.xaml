@@ -1,0 +1,439 @@
+<Page
+    x:Class="Deckle.Settings.GeneralPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI"
+    xmlns:vm="using:Deckle.Settings.ViewModels">
+
+    <!-- Pattern canonique Microsoft Learn (SettingsExpander sample "Settings page
+         example") : StackPanel max 1000 dans un Grid, Spacing=4 entre cards,
+         Margin="1,30,0,6" sur les headers de section. -->
+    <Page.Resources>
+        <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+        <Style x:Key="SettingsSectionHeaderTextBlockStyle"
+               BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+               TargetType="TextBlock">
+            <Style.Setters>
+                <Setter Property="Margin" Value="1,30,0,6" />
+            </Style.Setters>
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer Padding="32,24,32,24"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <Grid>
+            <StackPanel MaxWidth="1000"
+                        HorizontalAlignment="Stretch"
+                        Spacing="{StaticResource SettingsCardSpacing}">
+
+                <!-- Titre de page — pattern Win11 Settings : le H1 vit dans la
+                     Page, pas dans le chrome de la fenêtre. -->
+                <TextBlock x:Uid="GeneralPageTitleLabel"
+                           Style="{StaticResource TitleTextBlockStyle}"
+                           Margin="0,0,0,8" />
+
+                <TextBlock x:Uid="GeneralPageSubtitleLabel"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,12" />
+
+                <!-- ── Shortcuts ───────────────────────────────────────────── -->
+                <TextBlock x:Uid="GeneralPageShortcutsHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="GeneralTranscribeCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                    <TextBlock x:Uid="GeneralShortcutTranscribeKey"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralPrimaryRewriteCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                    <TextBlock x:Uid="GeneralShortcutPrimaryRewriteKey"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralSecondaryRewriteCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                    <TextBlock x:Uid="GeneralShortcutSecondaryRewriteKey"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </controls:SettingsCard>
+
+                <!-- ── Appearance ──────────────────────────────────────────── -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="GeneralPageAppearanceHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetAppearance_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Uid="GeneralAppThemeCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
+                    <ComboBox x:Name="ThemeCombo"
+                              MinWidth="160"
+                              SelectionChanged="ThemeCombo_SelectionChanged">
+                        <ComboBoxItem x:Uid="GeneralThemeSystem" Tag="System" />
+                        <ComboBoxItem x:Uid="GeneralThemeLight" Tag="Light" />
+                        <ComboBoxItem x:Uid="GeneralThemeDark" Tag="Dark" />
+                    </ComboBox>
+                </controls:SettingsCard>
+
+                <!-- ── Startup ─────────────────────────────────────────────── -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="GeneralPageStartupHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetStartup_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Uid="GeneralAutostartCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7E8;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutostartEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralStartMinimizedCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE944;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralWarmupCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <!-- ── Recording ───────────────────────────────────────────── -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="GeneralPageRecordingHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetRecording_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Name="AudioInputCard"
+                                       x:Uid="GeneralMicrophoneCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                    <ComboBox x:Name="AudioInputCombo"
+                              MinWidth="240"
+                              SelectionChanged="AudioInputCombo_SelectionChanged" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralAutoPasteCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <!--
+                    Voice level window — calibration of the dBFS range the
+                    HUD chrono maps onto its visible response. Three sliders
+                    target HudChrono.{Min,Max}Dbfs + DbfsCurveExponent, pushed
+                    live via App.ApplyLevelWindow on every change. The header
+                    toggle enables auto-calibration: after a few recordings
+                    with "Log microphone" on, the engine snaps the floor and
+                    ceiling to the user's measured percentiles.
+                -->
+                <controls:SettingsExpander x:Uid="GeneralVoiceLevelExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE993;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <TextBlock x:Uid="GeneralVoiceLevelAutoLabel"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <ToggleSwitch IsOn="{x:Bind ViewModel.LevelWindowAutoCalibration, Mode=TwoWay}"
+                                      OnContent=""
+                                      OffContent="" />
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="GeneralVoiceLevelFloorCard">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowMinSlider"
+                                        Minimum="-90" Maximum="-10"
+                                        Value="{x:Bind ViewModel.LevelWindowMinDbfs, Mode=TwoWay}"
+                                        StepFrequency="1"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowMinDbfs, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="dBFS"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralVoiceLevelCeilingCard">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowMaxSlider"
+                                        Minimum="-60" Maximum="-10"
+                                        Value="{x:Bind ViewModel.LevelWindowMaxDbfs, Mode=TwoWay}"
+                                        StepFrequency="1"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowMaxDbfs, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="dBFS"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralVoiceLevelCurveCard">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowExponentSlider"
+                                        Minimum="0.3" Maximum="3.0"
+                                        Value="{x:Bind ViewModel.LevelWindowExponent, Mode=TwoWay}"
+                                        StepFrequency="0.05"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowExponent, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <controls:SettingsExpander x:Uid="GeneralOverlayExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="GeneralOverlayFadeCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralOverlayAnimationsCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayAnimations, Mode=TwoWay}" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralOverlayPositionCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ComboBox x:Name="OverlayPositionCombo"
+                                      MinWidth="160"
+                                      SelectionChanged="OverlayPositionCombo_SelectionChanged">
+                                <ComboBoxItem x:Uid="GeneralOverlayPositionTop" Tag="TopCenter" />
+                                <ComboBoxItem x:Uid="GeneralOverlayPositionBottom" Tag="BottomCenter" />
+                            </ComboBox>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- ── Telemetry ───────────────────────────────────────────── -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="GeneralPageTelemetryHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetTelemetry_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Uid="GeneralLogMicrophoneCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                    <ToggleSwitch x:Name="MicrophoneTelemetryToggle"
+                                  IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}"
+                                  Toggled="MicrophoneTelemetryToggle_Toggled" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralLatencyCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralAppLogCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9A4;}">
+                    <ToggleSwitch x:Name="ApplicationLogToggle"
+                                  IsOn="{x:Bind ViewModel.ApplicationLogToDisk, Mode=TwoWay}"
+                                  Toggled="ApplicationLogToggle_Toggled" />
+                </controls:SettingsCard>
+
+                <controls:SettingsExpander x:Uid="GeneralCorpusExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xEFA9;}">
+                    <ToggleSwitch x:Name="CorpusLoggingToggle"
+                                  IsOn="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=TwoWay}"
+                                  Toggled="CorpusLoggingToggle_Toggled" />
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Name="AudioCorpusCard"
+                                               x:Uid="GeneralAudioCorpusCard"
+                                               IsEnabled="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=OneWay}">
+                            <ToggleSwitch x:Name="AudioCorpusToggle"
+                                          IsOn="{x:Bind ViewModel.RecordAudioCorpus, Mode=TwoWay}"
+                                          Toggled="AudioCorpusToggle_Toggled" />
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <controls:SettingsCard x:Name="TelemetryFolderCard"
+                                       x:Uid="GeneralStorageFolderCard"
+                                       ContentAlignment="Vertical">
+                    <!-- Grid + "*" column lets the TextBox shrink when the
+                         Settings window is narrow. A StackPanel Horizontal
+                         would keep children at their natural width and
+                         clip the rightmost buttons. -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TelemetryFolderBox"
+                                 Grid.Column="0"
+                                 Text="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
+                        <Button x:Name="ChangeTelemetryFolderButton"
+                                x:Uid="GeneralStorageFolderSetButton"
+                                Grid.Column="1"
+                                Click="ChangeCorpusFolderButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                <TextBlock x:Uid="GeneralStorageFolderSetLabel" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="OpenTelemetryFolderButton"
+                                x:Uid="GeneralStorageFolderOpenButton"
+                                Grid.Column="2"
+                                Click="OpenCorpusFolderButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock x:Uid="GeneralStorageFolderOpenLabel" />
+                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </controls:SettingsCard>
+
+                <!-- ── Back up & restore ───────────────────────────────────── -->
+                <!--
+                    Pattern PowerToys (Settings → General → "Back up & restore"):
+                    a single SettingsExpander with the Back up / Restore actions
+                    in the header and the body revealing Location + the latest
+                    snapshot info. Restore targets the most recent snapshot;
+                    older snapshots are accessible by opening the folder.
+                -->
+                <TextBlock x:Uid="GeneralPageBackupRestoreHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsExpander x:Uid="GeneralBackupExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE777;}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button x:Name="CreateBackupButton"
+                                x:Uid="GeneralBackupCreateButton"
+                                Click="CreateBackupButton_Click" />
+                        <Button x:Name="RestoreBackupButton"
+                                x:Uid="GeneralBackupRestoreButton"
+                                Click="RestoreBackupButton_Click"
+                                IsEnabled="{x:Bind ViewModel.HasBackup, Mode=OneWay}" />
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="GeneralBackupLocationCard">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="{x:Bind ViewModel.BackupLocationDisplay, Mode=OneWay}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="380" />
+                                <Button x:Name="ChangeBackupFolderButton"
+                                        x:Uid="GeneralBackupChangeButton"
+                                        Click="ChangeBackupFolderButton_Click">
+                                    <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Uid="GeneralBackupInfoCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="16" RowSpacing="4" Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Uid="GeneralBackupFileNameLabel"
+                                           Grid.Row="0" Grid.Column="0"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                           Text="{x:Bind ViewModel.LatestBackupFileName, Mode=OneWay}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Uid="GeneralBackupCreatedAtLabel"
+                                           Grid.Row="1" Grid.Column="0"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1"
+                                           Text="{x:Bind ViewModel.LatestBackupCreatedAt, Mode=OneWay}" />
+                            </Grid>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- ── Application data ────────────────────────────────────── -->
+                <TextBlock x:Uid="GeneralPageApplicationDataHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="GeneralDataFolderCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock x:Name="DataFolderPathText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="380" />
+                        <Button x:Name="OpenDataFolderButton"
+                                x:Uid="GeneralDataFolderOpenButton"
+                                Click="OpenDataFolderButton_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock x:Uid="GeneralDataFolderOpenText" />
+                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralRerunSetupCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9F5;}">
+                    <Button x:Name="ReRunSetupButton"
+                            x:Uid="GeneralRerunSetupButton"
+                            Click="ReRunSetupButton_Click" />
+                </controls:SettingsCard>
+
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Page>

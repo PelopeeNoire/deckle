@@ -1,6 +1,6 @@
-"""Reader for the WhispUI corpus JSONL files.
+"""Reader for the Deckle corpus JSONL files.
 
-WhispUI writes one line per transcription into
+Deckle writes one line per transcription into
 ``benchmark/telemetry/<profile-slug>/corpus.jsonl``. Each line is a
 TelemetryEvent envelope:
 

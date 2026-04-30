@@ -1,6 +1,6 @@
 # Benchmark — agent guide
 
-This folder holds the iterative benchmarking suite for the WhispUI
+This folder holds the iterative benchmarking suite for the Deckle
 transcription stack. Any LLM agent working here should read this file
 first; everything below is intentionally model-agnostic (no Claude-only
 shortcuts), so the same instructions apply whether you're Claude,
@@ -72,8 +72,8 @@ benchmark/
 │   ├── metrics.py            ← rule-based pre-filters
 │   └── ollama.py             ← Ollama HTTP client
 │
-├── telemetry/                ← gitignored runtime data (WhispUI side)
-│   ├── <slug>/corpus.jsonl   ← WhispUI's dictation corpus
+├── telemetry/                ← gitignored runtime data (Deckle side)
+│   ├── <slug>/corpus.jsonl   ← Deckle's dictation corpus
 │   └── <slug>/audio/*.wav    ← matching audio
 │
 ├── reports/                  ← gitignored bench artifacts
