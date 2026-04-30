@@ -318,20 +318,20 @@
                                  Grid.Column="0"
                                  Text="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
                         <Button x:Name="ChangeTelemetryFolderButton"
-                                x:Uid="GeneralStorageFolderSet"
+                                x:Uid="GeneralStorageFolderSetButton"
                                 Grid.Column="1"
                                 Click="ChangeCorpusFolderButton_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE838;" FontSize="14" />
-                                <TextBlock x:Uid="GeneralStorageFolderSet" />
+                                <TextBlock x:Uid="GeneralStorageFolderSetLabel" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="OpenTelemetryFolderButton"
-                                x:Uid="GeneralStorageFolderOpen"
+                                x:Uid="GeneralStorageFolderOpenButton"
                                 Grid.Column="2"
                                 Click="OpenCorpusFolderButton_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock x:Uid="GeneralStorageFolderOpen" />
+                                <TextBlock x:Uid="GeneralStorageFolderOpenLabel" />
                                 <FontIcon Glyph="&#xE8A7;" FontSize="12" />
                             </StackPanel>
                         </Button>
