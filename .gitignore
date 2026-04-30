@@ -5,8 +5,9 @@
 # Cloned whisper.cpp repo — external source, not versioned here.
 whisper.cpp/
 
-# Pre-built native DLLs (whisper.cpp + MinGW runtime), populated by
-# scripts/restore-assets.ps1 from a local whisper.cpp build.
+# Pre-built native DLLs (whisper.cpp + MinGW runtime). Runtime layout
+# resolves them from %LOCALAPPDATA%\Deckle\native\ exclusively; this
+# entry is defensive against stray copies under the repo root.
 native/
 
 # Whisper model weights — large binary files (100 MB to 3 GB).
@@ -116,6 +117,13 @@ benchmark/results.tsv
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/.session*
+
+# Worktrees created via Claude Code's EnterWorktree tool. The directory
+# itself is a registered git worktree (its content is not git-tracked
+# in the parent), but excluding the path here prevents `git status`
+# from ever surfacing it as untracked, and prevents accidental
+# `git add .` pollution.
+.claude/worktrees/
 
 # Personal-workflow skills not meant for the public repo.
 .claude/skills/benchmark-loop/

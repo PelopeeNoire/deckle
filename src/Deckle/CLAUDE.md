@@ -111,7 +111,7 @@ Window WinUI 3, ~320×64, bas-centre via `DisplayArea.Primary.WorkArea`,
   `WhispEngine` viennent de threads de fond).
 
 Détails (coloration progressive, fade proximité, ombre layered,
-régressions notification) dans [docs/reference--hud--0.1.md](docs/reference--hud--0.1.md).
+régressions notification) dans [docs/reference--hud--1.0.md](docs/reference--hud--1.0.md).
 
 ---
 
@@ -199,7 +199,7 @@ précompilé (pour LogWindow).
    (1 décimale), tokens en `tok`, caractères en `chars`. Suffixe
    `_ms`/`_sec`/`_tok`/`_chars` obligatoire dans le nom du champ. La
    table canonique vit dans
-   [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md)
+   [docs/reference--logging-inventory--1.0.md](docs/reference--logging-inventory--1.0.md)
    section "Vocabulaire de mesures" — la **lire avant** d'inventer
    un nom. Toute divergence est une régression et doit être
    refusée en review.
@@ -211,13 +211,13 @@ précompilé (pour LogWindow).
    pour que la ligne LogWindow reflète la nouvelle info — au minimum
    un résumé compact, le détail complet vit dans le JSONL.
 4. Passer la mesure de `[à instrumenter]` à `[logué]` dans
-   [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md),
+   [docs/reference--logging-inventory--1.0.md](docs/reference--logging-inventory--1.0.md),
    section concernée. Mettre à jour le gabarit standard si la ligne
    Verbose change.
 5. Vérifier que les consommateurs existants ne cassent pas (recherche
    sur `payload.<Field>` ou `<PayloadType>(...)` dans tout le projet).
 
-L'inventaire `reference--logging-inventory--0.1.md` est la **doc
+L'inventaire `reference--logging-inventory--1.0.md` est la **doc
 canonique** : quoi mesurer, à quel niveau, dans quel format. Avant
 d'ajouter ou de modifier un log, le lire. Sera promu un jour en
 document de nomenclature séparé ; tant que ce n'est pas fait, c'est
@@ -232,28 +232,28 @@ demande, uniquement quand je touche au sous-système concerné — pas
 chargés en contexte par défaut. Avant modification d'un sous-système,
 lire son fichier `docs/*.md`.
 
-- [docs/reference--hud--0.1.md](docs/reference--hud--0.1.md) — spec HudWindow
+- [docs/reference--hud--1.0.md](docs/reference--hud--1.0.md) — spec HudWindow
   (positioning, backdrop Acrylic, DPI), coloration progressive chrono,
   fade proximité souris (Raw Input + alpha layered + smoothstep),
   contrainte ombre layered.
-- [docs/reference--logwindow--0.1.md](docs/reference--logwindow--0.1.md) —
+- [docs/reference--logwindow--1.0.md](docs/reference--logwindow--1.0.md) —
   TitleBar natif + SearchBox, SelectorBar + CommandBar responsive,
   modèle de données (5 niveaux, cap 5000), couleurs `ThemeDictionaries`,
   templates/selector, piège wrap/scroll.
-- [docs/reference--pipeline-transcription--0.1.md](docs/reference--pipeline-transcription--0.1.md) —
+- [docs/reference--pipeline-transcription--1.0.md](docs/reference--pipeline-transcription--1.0.md) —
   pipeline monobloc (`new_segment_callback`, plus de chunking externe),
   instrumentation par segment, defaults whisper.cpp restaurés (piège
   `entropy_thold` inversé), hot-reload via `SettingsService`.
-- [docs/reference--paste-behavior--0.1.md](docs/reference--paste-behavior--0.1.md) —
+- [docs/reference--paste-behavior--1.0.md](docs/reference--paste-behavior--1.0.md) —
   re-capture cible au Stop avec filet PID, fix race `HideSync`
   (rendez-vous synchrone via `ManualResetEventSlim`), refus explicites
   de `PasteFromClipboard`, bug paste fantôme intermittent.
-- [docs/reference--settings-architecture--0.1.md](docs/reference--settings-architecture--0.1.md) —
+- [docs/reference--settings-architecture--1.0.md](docs/reference--settings-architecture--1.0.md) —
   NavigationView Auto (natif, 3 modes), TitleBar natif Standard,
   Frame+Page, SettingsCard CommunityToolkit, GeneralPage 4 sections
   câblées, WhisperPage 6 sections, persistance JSON portable,
   restart ciblé.
-- [docs/reference--logging-inventory--0.1.md](docs/reference--logging-inventory--0.1.md)
+- [docs/reference--logging-inventory--1.0.md](docs/reference--logging-inventory--1.0.md)
   — inventaire normatif des mesures par étape (vocabulaire d'unités,
   niveaux de sévérité, gabarits standards, recap UserFeedback). Référence
   unique avant d'ajouter ou de modifier un log.

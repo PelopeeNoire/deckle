@@ -10,9 +10,11 @@ Référence unique pour décider **quoi logger, à quel niveau, avec quel format
 - Câbler les bons signaux UX (`UserFeedback`) pour prévenir l'utilisateur
   des problèmes rattrapables sans qu'il ait à ouvrir la LogWindow.
 
-Document vivant. Version `0.1` : état des lieux au 2026-04-22, avant
-application. Les décisions prises ici cadrent les vagues de normalisation
-et de surface UX qui suivent.
+Document vivant. Version `1.0` : inventaire normatif appliqué au code,
+les sources et payloads décrits ci-dessous reflètent le runtime courant.
+Les décisions prises ici cadrent toute future étape mesurée — étendre un
+payload existant ou en ajouter un suit la procédure section "Quand on
+ajoute une étape mesurée" ci-dessous.
 
 ---
 
