@@ -147,7 +147,7 @@ public sealed partial class PlaygroundWindow : Window
 
         SystemBackdrop = new MicaBackdrop();
 
-        Title = "WhispUI Playground";
+        Title = "Deckle Playground";
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 880));
 
         var presenter = OverlappedPresenter.Create();

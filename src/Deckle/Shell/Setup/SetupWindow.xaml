@@ -3,7 +3,7 @@
     x:Class="Deckle.Shell.Setup.SetupWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="WhispUI Setup">
+    Title="Deckle Setup">
 
     <!-- Mica backdrop is set in code-behind. The root Grid stays
          transparent so DWM applies Mica through the window. -->

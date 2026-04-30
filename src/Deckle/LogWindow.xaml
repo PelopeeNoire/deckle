@@ -5,7 +5,7 @@
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:local="using:Deckle"
     xmlns:logging="using:Deckle.Logging"
-    Title="WhispUI Logs">
+    Title="Deckle Logs">
 
     <Grid x:Name="RootGrid">
         <Grid.Resources>

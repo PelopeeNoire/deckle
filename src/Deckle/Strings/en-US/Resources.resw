@@ -168,7 +168,7 @@
     <value>Enable corpus logging</value>
   </data>
   <data name="CorpusConsent_Body_Intro" xml:space="preserve">
-    <value>WhispUI will append every transcription to a local JSONL file — one folder per rewrite profile, one corpus.jsonl inside each — so you can iterate on your rewrite prompts offline.</value>
+    <value>Deckle will append every transcription to a local JSONL file — one folder per rewrite profile, one corpus.jsonl inside each — so you can iterate on your rewrite prompts offline.</value>
   </data>
   <data name="CorpusConsent_Body_What" xml:space="preserve">
     <value>Raw transcription text, rewritten text, timing, model and prompt identifiers. Nothing is sent over the network.</value>
@@ -182,7 +182,7 @@
     <value>Enable application log</value>
   </data>
   <data name="ApplicationLogConsent_Body_Intro" xml:space="preserve">
-    <value>WhispUI will mirror every in-app log line to a local JSONL file (app.jsonl) so you can diagnose a specific issue across restarts.</value>
+    <value>Deckle will mirror every in-app log line to a local JSONL file (app.jsonl) so you can diagnose a specific issue across restarts.</value>
   </data>
   <data name="ApplicationLogConsent_Body_What" xml:space="preserve">
     <value>Every log line from every subsystem — capture, VAD, Whisper, rewriting, clipboard, paste, UI — at every verbosity level. Log messages can include partial transcription text when a pipeline step logs what it just produced. Nothing is sent over the network.</value>
@@ -196,7 +196,7 @@
     <value>Enable audio corpus</value>
   </data>
   <data name="AudioCorpusConsent_Body_Intro" xml:space="preserve">
-    <value>WhispUI will save the raw microphone audio of every transcription as a 16 kHz mono WAV file, next to the JSONL text corpus under an audio/ subfolder per profile. Useful for replaying a past session against a different Whisper model or prompt.</value>
+    <value>Deckle will save the raw microphone audio of every transcription as a 16 kHz mono WAV file, next to the JSONL text corpus under an audio/ subfolder per profile. Useful for replaying a past session against a different Whisper model or prompt.</value>
   </data>
   <data name="AudioCorpusConsent_Body_What" xml:space="preserve">
     <value>The exact audio passed to whisper.cpp — including any silence and background noise picked up by the microphone. One WAV per transcription. Nothing is sent over the network.</value>
@@ -210,7 +210,7 @@
     <value>Enable microphone telemetry</value>
   </data>
   <data name="MicrophoneTelemetryConsent_Body_Intro" xml:space="preserve">
-    <value>WhispUI will log your microphone level distribution after every recording, so you can calibrate the HUD level window against the dBFS range your microphone actually produces.</value>
+    <value>Deckle will log your microphone level distribution after every recording, so you can calibrate the HUD level window against the dBFS range your microphone actually produces.</value>
   </data>
   <data name="MicrophoneTelemetryConsent_Body_What" xml:space="preserve">
     <value>Only level statistics — minimum, percentiles (p10, p25, p50, p75, p90), maximum, and mean RMS — in dBFS. No audio. No transcription. No words. Nothing is sent over the network.</value>
@@ -365,14 +365,14 @@
        Tray icon tooltip. Capped at 127 chars by Shell_NotifyIcon. The
        {0} placeholder receives a Status_* string from WhispEngine. -->
   <data name="Tray_Tooltip_Format" xml:space="preserve">
-    <value>Whisp — {0}</value>
+    <value>Deckle — {0}</value>
   </data>
 
   <!-- ─── Setup wizard — shell ───────────────────────────────────────
        SetupWindow shell strings: window title, footer buttons. The
        footer buttons reuse Common_* via x:Uid in XAML. -->
   <data name="Setup_WindowTitle" xml:space="preserve">
-    <value>WhispUI Setup</value>
+    <value>Deckle Setup</value>
   </data>
   <data name="SetupCancelButton.Content" xml:space="preserve">
     <value>Cancel</value>
@@ -531,7 +531,7 @@
        Logs in the footer). Window.Title XAML attribute is overridden
        in code-behind, only the TitleBar control title is loc'd. -->
   <data name="SettingsTitleBar.Title" xml:space="preserve">
-    <value>WhispUI Settings</value>
+    <value>Deckle Settings</value>
   </data>
   <data name="SettingsNavGeneral.Content" xml:space="preserve">
     <value>General</value>
@@ -627,7 +627,7 @@
     <value>Start with Windows</value>
   </data>
   <data name="GeneralAutostartCard.Description" xml:space="preserve">
-    <value>Launch WhispUI automatically when you sign in.</value>
+    <value>Launch Deckle automatically when you sign in.</value>
   </data>
   <data name="GeneralStartMinimizedCard.Header" xml:space="preserve">
     <value>Start minimized</value>
@@ -684,7 +684,7 @@
     <value>Show the overlay while recording</value>
   </data>
   <data name="GeneralOverlayExpander.Description" xml:space="preserve">
-    <value>A small floating indicator shown at the bottom of your screen while WhispUI captures and transcribes.</value>
+    <value>A small floating indicator shown at the bottom of your screen while Deckle captures and transcribes.</value>
   </data>
   <data name="GeneralOverlayFadeCard.Header" xml:space="preserve">
     <value>Fade when your cursor is near</value>
@@ -744,7 +744,7 @@
     <value>Storage folder</value>
   </data>
   <data name="GeneralStorageFolderCard.Description" xml:space="preserve">
-    <value>Shared root for every telemetry stream enabled above. Leave empty to use the default %LOCALAPPDATA%\WhispUI\telemetry\.</value>
+    <value>Shared root for every telemetry stream enabled above. Leave empty to use the default %LOCALAPPDATA%\Deckle\telemetry\.</value>
   </data>
   <data name="GeneralStorageFolderSetLabel.Text" xml:space="preserve">
     <value>Set</value>
@@ -789,7 +789,7 @@
     <value>Data folder</value>
   </data>
   <data name="GeneralDataFolderCard.Description" xml:space="preserve">
-    <value>Settings, telemetry, models, and native libraries — everything mutable lives here. Defaults to %LOCALAPPDATA%\WhispUI\.</value>
+    <value>Settings, telemetry, models, and native libraries — everything mutable lives here. Defaults to %LOCALAPPDATA%\Deckle\.</value>
   </data>
   <data name="GeneralDataFolderOpenText.Text" xml:space="preserve">
     <value>Open</value>
@@ -815,7 +815,7 @@
     <value>Transcription</value>
   </data>
   <data name="WhisperPage_Subtitle" xml:space="preserve">
-    <value>Control how WhispUI turns your voice into text. Start with the model and language — then use Speech filtering to fight hallucinations on silences and background noise.</value>
+    <value>Control how Deckle turns your voice into text. Start with the model and language — then use Speech filtering to fight hallucinations on silences and background noise.</value>
   </data>
   <data name="WhisperPage_ResetAll.ToolTipService.ToolTip" xml:space="preserve">
     <value>Reset all transcription settings to defaults</value>
@@ -860,7 +860,7 @@
     <value>Language</value>
   </data>
   <data name="WhisperLanguageCard.Description" xml:space="preserve">
-    <value>The language you're speaking. Set it to match your language for best accuracy, or use 'auto' to let WhispUI detect it.</value>
+    <value>The language you're speaking. Set it to match your language for best accuracy, or use 'auto' to let Deckle detect it.</value>
   </data>
   <data name="WhisperInitialPromptCard.Header" xml:space="preserve">
     <value>Initial prompt</value>
@@ -887,7 +887,7 @@
     <value>Detection threshold</value>
   </data>
   <data name="WhisperVadThresholdCard.Description" xml:space="preserve">
-    <value>How confident WhispUI must be that a sound is speech. Higher values filter more noise but may miss quiet speech. Default: 0.5.</value>
+    <value>How confident Deckle must be that a sound is speech. Higher values filter more noise but may miss quiet speech. Default: 0.5.</value>
   </data>
   <data name="WhisperVadMinSpeechCard.Header" xml:space="preserve">
     <value>Minimum speech duration</value>
@@ -1201,7 +1201,7 @@
     <value>Transcription</value>
   </data>
   <data name="WhisperPageSubtitleLabel.Text" xml:space="preserve">
-    <value>Control how WhispUI turns your voice into text. Start with the model and language — then use Speech filtering to fight hallucinations on silences and background noise.</value>
+    <value>Control how Deckle turns your voice into text. Start with the model and language — then use Speech filtering to fight hallucinations on silences and background noise.</value>
   </data>
   <data name="WhisperPageModelEngineHeaderLabel.Text" xml:space="preserve">
     <value>Model &amp; engine</value>
@@ -1402,7 +1402,7 @@
        Title bar, search, level selector, command bar, and the floating
        copy badge that flips between Copy / Copy selection / Copied. -->
   <data name="LogWindowTitleBar.Title" xml:space="preserve">
-    <value>WhispUI Logs</value>
+    <value>Deckle Logs</value>
   </data>
   <data name="LogWindowSearchBox.PlaceholderText" xml:space="preserve">
     <value>Search logs</value>
@@ -1451,16 +1451,16 @@
        The XAML Title="..." attribute is overridden in code-behind
        through AppWindow.Title in each window's ConfigureWindow. -->
   <data name="LogWindow_WindowTitle" xml:space="preserve">
-    <value>WhispUI Logs</value>
+    <value>Deckle Logs</value>
   </data>
   <data name="Settings_WindowTitle" xml:space="preserve">
-    <value>WhispUI Settings</value>
+    <value>Deckle Settings</value>
   </data>
   <data name="Hud_WindowTitle" xml:space="preserve">
-    <value>WhispUI Recording</value>
+    <value>Deckle Recording</value>
   </data>
   <data name="HudOverlay_WindowTitle" xml:space="preserve">
-    <value>WhispUI Overlay</value>
+    <value>Deckle Overlay</value>
   </data>
 
 </root>
