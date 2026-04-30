@@ -72,6 +72,21 @@ dependency, no account, no telemetry leaving the machine.
 - **Ollama** for LLM rewrite. Optional — the rewrite feature is off by
   default and the app works without it.
 
+### Fresh clone — first run
+
+For a brand new clone, in this order :
+
+1. Install the prerequisites above (Windows 11, .NET 10 SDK, Visual Studio
+   2026 with the WinUI workload, optionally Vulkan SDK and Ollama).
+2. Clone whisper.cpp **next to this repo** and build it with the Vulkan
+   backend, so its `build/bin/` contains the DLLs.
+3. From the repo root, run `scripts/restore-assets.ps1` to copy the
+   whisper and MinGW DLLs into `native/`.
+4. Drop a Whisper model file (e.g. `ggml-base.bin`) into `models/`, or
+   wait for the first-run wizard inside the app to download one for you.
+5. Build & run from PowerShell with `scripts/build-run.ps1`, or open the
+   solution in Visual Studio 2026 and press F5.
+
 ### Build & run
 
 From `src/WhispUI/`, in PowerShell (no admin needed) :
@@ -85,6 +100,43 @@ The output is a self-contained executable at
 
 The `scripts/build-run.ps1` helper resolves `MSBuild.exe` automatically
 (via `$env:WHISPUI_MSBUILD` or `vswhere`) and launches the resulting exe.
+
+### Publish — installable build
+
+`scripts/publish-unpackaged.ps1` produces a self-contained, single-file
+unpackaged build under `publish/` (≈ 50–100 MB) that can be copied
+anywhere — for example `%LOCALAPPDATA%\Programs\WhispUI\` — and launched
+directly. The script wraps `MSBuild -t:Restore;Publish` (Framework
+runtime, to avoid a known XamlCompiler bug in `dotnet publish`).
+
+```powershell
+scripts/publish-unpackaged.ps1 -Configuration Release
+```
+
+The published folder contains `WhispUI.exe`, the whisper / MinGW native
+DLLs, and the WinUI resource index. Whisper models are not bundled — the
+first-run wizard downloads the chosen model into the per-user data
+folder on first launch.
+
+---
+
+## Run at startup
+
+WhispUI can start automatically when you log into Windows. In the app,
+go to **Settings → General → Launch at startup** and toggle it on. Two
+related options shape the behaviour :
+
+- **Start minimized** keeps the main window hidden on launch — the app
+  lives in the system tray and only the HUD shows up when you press the
+  hotkey.
+- **Warm up on launch** runs a short dummy transcription right after
+  startup so the first real hotkey press does not pay the cold-start
+  cost (model load, Vulkan init).
+
+Under the hood this writes a single user-scope entry under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WhispUI` pointing at
+the exe you launched the toggle from — no UAC, no service, nothing
+machine-wide. Toggle it off to remove the entry.
 
 ---
 

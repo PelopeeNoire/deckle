@@ -1,0 +1,63 @@
+# Default: let Git auto-detect text files and normalize EOL on commit (LF in
+# the index, native EOL on checkout via core.autocrlf).
+* text=auto
+
+# ── Source code ─────────────────────────────────────────────────────────────
+*.cs       text eol=crlf diff=csharp
+*.xaml     text eol=crlf
+*.csproj   text eol=crlf
+*.props    text eol=crlf
+*.targets  text eol=crlf
+*.sln      text eol=crlf
+*.resw     text eol=crlf
+*.manifest text eol=crlf
+
+# ── Web / docs / config (LF, cross-platform friendly) ───────────────────────
+*.md   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+
+# ── Windows shell scripts (must keep CRLF) ──────────────────────────────────
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ── Unix shell / Python (LF) ────────────────────────────────────────────────
+*.sh  text eol=lf
+*.py  text eol=lf
+
+# ── Binary assets ───────────────────────────────────────────────────────────
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.svg  text eol=lf
+
+*.ttf  binary
+*.otf  binary
+*.woff  binary
+*.woff2 binary
+
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.flac binary
+
+*.bin binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.lib binary
+*.pri binary
+*.so  binary
+*.dylib binary
+
+*.pdf binary
+*.zip binary
+*.7z  binary
+*.gz  binary
