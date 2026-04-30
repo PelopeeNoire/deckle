@@ -99,23 +99,8 @@ scripts/build-run.ps1 -Configuration Release
 
 Output: `src/WhispUI/bin/x64/Release/net10.0-windows10.0.19041.0/WhispUI.exe`.
 
-### Publish — installable build
-
-`scripts/publish-unpackaged.ps1` produces a self-contained, single-file
-unpackaged build under `publish/` (≈ 50–100 MB) that can be copied
-anywhere — for example `%LOCALAPPDATA%\Programs\WhispUI\` — and launched
-directly. The script wraps `MSBuild -t:Restore;Publish` (Framework
-runtime, to avoid the same XamlCompiler bug).
-
-```powershell
-scripts/publish-unpackaged.ps1 -Configuration Release
-```
-
-The published folder contains `WhispUI.exe`, the WinUI resource index,
-and the Windows App SDK runtime. Native DLLs and Whisper models are
-**not** bundled — they live in `%LOCALAPPDATA%\WhispUI\native\` and
-`\models\`, populated by `scripts/setup-assets.ps1` (and replaced
-later by an in-app first-run wizard).
+See [`scripts/README.md`](scripts/README.md) for an overview of every
+script and module under `scripts/`.
 
 ---
 
