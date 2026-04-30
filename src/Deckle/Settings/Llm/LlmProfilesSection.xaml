@@ -1,9 +1,9 @@
 <UserControl
-    x:Class="WhispUI.Settings.Llm.LlmProfilesSection"
+    x:Class="Deckle.Settings.Llm.LlmProfilesSection"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
-    xmlns:vm="using:WhispUI.Settings.ViewModels"
+    xmlns:vm="using:Deckle.Settings.ViewModels"
     x:Name="Root">
 
     <UserControl.Resources>

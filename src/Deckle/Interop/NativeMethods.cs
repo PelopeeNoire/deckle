@@ -1,9 +1,9 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using WhispUI.Setup;
+using Deckle.Setup;
 
-namespace WhispUI.Interop;
+namespace Deckle.Interop;
 
 internal static class NativeMethods
 {

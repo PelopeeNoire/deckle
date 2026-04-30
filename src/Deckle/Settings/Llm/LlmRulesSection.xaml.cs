@@ -4,9 +4,9 @@ using System.Linq;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using WhispUI.Localization;
+using Deckle.Localization;
 
-namespace WhispUI.Settings.Llm;
+namespace Deckle.Settings.Llm;
 
 // ─── Auto-rewrite rules section of LlmPage ─────────────────────────────────
 //

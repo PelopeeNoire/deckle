@@ -1,10 +1,10 @@
 <Window
-    x:Class="WhispUI.LogWindow"
+    x:Class="Deckle.LogWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
-    xmlns:local="using:WhispUI"
-    xmlns:logging="using:WhispUI.Logging"
+    xmlns:local="using:Deckle"
+    xmlns:logging="using:Deckle.Logging"
     Title="WhispUI Logs">
 
     <Grid x:Name="RootGrid">

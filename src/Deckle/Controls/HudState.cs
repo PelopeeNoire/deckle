@@ -1,4 +1,4 @@
-namespace WhispUI.Controls;
+namespace Deckle.Controls;
 
 internal enum HudState
 {

@@ -1,4 +1,4 @@
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // Typed source constants — closed vocabulary. No magic strings in caller code.
 // Brackets are added by TelemetryEvent.Text formatting, so values must NOT include

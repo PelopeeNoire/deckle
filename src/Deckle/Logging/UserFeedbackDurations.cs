@@ -1,6 +1,6 @@
 using System;
 
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // Hardcoded HUD display durations, tuned for read time by severity. Kept out
 // of Settings deliberately — introducing a knob here adds complexity for a

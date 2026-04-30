@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace WhispUI.Setup;
+namespace Deckle.Setup;
 
 // ── SetupContext ─────────────────────────────────────────────────────────────
 //

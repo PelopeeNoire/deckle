@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 
-namespace WhispUI.Setup;
+namespace Deckle.Setup;
 
 // ── NativeRuntime ────────────────────────────────────────────────────────────
 //

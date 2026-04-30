@@ -1,9 +1,9 @@
-using WhispUI.Interop;
-using WhispUI.Logging;
-using WhispUI.Logging.Sinks;
-using WhispUI.Shell;
+using Deckle.Interop;
+using Deckle.Logging;
+using Deckle.Logging.Sinks;
+using Deckle.Shell;
 
-namespace WhispUI;
+namespace Deckle;
 
 public partial class App : Microsoft.UI.Xaml.Application
 {

@@ -6,10 +6,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
-using WhispUI.Llm;
-using WhispUI.Localization;
+using Deckle.Llm;
+using Deckle.Localization;
 
-namespace WhispUI.Settings.Llm.GgufImport;
+namespace Deckle.Settings.Llm.GgufImport;
 
 // ─── Vue du dialogue d'import GGUF ─────────────────────────────────────────
 //

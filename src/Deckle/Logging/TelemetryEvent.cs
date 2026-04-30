@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 
-namespace WhispUI.Logging;
+namespace Deckle.Logging;
 
 // ── TelemetryEvent ──────────────────────────────────────────────────────────
 //

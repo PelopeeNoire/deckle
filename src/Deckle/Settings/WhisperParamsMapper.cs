@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using WhispUI.Interop;
-using WhispUI.Logging;
+using Deckle.Interop;
+using Deckle.Logging;
 
-namespace WhispUI.Settings;
+namespace Deckle.Settings;
 
 // ── WhisperParamsMapper ───────────────────────────────────────────────────────
 //

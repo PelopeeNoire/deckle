@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
-using WhispUI.Logging;
-using WhispUI.Shell;
+using Deckle.Logging;
+using Deckle.Shell;
 
-namespace WhispUI.Settings.ViewModels;
+namespace Deckle.Settings.ViewModels;
 
 // ViewModel for GeneralPage — bridges the 4 AppSettings sections
 // (Recording, Overlay, Startup, Appearance) to the XAML via x:Bind.

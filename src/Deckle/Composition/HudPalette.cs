@@ -1,6 +1,6 @@
-using WhispUI.Controls;
+using Deckle.Controls;
 
-namespace WhispUI.Composition;
+namespace Deckle.Composition;
 
 // Semantic palette + Segoe Fluent glyphs for HUD message badges.
 //

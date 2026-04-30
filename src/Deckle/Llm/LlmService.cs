@@ -3,10 +3,10 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using WhispUI.Logging;
-using WhispUI.Settings;
+using Deckle.Logging;
+using Deckle.Settings;
 
-namespace WhispUI.Llm;
+namespace Deckle.Llm;
 
 // ─── LLM rewrite service via Ollama (RAW mode) ───────────────────────────────
 //

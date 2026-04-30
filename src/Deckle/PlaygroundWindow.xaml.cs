@@ -8,13 +8,13 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
-using WhispUI.Composition;
-using WhispUI.Controls;
-using WhispUI.Interop;
-using WhispUI.Playground;
-using WhispUI.Shell;
+using Deckle.Composition;
+using Deckle.Controls;
+using Deckle.Interop;
+using Deckle.Playground;
+using Deckle.Shell;
 
-namespace WhispUI;
+namespace Deckle;
 
 // ─── HUD playground window ────────────────────────────────────────────────────
 //

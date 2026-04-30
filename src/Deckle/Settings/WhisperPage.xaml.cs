@@ -10,11 +10,11 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Settings.ViewModels;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Settings.ViewModels;
 
-namespace WhispUI.Settings;
+namespace Deckle.Settings;
 
 public sealed partial class WhisperPage : Page
 {
@@ -456,7 +456,7 @@ public sealed partial class WhisperPage : Page
 
     private void RestartNow_Click(object sender, RoutedEventArgs e)
     {
-        App.RestartApp("WhispUI.Settings.WhisperPage");
+        App.RestartApp("Deckle.Settings.WhisperPage");
     }
 
     private void RestartDiscard_Click(object sender, RoutedEventArgs e)

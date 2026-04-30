@@ -1,13 +1,13 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using WhispUI.Interop;
-using WhispUI.Llm;
-using WhispUI.Localization;
-using WhispUI.Logging;
-using WhispUI.Settings;
+using Deckle.Interop;
+using Deckle.Llm;
+using Deckle.Localization;
+using Deckle.Logging;
+using Deckle.Settings;
 
-namespace WhispUI;
+namespace Deckle;
 
 // Result of a pipeline pass, consumed by the HUD post-paste handler.
 //   None            — nothing to show (empty audio, empty text, error).

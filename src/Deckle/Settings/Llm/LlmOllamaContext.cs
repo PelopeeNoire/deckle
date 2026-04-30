@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using WhispUI.Llm;
+using Deckle.Llm;
 
-namespace WhispUI.Settings.Llm;
+namespace Deckle.Settings.Llm;
 
 // ─── État Ollama partagé entre les sous-sections de LlmPage ─────────────────
 //

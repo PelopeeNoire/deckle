@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
-using WhispUI.Interop;
-using WhispUI.Logging;
+using Deckle.Interop;
+using Deckle.Logging;
 
-namespace WhispUI.Shell;
+namespace Deckle.Shell;
 
 // Invisible native Win32 host window (HWND_MESSAGE parent).
 //

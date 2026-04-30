@@ -8,7 +8,7 @@ using Microsoft.UI;
 using Microsoft.UI.Composition;
 using Windows.UI;
 
-namespace WhispUI.Composition;
+namespace Deckle.Composition;
 
 // Variant the processing stroke is rendering. HudChrono picks one based
 // on the HUD state (Recording / Transcribing / Rewriting); the live stroke

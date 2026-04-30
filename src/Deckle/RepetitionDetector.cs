@@ -1,4 +1,4 @@
-namespace WhispUI;
+namespace Deckle;
 
 // Guards against the Whisper hallucination loop: on a long audio with
 // ambiguous trailing silence, the greedy decoder can enter a state where it

@@ -1,4 +1,4 @@
-namespace WhispUI.Settings;
+namespace Deckle.Settings;
 
 // ── AppSettings ───────────────────────────────────────────────────────────────
 //
