@@ -18,7 +18,7 @@ namespace Deckle;
 //
 // Default <UserDataRoot> = %LOCALAPPDATA%\<AppFolderName>\, the canonical
 // per-user data root on Windows (Settings Win11, PowerToys, every
-// first-party Microsoft desktop app). Override with the WHISP_DATA_ROOT
+// first-party Microsoft desktop app). Override with the DECKLE_DATA_ROOT
 // env var to keep %LOCALAPPDATA% clean during development.
 //
 // The application binary itself stays read-only and Program Files-friendly:
@@ -28,21 +28,18 @@ namespace Deckle;
 // the app (see Shell/WelcomeWizardWindow).
 public static class AppPaths
 {
-    // Filesystem-safe folder name. Single source of truth for filesystem
-    // paths and the inter-process settings mutex. Swapped to the final
-    // user-facing brand in Lot C; until then the working title doubles as
-    // the folder name.
-    public const string AppFolderName = "WhispUI";
+    // Filesystem-safe folder name. Single source of truth for the
+    // %LOCALAPPDATA%\Deckle\ root and the inter-process settings mutex.
+    public const string AppFolderName = "Deckle";
 
     // Inter-process mutex name used by SettingsService to serialize writes
-    // across concurrent app instances. Derived from AppFolderName so the
-    // single rename in Lot C carries through.
+    // across concurrent app instances. Derived from AppFolderName.
     public const string SettingsMutexName = $"{AppFolderName}-Settings-Save";
 
     // Override env var. Pointed at a freshly-organized dev folder so
     // user data ends up there instead of polluting %LOCALAPPDATA%.
     // Empty/unset → default location.
-    public const string DataRootEnvVar = "WHISP_DATA_ROOT";
+    public const string DataRootEnvVar = "DECKLE_DATA_ROOT";
 
     public static string UserDataRoot            { get; }
     public static string SettingsFilePath        { get; }
@@ -104,7 +101,7 @@ public static class AppPaths
     }
 
     // <UserDataRoot> resolution order:
-    //   1. WHISP_DATA_ROOT env var (dev override)
+    //   1. DECKLE_DATA_ROOT env var (dev override)
     //   2. %LOCALAPPDATA%\<AppFolderName>\        ← canonical Windows location
     //   3. <exeDir>\<AppFolderName>\              ← portable fallback
     //

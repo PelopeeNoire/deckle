@@ -6,7 +6,7 @@ namespace Deckle.Shell;
 
 // ── AutostartService ─────────────────────────────────────────────────────────
 //
-// Registre la valeur HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WhispUI
+// Registre la valeur HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Deckle
 // qui pointe vers l'exe courant. Windows démarre l'exe à la prochaine
 // ouverture de session.
 //
@@ -15,16 +15,14 @@ namespace Deckle.Shell;
 //   - Pas de UAC prompt : HKCU (current user) est accessible en user
 //     standard. Task Scheduler avec /RL HIGHEST exige l'élévation parce que
 //     la tâche s'exécute elevated.
-//   - WhispUI n'a aucun besoin d'élévation : tray + hotkey global +
+//   - Deckle n'a aucun besoin d'élévation : tray + hotkey global +
 //     transcription locale. Élever inutilement réduit la sécurité (BlueHat
 //     reports, privilege sprawl).
 //   - C'est la primitive que Windows 11 Settings → "Startup apps" expose
 //     à l'utilisateur. Toggle aligné avec le modèle mental système.
-//   - Aucun conflit avec la tâche planifiée `Whisp` héritée de
-//     WhispInteropTest (cf. CLAUDE.md).
 //
 // Cohabitation multi-install (dev + publish sur la même machine) : la Run
-// key porte un nom fixe `WhispUI`, donc une seule install peut être en
+// key porte un nom fixe `Deckle`, donc une seule install peut être en
 // autostart à la fois. `IsEnabled` compare la valeur stockée à
 // `Environment.ProcessPath` : chaque install ne voit ON que si elle est
 // celle qui pointe dans le registre. `Disable` ne supprime que si la
@@ -41,7 +39,7 @@ public static class AutostartService
     private static readonly LogService _log = LogService.Instance;
 
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName  = "WhispUI";
+    private const string ValueName  = "Deckle";
 
     public static bool IsEnabled()
     {
@@ -103,7 +101,7 @@ public static class AutostartService
             }
             if (key.GetValue(ValueName) is string s && !IsOwnedByCurrentExe(s))
             {
-                // Entry belongs to another install of WhispUI — leave it alone.
+                // Entry belongs to another install of Deckle — leave it alone.
                 _log.Verbose(LogSource.Settings, "autostart disable skipped | reason=entry points to different install");
                 return true;
             }
