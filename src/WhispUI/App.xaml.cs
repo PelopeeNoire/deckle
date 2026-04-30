@@ -139,16 +139,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         _engine = new WhispEngine();
         Milestone("engine");
 
-        // Préchargement de la police Bitcount Single via Win2D : le shaping
-        // DirectWrite d'une font packagée est lazy par défaut, donc le premier
-        // GlyphRun arrive au premier hotkey alors que l'utilisateur attend le
-        // chrono. Construire un CanvasTextLayout sur "0123456789." force la
-        // load + shape pendant le boot, et le cache DirectWrite étant
-        // process-wide, les TextBlock du HudChrono trouvent leurs glyphes
-        // prêts au premier render.
-        Composition.FontPrewarmer.WarmBitcount();
-        Milestone("fontprewarm");
-
         // LogWindow lazy : instanciée à la première ouverture via
         // ShowLogWindowLazy(). Le sink est inscrit à ce moment-là, et
         // TelemetryService.Replay() rejoue l'historique du buffer
@@ -189,6 +179,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         TelemetryService.Instance.AddSink(new HudFeedbackSink(
             onReplacement: fb => _hudWindow.ShowUserFeedback(fb),
             onOverlay:     fb => _overlayManager.Enqueue(fb)));
+
+        // Warm pass: brief Show + Hide of the HUD at its real position so the
+        // first composition (swap chain DComp + visual tree + Bitcount font
+        // shaping) happens at boot rather than at first hotkey. The flash is
+        // visible during boot — accepted, because the user isn't watching the
+        // HUD position yet. First hotkey afterwards is cold-path-free.
+        _hudWindow.PrimeAndHide();
         Milestone("hudwindow");
 
         _tray = new TrayIconManager

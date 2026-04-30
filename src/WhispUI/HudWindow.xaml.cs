@@ -226,6 +226,44 @@ public sealed partial class HudWindow : Window
 
     public void Hide() => EnqueueUI(() => SetState(HudState.Hidden));
 
+    // Boot-time warm pass. Shows the HUD briefly at its real position so the
+    // first composition (swap chain DComp + visual tree + Bitcount font
+    // shaping) happens while the user isn't actively interacting with the
+    // app. Subsequent real shows from a hotkey skip the cold-path cost,
+    // eliminating the ~0.3 s blank frame visible on first hotkey.
+    //
+    // Bypasses SetState on purpose: the public state machine stays Hidden
+    // throughout, and the Overlay.Enabled gate that SetState applies isn't
+    // relevant here — we warm regardless of whether the user has the HUD
+    // enabled, because they may toggle it on at runtime. The chrono digits
+    // are already populated to "0" by HudChrono.xaml, so one composition
+    // pass is enough to load the Bitcount face into the DirectWrite cache.
+    //
+    // No off-screen relocation : per project memory the warm appears at the
+    // real position. The boot flash is accepted as the price of a cold-free
+    // first hotkey.
+    public void PrimeAndHide()
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueueOrLog(PrimeAndHide, LogSource.Hud, "PrimeAndHide");
+            return;
+        }
+
+        Chrono.Visibility  = Visibility.Visible;
+        Message.Visibility = Visibility.Collapsed;
+        SetAlphaImmediate(MAX_ALPHA);
+        ShowNoActivate();
+
+        // Low priority fires after the next render pass — by the time it
+        // runs the first frame has been presented and the cold-path costs
+        // are paid. SW_HIDE then clears the visual without going through
+        // SetState (no public state transition for this transient).
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () => NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE));
+    }
+
     // Forward mic RMS samples (20 Hz, engine recording thread) to the chrono
     // control without marshalling. HudChrono.UpdateAudioLevel writes to a
     // CompositionPropertySet scalar, which is thread-safe by Composition's
