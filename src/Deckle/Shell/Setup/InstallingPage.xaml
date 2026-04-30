@@ -9,11 +9,41 @@
         <StackPanel Spacing="6">
             <ProgressBar x:Name="GlobalProgress"
                          Minimum="0"
-                         Maximum="2" />
+                         Maximum="3" />
             <TextBlock x:Name="GlobalStatusText"
                        Style="{ThemeResource BodyTextBlockStyle}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
         </StackPanel>
+
+        <!-- Native runtime (Whisper.cpp + Vulkan) -->
+        <Grid x:Name="NativeRow"
+              ColumnSpacing="12" RowSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <FontIcon x:Name="NativeIcon"
+                      Grid.Column="0" Grid.Row="0"
+                      Glyph="&#xE7C3;"
+                      VerticalAlignment="Center"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="NativeLabel"
+                       x:Uid="SetupInstallNativeLabel"
+                       Grid.Column="1" Grid.Row="0"
+                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <ProgressBar x:Name="NativeProgress"
+                         Grid.Column="1" Grid.Row="1" />
+            <TextBlock x:Name="NativeStatus"
+                       Grid.Column="1" Grid.Row="2"
+                       Style="{ThemeResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
 
         <!-- Whisper model -->
         <Grid ColumnSpacing="12" RowSpacing="4">

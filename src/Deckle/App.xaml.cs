@@ -115,8 +115,10 @@ public partial class App : Microsoft.UI.Xaml.Application
         // and would throw DllNotFoundException without the native runtime
         // (libwhisper + ggml backends). There's no graceful degradation:
         // either the dependencies are in place, or we open the wizard, or
-        // the user quits. The wizard handles both natives (Browse...) and
-        // the speech model (HuggingFace download).
+        // the user quits. The wizard provisions the natives via auto-download
+        // (Deckle GitHub Release, NativeRuntime.CurrentBundle.Url) with a
+        // local Browse... fallback, plus the chosen speech model from
+        // HuggingFace.
         if (!Setup.NativeRuntime.IsInstalled() ||
             !Setup.SpeechModels.IsDefaultInstalled())
         {

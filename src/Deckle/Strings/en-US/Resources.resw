@@ -423,14 +423,23 @@
   <data name="Setup_Native_Replace" xml:space="preserve">
     <value>Replace...</value>
   </data>
+  <data name="Setup_Native_BrowseLocal" xml:space="preserve">
+    <value>Use local copy...</value>
+  </data>
   <data name="Setup_Native_Missing_Format" xml:space="preserve">
     <value>Missing {0} file(s)</value>
+  </data>
+  <data name="Setup_Native_WillDownload_Format" xml:space="preserve">
+    <value>Will be downloaded (~{0})</value>
   </data>
   <data name="Setup_Native_ImportFailed_Format" xml:space="preserve">
     <value>Could not import: {0}</value>
   </data>
   <data name="Setup_TotalEstimate_Format" xml:space="preserve">
     <value>~{0} to download for the model and VAD. Native runtime is {1}</value>
+  </data>
+  <data name="Setup_TotalEstimate_WithNative_Format" xml:space="preserve">
+    <value>~{0} to download (speech runtime, model, and VAD).</value>
   </data>
   <data name="Setup_TotalEstimate_NativeAlreadyInstalled" xml:space="preserve">
     <value>already installed.</value>
@@ -449,16 +458,22 @@
     <value>Installing</value>
   </data>
   <data name="Setup_StepSubtitle_Installing" xml:space="preserve">
-    <value>Downloading the speech model and VAD. This can take a while on a slow link.</value>
+    <value>Downloading the speech runtime, model, and VAD. This can take a while on a slow link.</value>
   </data>
-  <data name="Setup_Install_Step1Of2_Format" xml:space="preserve">
-    <value>Step 1 of 2 — downloading {0}...</value>
+  <data name="Setup_Install_Step1Of3_Format" xml:space="preserve">
+    <value>Step 1 of 3 — installing {0}...</value>
   </data>
-  <data name="Setup_Install_Step2Of2_Format" xml:space="preserve">
-    <value>Step 2 of 2 — downloading {0}...</value>
+  <data name="Setup_Install_Step2Of3_Format" xml:space="preserve">
+    <value>Step 2 of 3 — downloading {0}...</value>
+  </data>
+  <data name="Setup_Install_Step3Of3_Format" xml:space="preserve">
+    <value>Step 3 of 3 — downloading {0}...</value>
   </data>
   <data name="Setup_Install_Connecting" xml:space="preserve">
     <value>Connecting...</value>
+  </data>
+  <data name="Setup_Install_Extracting" xml:space="preserve">
+    <value>Extracting...</value>
   </data>
   <data name="Setup_Install_Done_Format" xml:space="preserve">
     <value>Done — {0}</value>
@@ -472,11 +487,17 @@
   <data name="Setup_Install_UnknownError" xml:space="preserve">
     <value>unknown error</value>
   </data>
+  <data name="Setup_Install_NativePlaceholderUrl" xml:space="preserve">
+    <value>Auto-download not configured. Please use the Browse... button on the previous step.</value>
+  </data>
   <data name="Setup_Install_VadAlreadyInstalledStatus" xml:space="preserve">
     <value>Silero VAD already installed.</value>
   </data>
   <data name="Setup_Install_AlreadyInstalled" xml:space="preserve">
     <value>Already installed</value>
+  </data>
+  <data name="SetupInstallNativeLabel.Text" xml:space="preserve">
+    <value>Whisper.cpp + Vulkan runtime</value>
   </data>
   <data name="Setup_Install_Progress_WithTotal_Format" xml:space="preserve">
     <value>{0} / {1}  ({2})</value>
