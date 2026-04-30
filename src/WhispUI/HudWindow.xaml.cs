@@ -226,6 +226,46 @@ public sealed partial class HudWindow : Window
 
     public void Hide() => EnqueueUI(() => SetState(HudState.Hidden));
 
+    // Boot-time warm pass. Drives a transient Charging → Hidden cycle through
+    // the canonical SetState path so the first composition (swap chain DComp
+    // + visual tree + Bitcount font shaping) happens at boot rather than at
+    // the user's first hotkey, eliminating the ~0.3 s blank frame previously
+    // visible there.
+    //
+    // Goes through SetState(bypassGate: true) on purpose — going around it
+    // (calling ShowNoActivate / ShowWindow directly) leaves the
+    // OverlappedPresenter and z-order in a half-applied state and a
+    // subsequent real Show landed behind other windows instead of topmost.
+    // Using SetState makes the warm byte-for-byte identical to what happens
+    // on a real hotkey, so the presenter ends up exactly where it needs to
+    // be afterwards.
+    //
+    // bypassGate skips the Overlay.Enabled check : we warm regardless of
+    // whether the user currently has the HUD enabled, because they may
+    // toggle it on at runtime and the first show after that toggle should
+    // also be cold-free.
+    //
+    // No off-screen relocation : per project memory the warm appears at the
+    // real position. The brief boot flash is accepted as the price of a
+    // cold-free first hotkey.
+    public void PrimeAndHide()
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            DispatcherQueue.TryEnqueueOrLog(PrimeAndHide, LogSource.Hud, "PrimeAndHide");
+            return;
+        }
+
+        SetState(HudState.Charging, bypassGate: true);
+
+        // Low priority fires after the next render pass — by the time it
+        // runs the first frame has been presented and the cold-path costs
+        // are paid.
+        DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () => SetState(HudState.Hidden));
+    }
+
     // Forward mic RMS samples (20 Hz, engine recording thread) to the chrono
     // control without marshalling. HudChrono.UpdateAudioLevel writes to a
     // CompositionPropertySet scalar, which is thread-safe by Composition's
@@ -271,11 +311,13 @@ public sealed partial class HudWindow : Window
     // forwards to the control's ApplyState / Show, shows the (fixed-size)
     // window, and arms the auto-hide timer for messages.
 
-    private void SetState(HudState next, MessagePayload? msg = null)
+    private void SetState(HudState next, MessagePayload? msg = null, bool bypassGate = false)
     {
         // Overlay disabled in Settings → no-op for any *visible* state. Hidden
         // still runs so an in-flight HUD gets cleared if the user toggles.
-        if (next != HudState.Hidden &&
+        // bypassGate=true lets the boot warm pass run regardless of the user's
+        // overlay setting (cf. PrimeAndHide).
+        if (next != HudState.Hidden && !bypassGate &&
             !Settings.SettingsService.Instance.Current.Overlay.Enabled)
         {
             return;
