@@ -37,7 +37,7 @@ relecture which is right-inclusive at 60 s)::
     relecture     d ≤ 60 s
     lissage       60 < d ≤ 300 s
     affinage     300 < d ≤ 600 s
-    arrangement  600 < d (no upper cap on bench side, even though WhispUI
+    arrangement  600 < d (no upper cap on bench side, even though Deckle
                           enforces 1200 s on capture)
 """
 

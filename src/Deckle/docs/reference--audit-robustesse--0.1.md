@@ -1,4 +1,4 @@
-# Audit robustesse & sécurité — WhispUI
+# Audit robustesse & sécurité — Deckle
 
 Référence consolidée des fragilités identifiées sur l'app à la date
 2026-04-26, suite à un crash réel survenu lors de l'ouverture de
@@ -20,7 +20,7 @@ Le présent document liste tous les findings et indique leur statut
 ### Symptôme observé
 
 Au premier hotkey rewrite après un démarrage frais du PC + lancement
-de WhispUI, l'utilisateur voit systématiquement le message HUD :
+de Deckle, l'utilisateur voit systématiquement le message HUD :
 
 > **Rewriter unavailable** — *Ollama is not reachable. No rewrite this
 > session.*
@@ -131,7 +131,7 @@ Findings classés par catégorie. La colonne **Statut** indique :
 
 | ID | Fichier:Ligne | Gravité | Risque | Mitigation | Statut |
 |----|---------------|---------|--------|------------|--------|
-| SET-1 | SettingsService.cs:306-309 (Save) | Haute | Atomic write `.tmp` + `Move` mais zéro lock inter-process. Deux instances WhispUI lancées en parallèle (double-clic, login script) → écritures concurrentes, dernier gagne, perte de config silencieuse. | `Mutex(true, "Global\\WhispUISettingsLock")` avant write. | ✅ (mutex local-scope `WhispUI-Settings-Save`, timeout 2s, AbandonedMutex récupéré) |
+| SET-1 | SettingsService.cs:306-309 (Save) | Haute | Atomic write `.tmp` + `Move` mais zéro lock inter-process. Deux instances Deckle lancées en parallèle (double-clic, login script) → écritures concurrentes, dernier gagne, perte de config silencieuse. | `Mutex(true, "Global\\WhispUISettingsLock")` avant write. | ✅ (mutex local-scope `Deckle-Settings-Save`, timeout 2s, AbandonedMutex récupéré) |
 | SET-2 | SettingsService.cs:44 (`Current` getter) | Moyenne | Hot-reload de settings : composants qui cachent une valeur (HttpClient base URL chez OllamaService — déjà OK via `Func<string>`) doivent re-lire à chaque usage. À auditer profil par profil. | Audit ciblé des consommateurs de settings sensibles. | 📋 Backlog |
 | SET-3 | SettingsService.cs:122-189 (migrations) | Basse | Migrations JSON robustes mais zéro validation post-deserialization (ProfileIds resolvable, profiles non-null, etc.). | `AppSettings.Validate()` post-deserialization avec invariants. | 📋 Backlog |
 
@@ -230,7 +230,7 @@ ordonné de la table 3) :
 - ASY-1 (bonus) : `HudWindow.HideSync` durci — TryEnqueueOrLog,
   early-set sur enqueue raté pour éviter Wait infini, timeout 5s sur
   Wait + log Warning si dépassé.
-- SET-1 : Mutex local-scope `WhispUI-Settings-Save` autour de
+- SET-1 : Mutex local-scope `Deckle-Settings-Save` autour de
   `SettingsService.Flush`. Timeout 2s, gestion `AbandonedMutexException`,
   log explicite si skip ou recovery.
 - PAR-1 : try/catch `JsonException` autour des `JsonSerializer.Deserialize`

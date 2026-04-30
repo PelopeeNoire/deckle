@@ -62,7 +62,7 @@ DLL whisper, aucun modèle.
 ### 3b. `%LOCALAPPDATA%\<AppName>\` — writable, racine UserDataRoot
 
 Définie par `AppPaths.UserDataRoot`, override en dev via env var
-`WHISP_DATA_ROOT`.
+`DECKLE_DATA_ROOT`.
 
 ```
 %LOCALAPPDATA%\<AppName>\
@@ -150,7 +150,7 @@ Pour mémoire, où ces artefacts vivent actuellement dans le repo de dev :
 
 ```
 D:\projects\ai\transcription\
-├── src\WhispUI\                       # binaire app (versionné)
+├── src\Deckle\                       # binaire app (versionné)
 ├── native\whisper\*.dll               # runtime natif (git-ignored)
 ├── native\mingw\*.dll                 # MinGW runtime (git-ignored)
 ├── models\ggml-*.bin                  # modèles (git-ignored, taille)

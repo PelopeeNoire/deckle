@@ -11,7 +11,7 @@ Renversement explicite par rapport à l'implémentation précédente (capture au
 Ordre des checks, tous refusent en clipboard-seul si faux :
 
 1. `GetForegroundWindow()` ≠ 0.
-2. Foreground n'appartient pas au process WhispUI (filet contre le faux positif « collé dans nos propres logs »).
+2. Foreground n'appartient pas au process Deckle (filet contre le faux positif « collé dans nos propres logs »).
 3. **`UIAutomation.IsFocusedElementTextEditable(out diag)` renvoie `true`**. La probe lit `CUIAutomation.GetFocusedElement()` puis `IUIAutomationElement.GetCurrentPropertyValue(UIA_ControlTypePropertyId)` et ne valide que `Edit` (50004) ou `Document` (50030). Toute autre issue — UIA refuse, exception COM, ControlType différent, process protégé — est traitée comme « pas sûr ».
 4. `SendInput` complet (4 events : `VK_CONTROL↓ VK_V↓ VK_V↑ VK_CONTROL↑`).
 
@@ -23,7 +23,7 @@ UIA est l'API canonique d'accessibilité Windows et répond à la bonne question
 
 ## Rendez-vous synchrone `HideSync` (conservé)
 
-Juste avant `PasteFromClipboard`, `OnReadyToPaste` est invoqué synchronement, câblé à `HudWindow.HideSync()`. Le HUD est caché de façon **bloquante** (marshal `DispatcherQueue` + `ManualResetEventSlim`) avant que `SendInput` parte. Sans ce verrou, le `Hide` async pouvait redistribuer l'activation pendant que Ctrl+V était encore en vol dans la queue du thread cible. Rien dans WhispUI ne touche à l'activation entre le Hide effectif et la délivrance des frappes.
+Juste avant `PasteFromClipboard`, `OnReadyToPaste` est invoqué synchronement, câblé à `HudWindow.HideSync()`. Le HUD est caché de façon **bloquante** (marshal `DispatcherQueue` + `ManualResetEventSlim`) avant que `SendInput` parte. Sans ce verrou, le `Hide` async pouvait redistribuer l'activation pendant que Ctrl+V était encore en vol dans la queue du thread cible. Rien dans Deckle ne touche à l'activation entre le Hide effectif et la délivrance des frappes.
 
 Voir [HudWindow.xaml.cs](../HudWindow.xaml.cs), [WhispEngine.cs](../WhispEngine.cs), [App.xaml.cs](../App.xaml.cs), [Interop/UIAutomation.cs](../Interop/UIAutomation.cs).
 

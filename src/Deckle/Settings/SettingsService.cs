@@ -15,7 +15,7 @@ namespace Deckle.Settings;
 //
 // Emplacement résolu via AppPaths.SettingsFilePath : settings.json à la
 // racine du UserDataRoot (par défaut %LOCALAPPDATA%\<AppFolderName>\,
-// override via WHISP_DATA_ROOT en dev). Le binaire reste read-only et
+// override via DECKLE_DATA_ROOT en dev). Le binaire reste read-only et
 // Program Files-friendly ; la config vit dans le profil utilisateur.
 //
 // Thread-safety : toutes les mutations de Current doivent passer par Save().
@@ -430,12 +430,12 @@ public sealed class SettingsService
                 // hérité (WaitOne a réussi malgré l'exception). État anormal
                 // mais récupérable, on continue avec l'écriture.
                 acquired = true;
-                LogService.Instance.Warning(LogSource.Settings, "settings mutex was abandoned (other WhispUI instance crashed?) — recovering");
+                LogService.Instance.Warning(LogSource.Settings, "settings mutex was abandoned (other Deckle instance crashed?) — recovering");
             }
 
             if (!acquired)
             {
-                LogService.Instance.Warning(LogSource.Settings, "save skipped: another WhispUI instance holds the settings mutex");
+                LogService.Instance.Warning(LogSource.Settings, "save skipped: another Deckle instance holds the settings mutex");
                 return;
             }
 

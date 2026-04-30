@@ -1,6 +1,6 @@
-"""Benchmark runner for WhispUI rewrite prompts.
+"""Benchmark runner for Deckle rewrite prompts.
 
-Reads the user's dictation corpus (produced by WhispUI under
+Reads the user's dictation corpus (produced by Deckle under
 ``benchmark/telemetry/*/corpus.jsonl``), asks the target Ollama model to
 rewrite each raw transcription with the candidate system prompt, then
 scores the output with the chosen judge (Claude Sonnet by default,
@@ -234,7 +234,7 @@ def run(
 def main() -> None:
     cfg = load_config()["benchmark"]
 
-    parser = argparse.ArgumentParser(description="WhispUI rewrite prompt benchmark")
+    parser = argparse.ArgumentParser(description="Deckle rewrite prompt benchmark")
     parser.add_argument("--model",         default=cfg["model"])
     parser.add_argument("--temperature",   type=float, default=cfg.getfloat("temperature"))
     parser.add_argument("--num-ctx-k",     type=int,   default=cfg.getint("num_ctx_k"))

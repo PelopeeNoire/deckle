@@ -3,7 +3,7 @@ namespace Deckle.Logging;
 // ── LogService ──────────────────────────────────────────────────────────────
 //
 // Thin façade over TelemetryService. Kept for source compatibility — every
-// WhispUI caller already goes through `LogService.Instance.Info(...)` and
+// Deckle caller already goes through `LogService.Instance.Info(...)` and
 // the like, and rewriting the ~400 call sites to TelemetryService would
 // bloat this chantier without changing behavior. The façade forwards the
 // six levels unchanged.

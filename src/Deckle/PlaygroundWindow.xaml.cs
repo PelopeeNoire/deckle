@@ -19,7 +19,7 @@ namespace Deckle;
 // ─── HUD playground window ────────────────────────────────────────────────────
 //
 // Long-lived tuning surface for the HUD composition stroke. Ported from the
-// standalone `dev/HudPlayground` tool into a first-party WhispUI window.
+// standalone `dev/HudPlayground` tool into a first-party Deckle window.
 // Lifecycle pattern mirrors SettingsWindow / LogWindow:
 //   - Native TitleBar (ExtendsContentIntoTitleBar + SetTitleBar).
 //   - Mica backdrop (app-persistent window, not transient).

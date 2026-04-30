@@ -94,7 +94,7 @@ run.log
 #  Benchmark — runtime artifacts, never versioned
 # ─────────────────────────────────────────────────────────────────────────
 #
-#   telemetry/  raw WhispUI capture (corpus JSONL + WAVs, latency, app log).
+#   telemetry/  raw Deckle capture (corpus JSONL + WAVs, latency, app log).
 #               Layout: <slug>/corpus.jsonl, <slug>/audio/*.wav, …
 #   reports/    per-run benchmark output (last_<name>_run.{json,txt},
 #               per-experiment snapshots). Regenerated each run.

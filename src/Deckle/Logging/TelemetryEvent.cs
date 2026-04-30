@@ -5,7 +5,7 @@ namespace Deckle.Logging;
 
 // ── TelemetryEvent ──────────────────────────────────────────────────────────
 //
-// Unified envelope for every piece of data WhispUI emits at runtime. Three
+// Unified envelope for every piece of data Deckle emits at runtime. Three
 // pipelines that used to run disjoint (logs, latency CSV, corpus JSONL) now
 // produce the same event shape:
 //

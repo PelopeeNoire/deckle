@@ -41,7 +41,7 @@ internal sealed class OllamaService
     /// <summary>
     /// Vérifie qu'Ollama est joignable (timeout court). Opt-in retry via
     /// <paramref name="maxAttempts"/> > 1 — couvre la race classique au boot
-    /// du PC où WhispUI démarre avant qu'Ollama ait fini d'écouter sur 11434.
+    /// du PC où Deckle démarre avant qu'Ollama ait fini d'écouter sur 11434.
     /// Default = 1 pour rester rapide sur les usages UI (Settings page),
     /// le warmup engine demande explicitement maxAttempts=3.
     /// </summary>

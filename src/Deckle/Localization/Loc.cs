@@ -21,7 +21,7 @@ namespace Deckle.Localization;
 //   Common reusable     Common_Purpose           e.g. "Common_Cancel"
 //
 // Technical strings (file names, URLs, product names like "Ollama" /
-// "Silero VAD" / "WhispUI") stay hardcoded — never go through Loc.
+// "Silero VAD" / "Deckle") stay hardcoded — never go through Loc.
 
 internal static class Loc
 {

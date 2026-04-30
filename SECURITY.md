@@ -48,7 +48,7 @@ logged.
 ### Autostart
 
 The "Start with Windows" toggle writes
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WhispUI` with the
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Deckle` with the
 quoted full path of the executable. Per-user (no UAC), no path traversal
 (the value is the verified `Environment.ProcessPath`), and the entry is
 removed only if it still points to the current install (so multiple
@@ -101,7 +101,7 @@ GPU driver does.
 
 The model file is loaded with the magic-header check that whisper.cpp
 performs internally — non-GGUF files are rejected without code execution.
-The `WHISP_MODEL_PATH` environment variable (if set) is validated for
+The `DECKLE_MODEL_PATH` environment variable (if set) is validated for
 absolute path + existence before being passed to whisper.
 
 ### What the app does not do

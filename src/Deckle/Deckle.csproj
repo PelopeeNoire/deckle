@@ -19,7 +19,7 @@
     <Platforms>x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Version>0.1.0</Version>
-    <!-- Forces the Publish pipeline to generate/copy WhispUI.pri into PublishDir.
+    <!-- Forces the Publish pipeline to generate/copy Deckle.pri into PublishDir.
          Without this, in unpackaged + WindowsAppSDK 1.8, the .pri doesn't land in
          publish\ and all compiled XAML resources (.xbf embedded in .pri since 1.8)
          become unreachable. Cf. microsoft/WindowsAppSDK#3451. -->
@@ -31,7 +31,7 @@
        in Release doesn't trigger the WinAppSDK "SingleFile without
        SelfContained" warning nor pay single-file costs at every iteration.
 
-       PublishSingleFile bundles the managed assemblies into WhispUI.exe.
+       PublishSingleFile bundles the managed assemblies into Deckle.exe.
        Native DLLs (libwhisper + ggml backends + MinGW runtime) and Whisper
        models are NOT shipped — they live in <UserDataRoot>\native\ and
        <UserDataRoot>\models\, populated by scripts/setup-assets.ps1 (or

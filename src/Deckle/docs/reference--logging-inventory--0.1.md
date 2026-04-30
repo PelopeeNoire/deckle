@@ -1,9 +1,9 @@
-# Inventaire logging — WhispUI
+# Inventaire logging — Deckle
 
 ## Contexte
 
 Référence unique pour décider **quoi logger, à quel niveau, avec quel format**
-à chaque étape du pipeline WhispUI. Sert deux objectifs :
+à chaque étape du pipeline Deckle. Sert deux objectifs :
 
 - Normaliser les logs existants (disparités : certaines zones très bavardes,
   d'autres muettes).
@@ -36,7 +36,7 @@ grep `rms=` trouve exactement la même chose partout.
 |---|---|---|---|---|
 | RMS linéaire | `[0, 1]` | 4 décimales | `rms=0.0123` | sqrt(Σv²/n), v = pcm16/32768 |
 | Niveau dBFS | `dBFS` | 1 décimale | `dbfs=-38.2` | `20 * log10(rms)` |
-| Fréquence | `kHz` | entier | `16 kHz` | toujours 16 dans WhispUI |
+| Fréquence | `kHz` | entier | `16 kHz` | toujours 16 dans Deckle |
 | Canaux | — | — | `mono` | toujours mono |
 | Échantillons | `samples` | entier | `samples=204800` | int PCM16 compte |
 | Taille buffer | `bytes` | entier | `bytes=16000` | octets bruts |
@@ -178,7 +178,7 @@ polish définitive. Forme provisoire actuelle à conserver.
 
 ### Sources (`LogSource`)
 
-Vocabulaire fermé, déjà défini dans `src/WhispUI/Logging/LogSource.cs`.
+Vocabulaire fermé, déjà défini dans `src/Deckle/Logging/LogSource.cs`.
 Ne pas en ajouter sans raison. Mapping étape → source :
 
 | Étape | Source |
@@ -208,8 +208,8 @@ Info standard, erreurs et leur sévérité cible.
 
 ### 1. Input utilisateur (hotkey / tray)
 
-**Fichiers** : `src/WhispUI/Shell/HotkeyManager.cs`, `src/WhispUI/Shell/TrayIconManager.cs`,
-`src/WhispUI/App.xaml.cs:OnHotkey`
+**Fichiers** : `src/Deckle/Shell/HotkeyManager.cs`, `src/Deckle/Shell/TrayIconManager.cs`,
+`src/Deckle/App.xaml.cs:OnHotkey`
 
 **Mesures disponibles**
 
@@ -236,7 +236,7 @@ Success HOTKEY  trigger | id={idName} | source={hotkey|tray}
 
 ### 2. Chargement modèle
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:446-496` (LoadModel), `500-545` (lifecycle idle)
+**Fichier** : `src/Deckle/WhispEngine.cs:446-496` (LoadModel), `500-545` (lifecycle idle)
 
 **Mesures disponibles**
 
@@ -270,7 +270,7 @@ Verbose   MODEL  model unloaded | idle_s={X} | state=vram-freed
 
 ### 3. Warmup startup
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:555-603` (Warmup)
+**Fichier** : `src/Deckle/WhispEngine.cs:555-603` (Warmup)
 
 **Mesures disponibles**
 
@@ -301,7 +301,7 @@ Les flags sont stockés et consultés au premier hotkey :
 
 ### 4. Enregistrement audio
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:620-905` (Record), `715-747` (mic probe),
+**Fichier** : `src/Deckle/WhispEngine.cs:620-905` (Record), `715-747` (mic probe),
 `911-930` (tail RMS analysis), `939-963` (EmitAudioLevels)
 
 **Mesures disponibles**
@@ -347,7 +347,7 @@ agrégée.
 
 ### 5. VAD
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:240-400` (InstallWhisperLogHook),
+**Fichier** : `src/Deckle/WhispEngine.cs:240-400` (InstallWhisperLogHook),
 `409-434` (EmitVadSummary), `195-209` (regex parsers)
 
 **Mesures disponibles**
@@ -380,7 +380,7 @@ pas de transcription. Pas d'UserFeedback ni Warning.
 
 ### 6. Transcription Whisper
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:1060-1400` (Transcribe), `976-1058`
+**Fichier** : `src/Deckle/WhispEngine.cs:1060-1400` (Transcribe), `976-1058`
 (OnNewSegment callback)
 
 **Mesures disponibles**
@@ -428,7 +428,7 @@ timestamp). Activity montre uniquement `Transcribing` et
 
 ### 7. Rewriting LLM
 
-**Fichier** : `src/WhispUI/Llm/LlmService.cs:51-138` (Rewrite), `149-217`
+**Fichier** : `src/Deckle/Llm/LlmService.cs:51-138` (Rewrite), `149-217`
 (PollOllamaWhileBusy)
 
 **Mesures disponibles**
@@ -466,7 +466,7 @@ Narrative LLM  Rewrite complete in {X:F1} s with the {profile.Name} profile — 
 
 ### 8. Clipboard
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:1403-1450` (CopyToClipboard)
+**Fichier** : `src/Deckle/WhispEngine.cs:1403-1450` (CopyToClipboard)
 
 **Mesures disponibles**
 
@@ -502,7 +502,7 @@ d'une autre surface UX sur `false`.
 
 ### 9. Paste (désactivé par défaut)
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:1455-1520`
+**Fichier** : `src/Deckle/WhispEngine.cs:1455-1520`
 
 Paste désactivé (`PasteSettings.AutoPasteEnabled = false`). Pour mémoire —
 aucune normalisation urgente. Les 5 refus actuels sont loggés Warning
@@ -512,7 +512,7 @@ reste désactivé.
 
 ### 10. Recap final
 
-**Fichier** : `src/WhispUI/WhispEngine.cs:1921-1956` (Verbose recap +
+**Fichier** : `src/Deckle/WhispEngine.cs:1921-1956` (Verbose recap +
 Narrative Done + LatencyPayload).
 
 **Mesures disponibles** — toutes écrites dans le `LatencyPayload` (JSONL `latency.jsonl`), accessibles aussi via Verbose `DONE timings`.

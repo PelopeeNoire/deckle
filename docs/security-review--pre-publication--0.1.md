@@ -68,9 +68,9 @@ and are useless to anyone else.
 
 | File | Lines (count) | Nature |
 |---|---|---|
-| `src/WhispUI/CLAUDE.md` | 2 | Memory plan path + MSBuild VS path |
-| `src/WhispUI/docs/brief--audit-robustesse--0.1.md` | 1 | Plan path |
-| `src/WhispUI/docs/brief--packaging-foundation--0.1.md` | 1 | Plan path |
+| `src/Deckle/CLAUDE.md` | 2 | Memory plan path + MSBuild VS path |
+| `src/Deckle/docs/brief--audit-robustesse--0.1.md` | 1 | Plan path |
+| `src/Deckle/docs/brief--packaging-foundation--0.1.md` | 1 | Plan path |
 | `.claude/skills/benchmark-loop/SKILL.md` | 4 | Plan path + absolute cwd to the benchmark folder |
 
 - **Remediation** — Replace with documentary placeholders
@@ -86,11 +86,11 @@ Multiple files used the maintainer's first name as a working-context cue
 copyright lines), but not as documentation cue. Replaced by neutral terms
 ("the user", "the maintainer", "we") everywhere except attribution.
 
-Files affected (tracked) : `CLAUDE.md`, `src/WhispUI/CLAUDE.md`,
+Files affected (tracked) : `CLAUDE.md`, `src/Deckle/CLAUDE.md`,
 `benchmark/AGENT.md`, `benchmark/README.md`,
-`src/WhispUI/docs/reference--audit-robustesse--0.1.md`,
-`src/WhispUI/docs/brief--latency-instrumentation--0.1.md`. C# code
-comments in `src/WhispUI/Controls/HudChrono.xaml.cs` (×6) similarly
+`src/Deckle/docs/reference--audit-robustesse--0.1.md`,
+`src/Deckle/docs/brief--latency-instrumentation--0.1.md`. C# code
+comments in `src/Deckle/Controls/HudChrono.xaml.cs` (×6) similarly
 substituted.
 
 - **Status** — `open` → `fixed`.
@@ -127,7 +127,7 @@ not in HEAD. No action needed for it.)
 - **Remediation** — `git rm --cached <path>` for both, kept on disk.
 - **Status** — `open` → `fixed`.
 
-### F6 — Ephemeral session briefs in `src/WhispUI/docs/` (Low → Removed)
+### F6 — Ephemeral session briefs in `src/Deckle/docs/` (Low → Removed)
 
 Three `brief--*.md` files document past internal sessions
 (audit-robustesse, latency-instrumentation, packaging-foundation).
@@ -145,9 +145,9 @@ corresponding `reference--*.md` documents and in commit messages.
 
 ## 2. Findings — application code
 
-### F7 — `WHISP_MODEL_PATH` env var unvalidated (High → Fixed)
+### F7 — `DECKLE_MODEL_PATH` env var unvalidated (High → Fixed)
 
-- **Location** — `src/WhispUI/WhispEngine.cs`, model path resolution
+- **Location** — `src/Deckle/WhispEngine.cs`, model path resolution
   early in initialization.
 - **Description** — A user-controlled environment variable is read
   and passed directly to whisper.cpp's
@@ -168,7 +168,7 @@ corresponding `reference--*.md` documents and in commit messages.
 
 ### F8 — `OllamaEndpoint` scheme not constrained (Medium → Fixed)
 
-- **Location** — `src/WhispUI/Llm/OllamaService.cs`, `BaseUrl`
+- **Location** — `src/Deckle/Llm/OllamaService.cs`, `BaseUrl`
   derivation.
 - **Description** — The Ollama endpoint is user-configurable via
   Settings. The current parser accepts any URI scheme that
@@ -186,7 +186,7 @@ corresponding `reference--*.md` documents and in commit messages.
 
 ### F9 — Prompt injection on LLM rewrite (Medium → Documented as accepted)
 
-- **Location** — `src/WhispUI/Llm/LlmService.cs`, transcribed text is
+- **Location** — `src/Deckle/Llm/LlmService.cs`, transcribed text is
   passed verbatim into the prompt template.
 - **Description** — Ill-formed transcribed text containing the
   model's stop tokens or template delimiters could escape the
@@ -209,7 +209,7 @@ Documented in `SECURITY.md`.
 |---|---|---|
 | Global hotkeys | `Shell/HotkeyManager.cs` | `RegisterHotKey` (high-level), not `WH_KEYBOARD_LL`. No keylogger surface. |
 | Clipboard write + paste injection | `WhispEngine.cs` (clipboard path) | Standard Win32 pattern with read-back verification. Paste only proceeds after UIA validates the focused element is `Edit`/`Document` and refuses if the foreground window is whisp-ui itself. |
-| Autostart | `Shell/AutostartService.cs` | `HKCU\...\Run\WhispUI` with quoted path, no UAC, multi-install cohabitation. |
+| Autostart | `Shell/AutostartService.cs` | `HKCU\...\Run\Deckle` with quoted path, no UAC, multi-install cohabitation. |
 | Telemetry & corpus | `Logging/*` | Strictly opt-in via four explicit consent dialogs (`ApplicationLogConsentDialog`, `AudioCorpusConsentDialog`, `MicrophoneTelemetryConsentDialog`, `CorpusConsentDialog`). All artifacts stay local — no upload. |
 | UI Automation read | `Interop/UIAutomation.cs` | Reads exactly one property (`UIA_ControlTypePropertyId`) on the focused element. No window enumeration, no content extraction. |
 
@@ -223,12 +223,12 @@ The order below is the order of execution on
 1. **Untrack files now in `.gitignore`** — `git rm --cached` on F5.
 2. **Anonymize personal references** — F2 + F3 paths and names across
    tracked docs and C# comments.
-3. **Cleanup `.claude/` and `src/WhispUI/docs/`** — untrack F4 skill,
+3. **Cleanup `.claude/` and `src/Deckle/docs/`** — untrack F4 skill,
    delete F6 briefs.
 4. **Add meta-publication files** — `LICENSE` (MIT, copyright "2025
    Louis Fifre"), `README.md`, `SECURITY.md`, optional `NOTICE.md` for
    third-party attribution.
-5. **Apply code fixes** — F7 (`WHISP_MODEL_PATH` validation) and F8
+5. **Apply code fixes** — F7 (`DECKLE_MODEL_PATH` validation) and F8
    (`OllamaEndpoint` scheme + loopback warning).
 6. **Update `.gitignore`** — add `.claude/skills/benchmark-loop/` and
    any new exclusions surfaced during the pass.
