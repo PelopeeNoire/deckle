@@ -746,16 +746,16 @@
   <data name="GeneralStorageFolderCard.Description" xml:space="preserve">
     <value>Shared root for every telemetry stream enabled above. Leave empty to use the default %LOCALAPPDATA%\WhispUI\telemetry\.</value>
   </data>
-  <data name="GeneralStorageFolderSet.Text" xml:space="preserve">
+  <data name="GeneralStorageFolderSetLabel.Text" xml:space="preserve">
     <value>Set</value>
   </data>
-  <data name="GeneralStorageFolderSet.ToolTipService.ToolTip" xml:space="preserve">
+  <data name="GeneralStorageFolderSetButton.ToolTipService.ToolTip" xml:space="preserve">
     <value>Pick a folder</value>
   </data>
-  <data name="GeneralStorageFolderOpen.Text" xml:space="preserve">
+  <data name="GeneralStorageFolderOpenLabel.Text" xml:space="preserve">
     <value>Open</value>
   </data>
-  <data name="GeneralStorageFolderOpen.ToolTipService.ToolTip" xml:space="preserve">
+  <data name="GeneralStorageFolderOpenButton.ToolTipService.ToolTip" xml:space="preserve">
     <value>Open in File Explorer</value>
   </data>
   <data name="GeneralBackupExpander.Header" xml:space="preserve">
