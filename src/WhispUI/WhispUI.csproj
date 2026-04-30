@@ -32,10 +32,10 @@
        SelfContained" warning nor pay single-file costs at every iteration.
 
        PublishSingleFile bundles the managed assemblies into WhispUI.exe.
-       Native DLLs are still copied alongside the exe via the Content items
-       below — they'll move to UserDataRoot\native once the first-run wizard
-       is implemented (see the dependencies reference doc under docs).
-       Whisper models are NOT shipped: too large, downloaded post-install.
+       Native DLLs (libwhisper + ggml backends + MinGW runtime) and Whisper
+       models are NOT shipped — they live in <UserDataRoot>\native\ and
+       <UserDataRoot>\models\, populated by scripts/setup-assets.ps1 (or
+       the future first-run wizard) on a per-user basis.
 
        SelfContained pairs with PublishSingleFile per WinAppSDK's SingleFile
        target requirements, and it's what the distribution ZIP wants anyway
@@ -79,17 +79,6 @@
     </Content>
     <!-- Warm-up audio (PCM 16-bit mono 16 kHz, lu par WhispEngine.Warmup) -->
     <Content Include="Assets\Sounds\**\*.wav">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <!-- TODO (wizard): retirer ces deux blocs quand le first-run wizard
-         peuplera <UserDataRoot>\native\ depuis le repo redist GitHub.
-         En attendant, les DLLs sont copiées à côté de l'EXE et le
-         resolver NativeMethods.ResolveNativeLibrary tombe en fallback
-         sur la recherche Windows par défaut (exe dir, System32, PATH). -->
-    <Content Include="..\..\native\whisper\*.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\..\native\mingw\*.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

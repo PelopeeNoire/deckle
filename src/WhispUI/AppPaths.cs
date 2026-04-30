@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 
 namespace WhispUI;
 
@@ -23,9 +22,10 @@ namespace WhispUI;
 // env var to keep %LOCALAPPDATA% clean during development.
 //
 // The application binary itself stays read-only and Program Files-friendly:
-// it ships with Assets but no models, no native DLLs, no config. The
-// first-run wizard populates <UserDataRoot>\models\ and \native\ on the
-// first launch (see Shell/WelcomeWizardWindow).
+// it ships with Assets but no models, no native DLLs, no config.
+// scripts/setup-assets.ps1 populates <UserDataRoot>\models\ and \native\
+// before first run; the future first-run wizard will replace it from inside
+// the app (see Shell/WelcomeWizardWindow).
 public static class AppPaths
 {
     // Filesystem-safe folder name. Single source of truth for filesystem
@@ -58,7 +58,7 @@ public static class AppPaths
         SettingsFilePath        = Path.Combine(UserDataRoot, "settings.json");
         SettingsBackupDirectory = Path.Combine(UserDataRoot, "backups");
         TelemetryDirectory      = Path.Combine(UserDataRoot, "telemetry");
-        ModelsDirectory         = ResolveModelsDirectory();
+        ModelsDirectory         = Path.Combine(UserDataRoot, "models");
         NativeDirectory         = Path.Combine(UserDataRoot, "native");
         BenchmarkDirectory      = Path.Combine(UserDataRoot, "benchmark");
 
@@ -123,38 +123,5 @@ public static class AppPaths
             return Path.Combine(localAppData, AppFolderName);
 
         return Path.Combine(AppContext.BaseDirectory, AppFolderName);
-    }
-
-    // ModelsDirectory resolution:
-    //   1. Canonical: <UserDataRoot>\models\ if it holds at least one .bin
-    //      (= the user — or the future wizard — has populated it).
-    //   2. Dev fallback: walk up from the exe (max 8 levels) looking for a
-    //      `models/` folder with .bin files. Lets a fresh dev build run
-    //      against the in-repo `models/` without copying anything to
-    //      <UserDataRoot> first.
-    //   3. Default: the canonical path even when empty, so the wizard has
-    //      somewhere consistent to write into and Setup/SpeechModels can
-    //      surface the missing state.
-    //
-    // TODO (wizard): drop the dev fallback once the first-run wizard
-    // populates <UserDataRoot>\models\ from a known source on first launch.
-    private static string ResolveModelsDirectory()
-    {
-        string canonical = Path.Combine(UserDataRoot, "models");
-
-        if (Directory.Exists(canonical) &&
-            Directory.EnumerateFiles(canonical, "*.bin").Any())
-            return canonical;
-
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        for (int i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
-        {
-            string candidate = Path.Combine(dir.FullName, "models");
-            if (Directory.Exists(candidate) &&
-                Directory.EnumerateFiles(candidate, "*.bin").Any())
-                return candidate;
-        }
-
-        return canonical;
     }
 }

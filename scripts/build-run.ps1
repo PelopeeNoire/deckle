@@ -158,59 +158,6 @@ $ExePath    = Join-Path $ProjectDir "bin\x64\$Configuration\net10.0-windows10.0.
 if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$RepoRoot' a WhispUI repo?" }
 
 # =============================================================================
-# Worktree junctions for gitignored folders
-# -----------------------------------------------------------------------------
-# `native/` (whisper.cpp DLLs, MinGW runtime) and `models/` (Whisper .bin)
-# are gitignored, so a fresh git worktree doesn't have them. The csproj
-# references `..\..\native\*.dll` with PreserveNewest, so an empty path
-# silently produces an exe without the transcription engine.
-#
-# When running from a worktree, resolve the main repo via
-# `git rev-parse --git-common-dir` and junction the missing folders.
-# No-op when running from the main repo or when git is unavailable.
-# =============================================================================
-function Sync-WorktreeJunctions {
-    param([string]$RepoRoot)
-
-    $needed = @('native', 'models')
-    $missing = @($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })
-    if ($missing.Count -eq 0) { return }
-
-    Push-Location $RepoRoot
-    try {
-        $commonDir = git rev-parse --git-common-dir 2>$null
-    } catch {
-        return
-    } finally {
-        Pop-Location
-    }
-    if (-not $commonDir) { return }
-
-    if (-not [System.IO.Path]::IsPathRooted($commonDir)) {
-        $commonDir = Join-Path $RepoRoot $commonDir
-    }
-    $mainRepo = (Get-Item (Split-Path $commonDir)).FullName
-
-    if ($mainRepo -eq (Get-Item $RepoRoot).FullName) {
-        # Main repo — the folders are genuinely missing, not a worktree gap.
-        return
-    }
-
-    foreach ($folder in $missing) {
-        $source = Join-Path $mainRepo $folder
-        $target = Join-Path $RepoRoot $folder
-        if (-not (Test-Path $source)) {
-            Write-Host "Worktree junction skipped ($folder not in main repo): $source" -ForegroundColor Yellow
-            continue
-        }
-        Write-Host "Creating junction: $target -> $source" -ForegroundColor Cyan
-        New-Item -ItemType Junction -Path $target -Value $source | Out-Null
-    }
-}
-
-Sync-WorktreeJunctions -RepoRoot $RepoRoot
-
-# =============================================================================
 # MSBuild configuration
 # -----------------------------------------------------------------------------
 # `dotnet build` is broken on WhispUI due to the XamlCompiler MSB3073 bug,
