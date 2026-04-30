@@ -71,6 +71,15 @@ public sealed partial class HudWindow : Window
     private HudState _state = HudState.Hidden;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _messageHideTimer;
 
+    // Fade-in on first show (Hidden → visible), 150ms cubic ease-out matching
+    // LayeredAlphaAnimator. Proximity update is suspended during the fade and
+    // re-activated on completion.
+    private const int FADE_IN_MS = 150;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _fadeInTimer;
+    private DateTime _fadeInStartUtc;
+    private byte _fadeInTarget;
+    private bool _fadeInActivateProximityOnComplete;
+
     // Raised when the HUD transitions between visible and hidden. Used by
     // HudOverlayManager to slide cards into / out of the main HUD's slot
     // (slot 0 drops onto the HUD's position while the HUD is hidden).
@@ -341,6 +350,7 @@ public sealed partial class HudWindow : Window
         switch (next)
         {
             case HudState.Hidden:
+                CancelFadeIn();
                 Chrono.ApplyState(HudState.Hidden);
                 Chrono.Visibility  = Visibility.Visible;
                 Message.Visibility = Visibility.Collapsed;
@@ -359,15 +369,7 @@ public sealed partial class HudWindow : Window
                 Message.Show(msg);
                 IconAssets.ApplyToWindow(AppWindow, recording: false);
                 ShowNoActivate();
-                SetAlphaImmediate(alphaOverride ?? MAX_ALPHA);
-                // Warm pass (alphaOverride.HasValue) skips proximity: the
-                // cursor could be near the HUD region at boot, and an alpha
-                // recompute would defeat the alpha=0 invisibility.
-                if (!alphaOverride.HasValue)
-                {
-                    _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
-                    if (_proximityActive) UpdateProximity();
-                }
+                ApplyShowAlpha(targetAlpha: MAX_ALPHA, alphaOverride: alphaOverride, wasShown: wasShown);
                 ArmMessageHideTimer(msg.Duration);
                 return;
 
@@ -380,14 +382,38 @@ public sealed partial class HudWindow : Window
                 Chrono.Visibility  = Visibility.Visible;
                 IconAssets.ApplyToWindow(AppWindow, recording: next == HudState.Recording);
                 ShowNoActivate();
-                SetAlphaImmediate(alphaOverride ?? MAX_ALPHA);
-                if (!alphaOverride.HasValue)
-                {
-                    _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
-                    if (_proximityActive) UpdateProximity();
-                }
+                ApplyShowAlpha(targetAlpha: MAX_ALPHA, alphaOverride: alphaOverride, wasShown: wasShown);
                 return;
         }
+    }
+
+    // Centralised alpha application for visible states. Three branches:
+    //   - alphaOverride.HasValue → warm pass, alpha forced (typically 0),
+    //     proximity skipped so a cursor near the HUD region cannot
+    //     overwrite the override on the next WM_INPUT.
+    //   - Hidden → visible transition with animations enabled → fade-in
+    //     150ms cubic ease-out, proximity re-activated on completion.
+    //   - All other cases (state switch while visible, animations off) →
+    //     instant alpha, proximity activated immediately.
+    private void ApplyShowAlpha(byte targetAlpha, byte? alphaOverride, bool wasShown)
+    {
+        if (alphaOverride.HasValue)
+        {
+            CancelFadeIn();
+            SetAlphaImmediate(alphaOverride.Value);
+            return;
+        }
+
+        if (!wasShown && AnimationSystemSetting.AreClientAreaAnimationsEnabled())
+        {
+            StartFadeIn(targetAlpha, activateProximityOnComplete: true);
+            return;
+        }
+
+        CancelFadeIn();
+        SetAlphaImmediate(targetAlpha);
+        _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
+        if (_proximityActive) UpdateProximity();
     }
 
     private void ArmMessageHideTimer(TimeSpan duration)
@@ -520,5 +546,56 @@ public sealed partial class HudWindow : Window
     {
         _currentAlpha = alpha;
         NativeMethods.SetLayeredWindowAttributes(_hwnd, 0, alpha, NativeMethods.LWA_ALPHA);
+    }
+
+    // ── Fade-in: Hidden → visible transition ──────────────────────────────────
+    //
+    // 150ms cubic ease-out, matches WindowSlideAnimator / LayeredAlphaAnimator
+    // to keep the HUD subsystem visually consistent. Proximity is suspended for
+    // the duration so a WM_INPUT mid-fade cannot snap alpha to a smoothstep
+    // value while the fade-in is still ramping up.
+
+    private void StartFadeIn(byte target, bool activateProximityOnComplete)
+    {
+        _fadeInTimer?.Stop();
+        _proximityActive = false;
+        SetAlphaImmediate(0);
+        _fadeInTarget = target;
+        _fadeInActivateProximityOnComplete = activateProximityOnComplete;
+        _fadeInStartUtc = DateTime.UtcNow;
+        _fadeInTimer ??= DispatcherQueue.CreateTimer();
+        _fadeInTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _fadeInTimer.IsRepeating = true;
+        _fadeInTimer.Tick -= OnFadeInTick;
+        _fadeInTimer.Tick += OnFadeInTick;
+        _fadeInTimer.Start();
+    }
+
+    private void OnFadeInTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        var elapsed = (DateTime.UtcNow - _fadeInStartUtc).TotalMilliseconds;
+        var t = Math.Clamp(elapsed / FADE_IN_MS, 0.0, 1.0);
+
+        var oneMinusT = 1.0 - t;
+        var eased = 1.0 - (oneMinusT * oneMinusT * oneMinusT);
+
+        var alpha = (byte)Math.Clamp(Math.Round(_fadeInTarget * eased), 0, 255);
+        SetAlphaImmediate(alpha);
+
+        if (t >= 1.0)
+        {
+            sender.Stop();
+            SetAlphaImmediate(_fadeInTarget);
+            if (_fadeInActivateProximityOnComplete)
+            {
+                _proximityActive = Settings.SettingsService.Instance.Current.Overlay.FadeOnProximity;
+                if (_proximityActive) UpdateProximity();
+            }
+        }
+    }
+
+    private void CancelFadeIn()
+    {
+        _fadeInTimer?.Stop();
     }
 }
