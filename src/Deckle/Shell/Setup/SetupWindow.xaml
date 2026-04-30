@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Deckle.Shell.Setup.SetupWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Deckle Setup">
+
+    <!-- Mica backdrop is set in code-behind. The root Grid stays
+         transparent so DWM applies Mica through the window. -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />  <!-- TitleBar drag region -->
+            <RowDefinition Height="Auto" />  <!-- Step header -->
+            <RowDefinition Height="*" />     <!-- Page Frame -->
+            <RowDefinition Height="Auto" />  <!-- Footer -->
+        </Grid.RowDefinitions>
+
+        <!-- Empty drag region. ExtendsContentIntoTitleBar=true is set in
+             code-behind; the Tall preference comes from AppWindow.TitleBar.
+             Caption buttons live above this row. -->
+        <Grid Grid.Row="0" Height="32" />
+
+        <StackPanel Grid.Row="1" Padding="40,12,40,16" Spacing="6">
+            <TextBlock x:Name="StepTitle"
+                       Text="Setup"
+                       Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock x:Name="StepSubtitle"
+                       Text=""
+                       Style="{ThemeResource BodyTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Pages will Navigate into ContentFrame from B.3 onward. The
+             SetupContext is passed via Frame.Navigate parameter so each
+             page picks it up in OnNavigatedTo. -->
+        <Frame x:Name="ContentFrame"
+               Grid.Row="2"
+               Padding="40,8,40,16" />
+
+        <Grid Grid.Row="3" Padding="40,16,40,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Button x:Name="CancelButton"
+                    x:Uid="SetupCancelButton"
+                    Grid.Column="0"
+                    Click="OnCancelClick" />
+
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                <Button x:Name="BackButton"
+                        x:Uid="SetupBackButton"
+                        Click="OnBackClick"
+                        IsEnabled="False" />
+                <Button x:Name="NextButton"
+                        x:Uid="SetupNextButton"
+                        Style="{ThemeResource AccentButtonStyle}"
+                        Click="OnNextClick" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

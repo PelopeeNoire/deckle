@@ -78,8 +78,8 @@ For a brand new clone, in this order :
 2. Clone whisper.cpp **next to this repo** and build it with the Vulkan
    backend, so its `build/bin/` contains the DLLs.
 3. From the repo root, run `scripts/setup-assets.ps1`. It copies the
-   whisper and MinGW DLLs into `%LOCALAPPDATA%\WhispUI\native\` and
-   downloads `ggml-base.bin` + Silero VAD into `%LOCALAPPDATA%\WhispUI\models\`.
+   whisper and MinGW DLLs into `%LOCALAPPDATA%\Deckle\native\` and
+   downloads `ggml-base.bin` + Silero VAD into `%LOCALAPPDATA%\Deckle\models\`.
    Add `-WithLarge` to also fetch `ggml-large-v3.bin` (~3 GB).
 4. Build & run via `scripts/launcher.ps1` (interactive picker), or open
    the solution in Visual Studio 2026 and press F5.
@@ -89,7 +89,7 @@ For a brand new clone, in this order :
 The recommended entry point is `scripts/launcher.ps1` — interactive
 two-step picker (worktree → action). For direct CLI use,
 `scripts/build-run.ps1` resolves `MSBuild.exe` automatically (via
-`$env:WHISPUI_MSBUILD` or `vswhere`), builds via VS MSBuild Framework
+`$env:DECKLE_MSBUILD` or `vswhere`), builds via VS MSBuild Framework
 (working around the `dotnet build` XamlCompiler bug), and launches the
 resulting exe.
 
@@ -97,7 +97,7 @@ resulting exe.
 scripts/build-run.ps1 -Configuration Release
 ```
 
-Output: `src/WhispUI/bin/x64/Release/net10.0-windows10.0.19041.0/WhispUI.exe`.
+Output: `src/Deckle/bin/x64/Release/net10.0-windows10.0.19041.0/Deckle.exe`.
 
 See [`scripts/README.md`](scripts/README.md) for an overview of every
 script and module under `scripts/`.
@@ -106,7 +106,7 @@ script and module under `scripts/`.
 
 ## Run at startup
 
-WhispUI can start automatically when you log into Windows. In the app,
+Deckle can start automatically when you log into Windows. In the app,
 go to **Settings → General → Launch at startup** and toggle it on. Two
 related options shape the behaviour :
 
@@ -118,7 +118,7 @@ related options shape the behaviour :
   cost (model load, Vulkan init).
 
 Under the hood this writes a single user-scope entry under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WhispUI` pointing at
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Deckle` pointing at
 the exe you launched the toggle from — no UAC, no service, nothing
 machine-wide. Toggle it off to remove the entry.
 
@@ -128,7 +128,7 @@ machine-wide. Toggle it off to remove the entry.
 
 ```
 <repo-root>/
-├── src/WhispUI/        WinUI 3 app — single entry point. Per-subsystem
+├── src/Deckle/        WinUI 3 app — single entry point. Per-subsystem
 │                       documentation in docs/reference--*.md.
 ├── scripts/            build-run.ps1, publish-unpackaged.ps1, restore-assets.ps1
 ├── benchmark/          Python benchmark suite for prompt tuning. Optional.

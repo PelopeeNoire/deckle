@@ -1,0 +1,605 @@
+<Page
+    x:Class="Deckle.Settings.WhisperPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <Page.Resources>
+        <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+        <Style x:Key="SettingsSectionHeaderTextBlockStyle"
+               BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+               TargetType="TextBlock">
+            <Style.Setters>
+                <Setter Property="Margin" Value="1,30,0,6" />
+            </Style.Setters>
+        </Style>
+
+        <!-- Slider compact pour valeurs bornées continues — pattern Settings
+             Windows 11 (sensibilité souris, volume, etc.). Pas de spinner,
+             pas de layout shift, valeur affichée à droite via ValueTextBlock. -->
+        <Style x:Key="SettingSliderStyle"
+               TargetType="Slider">
+            <Setter Property="MinWidth" Value="180" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsThumbToolTipEnabled" Value="True" />
+        </Style>
+
+        <Style x:Key="SliderValueTextStyle"
+               BasedOn="{StaticResource BodyTextBlockStyle}"
+               TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinWidth" Value="40" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <!-- Bouton reset per-setting. Opacity 0 par défaut, passée à 1 au
+             PointerEntered de la SettingsCard parente (code-behind). -->
+        <Style x:Key="ResetButtonStyle"
+               BasedOn="{StaticResource SubtleButtonStyle}"
+               TargetType="Button">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="ToolTipService.ToolTip" Value="Reset to default" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Background="Transparent"
+          Tapped="OnBackgroundTapped">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0"
+                      Padding="32,24,32,24"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid Background="Transparent">
+                <StackPanel MaxWidth="1000"
+                            HorizontalAlignment="Stretch"
+                            Spacing="{StaticResource SettingsCardSpacing}">
+
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="WhisperPageTitleLabel"
+                               Style="{StaticResource TitleTextBlockStyle}" />
+                    <Button x:Uid="WhisperPage_ResetAll"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Click="ResetAll_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <TextBlock x:Uid="WhisperPageResetAllLabel" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <TextBlock x:Uid="WhisperPageSubtitleLabel"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,12" />
+
+                <!-- ── Transcription ───────────────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageModelEngineHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Name="ModelCard"
+                                       x:Uid="WhisperModelCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <AutoSuggestBox x:Name="ModelSuggest"
+                                        x:Uid="WhisperModelSuggest"
+                                        MinWidth="240"
+                                        GotFocus="ModelSuggest_GotFocus"
+                                        TextChanged="ModelSuggest_TextChanged"
+                                        SuggestionChosen="ModelSuggest_SuggestionChosen"
+                                        LostFocus="ModelSuggest_LostFocus" />
+                        <Button x:Name="ModelReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="ModelReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="LanguageCard"
+                                       x:Uid="WhisperLanguageCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xF2B7;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ComboBox x:Name="LanguageCombo"
+                                  MinWidth="160"
+                                  IsEditable="True"
+                                  SelectionChanged="LanguageCombo_SelectionChanged"
+                                  LostFocus="LanguageCombo_LostFocus">
+                            <ComboBoxItem Content="auto" />
+                            <ComboBoxItem Content="fr" />
+                            <ComboBoxItem Content="en" />
+                            <ComboBoxItem Content="es" />
+                            <ComboBoxItem Content="de" />
+                            <ComboBoxItem Content="it" />
+                            <ComboBoxItem Content="pt" />
+                            <ComboBoxItem Content="nl" />
+                            <ComboBoxItem Content="ja" />
+                            <ComboBoxItem Content="zh" />
+                        </ComboBox>
+                        <Button x:Name="LanguageReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="LanguageReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsExpander x:Name="InitialPromptCard"
+                                           x:Uid="WhisperInitialPromptCard"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE932;}">
+                    <Button x:Name="InitialPromptReset"
+                            Style="{StaticResource ResetButtonStyle}"
+                            Click="InitialPromptReset_Click">
+                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                    </Button>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard ContentAlignment="Vertical">
+                            <StackPanel Spacing="8">
+                                <TextBox x:Name="InitialPromptBox"
+                                         x:Uid="WhisperInitialPromptBox"
+                                         MinHeight="80"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         Text="{x:Bind ViewModel.InitialPrompt, Mode=TwoWay}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <controls:SettingsCard x:Name="UseGpuCard"
+                                       x:Uid="WhisperUseGpuCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE950;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleSwitch x:Name="UseGpuToggle"
+                                      IsOn="{x:Bind ViewModel.UseGpu, Mode=TwoWay}" />
+                        <Button x:Name="UseGpuReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="UseGpuReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <!-- ── Speech filtering ────────────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageSpeechFilteringHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <TextBlock x:Uid="WhisperPageSpeechFilteringBodyLabel"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="1,0,0,8" />
+
+                <controls:SettingsExpander x:Name="VadEnabledCard"
+                                           x:Uid="WhisperVadEnabledCard"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleSwitch x:Name="VadEnabledToggle"
+                                      IsOn="{x:Bind ViewModel.VadEnabled, Mode=TwoWay}" />
+                        <Button x:Name="VadEnabledReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="VadEnabledReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+
+                        <controls:SettingsCard x:Name="VadThresholdCard"
+                                               x:Uid="WhisperVadThresholdCard"
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="VadThresholdSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Minimum="0"
+                                        Maximum="1"
+                                        StepFrequency="0.05"
+                                        TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.VadThreshold, Mode=TwoWay}"
+                                        ValueChanged="VadThresholdSlider_ValueChanged" />
+                                <TextBlock x:Name="VadThresholdValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="VadThresholdReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="VadThresholdReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Name="VadMinSpeechCard"
+                                               x:Uid="WhisperVadMinSpeechCard"
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <NumberBox x:Name="VadMinSpeechBox"
+                                           Minimum="0"
+                                           Maximum="5000"
+                                           SmallChange="50"
+                                           LargeChange="250"
+                                           SpinButtonPlacementMode="Hidden"
+                                           MinWidth="100"
+                                           Value="{x:Bind ViewModel.VadMinSpeechDurationMs, Mode=TwoWay}" />
+                                <Button x:Name="VadMinSpeechReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="VadMinSpeechReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Name="VadMinSilenceCard"
+                                               x:Uid="WhisperVadMinSilenceCard"
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <NumberBox x:Name="VadMinSilenceBox"
+                                           Minimum="0"
+                                           Maximum="5000"
+                                           SmallChange="50"
+                                           LargeChange="250"
+                                           SpinButtonPlacementMode="Hidden"
+                                           MinWidth="100"
+                                           Value="{x:Bind ViewModel.VadMinSilenceDurationMs, Mode=TwoWay}" />
+                                <Button x:Name="VadMinSilenceReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="VadMinSilenceReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Name="VadMaxSpeechCard"
+                                               x:Uid="WhisperVadMaxSpeechCard"
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <!-- Bug WinUI 3 release (net10 / trimming) :
+                                     poser Minimum="5" ou Value="5" en XAML
+                                     fait throw le parser à InitializeComponent
+                                     ("Failed to assign to property RangeBase.
+                                     Minimum/Value"). Seul Slider du fichier
+                                     avec Minimum > defaultValue. Fix : on
+                                     laisse en XAML uniquement Maximum et les
+                                     steps ; Minimum et Value sont posés en
+                                     code-behind dans le ctor via
+                                     ConfigureMinValueSlider() (après
+                                     InitializeComponent). -->
+                                <Slider x:Name="VadMaxSpeechSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Maximum="60"
+                                        StepFrequency="1"
+                                        TickFrequency="5"
+                                        Value="{x:Bind ViewModel.VadMaxSpeechDurationSec, Mode=TwoWay}"
+                                        ValueChanged="VadMaxSpeechSlider_ValueChanged" />
+                                <TextBlock x:Name="VadMaxSpeechValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="VadMaxSpeechReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="VadMaxSpeechReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Name="VadSpeechPadCard"
+                                               x:Uid="WhisperVadSpeechPadCard"
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <NumberBox x:Name="VadSpeechPadBox"
+                                           Minimum="0"
+                                           Maximum="2000"
+                                           SmallChange="25"
+                                           LargeChange="100"
+                                           SpinButtonPlacementMode="Hidden"
+                                           MinWidth="100"
+                                           Value="{x:Bind ViewModel.VadSpeechPadMs, Mode=TwoWay}" />
+                                <Button x:Name="VadSpeechPadReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="VadSpeechPadReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Name="VadOverlapCard"
+                                               x:Uid="WhisperVadOverlapCard"
+                                               IsEnabled="{x:Bind ViewModel.VadEnabled, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="VadOverlapSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Minimum="0"
+                                        Maximum="0.5"
+                                        StepFrequency="0.05"
+                                        TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.VadSamplesOverlap, Mode=TwoWay}"
+                                        ValueChanged="VadOverlapSlider_ValueChanged" />
+                                <TextBlock x:Name="VadOverlapValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="VadOverlapReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="VadOverlapReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- ── Output filters ──────────────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageOutputFiltersHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Name="SuppressNstCard"
+                                       x:Uid="WhisperSuppressNstCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleSwitch x:Name="SuppressNstToggle"
+                                      IsOn="{x:Bind ViewModel.SuppressNonSpeechTokens, Mode=TwoWay}" />
+                        <Button x:Name="SuppressNstReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="SuppressNstReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="SuppressBlankCard"
+                                       x:Uid="WhisperSuppressBlankCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleSwitch x:Name="SuppressBlankToggle"
+                                      IsOn="{x:Bind ViewModel.SuppressBlank, Mode=TwoWay}" />
+                        <Button x:Name="SuppressBlankReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="SuppressBlankReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsExpander x:Name="SuppressRegexCard"
+                                           x:Uid="WhisperSuppressRegexCard"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE71C;}">
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox x:Name="SuppressRegexBox"
+                                         x:Uid="WhisperSuppressRegexBox"
+                                         MinWidth="400"
+                                         Text="{x:Bind ViewModel.SuppressRegex, Mode=TwoWay}" />
+                                <Button x:Name="SuppressRegexReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="SuppressRegexReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- ── Context and segmentation ────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageContextSegmentationHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Name="UseContextCard"
+                                       x:Uid="WhisperUseContextCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE895;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleSwitch x:Name="UseContextToggle"
+                                      IsOn="{x:Bind ViewModel.UseContext, Mode=TwoWay}" />
+                        <Button x:Name="UseContextReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="UseContextReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="MaxTokensCard"
+                                       x:Uid="WhisperMaxTokensCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B2;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <!-- SpinButtonPlacementMode=Hidden : pas de flyout qui pousse
+                             le layout ; saisie clavier + molette. -->
+                        <NumberBox x:Name="MaxTokensBox"
+                                   Minimum="-1"
+                                   Maximum="448"
+                                   SmallChange="1"
+                                   LargeChange="10"
+                                   SpinButtonPlacementMode="Hidden"
+                                   MinWidth="100"
+                                   Value="{x:Bind ViewModel.MaxTokens, Mode=TwoWay}" />
+                        <Button x:Name="MaxTokensReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="MaxTokensReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <!-- ── Decoding ────────────────────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageDecodingHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Name="TemperatureCard"
+                                       x:Uid="WhisperTemperatureCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9CA;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Slider x:Name="TemperatureSlider"
+                                Style="{StaticResource SettingSliderStyle}"
+                                Minimum="0"
+                                Maximum="1"
+                                StepFrequency="0.1"
+                                TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.Temperature, Mode=TwoWay}"
+                                ValueChanged="TemperatureSlider_ValueChanged" />
+                        <TextBlock x:Name="TemperatureValue"
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="TemperatureReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="TemperatureReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="TemperatureIncrementCard"
+                                       x:Uid="WhisperTemperatureIncrementCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE72C;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Slider x:Name="TemperatureIncrementSlider"
+                                Style="{StaticResource SettingSliderStyle}"
+                                Minimum="0"
+                                Maximum="1"
+                                StepFrequency="0.1"
+                                TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.TemperatureIncrement, Mode=TwoWay}"
+                                ValueChanged="TemperatureIncrementSlider_ValueChanged" />
+                        <TextBlock x:Name="TemperatureIncrementValue"
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="TemperatureIncrementReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="TemperatureIncrementReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <InfoBar x:Name="TemperatureIncrementWarning"
+                         x:Uid="WhisperTemperatureIncrementWarning"
+                         IsOpen="False"
+                         IsClosable="False"
+                         Severity="Warning" />
+
+                <!-- ── Confidence thresholds ───────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageConfidenceThresholdsHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Name="EntropyCard"
+                                       x:Uid="WhisperEntropyCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Slider x:Name="EntropySlider"
+                                Style="{StaticResource SettingSliderStyle}"
+                                Maximum="3.5"
+                                StepFrequency="0.1"
+                                TickFrequency="0.5"
+                                Value="{x:Bind ViewModel.EntropyThreshold, Mode=TwoWay}"
+                                ValueChanged="EntropySlider_ValueChanged" />
+                        <TextBlock x:Name="EntropyValue"
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="EntropyReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="EntropyReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="LogprobCard"
+                                       x:Uid="WhisperLogprobCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Slider x:Name="LogprobSlider"
+                                Style="{StaticResource SettingSliderStyle}"
+                                StepFrequency="0.05"
+                                TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.LogprobThreshold, Mode=TwoWay}"
+                                ValueChanged="LogprobSlider_ValueChanged" />
+                        <TextBlock x:Name="LogprobValue"
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="LogprobReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="LogprobReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Name="NoSpeechCard"
+                                       x:Uid="WhisperNoSpeechCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Slider x:Name="NoSpeechSlider"
+                                Style="{StaticResource SettingSliderStyle}"
+                                Maximum="0.80"
+                                StepFrequency="0.05"
+                                TickFrequency="0.1"
+                                Value="{x:Bind ViewModel.NoSpeechThreshold, Mode=TwoWay}"
+                                ValueChanged="NoSpeechSlider_ValueChanged" />
+                        <TextBlock x:Name="NoSpeechValue"
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="NoSpeechReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="NoSpeechReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <!-- ── Storage ─────────────────────────────────────────────── -->
+                <TextBlock x:Uid="WhisperPageStorageHeaderLabel"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsExpander x:Name="PathsCard"
+                                           x:Uid="WhisperPathsCard"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="WhisperModelsDirCard"
+                                               ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox x:Name="ModelsDirectoryBox"
+                                         x:Uid="WhisperModelsDirBox"
+                                         MinWidth="400"
+                                         Text="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}" />
+                                <Button x:Name="ModelsDirectoryReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="ModelsDirectoryReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+            </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Footer restart — pattern Windows Terminal Settings.
+             56px de haut, DividerStrokeColorDefaultBrush en séparateur,
+             AccentButton primaire + Button standard, 8px gap, 32px marge droite. -->
+        <Grid x:Name="RestartFooter"
+              Grid.Row="1"
+              Height="56"
+              Visibility="Collapsed"
+              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+              BorderThickness="0,1,0,0">
+            <StackPanel Margin="0,0,32,0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                <Button x:Uid="WhisperRestartDiscard"
+                        Click="RestartDiscard_Click" />
+                <Button x:Uid="WhisperRestartNow"
+                        Margin="8,0,0,0"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Click="RestartNow_Click" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

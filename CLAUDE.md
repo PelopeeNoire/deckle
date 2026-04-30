@@ -20,7 +20,7 @@ officielle ? » Si la réponse est non, c'est le mauvais choix, recommencer.
 </identity>
 
 <rules>
-Ne jamais lancer de build ni de publish WhispUI — ni `build-run.ps1`, ni
+Ne jamais lancer de build ni de publish Deckle — ni `build-run.ps1`, ni
 `MSBuild.exe`, aucune variante. Le maintainer s'en charge. S'arrêter au
 résumé des changements et laisser le maintainer builder puis valider
 runtime.
@@ -28,13 +28,13 @@ runtime.
 
 <observability>
 Logging et télémétrie : **source unique** dans
-`src/WhispUI/Logging/TelemetryService.Instance`. Tout passe par ce hub —
+`src/Deckle/Logging/TelemetryService.Instance`. Tout passe par ce hub —
 fenêtre LogWindow et fichiers JSONL (`{app,latency,microphone,corpus}.jsonl`)
 sont des sinks de la même source. Jamais de `File.AppendAllText`,
 `Console.WriteLine`, `Debug.WriteLine`, ni de `*Logger.cs` parallèle dans
 le code métier. Avant d'écrire le moindre code de log ou de mesure, lire
-`src/WhispUI/CLAUDE.md` § « Télémétrie — source unique » et l'inventaire
-canonique `src/WhispUI/docs/reference--logging-inventory--0.1.md`.
+`src/Deckle/CLAUDE.md` § « Télémétrie — source unique » et l'inventaire
+canonique `src/Deckle/docs/reference--logging-inventory--0.1.md`.
 Exception unique et subordonnée : helper `DebugLog` file-based pour
 crash natif non rattrapable, instrumentation **temporaire** jamais
 commitée en l'état.
@@ -153,7 +153,7 @@ in-process qui fonctionne. Régression non revue. Cf.
 **Contournement retenu** : builder via le `MSBuild.exe` de Visual Studio
 2026 (MSBuild Framework, `MSBuildRuntimeType=Full`), qui désactive la
 condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
-`src/WhispUI/CLAUDE.md`.
+`src/Deckle/CLAUDE.md`.
 
 **Diagnostic futur** : `MSBuild ... -bl:fresh.binlog` puis
 `binlogtool search fresh.binlog <pattern>`
@@ -164,7 +164,7 @@ condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
 ```
 <repo-root>/
 ├── src/
-│   └── WhispUI\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
+│   └── Deckle\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
 │       └── docs\             — journal d'implémentation détaillé, lu à la demande
 ├── scripts\                  — build-run.ps1, publish-unpackaged.ps1 (versionnés)
 ├── native\                   — DLLs pré-compilées whisper + MinGW (git-ignored)

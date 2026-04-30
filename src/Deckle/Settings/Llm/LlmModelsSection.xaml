@@ -1,0 +1,41 @@
+<UserControl
+    x:Class="Deckle.Settings.Llm.LlmModelsSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
+        <TextBlock x:Uid="LlmModelsHeader"
+                   Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+        <TextBlock x:Uid="LlmModelsBody"
+                   Style="{StaticResource BodyTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   Margin="1,0,0,8" />
+
+        <InfoBar x:Name="ErrorBar"
+                 Severity="Error"
+                 IsOpen="False"
+                 IsClosable="True"
+                 Margin="0,0,0,4" />
+
+        <!-- Dynamic model cards are inserted here by code-behind -->
+        <StackPanel x:Name="ModelsContainer"
+                    Spacing="{StaticResource SettingsCardSpacing}" />
+
+        <StackPanel Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="0,4,0,0">
+            <Button x:Name="ImportGgufButton"
+                    x:Uid="LlmImportGgufButton"
+                    Click="ImportGguf_Click" />
+            <Button x:Name="RefreshModelsButton"
+                    Click="RefreshModels_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                    <TextBlock x:Uid="LlmRefreshLabel" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

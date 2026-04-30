@@ -1,0 +1,54 @@
+<UserControl
+    x:Class="Deckle.Settings.Llm.LlmRulesSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls">
+
+    <StackPanel Spacing="{StaticResource SettingsCardSpacing}">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Uid="LlmRulesHeader"
+                       Grid.Column="0"
+                       Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+            <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                             Grid.Column="1"
+                             VerticalAlignment="Bottom"
+                             Margin="0,0,0,2"
+                             Click="ResetSection_Click" />
+        </Grid>
+
+        <TextBlock x:Uid="LlmRulesBody"
+                   Style="{StaticResource BodyTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   Margin="1,0,0,8" />
+
+        <controls:SettingsCard x:Uid="LlmRulesMetricCard">
+            <RadioButtons x:Name="MetricRadios"
+                          SelectionChanged="MetricRadios_SelectionChanged"
+                          MaxColumns="2">
+                <x:String>Word count</x:String>
+                <x:String>Duration</x:String>
+            </RadioButtons>
+        </controls:SettingsCard>
+
+        <!-- Both panels are populated by Reload() in code-behind. The previous
+             ItemsRepeater + DataTemplate + per-VM ProfileChoices architecture
+             stacked five fragility layers (no DataContext propagation, x:Bind
+             writeback gotchas with [ObservableProperty] partial properties,
+             ItemsSource Reset events clearing SelectedItem on Clear+Add,
+             template recycling on Visibility flips) and lost the user's
+             selection on every metric switch / profile add-remove / nav.
+             Aligned on LlmShortcutSlotsSection's pattern: explicit ComboBox
+             construction, Items + SelectedIndex, SelectionChanged handler. -->
+        <StackPanel x:Name="WordsRulesPanel"
+                    Spacing="{StaticResource SettingsCardSpacing}" />
+
+        <StackPanel x:Name="DurationRulesPanel"
+                    Spacing="{StaticResource SettingsCardSpacing}"
+                    Visibility="Collapsed" />
+    </StackPanel>
+</UserControl>
