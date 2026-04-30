@@ -6,7 +6,7 @@ namespace Deckle.Logging;
 
 // ── TelemetryService ────────────────────────────────────────────────────────
 //
-// Singleton emission hub. Every runtime observation in WhispUI funnels
+// Singleton emission hub. Every runtime observation in Deckle funnels
 // through this — logs via Log(), per-transcription latency via Latency(),
 // raw corpus rows via Corpus(), audio WAV capture via Audio(). The service
 // does not persist anything itself: it builds a TelemetryEvent, stamps it

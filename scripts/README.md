@@ -9,8 +9,8 @@ working directory does not actually matter).
 | Script | What it does | When to use it |
 |---|---|---|
 | [`launcher.ps1`](launcher.ps1) | Two-step interactive menu — step 1 picks a worktree (auto-skipped when only one exists), step 2 picks an action (Build & run Debug, Build & run Release, Build only, Setup assets, Quit). Delegates to the relevant script. | Daily driver. F5 in VSCodium also points here (see `.vscode/launch.json`). |
-| [`build-run.ps1`](build-run.ps1) | Resolves `MSBuild.exe` (via `-MsBuild`, `$env:WHISPUI_MSBUILD`, or `vswhere`), kills any running `WhispUI.exe`, builds via VS MSBuild Framework runtime (working around the `dotnet build` XamlCompiler MSB3073 bug), and launches the resulting exe. | Direct CLI use, launch.json profiles, anything that needs a non-interactive build. Switches: `-Configuration Debug\|Release`, `-NoRun`, `-Wait`, `-Restore`, `-MsBuild <path>`, `-Target <worktree-path>`, `-Pick`. |
-| [`setup-assets.ps1`](setup-assets.ps1) | Populates `<UserDataRoot>\native\` and `<UserDataRoot>\models\` (default `%LOCALAPPDATA%\WhispUI\`) with the whisper.cpp DLLs, MinGW C++ runtime, and Whisper models. Idempotent. | Fresh clone, after a `whisper.cpp` rebuild, or to download a missing model. Switches: `-DataRoot <path>`, `-AlsoInRepo` (also populate `<repo>/native` and `/models`), `-WithLarge` (fetch `ggml-large-v3.bin` ~3 GB), `-Force`. |
+| [`build-run.ps1`](build-run.ps1) | Resolves `MSBuild.exe` (via `-MsBuild`, `$env:DECKLE_MSBUILD`, or `vswhere`), kills any running `Deckle.exe`, builds via VS MSBuild Framework runtime (working around the `dotnet build` XamlCompiler MSB3073 bug), and launches the resulting exe. | Direct CLI use, launch.json profiles, anything that needs a non-interactive build. Switches: `-Configuration Debug\|Release`, `-NoRun`, `-Wait`, `-Restore`, `-MsBuild <path>`, `-Target <worktree-path>`, `-Pick`. |
+| [`setup-assets.ps1`](setup-assets.ps1) | Populates `<UserDataRoot>\native\` and `<UserDataRoot>\models\` (default `%LOCALAPPDATA%\Deckle\`) with the whisper.cpp DLLs, MinGW C++ runtime, and Whisper models. Idempotent. | Fresh clone, after a `whisper.cpp` rebuild, or to download a missing model. Switches: `-DataRoot <path>`, `-AlsoInRepo` (also populate `<repo>/native` and `/models`), `-WithLarge` (fetch `ggml-large-v3.bin` ~3 GB), `-Force`. |
 
 ## Modules (imported, never run directly)
 
@@ -26,7 +26,7 @@ its own non-interactive CLI for VSCodium / launch.json / scripted use.
 
 ## What is *not* here
 
-- **Publish / installer scripts.** WhispUI is currently distributed as
+- **Publish / installer scripts.** Deckle is currently distributed as
   source only; there is no MSIX nor a self-contained installer. Build
   via `build-run.ps1` (or the launcher) and run from the build output.
 - **CI / GitHub Actions.** None for now — personal project.

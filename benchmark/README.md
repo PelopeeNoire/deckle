@@ -1,6 +1,6 @@
-# Benchmark — WhispUI experimentation suite
+# Benchmark — Deckle experimentation suite
 
-Closed-loop suite for measuring and optimising the WhispUI transcription
+Closed-loop suite for measuring and optimising the Deckle transcription
 stack: the Whisper inference parameters (initial prompt first, then the
 rest), and the LLM rewrite prompts that turn raw transcription into
 clean text. Iteration happens in conversation with an LLM agent
@@ -50,12 +50,12 @@ benchmark/
 │       ├── relecture_system_prompt.txt    \
 │       ├── lissage_system_prompt.txt      / 4 bracket prompts — source of
 │       ├── affinage_system_prompt.txt     \   truth for the AppSettings.cs
-│       ├── arrangement_system_prompt.txt  /  defaults in WhispUI
+│       ├── arrangement_system_prompt.txt  /  defaults in Deckle
 │       ├── system_prompt.txt           ← legacy autoresearch target
 │       └── judge_system_prompt.txt     ← legacy 6-criteria grid
 │
 ├── lib/
-│   ├── corpus.py                       ← WhispUI JSONL reader + bracket bucketing
+│   ├── corpus.py                       ← Deckle JSONL reader + bracket bucketing
 │   ├── ollama.py                       ← HTTP client, sanitize
 │   ├── metrics.py                      ← rule-based pre-filters
 │   ├── judge.py                        ← legacy 6-criteria contract
@@ -94,7 +94,7 @@ Invariant across all brackets: keep every nuance. Only `arrangement`
 allows merging passages that say the same thing the same way; if the
 nuances differ, both stay.
 
-The `MaxRecordingDurationSeconds = 1200` cap on the WhispUI side
+The `MaxRecordingDurationSeconds = 1200` cap on the Deckle side
 matches the upper bound; samples above the cap should never reach the
 corpus and bucket to `None` if they somehow do.
 
@@ -148,7 +148,7 @@ python compare_runs.py
 
 The 4 canonical prompts in `config/prompts/<bracket>_system_prompt.txt`
 are the source of truth for the `Profiles` defaults in
-`src/WhispUI/Settings/AppSettings.cs`. Edit one place, re-run the bench,
+`src/Deckle/Settings/AppSettings.cs`. Edit one place, re-run the bench,
 port to AppSettings.cs — that's the loop.
 
 ## Reusable pipeline (when corpus is enriched)

@@ -53,13 +53,13 @@ if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$Repo
 # =============================================================================
 # MSBuild configuration
 # -----------------------------------------------------------------------------
-# `dotnet build` is broken on WhispUI due to the XamlCompiler MSB3073 bug,
+# `dotnet build` is broken on Deckle due to the XamlCompiler MSB3073 bug,
 # so we must use the Visual Studio MSBuild Framework (MSBuildRuntimeType=Full).
 #
 # Resolution order:
 #   1. -MsBuild parameter (explicit override)
-#   2. WHISPUI_MSBUILD env var (recommended for non-standard VS install paths;
-#      set once with: setx WHISPUI_MSBUILD "<path\to\MSBuild.exe>")
+#   2. DECKLE_MSBUILD env var (recommended for non-standard VS install paths;
+#      set once with: setx DECKLE_MSBUILD "<path\to\MSBuild.exe>")
 #   3. vswhere.exe (standard VS install under Program Files)
 #   4. error with instructions
 # =============================================================================
@@ -71,11 +71,11 @@ function Resolve-MsBuild {
         return $Explicit
     }
 
-    if ($env:WHISPUI_MSBUILD) {
-        if (-not (Test-Path $env:WHISPUI_MSBUILD)) {
-            throw "WHISPUI_MSBUILD points to a missing file: $($env:WHISPUI_MSBUILD)"
+    if ($env:DECKLE_MSBUILD) {
+        if (-not (Test-Path $env:DECKLE_MSBUILD)) {
+            throw "DECKLE_MSBUILD points to a missing file: $($env:DECKLE_MSBUILD)"
         }
-        return $env:WHISPUI_MSBUILD
+        return $env:DECKLE_MSBUILD
     }
 
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -89,7 +89,7 @@ function Resolve-MsBuild {
     throw @"
 MSBuild.exe not found. Configure one of the following:
   - parameter -MsBuild "<path\MSBuild.exe>"
-  - env var WHISPUI_MSBUILD (persistent: setx WHISPUI_MSBUILD "<path>")
+  - env var DECKLE_MSBUILD (persistent: setx DECKLE_MSBUILD "<path>")
   - standard Visual Studio install detectable by vswhere
 "@
 }

@@ -142,7 +142,7 @@ public partial class GeneralViewModel : ObservableObject
     // ── Startup ──────────────────────────────────────────────────────────────
 
     // AutostartEnabled is not backed by AppSettings — the source of truth is
-    // HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WhispUI. Load() reads
+    // HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Deckle. Load() reads
     // the registry, OnAutostartEnabledChanged writes it. If the write fails,
     // we revert the UI state so the toggle stays consistent with reality.
     [ObservableProperty]

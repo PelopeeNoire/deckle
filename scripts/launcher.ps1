@@ -1,4 +1,4 @@
-# launcher.ps1 — Interactive entry point for daily WhispUI development
+# launcher.ps1 — Interactive entry point for daily Deckle development
 #
 # Two-step menu:
 #   1. Pick a worktree (skipped when only the main repo exists).

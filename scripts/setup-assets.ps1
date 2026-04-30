@@ -3,13 +3,13 @@
 # Populates <UserDataRoot>\native\ and <UserDataRoot>\models\ with the
 # whisper.cpp DLLs, MinGW C++ runtime, and Whisper models the app needs
 # at runtime. This is the canonical setup step — the app reads from
-# <UserDataRoot> exclusively (see src/WhispUI/AppPaths.cs).
+# <UserDataRoot> exclusively (see src/Deckle/AppPaths.cs).
 #
 # Default <UserDataRoot> resolution mirrors AppPaths.ResolveUserDataRoot
 # on the C# side:
 #   1. -DataRoot parameter (highest priority)
-#   2. WHISP_DATA_ROOT environment variable
-#   3. %LOCALAPPDATA%\WhispUI\
+#   2. DECKLE_DATA_ROOT environment variable
+#   3. %LOCALAPPDATA%\Deckle\
 #
 # Sources:
 #   - whisper.cpp DLLs : <repo>\whisper.cpp\build\bin\
@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     # Override programmable du root cible. Priorité la plus haute, devant
-    # WHISP_DATA_ROOT, devant %LOCALAPPDATA%\WhispUI\.
+    # DECKLE_DATA_ROOT, devant %LOCALAPPDATA%\Deckle\.
     [string]$DataRoot,
 
     # Also populate <repo>\native\ and <repo>\models\ in addition to the
@@ -54,8 +54,8 @@ $ScoopMingw  = Join-Path $ScoopRoot 'apps\mingw\current\bin'
 
 # Target root resolution — same order as AppPaths.ResolveUserDataRoot
 if ($DataRoot)                { $TargetRoot = $DataRoot }
-elseif ($env:WHISP_DATA_ROOT) { $TargetRoot = $env:WHISP_DATA_ROOT }
-else                          { $TargetRoot = Join-Path $env:LOCALAPPDATA 'WhispUI' }
+elseif ($env:DECKLE_DATA_ROOT) { $TargetRoot = $env:DECKLE_DATA_ROOT }
+else                          { $TargetRoot = Join-Path $env:LOCALAPPDATA 'Deckle' }
 
 $TargetNative = Join-Path $TargetRoot 'native'
 $TargetModels = Join-Path $TargetRoot 'models'
@@ -69,7 +69,7 @@ function Step($msg) { Write-Host "`n[setup] $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "         $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "         $msg" -ForegroundColor Yellow }
 
-# Catalog (matches WhispUI.Setup.NativeRuntime.RequiredDllNames)
+# Catalog (matches Deckle.Setup.NativeRuntime.RequiredDllNames)
 $WhisperDlls = @(
     'libwhisper.dll', 'ggml.dll', 'ggml-base.dll',
     'ggml-cpu.dll',   'ggml-vulkan.dll'

@@ -1,9 +1,9 @@
-# CLAUDE.md — WhispUI
+# CLAUDE.md — Deckle
 
 App WinUI 3 unpackaged, point d'entrée unique du projet transcription
 côté UI.
 
-Avant un test runtime, tuer toute instance déjà en cours (WhispUI ou
+Avant un test runtime, tuer toute instance déjà en cours (Deckle ou
 prototype antérieur) — deux processus qui appellent `RegisterHotKey`
 sur la même combinaison se collisionnent (`err 1409`).
 
@@ -18,7 +18,7 @@ l'agent (Claude Code auto-memory). À relire en début de session.
 détail dans le CLAUDE.md racine). Builder via `MSBuild.exe` de VS 2026
 (MSBuild Framework, `MSBuildRuntimeType=Full`).
 
-Depuis `src/WhispUI/`, PowerShell sans admin (remplacer
+Depuis `src/Deckle/`, PowerShell sans admin (remplacer
 `<msbuild-path>` par le chemin local du `MSBuild.exe` Framework livré
 avec Visual Studio 2026, par défaut sous
 `<vs-install>\MSBuild\Current\Bin\amd64\MSBuild.exe`) :
@@ -28,7 +28,7 @@ avec Visual Studio 2026, par défaut sous
     -t:Restore,Build -p:Configuration=Release -p:Platform=x64
 ```
 
-Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe`
+Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\Deckle.exe`
 (self-contained).
 
 État du csproj :
@@ -36,24 +36,24 @@ Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\WhispUI.exe`
 - `Microsoft.WindowsAppSDK` : `1.8.260317003` (stable officielle).
 - `global.json` épingle SDK `10.0.104` — conserver.
 - `<EnableMsixTooling>true</EnableMsixTooling>` force le pipeline
-  Publish à générer `WhispUI.pri` dans `PublishDir`. Sans ça, en
+  Publish à générer `Deckle.pri` dans `PublishDir`. Sans ça, en
   WindowsAppSDK 1.8 unpackaged, les `.xbf` embarqués dans le `.pri`
   sont injoignables et l'app démarre sans fenêtre. Cf.
   `microsoft/WindowsAppSDK#3451`.
 
 Scripts `scripts/build-run.ps1` et `scripts/publish-unpackaged.ps1`
-(versionnés). `build-run` tue WhispUI s'il tourne, build via MSBuild
+(versionnés). `build-run` tue Deckle s'il tourne, build via MSBuild
 VS, lance l'exe — switches `-Restore`, `-NoRun`, `-Wait`,
 `-Configuration`, `-MsBuild`. `publish-unpackaged` : target
 `Restore;Publish` vers `publish/` (racine repo) — sortie folder
 unpackaged sans installer ni MSIX, modèles et DLLs natives non
 embarqués (téléchargés au first run). MSBuild résolu via `-MsBuild`
-> `$env:WHISPUI_MSBUILD` > `vswhere`. Pour court-circuiter `vswhere`
+> `$env:DECKLE_MSBUILD` > `vswhere`. Pour court-circuiter `vswhere`
 (et accélérer le démarrage du script), définir une fois pour toutes
 la variable d'environnement utilisateur :
 
 ```
-setx WHISPUI_MSBUILD "<msbuild-path>"
+setx DECKLE_MSBUILD "<msbuild-path>"
 ```
 
 ---
@@ -171,7 +171,7 @@ fois l'instrumentation en place. Pas implémenté pour l'instant.
 
 ## Télémétrie — source unique
 
-Tout ce que WhispUI observe au runtime passe par
+Tout ce que Deckle observe au runtime passe par
 `Logging.TelemetryService.Instance` — c'est le hub central, pas un
 détail d'implémentation. Quatre canaux :
 

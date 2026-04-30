@@ -318,7 +318,7 @@ public sealed partial class HudChrono : UserControl
     // doubled the stroke churn on every target change and inflated
     // live_stroke_count artefacts in the instrumentation log.
     //
-    // Null in shipping WhispUI — OnLaunched and HudWindow never set it,
+    // Null in shipping Deckle — OnLaunched and HudWindow never set it,
     // so AttachProcessingVisual falls back to the factories' default
     // configs. Shipping behaviour is byte-identical.
     private HudComposition.ConicArcStrokeConfig? _nextStrokeConfig;
@@ -440,7 +440,7 @@ public sealed partial class HudChrono : UserControl
             var size = new Vector2(w, h);
 
             // Consume the one-shot config override if the playground armed
-            // one before this ApplyState call. Null in shipping WhispUI.
+            // one before this ApplyState call. Null in shipping Deckle.
             var cfg = _nextStrokeConfig;
             _nextStrokeConfig = null;
 
@@ -491,7 +491,7 @@ public sealed partial class HudChrono : UserControl
     // must pass a config that matches (Recording* fields honoured when
     // variant == Recording, generic fields otherwise).
     // `log` is an optional diagnostic sink used exclusively by the
-    // HudPlayground — shipping WhispUI never passes one, so the null-
+    // HudPlayground — shipping Deckle never passes one, so the null-
     // conditional invocations collapse to zero cost. Each anchor lets
     // the playground log panel show the exact lifecycle order when
     // a stroke is observed freezing mid-run; the try/catch wraps
@@ -501,7 +501,7 @@ public sealed partial class HudChrono : UserControl
     // HudPlayground-only: force the "digit was modified during Recording"
     // flags so the swipe reveal (only visible on flagged digits) can be
     // observed without first running a full Recording cycle. Shipping
-    // WhispUI never calls this — the flags flip naturally inside
+    // Deckle never calls this — the flags flip naturally inside
     // UpdateClock as the chrono advances.
     //
     // The four CS digits and both seconds digits are the usual candidates

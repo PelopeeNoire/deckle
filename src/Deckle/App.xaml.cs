@@ -243,7 +243,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                     _hudWindow.ShowPasted();
                     break;
                 case TranscriptionOutcome.ClipboardOnly:
-                    // Paste skipped (UIA unsure, foreground = WhispUI, no focus,
+                    // Paste skipped (UIA unsure, foreground = Deckle, no focus,
                     // SendInput partial…) — tell the user the text is on the
                     // clipboard and keep the HUD up long enough to read.
                     _hudWindow.ShowCopied();
@@ -497,7 +497,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     // ── Restart from Settings ───────────────────────────────────────────────
     //
-    // Launches a new WhispUI process with --settings so Settings reopen
+    // Launches a new Deckle process with --settings so Settings reopen
     // automatically at boot, then clean shutdown of the current process
     // via QuitApp().
     public static void RestartApp(string? pageTag = null)
@@ -525,7 +525,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     // ── Restart from tray ──────────────────────────────────────────────────
     //
-    // Launches a new bare WhispUI process (no --settings) then clean
+    // Launches a new bare Deckle process (no --settings) then clean
     // shutdown of the current process.
     private void RestartAppFromTray()
     {

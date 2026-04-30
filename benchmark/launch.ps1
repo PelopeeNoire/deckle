@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Interactive launcher for the WhispUI benchmark suite.
+    Interactive launcher for the Deckle benchmark suite.
 
 .DESCRIPTION
     Auto-discovers Python benchmarks in this folder (any *_bench.py plus
@@ -104,7 +104,7 @@ function Show-Header {
     Clear-Host
     Write-Host ''
     Write-Host '  ============================================' -ForegroundColor Cyan
-    Write-Host '   WhispUI benchmark launcher' -ForegroundColor Cyan
+    Write-Host '   Deckle benchmark launcher' -ForegroundColor Cyan
     Write-Host '  ============================================' -ForegroundColor Cyan
     Write-Host ''
     foreach ($l in Get-StatusLines) {

@@ -158,7 +158,7 @@ internal static class Downloader
         // User-Agent helps shared infrastructure logs distinguish our traffic
         // from generic curl/wget. Bump the brand string when the app rename
         // lands.
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("WhispUI/1.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Deckle/1.0");
         return client;
     }
 

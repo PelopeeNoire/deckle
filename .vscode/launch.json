@@ -1,5 +1,5 @@
 {
-    // WhispUI launch profiles. Select from the Run and Debug panel (Ctrl+Shift+D),
+    // Deckle launch profiles. Select from the Run and Debug panel (Ctrl+Shift+D),
     // then F5. Uses the PowerShell extension (ms-vscode.powershell).
     //
     // Le profil par défaut "Launcher" ouvre le menu deux étapes :

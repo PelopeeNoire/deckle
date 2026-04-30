@@ -14,7 +14,7 @@ namespace Deckle;
 //   Pasted          — UIA confirmed a text field and Ctrl+V was delivered;
 //                     HUD flashes "Pasted" in green.
 //   ClipboardOnly   — text is on the clipboard but paste was skipped (UIA
-//                     couldn't confirm, foreground was WhispUI, SendInput
+//                     couldn't confirm, foreground was Deckle, SendInput
 //                     partial…); HUD shows the Ctrl+V reminder for a few
 //                     seconds. This is the safe default when in doubt.
 internal enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
@@ -79,7 +79,7 @@ internal sealed class WhispEngine : IDisposable
 
     // Synchronous rendezvous just before PasteFromClipboard. The caller
     // (App.xaml.cs) hooks HudWindow.HideSync() to ensure no activation
-    // mutation from WhispUI occurs while SendInput is in flight to the target.
+    // mutation from Deckle occurs while SendInput is in flight to the target.
     public Action? OnReadyToPaste { get; set; }
 
     // Microphone level, linear RMS [0, 1], throttled ~20 Hz (one emission per
@@ -407,7 +407,7 @@ internal sealed class WhispEngine : IDisposable
     }
 
     // Resolves the model path. Order of precedence:
-    //   1. WHISP_MODEL_PATH environment variable, only if it points to an
+    //   1. DECKLE_MODEL_PATH environment variable, only if it points to an
     //      absolute path that exists on disk. Anything else is rejected
     //      with a warning so the user notices the misconfiguration instead
     //      of silently falling back. Validation is cheap and avoids handing
@@ -425,14 +425,14 @@ internal sealed class WhispEngine : IDisposable
         string fallback = Path.Combine(
             SettingsService.Instance.ResolveModelsDirectory(), modelFile);
 
-        string? envPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH");
+        string? envPath = Environment.GetEnvironmentVariable("DECKLE_MODEL_PATH");
         if (string.IsNullOrWhiteSpace(envPath))
             return fallback;
 
         if (!Path.IsPathRooted(envPath) || !File.Exists(envPath))
         {
             _log.Warning(LogSource.Engine,
-                $"WHISP_MODEL_PATH ignored (not an existing absolute path): \"{envPath}\". " +
+                $"DECKLE_MODEL_PATH ignored (not an existing absolute path): \"{envPath}\". " +
                 $"Falling back to \"{fallback}\".");
             return fallback;
         }
@@ -810,7 +810,7 @@ internal sealed class WhispEngine : IDisposable
     // ── Warmup clip loader ──────────────────────────────────────────────────
     //
     // Reads Assets/Sounds/speech.wav (deployed next to the exe via the
-    // Content directive in WhispUI.csproj) and converts the PCM mono 16-bit
+    // Content directive in Deckle.csproj) and converts the PCM mono 16-bit
     // 16 kHz body into the float[-1, 1] sample buffer Whisper expects.
     // Strict format check — the file is shipped pre-converted, anything
     // unexpected returns null so Warmup falls back to a silent buffer
@@ -971,7 +971,7 @@ internal sealed class WhispEngine : IDisposable
                 //    feature is disabled — no rewriter needed, no warning to
                 //    surface. 3 s timeout par tentative dans IsAvailableAsync
                 //    × 3 essais espacés de 500 ms — couvre la race classique
-                //    au boot PC où WhispUI démarre avant qu'Ollama ait fini
+                //    au boot PC où Deckle démarre avant qu'Ollama ait fini
                 //    d'écouter sur 11434. Pire cas borné à ~10 s.
                 var llmSettings = Settings.SettingsService.Instance.Current.Llm;
                 if (llmSettings.Enabled)
@@ -1153,7 +1153,7 @@ internal sealed class WhispEngine : IDisposable
                     // Live re-probe avant d'émettre le warning : Ollama peut
                     // être devenu reachable entre warmup et premier hotkey
                     // (cas typique : l'utilisateur a démarré Ollama après
-                    // WhispUI, ou le service Windows a fini son init après
+                    // Deckle, ou le service Windows a fini son init après
                     // les 3 essais retry du warmup). Single-shot 3s, exécuté
                     // sur thread pool pour éviter tout risque de deadlock
                     // sur le UI thread du message host.
@@ -2466,7 +2466,7 @@ internal sealed class WhispEngine : IDisposable
         {
             // Synchronous rendezvous: the handler (App) hides the HUD and only
             // returns once SW_HIDE is effective on the UI thread. After this
-            // point, nothing in WhispUI touches activation until the end of
+            // point, nothing in Deckle touches activation until the end of
             // Transcribe — Ctrl+V delivery is protected.
             OnReadyToPaste?.Invoke();
             _log.Verbose(LogSource.Paste, "HUD hidden (HideSync) — ready to paste");
@@ -2488,7 +2488,7 @@ internal sealed class WhispEngine : IDisposable
         // in LogWindow and stays grep-friendly through the standard `k=v` format.
         // Outcome : Pasted on a verified paste delivery, ClipboardOnly when
         // the text made it to the clipboard but paste was disabled or refused
-        // (target lost, WhispUI itself, SendInput partial) — the HUD uses
+        // (target lost, Deckle itself, SendInput partial) — the HUD uses
         // this to flash "Copied" or the Ctrl+V reminder before hiding.
         var outcome = (_shouldPaste && pasteVerified) ? TranscriptionOutcome.Pasted
                                                       : TranscriptionOutcome.ClipboardOnly;
@@ -2708,7 +2708,7 @@ internal sealed class WhispEngine : IDisposable
     //
     // Doctrine: clipboard is the safe default. Paste only when we are confident
     // the target expects text. When in doubt — UIA refuses to answer, unknown
-    // control type, foreground is WhispUI itself — the text stays on the
+    // control type, foreground is Deckle itself — the text stays on the
     // clipboard and the HUD shows the Ctrl+V reminder.
     private bool PasteFromClipboard()
     {
@@ -2726,14 +2726,14 @@ internal sealed class WhispEngine : IDisposable
             return false;
         }
 
-        // Refuse if the foreground is a WhispUI window itself (LogWindow, HUD,
+        // Refuse if the foreground is a Deckle window itself (LogWindow, HUD,
         // Settings). Avoids the false positive where we would paste into our
         // own logs while the user reads them.
         NativeMethods.GetWindowThreadProcessId(fg, out uint fgPid);
         uint ownPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
         if (fgPid == ownPid)
         {
-            _log.Warning(LogSource.Paste, "skipped: foreground is WhispUI itself. Clipboard holds the text — Ctrl+V in the right window.");
+            _log.Warning(LogSource.Paste, "skipped: foreground is Deckle itself. Clipboard holds the text — Ctrl+V in the right window.");
             return false;
         }
 

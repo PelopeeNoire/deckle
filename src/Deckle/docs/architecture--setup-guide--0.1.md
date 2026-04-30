@@ -10,7 +10,7 @@ fait.
 
 ## Context
 
-L'app (working title WhispUI, `<AppName>` final TBD) ne peut pas transcrire
+L'app (working title Deckle, `<AppName>` final TBD) ne peut pas transcrire
 sans deux artefacts post-install : un runtime natif whisper.cpp (8 DLLs,
 ~50 MB) et un modèle Whisper (~150 MB ou ~3 GB). Le binaire ship vide de
 ces deux pièces — le first-run wizard les installe sous `<UserDataRoot>\`.
@@ -187,7 +187,7 @@ Découpage en 3 couches verticales : modules métier (Setup/), shell UI
 Logique pure, pas de référence WinUI. Testable headless.
 
 ```
-src/WhispUI/Setup/
+src/Deckle/Setup/
 ├── NativeRuntime.cs           # encapsule TOUTE la connaissance des DLLs whisper
 │   ├── const string[] RequiredDllNames
 │   ├── bool IsInstalled()
@@ -221,7 +221,7 @@ P/Invoke mais c'est `NativeRuntime` qui orchestre l'install.
 Une fenêtre, trois pages, navigation par `Frame`.
 
 ```
-src/WhispUI/Shell/Setup/
+src/Deckle/Shell/Setup/
 ├── SetupWindow.xaml{.cs}       # racine, Mica, Frame, footer Back/Next/Cancel
 ├── ChoicesPage.xaml{.cs}       # étape 1 — location + modèle + estimate
 ├── InstallingPage.xaml{.cs}    # étape 2 — ProgressBar global + 2 items

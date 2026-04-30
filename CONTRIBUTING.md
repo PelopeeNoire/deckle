@@ -1,6 +1,6 @@
 # Contributing
 
-WhispUI is a **personal project** developed primarily as a learning exercise
+Deckle is a **personal project** developed primarily as a learning exercise
 and for the maintainer's own daily use. The codebase is public so others can
 read, fork, learn from, or borrow ideas — not because external contributions
 are actively solicited.
@@ -24,7 +24,7 @@ be closed without review.
 Bug reports are welcome and useful. When opening a bug:
 
 - Describe what you did and what you expected.
-- Attach the relevant logs from `%LOCALAPPDATA%\WhispUI\logs\` (typically
+- Attach the relevant logs from `%LOCALAPPDATA%\Deckle\logs\` (typically
   `app.jsonl` and `latency.jsonl`). Redact paths or content you consider
   private — these logs are local-only by design.
 - Mention your Windows build, GPU vendor (Vulkan backend), and the model

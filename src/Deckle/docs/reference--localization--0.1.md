@@ -1,4 +1,4 @@
-# Système de wording et localisation — WhispUI
+# Système de wording et localisation — Deckle
 
 ## Contexte
 
@@ -29,18 +29,18 @@ décrites ci-dessous.
 Trois pièces reliées par convention de fichiers et de noms.
 
 **Fichier source des strings** :
-`src/WhispUI/Strings/en-US/Resources.resw` (XML, format hérité ResX). Une
+`src/Deckle/Strings/en-US/Resources.resw` (XML, format hérité ResX). Une
 entrée par clé. Une seule langue présente aujourd'hui ; un futur
 `Strings/fr-FR/Resources.resw` se posera à côté sans modification du
 csproj.
 
 **Génération PRI** : la PRI (Package Resource Index) est un fichier
 binaire compilé à partir des `.resw` au build, lu par MRT au runtime.
-Pour un projet unpackagé comme WhispUI
+Pour un projet unpackagé comme Deckle
 (`<WindowsPackageType>None</WindowsPackageType>`), le pipeline a besoin
 de `<EnableMsixTooling>true</EnableMsixTooling>` dans le csproj pour
-que `WhispUI.pri` soit copié à côté de `WhispUI.exe` au Publish. C'est
-**déjà actif** dans `WhispUI.csproj` indépendamment de la localisation
+que `Deckle.pri` soit copié à côté de `Deckle.exe` au Publish. C'est
+**déjà actif** dans `Deckle.csproj` indépendamment de la localisation
 (la PRI 1.8 embarque aussi les `.xbf` XAML — sans elle, l'app ne démarre
 pas). Aucune modification supplémentaire de l'infra build n'est requise
 pour les `.resw`.
@@ -60,7 +60,7 @@ diverge. La balise verrouille `en-US` comme fallback inconditionnel.
   `Strings/<lang>/Resources.resw` au runtime et applique les valeurs
   trouvées à l'élément. Mécanisme zero-code côté XAML.
 - `Loc.Get("Key")` et `Loc.Format("Key", args...)` en C# — wrapper
-  statique défini dans `src/WhispUI/Localization/Loc.cs`. Utilisé pour
+  statique défini dans `src/Deckle/Localization/Loc.cs`. Utilisé pour
   tout ce qui est construit programmatiquement : ConsentDialogs, status
   moteur, `UserFeedback`, HUD, tray, status dynamiques du setup wizard.
 
@@ -126,7 +126,7 @@ visible dans le code consommateur.
 Exemples :
 
 - `Status_Rewriting_Format` = `Rewriting ({0})…`
-- `Tray_Tooltip_Format` = `Whisp — {0}`
+- `Tray_Tooltip_Format` = `Deckle — {0}`
 - `Llm_StartOllama_Format` = `Start Ollama or check the endpoint setting ({0}).`
 - `Gguf_FileNotFound_Format` = `GGUF file not found: {0}`
 
@@ -158,16 +158,16 @@ passent jamais par le `.resw` ni par `Loc`. Toute addition à cette liste
 demande une justification documentée ici.
 
 - **Noms de fichiers et extensions** — `app.jsonl`, `latency.jsonl`,
-  `microphone.jsonl`, `corpus.jsonl`, `settings.json`, `WhispUI.pri`,
-  `WhispUI.exe`. Les noms sont des contrats avec le filesystem et avec
+  `microphone.jsonl`, `corpus.jsonl`, `settings.json`, `Deckle.pri`,
+  `Deckle.exe`. Les noms sont des contrats avec le filesystem et avec
   les outils de diagnostic ; les traduire casse les scripts et la
   télémétrie.
 - **URLs et endpoints** — `http://localhost:11434/api/chat` (Ollama
   default), URLs de redist GitHub, schémas `ms-resource://`. Identifiants
   techniques.
-- **Noms de produits et marques** — `WhispUI`, `Whisp`, `Ollama`,
-  `Silero VAD`, `whisper.cpp`. Identité produit ; pas de traduction
-  possible ni souhaitable.
+- **Noms de produits et marques** — `Deckle`, `Ollama`, `Silero VAD`,
+  `whisper.cpp`. Identité produit ; pas de traduction possible ni
+  souhaitable.
 - **Noms de modèles Whisper** — `base`, `small`, `medium`, `large-v3`,
   `tiny`. Tag d'identification du modèle, exposé tel quel dans l'UI.
 - **Noms techniques de subsystèmes loggés** — entrées de
@@ -195,7 +195,7 @@ Tout autre texte visible par l'utilisateur passe par le `.resw`.
      valeur littérale de l'attribut concerné.
    - C# : remplacer le littéral par `Loc.Get("<key>")` ou
      `Loc.Format("<key>_Format", args...)`. Importer
-     `WhispUI.Localization`.
+     `Deckle.Localization`.
 5. Builder via `MSBuild.exe` (cf. CLAUDE.md projet — `dotnet build` est
    cassé). Vérifier au runtime que la string s'affiche bien (en DEBUG,
    une clé manquante apparaît comme `[!key]` à l'écran — assez voyant
@@ -207,7 +207,7 @@ Tout autre texte visible par l'utilisateur passe par le `.resw`.
 
 Quand le moment vient (FR, ES, ...) :
 
-1. Créer `src/WhispUI/Strings/<lang>/Resources.resw` en copiant le
+1. Créer `src/Deckle/Strings/<lang>/Resources.resw` en copiant le
    fichier `en-US` puis en traduisant chaque `<value>`. Garder les clés
    strictement identiques.
 2. **Ne pas toucher** aux strings techniques de la liste plus haut —
