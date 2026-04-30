@@ -129,12 +129,6 @@ internal sealed class WhispEngine : IDisposable
         _log.Narrative(source, msg);
     }
 
-    // ── Configuration ─────────────────────────────────────────────────────────
-
-    // Default model filename — sourced from the Setup catalog so the engine
-    // and the first-run wizard agree on which file the engine targets.
-    private const string MODEL_FILE = Setup.SpeechModels.DefaultModelFileName;
-
     // ── Internal state ───────────────────────────────────────────────────────
 
     private static readonly LogService _log = LogService.Instance;
@@ -418,12 +412,18 @@ internal sealed class WhispEngine : IDisposable
     //      with a warning so the user notices the misconfiguration instead
     //      of silently falling back. Validation is cheap and avoids handing
     //      a relative or non-existent path to the native whisper layer.
-    //   2. The path resolved by SettingsService (configured models dir +
-    //      default model filename).
+    //   2. The path resolved from SettingsService (configured models dir +
+    //      the model filename selected by the user, falling back to the
+    //      Setup catalog default when the setting is unset).
     private static string ResolveModelPath()
     {
+        var transcription = SettingsService.Instance.Current.Transcription;
+        string modelFile = string.IsNullOrWhiteSpace(transcription.Model)
+            ? Setup.SpeechModels.DefaultModelFileName
+            : transcription.Model;
+
         string fallback = Path.Combine(
-            SettingsService.Instance.ResolveModelsDirectory(), MODEL_FILE);
+            SettingsService.Instance.ResolveModelsDirectory(), modelFile);
 
         string? envPath = Environment.GetEnvironmentVariable("WHISP_MODEL_PATH");
         if (string.IsNullOrWhiteSpace(envPath))
