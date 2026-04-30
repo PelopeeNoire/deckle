@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Deckle.Controls"
-    Title="WhispUI Playground">
+    Title="Deckle Playground">
 
     <!-- RootGrid is hit-testable (Background="Transparent") + focusable
          (IsTabStop) so a tap on empty space can dismiss the focus from a
@@ -22,7 +22,7 @@
              ImageIconSource rebuilt wholesale on recording state change. -->
         <TitleBar Grid.Row="0"
                   x:Name="AppTitleBar"
-                  Title="WhispUI Playground">
+                  Title="Deckle Playground">
             <TitleBar.IconSource>
                 <ImageIconSource x:Name="AppTitleBarIcon" />
             </TitleBar.IconSource>
@@ -142,7 +142,7 @@
                 The Playground is intentionally non-persistent. It reads its
                 initial values from the running app's defaults, lets the user
                 tune them in-memory for the current process, and writes
-                nothing to disk. Every relaunch of WhispUI returns to the
+                nothing to disk. Every relaunch of Deckle returns to the
                 compiled defaults — values that look right move into the code
                 as the new defaults; the Playground's job is to find them,
                 not to remember them.
@@ -216,7 +216,7 @@
                              ScrollViewer's MaxWidth=920, so the column
                              negotiates normally. -->
                         <TextBlock Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2"
-                                   Text="Tweak values live for the current session — nothing is saved. Restart WhispUI to reset to defaults."
+                                   Text="Tweak values live for the current session — nothing is saved. Restart Deckle to reset to defaults."
                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    TextWrapping="Wrap"
