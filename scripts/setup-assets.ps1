@@ -15,7 +15,7 @@
 #   1. -FromRelease <X.Y.Z> (default for everyone except DLL rebuilders) —
 #      downloads deckle-native-<X.Y.Z>.zip from the Deckle GitHub Release
 #      and extracts the catalog DLLs in place. No local whisper.cpp clone
-#      needed. Recipe: src/Deckle/docs/reference--native-runtime--0.1.md.
+#      needed. Recipe: src/Deckle/docs/reference--native-runtime--1.0.md.
 #   2. -WhisperRepo <path> — copies DLLs from a local whisper.cpp build
 #      tree (path must contain build\bin\). For developers who recompile
 #      whisper.cpp themselves with the Vulkan backend.

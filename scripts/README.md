@@ -11,7 +11,7 @@ working directory does not actually matter).
 | [`launcher.ps1`](launcher.ps1) | Two-step interactive menu — step 1 picks a worktree (auto-skipped when only one exists), step 2 picks an action (Build & run Debug, Build & run Release, Build only, Setup assets, Quit). Delegates to the relevant script. | Daily driver. F5 in VSCodium also points here (see `.vscode/launch.json`). |
 | [`build-run.ps1`](build-run.ps1) | Resolves `MSBuild.exe` (via `-MsBuild`, `$env:DECKLE_MSBUILD`, or `vswhere`), kills any running `Deckle.exe`, builds via VS MSBuild Framework runtime (working around the `dotnet build` XamlCompiler MSB3073 bug), and launches the resulting exe. | Direct CLI use, launch.json profiles, anything that needs a non-interactive build. Switches: `-Configuration Debug\|Release`, `-NoRun`, `-Wait`, `-Restore`, `-MsBuild <path>`, `-Target <worktree-path>`, `-Pick`. |
 | [`setup-assets.ps1`](setup-assets.ps1) | Populates `<UserDataRoot>\native\` and `<UserDataRoot>\models\` (default `%LOCALAPPDATA%\Deckle\`) with the native runtime DLLs and Whisper models. Idempotent. | Fresh clone, populating a fresh data root, or refreshing the models. See **Native runtime** below for the three modes. |
-| [`publish-native-runtime.ps1`](publish-native-runtime.ps1) | Builds the versioned native runtime zip (8 DLLs + `PROVENANCE.txt` + `SHA256SUMS`) from a local whisper.cpp build tree, computes the SHA256 the wizard hardcodes in `NativeRuntime.CurrentBundle`, and (with `-Publish`) uploads it as a `native-vX.Y.Z` GitHub Release on the Deckle repo. | Maintainer-only. Run after every whisper.cpp upstream bump or toolchain change. Recipe: [`src/Deckle/docs/reference--native-runtime--0.1.md`](../src/Deckle/docs/reference--native-runtime--0.1.md). |
+| [`publish-native-runtime.ps1`](publish-native-runtime.ps1) | Builds the versioned native runtime zip (8 DLLs + `PROVENANCE.txt` + `SHA256SUMS`) from a local whisper.cpp build tree, computes the SHA256 the wizard hardcodes in `NativeRuntime.CurrentBundle`, and (with `-Publish`) uploads it as a `native-vX.Y.Z` GitHub Release on the Deckle repo. | Maintainer-only. Run after every whisper.cpp upstream bump or toolchain change. Recipe: [`src/Deckle/docs/reference--native-runtime--1.0.md`](../src/Deckle/docs/reference--native-runtime--1.0.md). |
 
 ## Native runtime — three modes
 
@@ -61,5 +61,5 @@ both `setup-assets.ps1 -FromRelease` and the in-app wizard's auto-DL.
   runtime publish flow is run manually by the maintainer.
 - **Source mirror of whisper.cpp.** The repo no longer carries a
   `whisper.cpp/` clone. Rebuilders clone it themselves alongside the
-  Deckle repo (recipe in [`src/Deckle/docs/reference--native-runtime--0.1.md`](../src/Deckle/docs/reference--native-runtime--0.1.md))
+  Deckle repo (recipe in [`src/Deckle/docs/reference--native-runtime--1.0.md`](../src/Deckle/docs/reference--native-runtime--1.0.md))
   and point `-WhisperRepo` at it.
