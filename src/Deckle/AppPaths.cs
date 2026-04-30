@@ -59,11 +59,6 @@ public static class AppPaths
         NativeDirectory         = Path.Combine(UserDataRoot, "native");
         BenchmarkDirectory      = Path.Combine(UserDataRoot, "benchmark");
 
-        // Migrate %LOCALAPPDATA%\WhispUI\ to %LOCALAPPDATA%\Deckle\ before
-        // creating the new root, so the move is a single atomic rename rather
-        // than a copy of pre-existing empty subfolders.
-        TryMigrateLegacyAppFolder();
-
         // UserDataRoot + telemetry are created eagerly — those are the two
         // locations the app writes to during normal operation. Models,
         // native, and benchmark are populated by the wizard or the user;
@@ -74,44 +69,6 @@ public static class AppPaths
         Directory.CreateDirectory(TelemetryDirectory);
 
         TryMigrateLegacySettingsLayout();
-    }
-
-    // Best-effort migration of the legacy %LOCALAPPDATA%\WhispUI\ root to the
-    // new %LOCALAPPDATA%\Deckle\ root. Preserves settings.json, downloaded
-    // models, native DLLs, and telemetry without forcing the user to redo
-    // the setup. No-op once the migration has run, when DECKLE_DATA_ROOT
-    // points outside %LOCALAPPDATA%, or when the new root is already
-    // populated. Failures are swallowed so a quirky filesystem state
-    // doesn't bring the app down at start-up.
-    private static void TryMigrateLegacyAppFolder()
-    {
-        try
-        {
-            string localAppData = Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData);
-            if (string.IsNullOrWhiteSpace(localAppData)) return;
-
-            string canonical = Path.Combine(localAppData, AppFolderName);
-            if (!string.Equals(UserDataRoot, canonical, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            string legacy = Path.Combine(localAppData, "WhispUI");
-            if (!Directory.Exists(legacy)) return;
-
-            if (Directory.Exists(UserDataRoot) &&
-                Directory.GetFileSystemEntries(UserDataRoot).Length > 0)
-                return;
-
-            if (Directory.Exists(UserDataRoot))
-                Directory.Delete(UserDataRoot);
-
-            Directory.Move(legacy, UserDataRoot);
-        }
-        catch
-        {
-            // best-effort; the app keeps booting against a fresh layout if
-            // the migration trips on a permission edge case.
-        }
     }
 
     // Best-effort migration of the previous layout where settings lived in a
