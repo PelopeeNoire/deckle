@@ -44,11 +44,11 @@ if ($Pick) {
 
 Write-Host "Repo: $RepoRoot" -ForegroundColor DarkGray
 
-$ProjectDir = Join-Path $RepoRoot 'src\WhispUI'
-$Csproj     = Join-Path $ProjectDir 'WhispUI.csproj'
-$ExePath    = Join-Path $ProjectDir "bin\x64\$Configuration\net10.0-windows10.0.19041.0\WhispUI.exe"
+$ProjectDir = Join-Path $RepoRoot 'src\Deckle'
+$Csproj     = Join-Path $ProjectDir 'Deckle.csproj'
+$ExePath    = Join-Path $ProjectDir "bin\x64\$Configuration\net10.0-windows10.0.19041.0\Deckle.exe"
 
-if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$RepoRoot' a WhispUI repo?" }
+if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$RepoRoot' a Deckle repo?" }
 
 # =============================================================================
 # MSBuild configuration
@@ -98,8 +98,8 @@ $MsBuildExe = Resolve-MsBuild -Explicit $MsBuild
 Write-Host "MSBuild: $MsBuildExe" -ForegroundColor DarkGray
 
 # 1. Kill running instance (otherwise the .exe is locked)
-Get-Process -Name WhispUI -ErrorAction SilentlyContinue | ForEach-Object {
-    Write-Host "Killing WhispUI PID $($_.Id)" -ForegroundColor Yellow
+Get-Process -Name Deckle -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "Killing Deckle PID $($_.Id)" -ForegroundColor Yellow
     $_ | Stop-Process -Force
 }
 
