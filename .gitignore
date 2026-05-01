@@ -128,8 +128,6 @@ benchmark/results.tsv
 # Personal-workflow skills not meant for the public repo.
 .claude/skills/benchmark-loop/
 
-# Symlink to Claude auto-memory directory (created locally, never
+# Link to Claude auto-memory directory (created locally, never
 # versioned).
-/memory
 memory.lnk
-appdata.lnk
