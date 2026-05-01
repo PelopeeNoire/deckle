@@ -5,10 +5,11 @@ using Deckle.Interop;
 using Deckle.Llm;
 using Deckle.Localization;
 using Deckle.Logging;
-using Deckle.Settings;
+using Deckle.Settings;          // RewriteProfile / LlmSettings live in this namespace (declared in Deckle.Llm csproj).
 using Deckle.Whisp.Pinvoke;
+using Deckle.Whisp.Setup;
 
-namespace Deckle;
+namespace Deckle.Whisp;
 
 // Result of a pipeline pass, consumed by the HUD post-paste handler.
 //   None            — nothing to show (empty audio, empty text, error).
@@ -18,7 +19,7 @@ namespace Deckle;
 //                     couldn't confirm, foreground was Deckle, SendInput
 //                     partial…); HUD shows the Ctrl+V reminder for a few
 //                     seconds. This is the safe default when in doubt.
-internal enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
+public enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
 
 // Pipeline state — single source of truth for the recording lifecycle.
 // Manipulated exclusively via Interlocked.CompareExchange on _state. Each
@@ -40,12 +41,12 @@ internal enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
 // See WhispEngine.RequestToggle, TryStartFromIdle, and WorkerRun for the
 // actual CAS sites; the cap-duration branch inside Record() also drives
 // the Recording → Stopping transition when MaxRecordingDurationSeconds hits.
-internal enum PipelineState { Idle, Starting, Recording, Stopping, Transcribing, Disposed }
+public enum PipelineState { Idle, Starting, Recording, Stopping, Transcribing, Disposed }
 
 // Outcome of a hotkey toggle request — returned to App.OnHotkey so the
 // caller can drive HUD/log without ever reading engine state directly
 // (which is what caused the original double-press race).
-internal enum ToggleResult
+public enum ToggleResult
 {
     Started,            // CAS Idle → Starting succeeded, worker spawned.
     Stopped,            // CAS Recording → Stopping succeeded, worker draining.
@@ -61,7 +62,7 @@ internal enum ToggleResult
 // Events may fire from background threads: subscribers are responsible
 // for marshaling to the UI thread.
 
-internal sealed class WhispEngine : IDisposable
+public sealed class WhispEngine : IDisposable
 {
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -423,8 +424,11 @@ internal sealed class WhispEngine : IDisposable
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
-    public WhispEngine()
+    private readonly IWhispEngineHost _host;
+
+    public WhispEngine(IWhispEngineHost host)
     {
+        _host = host;
         _modelPath = ResolveModelPath();
 
         _llm = new LlmService();
@@ -447,15 +451,15 @@ internal sealed class WhispEngine : IDisposable
     //   2. The path resolved from SettingsService (configured models dir +
     //      the model filename selected by the user, falling back to the
     //      Setup catalog default when the setting is unset).
-    private static string ResolveModelPath()
+    private string ResolveModelPath()
     {
-        var transcription = SettingsService.Instance.Current.Transcription;
+        var transcription = _host.Whisp.Transcription;
         string modelFile = string.IsNullOrWhiteSpace(transcription.Model)
-            ? Setup.SpeechModels.DefaultModelFileName
+            ? SpeechModels.DefaultModelFileName
             : transcription.Model;
 
         string fallback = Path.Combine(
-            SettingsService.Instance.ResolveModelsDirectory(), modelFile);
+            _host.ResolveModelsDirectory(), modelFile);
 
         string? envPath = Environment.GetEnvironmentVariable("DECKLE_MODEL_PATH");
         if (string.IsNullOrWhiteSpace(envPath))
@@ -1040,13 +1044,13 @@ internal sealed class WhispEngine : IDisposable
                 //    × 3 essais espacés de 500 ms — couvre la race classique
                 //    au boot PC où Deckle démarre avant qu'Ollama ait fini
                 //    d'écouter sur 11434. Pire cas borné à ~10 s.
-                var llmSettings = Settings.SettingsService.Instance.Current.Llm;
+                var llmSettings = _host.Llm;
                 if (llmSettings.Enabled)
                 {
                     try
                     {
                         var ollama = new Llm.OllamaService(
-                            () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
+                            () => _host.Llm.OllamaEndpoint);
                         bool reachable = ollama.IsAvailableAsync(maxAttempts: 3).GetAwaiter().GetResult();
                         _ollamaWarmupOk = reachable ? 1 : 0;
                     }
@@ -1239,7 +1243,7 @@ internal sealed class WhispEngine : IDisposable
                     try
                     {
                         var ollama = new Llm.OllamaService(
-                            () => Settings.SettingsService.Instance.Current.Llm.OllamaEndpoint);
+                            () => _host.Llm.OllamaEndpoint);
                         var probeTask = Task.Run(() => ollama.IsAvailableAsync());
                         if (probeTask.Wait(TimeSpan.FromSeconds(4)))
                             reachableNow = probeTask.Result;
@@ -1470,7 +1474,7 @@ internal sealed class WhispEngine : IDisposable
             cbSize          = 0,
         };
 
-        int configuredDevice = Settings.SettingsService.Instance.Current.Recording.AudioInputDeviceId;
+        int configuredDevice = _host.Recording.AudioInputDeviceId;
         uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
 
         err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, IntPtr.Zero, IntPtr.Zero, 0u);
@@ -1530,7 +1534,7 @@ internal sealed class WhispEngine : IDisposable
         IntPtr hEvent = NativeMethods.CreateEvent(IntPtr.Zero, bManualReset: false, bInitialState: false, null);
 
         // Device selected in Settings. -1 = WAVE_MAPPER (system default).
-        int configuredDevice = Settings.SettingsService.Instance.Current.Recording.AudioInputDeviceId;
+        int configuredDevice = _host.Recording.AudioInputDeviceId;
         uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
 
         uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
@@ -1576,7 +1580,7 @@ internal sealed class WhispEngine : IDisposable
 
         // Snapshot the cap at recording start so a mid-recording Settings
         // change doesn't shorten or extend a session already in progress.
-        int maxDurationSec = Settings.SettingsService.Instance.Current.Recording.MaxRecordingDurationSeconds;
+        int maxDurationSec = _host.Recording.MaxRecordingDurationSeconds;
         bool capHit = false;
         int buffersReceived = 0;
 
@@ -1944,8 +1948,7 @@ internal sealed class WhispEngine : IDisposable
         // Both gated by Settings ▸ Telemetry ▸ Log microphone — the sink
         // re-checks the toggle at write time (defence in depth) and
         // returning early here keeps the LogWindow quiet too.
-        bool micTelemetryEnabled = Settings.SettingsService.Instance
-            .Current.Telemetry.MicrophoneTelemetry;
+        bool micTelemetryEnabled = _host.Telemetry.MicrophoneTelemetry;
         if (micTelemetryEnabled)
             Logging.TelemetryService.Instance.Microphone(payload);
 
@@ -1988,7 +1991,7 @@ internal sealed class WhispEngine : IDisposable
     // last wins, which is the natural behaviour from the user's POV.
     private void TryAutoCalibrate(Logging.MicrophoneTelemetryPayload payload)
     {
-        var lw = Settings.SettingsService.Instance.Current.Recording.LevelWindow;
+        var lw = _host.Recording.LevelWindow;
         if (!lw.AutoCalibrationEnabled) return;
 
         int needed = Math.Max(1, lw.AutoCalibrationSamples);
@@ -2035,12 +2038,12 @@ internal sealed class WhispEngine : IDisposable
 
         lw.MinDbfs = (float)newMin;
         lw.MaxDbfs = (float)newMax;
-        Settings.SettingsService.Instance.Save();
+        _host.SaveSettings();
 
         // Push live into HudChrono so the next sub-window already uses the
-        // new calibration. App.ApplyLevelWindow is the single point of
-        // truth for the static-field write.
-        App.ApplyLevelWindow(lw);
+        // new calibration. The host owns the static-field write
+        // (App.ApplyLevelWindow on the App side).
+        _host.ApplyLevelWindow(lw);
 
         _log.Success(LogSource.Record,
             $"Auto-calibrated level window: Min={newMin:F0} Max={newMax:F0} dBFS "
@@ -2241,8 +2244,8 @@ internal sealed class WhispEngine : IDisposable
         // Hot-reload fields (thresholds, VAD, suppress, context, decoding)
         // are applied here on each call — no context restart needed.
         // Heavy settings (model, use_gpu) are handled at LoadModel.
-        var settings = Settings.SettingsService.Instance.Current;
-        var nativeAllocs = Settings.WhisperParamsMapper.Apply(ref wparams, settings);
+        var whispSettings = _host.Whisp;
+        var nativeAllocs = WhisperParamsMapper.Apply(ref wparams, whispSettings, _host.ResolveModelsDirectory());
 
         // Cache the timestamp token bound once for the entire call — it's a model
         // property, not per-segment, no need to call for each token.
@@ -2282,8 +2285,8 @@ internal sealed class WhispEngine : IDisposable
         _log.Verbose(LogSource.Transcribe, $"params | strategy={strategyLabelVerbose} | temp={wparams.temperature:F2}+{wparams.temperature_inc:F2} | logprob_thold={wparams.logprob_thold:F2} | entropy_thold={wparams.entropy_thold:F2} | no_speech_thold={wparams.no_speech_thold:F2} | suppress_nst={wparams.suppress_nst} | carry_prompt={wparams.carry_initial_prompt} | n_threads={wparams.n_threads}");
 
         // Log the initial prompt sent to Whisper — conditions decoding style.
-        string prompt = settings.Transcription.InitialPrompt;
-        bool carry = settings.Transcription.CarryInitialPrompt;
+        string prompt = whispSettings.Transcription.InitialPrompt;
+        bool carry = whispSettings.Transcription.CarryInitialPrompt;
         if (!string.IsNullOrEmpty(prompt))
         {
             string truncated = prompt.Length > 60 ? prompt[..60] + "…" : prompt;
@@ -2442,14 +2445,14 @@ internal sealed class WhispEngine : IDisposable
         long llmEvalMs       = 0;
         int  llmPromptTokens = 0;
         int  llmEvalTokens   = 0;
-        var llmSettings = Settings.SettingsService.Instance.Current.Llm;
+        var llmSettings = _host.Llm;
         double recDurationSec = (_recordingSw?.Elapsed.TotalSeconds) ?? 0;
         int rawWordCount = Logging.TextMetrics.CountWords(fullText);
 
         // Rewrite profile resolution:
         // - manual rewrite hotkey → the profile name passed to StartRecording
         // - plain transcribe hotkey → first matching AutoRewriteRule (duration-based)
-        Settings.RewriteProfile? profile = null;
+        RewriteProfile? profile = null;
         if (!string.IsNullOrWhiteSpace(_manualProfileName) && llmSettings.Enabled)
         {
             profile = llmSettings.Profiles.Find(p =>
@@ -2465,7 +2468,7 @@ internal sealed class WhispEngine : IDisposable
             // Pivot between the two auto-rule lists. "Words" is the default —
             // word count is a truer proxy for LLM context load than wall-clock
             // duration. "Duration" keeps the legacy behaviour.
-            Settings.RewriteProfile? ResolveRuleProfile(string? id, string? name)
+            RewriteProfile? ResolveRuleProfile(string? id, string? name)
             {
                 var byId = !string.IsNullOrEmpty(id)
                     ? llmSettings.Profiles.Find(p => p.Id == id)
@@ -2635,10 +2638,10 @@ internal sealed class WhispEngine : IDisposable
         // useful for benchmarking Whisper itself (initial prompt, VAD, model
         // swap). One file per rewrite profile so samples stay sliceable by
         // the workflow they came from, even without the rewrite payload.
-        var telemetrySettings = Settings.SettingsService.Instance.Current.Telemetry;
+        var telemetrySettings = _host.Telemetry;
         if (telemetrySettings.CorpusEnabled && profile is not null)
         {
-            var whisperSettings = Settings.SettingsService.Instance.Current.Transcription;
+            var whisperSettings = _host.Whisp.Transcription;
             int rawChars = rawText.Length;
             var timestamp = DateTimeOffset.Now;
 

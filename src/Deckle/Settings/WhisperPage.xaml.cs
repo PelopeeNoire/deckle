@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Navigation;
 using Deckle.Localization;
 using Deckle.Logging;
 using Deckle.Settings.ViewModels;
+using Deckle.Whisp;
 
 namespace Deckle.Settings;
 
@@ -506,12 +507,7 @@ public sealed partial class WhisperPage : Page
         _log.Info(LogSource.SetWhisper, "Reset all Whisper settings to defaults");
 
         var s = SettingsService.Instance.Current;
-        s.Transcription = new TranscriptionSettings();
-        s.SpeechDetection = new SpeechDetectionSettings();
-        s.Decoding = new DecodingSettings();
-        s.Confidence = new ConfidenceSettings();
-        s.OutputFilters = new OutputFilterSettings();
-        s.Context = new ContextSettings();
+        s.Whisp = new WhispSettings();
         s.Paths = new PathsSettings();
         SettingsService.Instance.Save();
 

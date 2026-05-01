@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Deckle.Setup;
+namespace Deckle.Whisp.Setup;
 
 // ── Downloader ───────────────────────────────────────────────────────────────
 //
@@ -34,7 +34,7 @@ namespace Deckle.Setup;
 // timeout is overridden to Infinite because large model files routinely
 // exceed it on slow links — cancellation is the right escape hatch, not
 // the timeout.
-internal static class Downloader
+public static class Downloader
 {
     private const int BufferSize = 81920; // 80 KB, matches Stream.CopyToAsync default
 

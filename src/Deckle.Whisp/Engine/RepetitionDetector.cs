@@ -1,4 +1,4 @@
-namespace Deckle;
+namespace Deckle.Whisp;
 
 // Guards against the Whisper hallucination loop: on a long audio with
 // ambiguous trailing silence, the greedy decoder can enter a state where it
@@ -10,7 +10,7 @@ namespace Deckle;
 // V1 targets the observed case: N identical consecutive segments (case- and
 // whitespace-insensitive). AB-AB alternation is not covered yet — upgrade
 // when a real case surfaces.
-internal sealed class RepetitionDetector
+internal sealed class RepetitionDetector  // engine-internal helper; only WhispEngine instantiates it
 {
     private readonly int _threshold;
     private string? _lastText;

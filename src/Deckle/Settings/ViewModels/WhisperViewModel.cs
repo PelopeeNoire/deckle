@@ -298,27 +298,27 @@ public partial class WhisperViewModel : ObservableObject
         {
             var s = SettingsService.Instance.Current;
             ModelsDirectory = s.Paths.ModelsDirectory;
-            Model = s.Transcription.Model;
-            UseGpu = s.Transcription.UseGpu;
-            Language = s.Transcription.Language;
-            InitialPrompt = s.Transcription.InitialPrompt;
-            VadEnabled = s.SpeechDetection.Enabled;
-            VadThreshold = s.SpeechDetection.Threshold;
-            VadMinSpeechDurationMs = s.SpeechDetection.MinSpeechDurationMs;
-            VadMinSilenceDurationMs = s.SpeechDetection.MinSilenceDurationMs;
-            VadMaxSpeechDurationSec = s.SpeechDetection.MaxSpeechDurationSec;
-            VadSpeechPadMs = s.SpeechDetection.SpeechPadMs;
-            VadSamplesOverlap = s.SpeechDetection.SamplesOverlap;
-            Temperature = s.Decoding.Temperature;
-            TemperatureIncrement = s.Decoding.TemperatureIncrement;
-            EntropyThreshold = s.Confidence.EntropyThreshold;
-            LogprobThreshold = s.Confidence.LogprobThreshold;
-            NoSpeechThreshold = s.Confidence.NoSpeechThreshold;
-            SuppressNonSpeechTokens = s.OutputFilters.SuppressNonSpeechTokens;
-            SuppressBlank = s.OutputFilters.SuppressBlank;
-            SuppressRegex = s.OutputFilters.SuppressRegex;
-            UseContext = s.Context.UseContext;
-            MaxTokens = s.Context.MaxTokens;
+            Model = s.Whisp.Transcription.Model;
+            UseGpu = s.Whisp.Transcription.UseGpu;
+            Language = s.Whisp.Transcription.Language;
+            InitialPrompt = s.Whisp.Transcription.InitialPrompt;
+            VadEnabled = s.Whisp.SpeechDetection.Enabled;
+            VadThreshold = s.Whisp.SpeechDetection.Threshold;
+            VadMinSpeechDurationMs = s.Whisp.SpeechDetection.MinSpeechDurationMs;
+            VadMinSilenceDurationMs = s.Whisp.SpeechDetection.MinSilenceDurationMs;
+            VadMaxSpeechDurationSec = s.Whisp.SpeechDetection.MaxSpeechDurationSec;
+            VadSpeechPadMs = s.Whisp.SpeechDetection.SpeechPadMs;
+            VadSamplesOverlap = s.Whisp.SpeechDetection.SamplesOverlap;
+            Temperature = s.Whisp.Decoding.Temperature;
+            TemperatureIncrement = s.Whisp.Decoding.TemperatureIncrement;
+            EntropyThreshold = s.Whisp.Confidence.EntropyThreshold;
+            LogprobThreshold = s.Whisp.Confidence.LogprobThreshold;
+            NoSpeechThreshold = s.Whisp.Confidence.NoSpeechThreshold;
+            SuppressNonSpeechTokens = s.Whisp.OutputFilters.SuppressNonSpeechTokens;
+            SuppressBlank = s.Whisp.OutputFilters.SuppressBlank;
+            SuppressRegex = s.Whisp.OutputFilters.SuppressRegex;
+            UseContext = s.Whisp.Context.UseContext;
+            MaxTokens = s.Whisp.Context.MaxTokens;
         }
         finally
         {
@@ -331,36 +331,36 @@ public partial class WhisperViewModel : ObservableObject
         var s = SettingsService.Instance.Current;
 
         s.Paths.ModelsDirectory = ModelsDirectory;
-        s.Transcription.Model = Model;
-        s.Transcription.UseGpu = UseGpu;
-        s.Transcription.Language = Language;
-        s.Transcription.InitialPrompt = InitialPrompt;
+        s.Whisp.Transcription.Model = Model;
+        s.Whisp.Transcription.UseGpu = UseGpu;
+        s.Whisp.Transcription.Language = Language;
+        s.Whisp.Transcription.InitialPrompt = InitialPrompt;
 
-        s.SpeechDetection.Enabled = VadEnabled;
-        s.SpeechDetection.Threshold = (float)VadThreshold;
+        s.Whisp.SpeechDetection.Enabled = VadEnabled;
+        s.Whisp.SpeechDetection.Threshold = (float)VadThreshold;
         if (!double.IsNaN(VadMinSpeechDurationMs))
-            s.SpeechDetection.MinSpeechDurationMs = (int)VadMinSpeechDurationMs;
+            s.Whisp.SpeechDetection.MinSpeechDurationMs = (int)VadMinSpeechDurationMs;
         if (!double.IsNaN(VadMinSilenceDurationMs))
-            s.SpeechDetection.MinSilenceDurationMs = (int)VadMinSilenceDurationMs;
-        s.SpeechDetection.MaxSpeechDurationSec = (float)VadMaxSpeechDurationSec;
+            s.Whisp.SpeechDetection.MinSilenceDurationMs = (int)VadMinSilenceDurationMs;
+        s.Whisp.SpeechDetection.MaxSpeechDurationSec = (float)VadMaxSpeechDurationSec;
         if (!double.IsNaN(VadSpeechPadMs))
-            s.SpeechDetection.SpeechPadMs = (int)VadSpeechPadMs;
-        s.SpeechDetection.SamplesOverlap = (float)VadSamplesOverlap;
+            s.Whisp.SpeechDetection.SpeechPadMs = (int)VadSpeechPadMs;
+        s.Whisp.SpeechDetection.SamplesOverlap = (float)VadSamplesOverlap;
 
-        s.Decoding.Temperature = Temperature;
-        s.Decoding.TemperatureIncrement = TemperatureIncrement;
+        s.Whisp.Decoding.Temperature = Temperature;
+        s.Whisp.Decoding.TemperatureIncrement = TemperatureIncrement;
 
-        s.Confidence.EntropyThreshold = EntropyThreshold;
-        s.Confidence.LogprobThreshold = LogprobThreshold;
-        s.Confidence.NoSpeechThreshold = NoSpeechThreshold;
+        s.Whisp.Confidence.EntropyThreshold = EntropyThreshold;
+        s.Whisp.Confidence.LogprobThreshold = LogprobThreshold;
+        s.Whisp.Confidence.NoSpeechThreshold = NoSpeechThreshold;
 
-        s.OutputFilters.SuppressNonSpeechTokens = SuppressNonSpeechTokens;
-        s.OutputFilters.SuppressBlank = SuppressBlank;
-        s.OutputFilters.SuppressRegex = SuppressRegex;
+        s.Whisp.OutputFilters.SuppressNonSpeechTokens = SuppressNonSpeechTokens;
+        s.Whisp.OutputFilters.SuppressBlank = SuppressBlank;
+        s.Whisp.OutputFilters.SuppressRegex = SuppressRegex;
 
-        s.Context.UseContext = UseContext;
+        s.Whisp.Context.UseContext = UseContext;
         if (!double.IsNaN(MaxTokens))
-            s.Context.MaxTokens = (int)MaxTokens;
+            s.Whisp.Context.MaxTokens = (int)MaxTokens;
 
         SettingsService.Instance.Save();
     }

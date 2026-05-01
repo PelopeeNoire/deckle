@@ -5,7 +5,7 @@ using System.IO.Compression;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Deckle.Setup;
+namespace Deckle.Whisp.Setup;
 
 // ── NativeRuntime ────────────────────────────────────────────────────────────
 //
@@ -37,7 +37,7 @@ namespace Deckle.Setup;
 //   • Catalog of speech models (Whisper .bin, Silero VAD). Lives in
 //     Setup/SpeechModels — different lifecycle, different trust boundary
 //     (download from HuggingFace vs redistribute via our own release).
-internal static class NativeRuntime
+public static class NativeRuntime
 {
     // Filename used by ResolveNativeLibrary as the entry point. Must match
     // the literal "libwhisper" in [DllImport(...)] attributes plus ".dll".
