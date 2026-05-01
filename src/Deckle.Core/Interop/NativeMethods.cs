@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace Deckle.Interop;
 
-internal static class NativeMethods
+public static class NativeMethods
 {
     // ── Hotkey ────────────────────────────────────────────────────────────────
 
