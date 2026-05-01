@@ -1,4 +1,4 @@
-# whisp-ui
+# Deckle
 
 Local-first voice-to-clipboard transcription utility for Windows. Press a
 hotkey, talk, release — the transcription lands in the clipboard, ready to
