@@ -14,7 +14,7 @@ namespace Deckle.Interop;
 // slots actually needed are declared; earlier slots are placeholders with
 // opaque IntPtr types to preserve ordering.
 
-internal static class UIAutomation
+public static class UIAutomation
 {
     // https://learn.microsoft.com/windows/win32/winauto/uiauto-automation-element-propids
     private const int UIA_ControlTypePropertyId = 30003;

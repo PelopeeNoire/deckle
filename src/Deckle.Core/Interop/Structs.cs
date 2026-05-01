@@ -4,7 +4,7 @@ namespace Deckle.Interop;
 
 // ── POINT ─────────────────────────────────────────────────────────────────────
 [StructLayout(LayoutKind.Sequential)]
-internal struct POINT
+public struct POINT
 {
     public int X;
     public int Y;
@@ -15,7 +15,7 @@ internal struct POINT
 // Pour la souris : usUsagePage=0x01 (Generic Desktop), usUsage=0x02 (Mouse).
 // dwFlags=RIDEV_INPUTSINK : recevoir les events même sans focus (hwndTarget requis).
 [StructLayout(LayoutKind.Sequential)]
-internal struct RAWINPUTDEVICE
+public struct RAWINPUTDEVICE
 {
     public ushort usUsagePage;
     public ushort usUsage;
@@ -29,7 +29,7 @@ internal struct RAWINPUTDEVICE
 // CharSet.Unicode : les champs szTip/szInfo sont des WCHAR[].
 // cbSize doit être défini à Marshal.SizeOf<NOTIFYICONDATA>() avant tout appel.
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-internal struct NOTIFYICONDATA
+public struct NOTIFYICONDATA
 {
     public uint   cbSize;
     public IntPtr hWnd;
@@ -58,7 +58,7 @@ internal struct NOTIFYICONDATA
 // function pointer obtained via Marshal.GetFunctionPointerForDelegate — the
 // delegate itself must be rooted in a managed field to keep it alive.
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-internal struct WNDCLASSEX
+public struct WNDCLASSEX
 {
     public uint   cbSize;
     public uint   style;
@@ -81,7 +81,7 @@ internal struct WNDCLASSEX
 // L'union est dimensionnée par MOUSEINPUT (le plus grand membre).
 // Le champ _pad à l'offset 32 force Marshal.SizeOf à retourner 40.
 [StructLayout(LayoutKind.Explicit)]
-internal struct INPUT
+public struct INPUT
 {
     [FieldOffset(0)]  public uint   type;
     [FieldOffset(8)]  public ushort ki_wVk;
@@ -93,7 +93,7 @@ internal struct INPUT
 }
 
 [StructLayout(LayoutKind.Sequential)]
-internal struct WAVEFORMATEX
+public struct WAVEFORMATEX
 {
     public ushort wFormatTag;
     public ushort nChannels;
@@ -105,7 +105,7 @@ internal struct WAVEFORMATEX
 }
 
 [StructLayout(LayoutKind.Sequential)]
-internal struct WAVEHDR
+public struct WAVEHDR
 {
     public IntPtr lpData;           // pointeur vers le buffer de données audio
     public uint   dwBufferLength;   // taille totale du buffer (octets)

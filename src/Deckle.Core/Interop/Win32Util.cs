@@ -8,7 +8,7 @@ namespace Deckle.Interop;
 // DescribeHwnd : produit une chaîne lisible "Exe / Titre / focus=Class" pour
 // caractériser une fenêtre. Sert à diagnostiquer les pertes de focus / paste.
 
-internal static class Win32Util
+public static class Win32Util
 {
     public static string DescribeHwnd(IntPtr hwnd)
     {
