@@ -30,7 +30,7 @@ namespace Deckle.Llm;
 // tokens to stay aligned with the logging inventory vocabulary. All zeros
 // when Rewrite short-circuits (no model configured, timeout, exception) —
 // the caller is expected to check Text != null before reading metrics.
-internal readonly record struct RewriteResult(
+public readonly record struct RewriteResult(
     string?      Text,
     long         TotalMs,
     long         OllamaLoadMs,
@@ -39,7 +39,7 @@ internal readonly record struct RewriteResult(
     int          PromptTokens,
     int          EvalTokens);
 
-internal class LlmService
+public class LlmService
 {
     private static readonly LogService _log = LogService.Instance;
 

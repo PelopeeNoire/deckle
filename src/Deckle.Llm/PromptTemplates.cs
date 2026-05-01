@@ -24,7 +24,7 @@ namespace Deckle.Llm;
 //   - fallback (famille inconnue)         → ChatML (couvre beaucoup de modèles
 //     récents y compris yi, deepseek, nous-*, openchat)
 
-internal static class PromptTemplates
+public static class PromptTemplates
 {
     public static (string Prompt, string[] Stops, string Family) Build(string model, string system, string user)
     {
