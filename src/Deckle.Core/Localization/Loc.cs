@@ -23,7 +23,7 @@ namespace Deckle.Localization;
 // Technical strings (file names, URLs, product names like "Ollama" /
 // "Silero VAD" / "Deckle") stay hardcoded — never go through Loc.
 
-internal static class Loc
+public static class Loc
 {
     // Lazy-initialized so the ResourceLoader is built on first use, after
     // the Windows App SDK runtime is bootstrapped in App.OnLaunched.
