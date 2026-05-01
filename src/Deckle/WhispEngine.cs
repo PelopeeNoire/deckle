@@ -99,20 +99,29 @@ internal sealed class WhispEngine : IDisposable
 
     // All StatusChanged / TranscriptionFinished emissions route through these
     // two helpers so the startup warmup can silence them in a single place
-    // instead of peppering the pipeline with if-checks. _isWarmup is set only
-    // around the Transcribe() call inside Warmup() — model load and other
-    // lifecycle events stay visible on the tray.
-    private volatile bool _isWarmup = false;
+    // instead of peppering the pipeline with if-checks.
+    //
+    // ThreadStatic — the suppression is scoped to the *invocation* of
+    // Transcribe() that owns the warmup, not to the engine instance. Warmup
+    // sets the flag on its own thread before calling Transcribe and clears
+    // it after; the user-driven Worker thread reads its own (false) copy and
+    // is unaffected. A shared instance flag would let the Worker observe
+    // Warmup's `true` for the slice between Warmup releasing
+    // _transcribeLock and reaching its `finally` reset, silencing the user's
+    // narratives mid-call. Whisper.cpp invokes its segment / abort / log
+    // callbacks synchronously on the thread that called whisper_full, so
+    // ThreadStatic is the right scope for them too.
+    [ThreadStatic] private static bool t_isWarmup;
 
     private void RaiseStatus(string status)
     {
-        if (_isWarmup) return;
+        if (t_isWarmup) return;
         StatusChanged?.Invoke(status);
     }
 
     private void RaiseFinished(TranscriptionOutcome outcome)
     {
-        if (_isWarmup) return;
+        if (t_isWarmup) return;
         TranscriptionFinished?.Invoke(outcome);
     }
 
@@ -125,7 +134,7 @@ internal sealed class WhispEngine : IDisposable
     // an enum).
     private void RaiseNarrative(string source, string msg)
     {
-        if (_isWarmup) return;
+        if (t_isWarmup) return;
         _log.Narrative(source, msg);
     }
 
@@ -179,6 +188,28 @@ internal sealed class WhispEngine : IDisposable
     // for Dispose to call Join with a timeout — no other consumer reads this.
     // null when Idle.
     private Thread? _worker;
+
+    // Cancellation channel for the boot warmup. Created by Warmup() when its
+    // background thread enters, nulled+disposed in finally before the thread
+    // exits. RequestToggle and Dispose call TrySignalWarmupCancel() to
+    // unblock a hotkey or quit pressed while warmup is in flight — see the
+    // Warmup doc-block for the rationale. Plain field, no `volatile`:
+    // writers see each other through the lifecycle (Warmup creates →
+    // toggle/Dispose cancels → Warmup nulls), and the helper snapshots the
+    // field locally to avoid TOCTOU between the null-check and Cancel().
+    private CancellationTokenSource? _warmupCts;
+
+    // Best-effort cancel of an in-flight warmup. No-op if no warmup is
+    // running. Catches ObjectDisposedException because the Warmup thread's
+    // finally may have disposed the CTS in the small window between our
+    // local snapshot and the Cancel() call.
+    private void TrySignalWarmupCancel()
+    {
+        var cts = _warmupCts;
+        if (cts is null) return;
+        try { cts.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
 
     // Serialises whisper_full calls on the same _ctx. The state machine
     // already prevents concurrent transcriptions through the user-driven
@@ -741,7 +772,7 @@ internal sealed class WhispEngine : IDisposable
         // the tray tooltip transitions Loading model… → Ready as soon as the
         // model is in VRAM. Without this, the success path returns silently
         // and the tooltip stays stuck on "Loading model…" through warmup
-        // (Transcribe's own RaiseStatus(Loc.Get("Status_Ready")) is absorbed by _isWarmup)
+        // (Transcribe's own RaiseStatus(Loc.Get("Status_Ready")) is absorbed by t_isWarmup)
         // and only flips on the first user hotkey.
         RaiseStatus(Loc.Get("Status_Ready"));
         return true;
@@ -896,14 +927,20 @@ internal sealed class WhispEngine : IDisposable
     // first dictation.
     //
     // StatusChanged / TranscriptionFinished / Narrative are gated during
-    // Transcribe() via _isWarmup (RaiseStatus / RaiseFinished /
+    // Transcribe() via t_isWarmup (RaiseStatus / RaiseFinished /
     // RaiseNarrative) so the HUD never appears, the tray doesn't flash, and
     // LogWindow doesn't surface "Looking for speech…" / "Speech detected —
     // 2.4 s…" / "Whisper transcribed…" phrases that would confuse the user
     // at boot. Two warmup-specific narratives are emitted directly — one at
     // the start ("Priming the recognizer…") and one at the end ("Pipeline
     // ready"). LoadModel's narrative stays audible because it runs before
-    // _isWarmup flips.
+    // t_isWarmup flips.
+    //
+    // Cancellable. RequestToggle and Dispose call Cancel() on _warmupCts to
+    // unblock the user — a hotkey pressed during warmup must not wait for
+    // the warmup's whisper_full to finish before the recording can start.
+    // The abort_callback observes the token mid-decoder, so cancellation
+    // surfaces in ~50 ms rather than the worst-case ~800 ms.
     //
     // Fire-and-forget on a background thread — the call site in
     // App.OnLaunched must not block UI-thread startup. Named Warmup (not
@@ -914,18 +951,33 @@ internal sealed class WhispEngine : IDisposable
         if (_disposed) return;
         var thread = new Thread(() =>
         {
+            // Re-check : Dispose peut survenir entre le Thread.Start et
+            // le démarrage effectif du thread (rare mais possible si
+            // l'utilisateur quitte très tôt après le boot).
+            if (_disposed) return;
+
+            // CTS lifetime is bounded by this thread. We assign to the field
+            // so RequestToggle / Dispose can signal cancellation, and clear
+            // it in finally so post-warmup callers see "no warmup in flight".
+            var cts = new CancellationTokenSource();
+            _warmupCts = cts;
+            var ct = cts.Token;
+
             try
             {
-                // Re-check : Dispose peut survenir entre le Thread.Start et
-                // le démarrage effectif du thread (rare mais possible si
-                // l'utilisateur quitte très tôt après le boot).
-                if (_disposed) return;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 _log.Info(LogSource.Init, "Warmup start");
 
                 // 1) Mic probe — same code path StartRecording uses, just the
                 //    probe result is stored instead of blocking the recording.
                 _micWarmupOk = TryProbeMicrophone(out _) ? 1 : 0;
+
+                if (ct.IsCancellationRequested)
+                {
+                    _log.Info(LogSource.Init,
+                        $"Warmup cancelled before model load | total_ms={sw.ElapsedMilliseconds}");
+                    return;
+                }
 
                 // 2) Model load. On failure we stop here — nothing else can
                 //    be tested without the model — and flag model+ollama as
@@ -939,6 +991,13 @@ internal sealed class WhispEngine : IDisposable
                     return;
                 }
                 _modelWarmupOk = 1;
+
+                if (ct.IsCancellationRequested)
+                {
+                    _log.Info(LogSource.Init,
+                        $"Warmup cancelled before transcribe | total_ms={sw.ElapsedMilliseconds}");
+                    return;
+                }
 
                 // Real-audio Transcribe through the full pipeline (VAD +
                 // whisper_full + Vulkan kernel compile) to pay the first-
@@ -955,14 +1014,21 @@ internal sealed class WhispEngine : IDisposable
                 _log.Narrative(LogSource.Init,
                     "Priming the recognizer with a short reference clip — the audio pipeline is being warmed up so your first dictation feels instant.");
 
-                _isWarmup = true;
+                t_isWarmup = true;
                 try
                 {
-                    Transcribe(warmupBuffer);
+                    Transcribe(warmupBuffer, ct);
                 }
                 finally
                 {
-                    _isWarmup = false;
+                    t_isWarmup = false;
+                }
+
+                if (ct.IsCancellationRequested)
+                {
+                    _log.Info(LogSource.Init,
+                        $"Warmup cancelled during transcribe | total_ms={sw.ElapsedMilliseconds}");
+                    return;
                 }
 
                 _log.Narrative(LogSource.Init, "Pipeline ready.");
@@ -996,8 +1062,12 @@ internal sealed class WhispEngine : IDisposable
             }
             catch (Exception ex)
             {
-                _isWarmup = false;
                 _log.Error(LogSource.Init, $"Warmup failed | error={ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                _warmupCts = null;
+                cts.Dispose();
             }
         });
         thread.IsBackground = true;
@@ -1027,6 +1097,13 @@ internal sealed class WhispEngine : IDisposable
         // Either guard reaching this branch means the engine is shutting
         // down — silent no-op.
         if (_disposed) return ToggleResult.IgnoredDisposed;
+
+        // Unblock a warmup in flight. The user's hotkey wins over the
+        // best-effort priming work — abort_callback observes the token and
+        // whisper_full bails within ~50 ms, releasing _transcribeLock so the
+        // worker (spawned a few lines below) can enter Transcribe without
+        // waiting out the warmup's residual decode time.
+        TrySignalWarmupCancel();
 
         var current = (PipelineState)Volatile.Read(ref _state);
         if (current == PipelineState.Disposed) return ToggleResult.IgnoredDisposed;
@@ -2133,7 +2210,7 @@ internal sealed class WhispEngine : IDisposable
         }
     }
 
-    private void Transcribe(float[] audio)
+    private void Transcribe(float[] audio, CancellationToken ct = default)
     {
         IntPtr ctx = _ctx;
         if (ctx == IntPtr.Zero)
@@ -2182,7 +2259,12 @@ internal sealed class WhispEngine : IDisposable
         // caveat as the segment callback — keep the delegate rooted.
         _repetitionDetector.Reset();
         _abortRequested = false;
-        _abortCallback = _ => _abortRequested;
+        // Combined abort signal: repetition-loop guard (via _abortRequested)
+        // OR external cancellation (warmup interrupted by a hotkey or Dispose).
+        // The local capture is safe because whisper_full holds the function
+        // pointer only for the duration of the call — once the lock below is
+        // released, the delegate is no longer probed.
+        _abortCallback = _ => _abortRequested || ct.IsCancellationRequested;
         wparams.abort_callback = Marshal.GetFunctionPointerForDelegate(_abortCallback);
         wparams.abort_callback_user_data = IntPtr.Zero;
 
@@ -2327,7 +2409,7 @@ internal sealed class WhispEngine : IDisposable
         // clipboard untouched at boot, avoids a cold Ollama hit, and prevents
         // a "Pasted" Narrative from leaking through. The Warmup() caller
         // logs its own success line.
-        if (_isWarmup)
+        if (t_isWarmup)
         {
             return;
         }
@@ -2803,6 +2885,12 @@ internal sealed class WhispEngine : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        // Unblock a warmup still in flight at Quit time — without this, the
+        // _transcribeLock acquisition at the end of Dispose can wait up to
+        // ~800 ms for warmup's whisper_full to finish on its own. Cancelling
+        // brings that down to ~50 ms.
+        TrySignalWarmupCancel();
 
         // Capture before transitioning so the Verbose line below records
         // what the engine was actually doing when Dispose arrived.
