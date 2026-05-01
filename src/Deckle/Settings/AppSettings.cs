@@ -1,3 +1,4 @@
+using Deckle.Llm;
 using Deckle.Logging;
 using Deckle.Whisp;
 

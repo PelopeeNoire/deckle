@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Deckle.Logging;
-using Deckle.Settings;
 
 namespace Deckle.Llm;
 

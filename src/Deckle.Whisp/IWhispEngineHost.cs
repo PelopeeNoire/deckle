@@ -1,6 +1,5 @@
 using Deckle.Llm;
 using Deckle.Logging;
-using Deckle.Settings; // LlmSettings lives under namespace Deckle.Settings (legacy, in Deckle.Llm.dll).
 
 namespace Deckle.Whisp;
 

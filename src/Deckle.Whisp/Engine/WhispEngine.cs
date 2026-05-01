@@ -5,7 +5,6 @@ using Deckle.Interop;
 using Deckle.Llm;
 using Deckle.Localization;
 using Deckle.Logging;
-using Deckle.Settings;          // RewriteProfile / LlmSettings live in this namespace (declared in Deckle.Llm csproj).
 using Deckle.Whisp.Pinvoke;
 using Deckle.Whisp.Setup;
 

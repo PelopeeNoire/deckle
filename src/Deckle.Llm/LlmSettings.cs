@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Deckle.Settings;
+namespace Deckle.Llm;
 
 // ── Réécriture LLM via Ollama ────────────────────────────────────────────────
 
