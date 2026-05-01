@@ -69,6 +69,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Tray icons -->
     <Content Include="Assets\Icons\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
