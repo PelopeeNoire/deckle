@@ -370,24 +370,24 @@ public sealed class OllamaService
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
 // Requête générique avec champ "model" (API Ollama actuelle).
-internal sealed class OllamaModelRequest
+public sealed class OllamaModelRequest
 {
     public string Model { get; set; } = "";
 }
 
-internal sealed class OllamaTagsResponse
+public sealed class OllamaTagsResponse
 {
     public List<OllamaModel>? Models { get; set; }
 }
 
-internal sealed class OllamaModel
+public sealed class OllamaModel
 {
     public string Name { get; set; } = "";
     public long Size { get; set; }
     public string ModifiedAt { get; set; } = "";
 }
 
-internal sealed class OllamaModelInfo
+public sealed class OllamaModelInfo
 {
     public string Modelfile { get; set; } = "";
     public string Template { get; set; } = "";
@@ -396,7 +396,7 @@ internal sealed class OllamaModelInfo
 }
 
 /// <summary>Exception avec le message d'erreur extrait de la réponse API Ollama.</summary>
-internal sealed class OllamaApiException : Exception
+public sealed class OllamaApiException : Exception
 {
     public OllamaApiException(string message) : base(message) { }
 }
