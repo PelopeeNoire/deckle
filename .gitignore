@@ -1,17 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────
-#  External sources / large binaries — fetched or built locally
+#  External sources cloned outside the repo
 # ─────────────────────────────────────────────────────────────────────────
 
-# Cloned whisper.cpp repo — external source, not versioned here.
+# Cloned whisper.cpp upstream — external source, not versioned here.
+# Used to rebuild Deckle.Whisp's native runtime (libwhisper.dll +
+# ggml-*.dll) on demand ; binaries land in %LOCALAPPDATA%\Deckle\native\,
+# never in the repo. Runtime model weights similarly live under
+# %LOCALAPPDATA%\Deckle\models\, sourced by the first-run wizard.
 whisper.cpp/
-
-# Pre-built native DLLs (whisper.cpp + MinGW runtime). Runtime layout
-# resolves them from %LOCALAPPDATA%\Deckle\native\ exclusively; this
-# entry is defensive against stray copies under the repo root.
-native/
-
-# Whisper model weights — large binary files (100 MB to 3 GB).
-models/
 
 # ─────────────────────────────────────────────────────────────────────────
 #  Build artifacts
