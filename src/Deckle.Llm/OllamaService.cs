@@ -18,7 +18,7 @@ namespace Deckle.Llm;
 // La base URL est dérivée de LlmSettings.OllamaEndpoint en strippant
 // le path (/api/chat) pour ne garder que l'origin (http://localhost:11434).
 
-internal sealed class OllamaService
+public sealed class OllamaService
 {
     // Timeout généreux : le push de blobs volumineux (GGUF 3-9 Go) peut
     // prendre du temps, même en localhost. Les appels rapides utilisent
