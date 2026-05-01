@@ -1,5 +1,5 @@
 using System;
-using Deckle.Settings;
+using Deckle.Settings;  // SettingsService.Instance — kept; TelemetrySettings now lives in this same Deckle.Logging namespace.
 
 namespace Deckle.Logging;
 

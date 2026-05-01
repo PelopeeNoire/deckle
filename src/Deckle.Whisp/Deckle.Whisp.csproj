@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
   </ItemGroup>

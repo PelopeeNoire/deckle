@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Deckle.Setup;
+namespace Deckle.Whisp.Setup;
 
 // ── SetupContext ─────────────────────────────────────────────────────────────
 //
@@ -12,7 +12,7 @@ namespace Deckle.Setup;
 // Plain POCO — no Action delegates for navigation. Pages call
 // `Frame.Navigate(typeof(NextPage), context)` directly, which keeps the
 // setup classes free of UI types.
-internal sealed class SetupContext
+public sealed class SetupContext
 {
     // Where to install. Defaults to whatever AppPaths resolved at start-up
     // (LOCALAPPDATA or env-var override). The wizard's location section
@@ -51,7 +51,7 @@ internal sealed class SetupContext
 // it worked, and (on failure) the human-readable reason. Bytes is the
 // installed size after success — null for native runtime entries that
 // only count files.
-internal sealed record InstallResult(
+public sealed record InstallResult(
     string ItemId,
     string DisplayName,
     bool Success,

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Deckle.Setup;
+namespace Deckle.Whisp.Setup;
 
 // ── ModelEntry ───────────────────────────────────────────────────────────────
 //
@@ -10,7 +10,7 @@ namespace Deckle.Setup;
 // + SizeBytes drive the downloader; Url empty means the entry can only be
 // satisfied by a local copy. SizeBytes is nominal — used to size the
 // progress bar and budget the disk estimate, not for verification.
-internal sealed record ModelEntry(
+public sealed record ModelEntry(
     string Id,
     string FileName,
     string DisplayName,
@@ -28,7 +28,7 @@ internal sealed record ModelEntry(
 // Silero VAD model. SHA-256 fields are placeholders — HuggingFace doesn't
 // publish a canonical hash format compatible with our verifier yet.
 // They'll be filled when the redist pipeline computes them.
-internal static class SpeechModels
+public static class SpeechModels
 {
     // Default Whisper model the engine targets when no override is set.
     // Single source of truth — WhispEngine reads this rather than its
