@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Deckle.Interop;
 
-namespace Deckle.Whisp.Native;
+namespace Deckle.Whisp.Pinvoke;
 
 // ── WhisperPInvoke ──────────────────────────────────────────────────────────
 //
