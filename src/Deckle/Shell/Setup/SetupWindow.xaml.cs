@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Deckle.Localization;
 using Deckle.Logging;
-using Deckle.Setup;
+using Deckle.Whisp.Setup;
 
 namespace Deckle.Shell.Setup;
 

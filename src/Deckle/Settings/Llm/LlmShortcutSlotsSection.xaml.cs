@@ -1,6 +1,7 @@
 using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Deckle.Llm;
 using Deckle.Localization;
 
 namespace Deckle.Settings.Llm;

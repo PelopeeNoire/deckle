@@ -4,6 +4,7 @@ using System.Linq;
 using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Deckle.Llm;
 using Deckle.Localization;
 
 namespace Deckle.Settings.Llm;
