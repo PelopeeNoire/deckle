@@ -8,4 +8,12 @@
     <Platforms>x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ResourceLoader (Microsoft.Windows.ApplicationModel.Resources) used by Loc.
+         Version stays aligned with Deckle.csproj — the WindowsAppSDK runtime is
+         loaded once per process, so two assemblies pinning different versions
+         would crash at boot. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+  </ItemGroup>
 </Project>
