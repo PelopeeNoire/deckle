@@ -2,6 +2,8 @@ using Deckle.Interop;
 using Deckle.Logging;
 using Deckle.Logging.Sinks;
 using Deckle.Shell;
+using Deckle.Whisp;
+using Deckle.Whisp.Setup;
 
 namespace Deckle;
 
@@ -88,6 +90,15 @@ public partial class App : Microsoft.UI.Xaml.Application
         var milestones = new List<string>();
         void Milestone(string name) => milestones.Add($"{name} +{sw.ElapsedMilliseconds}ms");
 
+        // Wire Deckle.Logging's gates to the host's TelemetrySettings BEFORE
+        // attaching JsonlFileSink: the sink's first emit reads
+        // TelemetryGates.Current to decide whether to land on disk, and an
+        // unconfigured Logging defaults to the closed posture (every toggle
+        // false, no override path). Without Configure here, the very first
+        // log lines flushed below ("Paths initialized") would silently skip
+        // the JSONL even when the user has the app log enabled.
+        TelemetryGates.Configure(new AppTelemetryGates());
+
         // File sink first — captures every event from boot, including the
         // startup milestones flushed at the end of OnLaunched. Writes under
         // the telemetry storage directory (benchmark/ in dev layout, or
@@ -119,12 +130,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         // (Deckle GitHub Release, NativeRuntime.CurrentBundle.Url) with a
         // local Browse... fallback, plus the chosen speech model from
         // HuggingFace.
-        if (!Setup.NativeRuntime.IsInstalled() ||
-            !Setup.SpeechModels.IsDefaultInstalled())
+        if (!NativeRuntime.IsInstalled() ||
+            !SpeechModels.IsDefaultInstalled())
         {
             _log.Info(LogSource.Setup,
-                $"first-run gate | natives_installed={Setup.NativeRuntime.IsInstalled()}" +
-                $" | default_model_installed={Setup.SpeechModels.IsDefaultInstalled()}");
+                $"first-run gate | natives_installed={NativeRuntime.IsInstalled()}" +
+                $" | default_model_installed={SpeechModels.IsDefaultInstalled()}");
             var setup = new Shell.Setup.SetupWindow();
             setup.Body.Navigate(typeof(Shell.Setup.ChoicesPage), setup);
             setup.Activate();
@@ -138,7 +149,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             Milestone("wizard");
         }
 
-        _engine = new WhispEngine();
+        _engine = new WhispEngine(new AppWhispEngineHost());
         Milestone("engine");
 
         // LogWindow lazy : instanciée à la première ouverture via
@@ -353,7 +364,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     // GeneralPage propagate without restart. Idempotent — safe to call
     // multiple times.
 
-    public static void ApplyLevelWindow(Settings.LevelWindowSettings cfg)
+    public static void ApplyLevelWindow(Whisp.LevelWindowSettings cfg)
     {
         if (cfg is null) return;
         Controls.HudChrono.MinDbfs           = cfg.MinDbfs;

@@ -1,6 +1,7 @@
 using System;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml.Data;
+using Deckle.Llm;
 
 namespace Deckle.Settings.ViewModels;
 
