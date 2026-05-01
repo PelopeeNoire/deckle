@@ -22,7 +22,7 @@ namespace Deckle.Logging;
 // line stays portable — consumers resolve it against the profile directory
 // that holds corpus.jsonl. Null on any failure — callers surface "no audio
 // file" in the payload instead of crashing.
-internal static class WavCorpusWriter
+public static class WavCorpusWriter
 {
     private const int    SampleRate    = 16_000;
     private const short  BitsPerSample = 16;

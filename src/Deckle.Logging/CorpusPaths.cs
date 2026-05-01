@@ -1,9 +1,7 @@
-using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using Deckle.Settings;
 
 namespace Deckle.Logging;
 
@@ -15,24 +13,16 @@ namespace Deckle.Logging;
 // WAV writer so there's a single source of truth for the storage layout.
 //
 // Resolution order:
-//   1. User-configured TelemetrySettings.StorageDirectory (absolute path),
-//      when non-empty.
+//   1. ITelemetryGates.StorageDirectoryOverride (host-configured absolute
+//      path), when non-empty. Read on every call so a host that flips the
+//      override at runtime gets picked up immediately.
 //   2. AppPaths.TelemetryDirectory (= <UserDataRoot>\telemetry\), always
 //      present and writable.
 public static class CorpusPaths
 {
     public static string GetDirectoryPath()
     {
-        string custom = "";
-        try
-        {
-            custom = SettingsService.Instance.Current.Telemetry.StorageDirectory ?? "";
-        }
-        catch
-        {
-            // Settings not initialized yet — fall through to the default.
-        }
-
+        string? custom = TelemetryGates.Current.StorageDirectoryOverride;
         if (!string.IsNullOrWhiteSpace(custom))
             return custom;
 

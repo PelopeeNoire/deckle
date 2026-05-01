@@ -10,7 +10,7 @@ namespace Deckle.Logging;
 // Success is not a UserFeedbackSeverity value — success messages (Pasted,
 // Copied) are emitted directly by HudWindow, not through UserFeedback. The
 // Success constant exists so HudWindow can pull from the same source.
-internal static class UserFeedbackDurations
+public static class UserFeedbackDurations
 {
     public static readonly TimeSpan Success = TimeSpan.FromSeconds(2);
 
