@@ -119,5 +119,33 @@ if ($LASTEXITCODE -ne 0) { throw "MSBuild failed (code $LASTEXITCODE)" }
 if ($NoRun) { return }
 if (-not (Test-Path $ExePath)) { throw "Exe not found: $ExePath" }
 Write-Host "Run $ExePath" -ForegroundColor Green
-$proc = Start-Process -FilePath $ExePath -PassThru
-if ($Wait) { $proc.WaitForExit() }
+
+# Launch via `cmd /c start` instead of `Start-Process -FilePath` so the
+# new Deckle process is created via ShellExecute (detached) rather than
+# CreateProcess as a child of PowerShell. Direct CreateProcess from a
+# non-foreground PowerShell host makes Windows treat the new process as
+# also non-foreground, and the foreground lock policy then silently
+# downgrades / defers the WS_EX_TOPMOST flag that HudWindow's
+# OverlappedPresenter posts at construction (IsAlwaysOnTop = true). The
+# net effect Louis observed: HUD launches behind every other window for
+# the entire session, and only an app restart from Explorer (which routes
+# through ShellExecute and gets proper foreground promotion) cures it.
+# `cmd /c start "" "<path>"` is the canonical Windows idiom for "launch
+# this exe as if the user had double-clicked it from the shell". The
+# empty "" is the START title slot — required when the path is quoted,
+# otherwise `start` interprets the quoted path as the title and silently
+# does nothing.
+& cmd /c start "" "$ExePath"
+
+if ($Wait) {
+    # cmd /c start spawned the process detached; we don't have a direct
+    # handle. Poll briefly until the new Deckle process appears, then
+    # wait on it. 5s ceiling so the script can't hang indefinitely if
+    # the exe failed to start for an unrelated reason.
+    $deadline = (Get-Date).AddSeconds(5)
+    do {
+        Start-Sleep -Milliseconds 100
+        $proc = Get-Process -Name Deckle -ErrorAction SilentlyContinue | Select-Object -First 1
+    } while (-not $proc -and (Get-Date) -lt $deadline)
+    if ($proc) { $proc.WaitForExit() }
+}
