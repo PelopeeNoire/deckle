@@ -6,7 +6,7 @@ using Deckle.Llm;
 using Deckle.Localization;
 using Deckle.Logging;
 using Deckle.Settings;
-using Deckle.Whisp.Native;
+using Deckle.Whisp.Pinvoke;
 
 namespace Deckle;
 
