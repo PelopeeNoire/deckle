@@ -48,6 +48,29 @@ public static class AppPaths
     public static string ModelsDirectory         { get; }
     public static string NativeDirectory         { get; }
     public static string BenchmarkDirectory      { get; }
+    public static string ModulesDirectory        { get; }
+
+    /// <summary>
+    /// Returns the per-module data directory under
+    /// <c>%LOCALAPPDATA%\Deckle\modules\&lt;moduleId&gt;\</c>. Modules use
+    /// this as the root to host their own settings file, telemetry sinks,
+    /// model caches, native runtimes, etc. — keeping each module's footprint
+    /// self-contained and independent of the others.
+    /// </summary>
+    /// <param name="moduleId">
+    /// Stable filesystem-safe identifier of the module (e.g. <c>"whisp"</c>,
+    /// <c>"llm"</c>, <c>"askollama"</c>). Convention: lowercase, ASCII, no
+    /// spaces.
+    /// </param>
+    public static string GetModuleDirectory(string moduleId)
+    {
+        if (string.IsNullOrWhiteSpace(moduleId))
+            throw new ArgumentException("Module id must not be empty.", nameof(moduleId));
+
+        string dir = Path.Combine(ModulesDirectory, moduleId);
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
 
     static AppPaths()
     {
@@ -58,6 +81,7 @@ public static class AppPaths
         ModelsDirectory         = Path.Combine(UserDataRoot, "models");
         NativeDirectory         = Path.Combine(UserDataRoot, "native");
         BenchmarkDirectory      = Path.Combine(UserDataRoot, "benchmark");
+        ModulesDirectory        = Path.Combine(UserDataRoot, "modules");
 
         // UserDataRoot + telemetry are created eagerly — those are the two
         // locations the app writes to during normal operation. Models,
