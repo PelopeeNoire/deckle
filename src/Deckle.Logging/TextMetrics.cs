@@ -5,7 +5,7 @@ namespace Deckle.Logging;
 // Whitespace-tolerant word counter. Every maximal run of non-whitespace
 // counts as one word — resilient to multiple spaces, tabs, CRLFs, mixed
 // punctuation. No locale/NLP assumptions.
-internal static class TextMetrics
+public static class TextMetrics
 {
     private static readonly Regex _token = new(@"\S+", RegexOptions.Compiled);
 

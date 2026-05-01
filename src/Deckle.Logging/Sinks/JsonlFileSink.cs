@@ -41,7 +41,7 @@ namespace Deckle.Logging.Sinks;
 //
 // Fail-soft: any IO error is swallowed. Telemetry persistence must never
 // take down the pipeline.
-internal sealed class JsonlFileSink : ITelemetrySink
+public sealed class JsonlFileSink : ITelemetrySink
 {
     private const int AppLogRotationLineThreshold = 5000;
 
@@ -104,45 +104,38 @@ internal sealed class JsonlFileSink : ITelemetrySink
         }
     }
 
+    // Gates are read on every emit (not snapshot at construction): a host
+    // toggle flipped through Settings UI takes effect immediately on the
+    // next emission. The TelemetryGates.Current default ("closed") returns
+    // false for every flag and null for the override path, so an emit
+    // happening before the host calls Configure() simply doesn't land on
+    // disk — the legacy fail-safe behaviour is preserved.
     private static string? ResolvePath(TelemetryEvent ev)
     {
         string root = CorpusPaths.GetDirectoryPath();
+        var gates = TelemetryGates.Current;
 
         switch (ev.Kind)
         {
             case TelemetryKind.Log:
-                if (!ReadSettingsToggle(s => s.ApplicationLogToDisk)) return null;
+                if (!gates.ApplicationLogToDisk) return null;
                 return Path.Combine(root, "app.jsonl");
 
             case TelemetryKind.Latency:
-                if (!ReadSettingsToggle(s => s.LatencyEnabled)) return null;
+                if (!gates.LatencyEnabled) return null;
                 return Path.Combine(root, "latency.jsonl");
 
             case TelemetryKind.Corpus:
-                if (!ReadSettingsToggle(s => s.CorpusEnabled)) return null;
+                if (!gates.CorpusEnabled) return null;
                 if (ev.Payload is not CorpusPayload cp) return null;
                 string profileDir = Path.Combine(root, CorpusPaths.Sanitize(cp.Slug));
                 return Path.Combine(profileDir, "corpus.jsonl");
 
             case TelemetryKind.Microphone:
-                if (!ReadSettingsToggle(s => s.MicrophoneTelemetry)) return null;
+                if (!gates.MicrophoneTelemetry) return null;
                 return Path.Combine(root, "microphone.jsonl");
         }
         return null;
-    }
-
-    // Settings may not be initialized at the first emit (crash-in-ctor
-    // path). Fall through to "disabled" so we never throw out of a sink.
-    private static bool ReadSettingsToggle(Func<Settings.TelemetrySettings, bool> reader)
-    {
-        try
-        {
-            return reader(Settings.SettingsService.Instance.Current.Telemetry);
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     // ── App log rotation ────────────────────────────────────────────────────

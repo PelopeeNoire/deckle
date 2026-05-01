@@ -88,6 +88,15 @@ public partial class App : Microsoft.UI.Xaml.Application
         var milestones = new List<string>();
         void Milestone(string name) => milestones.Add($"{name} +{sw.ElapsedMilliseconds}ms");
 
+        // Wire Deckle.Logging's gates to the host's TelemetrySettings BEFORE
+        // attaching JsonlFileSink: the sink's first emit reads
+        // TelemetryGates.Current to decide whether to land on disk, and an
+        // unconfigured Logging defaults to the closed posture (every toggle
+        // false, no override path). Without Configure here, the very first
+        // log lines flushed below ("Paths initialized") would silently skip
+        // the JSONL even when the user has the app log enabled.
+        TelemetryGates.Configure(new AppTelemetryGates());
+
         // File sink first — captures every event from boot, including the
         // startup milestones flushed at the end of OnLaunched. Writes under
         // the telemetry storage directory (benchmark/ in dev layout, or
