@@ -73,6 +73,7 @@
     <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
+    <ProjectReference Include="..\Deckle.Whisp\Deckle.Whisp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

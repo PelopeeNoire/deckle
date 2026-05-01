@@ -6,6 +6,7 @@ using Deckle.Llm;
 using Deckle.Localization;
 using Deckle.Logging;
 using Deckle.Settings;
+using Deckle.Whisp.Native;
 
 namespace Deckle;
 
@@ -250,7 +251,7 @@ internal sealed class WhispEngine : IDisposable
 
     // whisper_log_set callback — same GC constraint. Stored for lifetime since
     // the hook is global (process-wide) and installed once at startup.
-    private NativeMethods.WhisperLogCallback? _whisperLogCallback;
+    private WhisperPInvoke.WhisperLogCallback? _whisperLogCallback;
 
     // Lower bound of timestamp token IDs for the current model. Cached at the
     // start of each Transcribe and read by OnNewSegment to filter non-text tokens.
@@ -652,7 +653,7 @@ internal sealed class WhispEngine : IDisposable
 
         try
         {
-            NativeMethods.whisper_log_set(_whisperLogCallback, IntPtr.Zero);
+            WhisperPInvoke.whisper_log_set(_whisperLogCallback, IntPtr.Zero);
         }
         catch (Exception ex)
         {
@@ -737,12 +738,12 @@ internal sealed class WhispEngine : IDisposable
         // line; if none appear, CPU is the correct fallback.
         _detectedBackend = "CPU";
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        IntPtr ctxParamsPtr = NativeMethods.whisper_context_default_params_by_ref();
+        IntPtr ctxParamsPtr = WhisperPInvoke.whisper_context_default_params_by_ref();
         WhisperContextParams ctxParams = Marshal.PtrToStructure<WhisperContextParams>(ctxParamsPtr);
-        NativeMethods.whisper_free_context_params(ctxParamsPtr);
+        WhisperPInvoke.whisper_free_context_params(ctxParamsPtr);
         ctxParams.use_gpu = 1;
 
-        _ctx = NativeMethods.whisper_init_from_file_with_params(_modelPath, ctxParams);
+        _ctx = WhisperPInvoke.whisper_init_from_file_with_params(_modelPath, ctxParams);
         sw.Stop();
         _log.Verbose(LogSource.Engine, $"whisper_init_from_file returned ctx={_ctx}");
 
@@ -811,7 +812,7 @@ internal sealed class WhispEngine : IDisposable
             }
             if (_ctx == IntPtr.Zero) return;
 
-            NativeMethods.whisper_free(_ctx);
+            WhisperPInvoke.whisper_free(_ctx);
             _ctx = IntPtr.Zero;
             _log.Success(LogSource.Model, "Model unloaded");
             _log.Verbose(LogSource.Model, $"model unloaded | idle_s={MODEL_IDLE_TIMEOUT_MS / 1000} | state=vram-freed");
@@ -2124,7 +2125,7 @@ internal sealed class WhispEngine : IDisposable
         // end of the total list exposed by whisper_full_n_segments.
         try
         {
-            int total = NativeMethods.whisper_full_n_segments(ctx);
+            int total = WhisperPInvoke.whisper_full_n_segments(ctx);
             int from  = total - n_new;
             // Lower bound of timestamp token IDs — above this are <|t.tt|>,
             // not text tokens. Cached per Transcribe call to avoid unnecessary
@@ -2132,22 +2133,22 @@ internal sealed class WhispEngine : IDisposable
             int tokenBeg = _tokenBeg;
             for (int i = from; i < total; i++)
             {
-                string segText = Marshal.PtrToStringUTF8(NativeMethods.whisper_full_get_segment_text(ctx, i)) ?? "";
-                long  t0  = NativeMethods.whisper_full_get_segment_t0(ctx, i);
-                long  t1  = NativeMethods.whisper_full_get_segment_t1(ctx, i);
-                float nsp = NativeMethods.whisper_full_get_segment_no_speech_prob(ctx, i);
+                string segText = Marshal.PtrToStringUTF8(WhisperPInvoke.whisper_full_get_segment_text(ctx, i)) ?? "";
+                long  t0  = WhisperPInvoke.whisper_full_get_segment_t0(ctx, i);
+                long  t1  = WhisperPInvoke.whisper_full_get_segment_t1(ctx, i);
+                float nsp = WhisperPInvoke.whisper_full_get_segment_no_speech_prob(ctx, i);
 
                 // Per-segment confidence, aggregated over text tokens only.
                 // p = linear probability of the token as sampled by Whisper.
                 // avg = "is the sentence globally confident?", min = "weakest link / fabricated word?".
-                int nTok = NativeMethods.whisper_full_n_tokens(ctx, i);
+                int nTok = WhisperPInvoke.whisper_full_n_tokens(ctx, i);
                 float sumP = 0f, minP = 1f;
                 int textTok = 0;
                 for (int k = 0; k < nTok; k++)
                 {
-                    int id = NativeMethods.whisper_full_get_token_id(ctx, i, k);
+                    int id = WhisperPInvoke.whisper_full_get_token_id(ctx, i, k);
                     if (id >= tokenBeg) continue; // skip tokens timestamp
-                    float p = NativeMethods.whisper_full_get_token_p(ctx, i, k);
+                    float p = WhisperPInvoke.whisper_full_get_token_p(ctx, i, k);
                     sumP += p;
                     if (p < minP) minP = p;
                     textTok++;
@@ -2230,9 +2231,9 @@ internal sealed class WhispEngine : IDisposable
             return;
         }
 
-        IntPtr fullParamsPtr = NativeMethods.whisper_full_default_params_by_ref(0);
+        IntPtr fullParamsPtr = WhisperPInvoke.whisper_full_default_params_by_ref(0);
         WhisperFullParams wparams = Marshal.PtrToStructure<WhisperFullParams>(fullParamsPtr);
-        NativeMethods.whisper_free_params(fullParamsPtr);
+        WhisperPInvoke.whisper_free_params(fullParamsPtr);
 
         wparams.print_progress = 0;
 
@@ -2245,7 +2246,7 @@ internal sealed class WhispEngine : IDisposable
 
         // Cache the timestamp token bound once for the entire call — it's a model
         // property, not per-segment, no need to call for each token.
-        _tokenBeg = NativeMethods.whisper_token_beg(ctx);
+        _tokenBeg = WhisperPInvoke.whisper_token_beg(ctx);
         _lastSegmentT1 = -1;
 
         // Hook the native callback. Delegate stored as instance field to prevent
@@ -2316,7 +2317,7 @@ internal sealed class WhispEngine : IDisposable
         int result;
         lock (_transcribeLock)
         {
-            result = NativeMethods.whisper_full(ctx, wparams, audio, audio.Length);
+            result = WhisperPInvoke.whisper_full(ctx, wparams, audio, audio.Length);
         }
         sw.Stop();
         long transcribeMsTotal = sw.ElapsedMilliseconds;
@@ -2939,7 +2940,7 @@ internal sealed class WhispEngine : IDisposable
         {
             if (_ctx != IntPtr.Zero)
             {
-                NativeMethods.whisper_free(_ctx);
+                WhisperPInvoke.whisper_free(_ctx);
                 _ctx = IntPtr.Zero;
             }
         }
