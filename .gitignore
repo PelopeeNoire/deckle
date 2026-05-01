@@ -132,3 +132,4 @@ benchmark/results.tsv
 # versioned).
 /memory
 memory.lnk
+appdata.lnk
