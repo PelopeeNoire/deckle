@@ -5,9 +5,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Deckle.Llm;
 using Deckle.Localization;
-using Deckle.Settings.Llm.GgufImport;
+using Deckle.Llm.GgufImport;
 
-namespace Deckle.Settings.Llm;
+namespace Deckle.Llm;
 
 // ─── Section Models de LlmPage ─────────────────────────────────────────────
 //

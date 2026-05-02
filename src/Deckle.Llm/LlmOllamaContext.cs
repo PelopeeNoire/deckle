@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Deckle.Llm;
 
-namespace Deckle.Settings.Llm;
+namespace Deckle.Llm;
 
 // ─── État Ollama partagé entre les sous-sections de LlmPage ─────────────────
 //
