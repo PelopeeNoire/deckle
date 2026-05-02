@@ -263,8 +263,8 @@ internal static class HudComposition
         public float  TranscribingSaturationDark  { get; init; } = 0f;
         public float  TranscribingSaturationLight { get; init; } = 0f;
         public float  TranscribingHueShiftTurns   { get; init; } = 0f;
-        public float  TranscribingExposureDark    { get; init; } = 0f;
-        public float  TranscribingExposureLight   { get; init; } = 0f;
+        public float  TranscribingExposureDark    { get; init; } = 0.7f;
+        public float  TranscribingExposureLight   { get; init; } = -1.2f;
         public float  TranscribingOpacity         { get; init; } = 1f;
         public double TranscribingBlendSeconds    { get; init; } = 2;
 
@@ -303,8 +303,8 @@ internal static class HudComposition
         public float  RecordingSaturationDark      { get; init; } = 0f;
         public float  RecordingSaturationLight     { get; init; } = 0f;
         public float  RecordingHueShiftTurns       { get; init; } = 0f;
-        public float  RecordingExposureDark        { get; init; } = 0.5f;
-        public float  RecordingExposureLight       { get; init; } = -1.0f;
+        public float  RecordingExposureDark        { get; init; } = 0.7f;
+        public float  RecordingExposureLight       { get; init; } = -1.2f;
         public double RecordingBlendSeconds        { get; init; } = 2;
 
         // Recording hue rotation — independent from arc rotation (which is
