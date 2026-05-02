@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Deckle.Chrono</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <!-- Pure timer module — Stopwatch wrapper + formatter, reusable by
+       any module that wants a "time since trigger" reading without
+       pulling the visual UserControl. No XAML, no WindowsAppSDK,
+       no Composition — just System.Diagnostics.Stopwatch. -->
+</Project>

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Deckle.Capture;
+using Deckle.Chrono;
 using Deckle.Composition;
 
 namespace Deckle.Controls;
@@ -28,7 +29,7 @@ namespace Deckle.Controls;
 // — no DispatcherTimer, no jitter when the UI thread is busy.
 public sealed partial class HudChrono : UserControl
 {
-    private readonly System.Diagnostics.Stopwatch _stopwatch = new();
+    private readonly ChronoTimer _stopwatch = new();
     private bool _renderingHooked;
 
     private int _lastMin = -1;
@@ -170,7 +171,7 @@ public sealed partial class HudChrono : UserControl
 
     private void ApplyRecording()
     {
-        _stopwatch.Restart();
+        _stopwatch.Start();
         StopSwipe();
 
         AttachProcessingVisual(ProcessingVariant.Recording);
@@ -602,14 +603,11 @@ public sealed partial class HudChrono : UserControl
 
     private void UpdateClock()
     {
-        var elapsed = _stopwatch.Elapsed;
         int capSec = Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds;
-        if (capSec > 0 && elapsed.TotalSeconds > capSec)
-            elapsed = TimeSpan.FromSeconds(capSec);
-        int totalMin = (int)elapsed.TotalMinutes;
-        int min = totalMin % 100;
-        int sec = elapsed.Seconds;
-        int cs  = elapsed.Milliseconds / 10;
+        var d = ChronoFormatter.Decompose(_stopwatch.Elapsed, capSec);
+        int min = d.Minutes;
+        int sec = d.Seconds;
+        int cs  = d.Centiseconds;
 
         if (min != _lastMin)
         {
