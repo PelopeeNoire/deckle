@@ -47,7 +47,7 @@ public sealed partial class LlmProfilesSection : UserControl
     public void Reload()
     {
         Profiles.Clear();
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         for (int i = 0; i < s.Profiles.Count; i++)
         {
             var vm = new ProfileViewModel();
@@ -97,7 +97,7 @@ public sealed partial class LlmProfilesSection : UserControl
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            var profiles = SettingsService.Instance.Current.Llm.Profiles;
+            var profiles = LlmSettingsService.Instance.Current.Profiles;
             if (vm.ProfileIndex < profiles.Count)
             {
                 profiles.RemoveAt(vm.ProfileIndex);
@@ -105,8 +105,8 @@ public sealed partial class LlmProfilesSection : UserControl
                 // profile shared a name with another one — unlikely, but
                 // harmless to re-pair) get reconciled against the remaining
                 // Profiles list. Migrate never deletes a rule on its own.
-                SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
-                SettingsService.Instance.Save();
+                LlmSettingsMigrations.RepairProfileReferences(LlmSettingsService.Instance.Current);
+                LlmSettingsService.Instance.Save();
             }
             Reload();
             ProfilesChanged?.Invoke(this, EventArgs.Empty);
@@ -198,7 +198,7 @@ public sealed partial class LlmProfilesSection : UserControl
 
     private void AddProfile_Click(object sender, RoutedEventArgs e)
     {
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         s.Profiles.Add(new RewriteProfile
         {
             Id = Guid.NewGuid().ToString("N").Substring(0, 12),
@@ -206,7 +206,7 @@ public sealed partial class LlmProfilesSection : UserControl
             Model = "",
             SystemPrompt = ""
         });
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
 
         int index = s.Profiles.Count - 1;
         var vm = new ProfileViewModel();
@@ -240,9 +240,9 @@ public sealed partial class LlmProfilesSection : UserControl
             return;
 
         var defaults = new LlmSettings();
-        SettingsService.Instance.Current.Llm.Profiles = defaults.Profiles;
-        SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Current.Profiles = defaults.Profiles;
+        LlmSettingsMigrations.RepairProfileReferences(LlmSettingsService.Instance.Current);
+        LlmSettingsService.Instance.Save();
         Reload();
         ProfilesChanged?.Invoke(this, EventArgs.Empty);
     }

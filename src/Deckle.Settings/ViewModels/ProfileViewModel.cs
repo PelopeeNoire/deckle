@@ -134,7 +134,7 @@ public partial class ProfileViewModel : ObservableObject
     // fight the cursor). The POCO stays clean.
     private void PushToSettings()
     {
-        var profiles = SettingsService.Instance.Current.Llm.Profiles;
+        var profiles = LlmSettingsService.Instance.Current.Profiles;
         if (ProfileIndex >= profiles.Count) return;
 
         var p = profiles[ProfileIndex];
@@ -145,7 +145,7 @@ public partial class ProfileViewModel : ObservableObject
         p.NumCtxK = CtxKSteps[Math.Clamp((int)CtxIndex, 0, CtxKSteps.Length - 1)];
         p.TopP = double.IsNaN(TopP) ? null : (double?)TopP;
         p.RepeatPenalty = double.IsNaN(RepeatPenalty) ? null : (double?)RepeatPenalty;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
     }
 }
 

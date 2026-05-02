@@ -31,7 +31,7 @@ public sealed partial class HudChrono : UserControl
 {
     // Cross-assembly hook for the recording cap used by UpdateClock to
     // freeze the chrono at the configured ceiling. The shipping App wires
-    // this to Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds
+    // this to Capture.CaptureSettingsService.Instance.Current.MaxRecordingDurationSeconds
     // at boot; until wired, the default `int.MaxValue` is a no-op (no cap),
     // which keeps the lib usable standalone (HudPlayground tests, future
     // host modules) without a Settings module dependency.

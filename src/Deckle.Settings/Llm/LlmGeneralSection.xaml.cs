@@ -42,7 +42,7 @@ public sealed partial class LlmGeneralSection : UserControl
     public void Reload()
     {
         _loading = true;
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         EnabledToggle.IsOn = s.Enabled;
         EndpointBox.Text = s.OllamaEndpoint;
         IsRewritingEnabled = s.Enabled;
@@ -52,16 +52,16 @@ public sealed partial class LlmGeneralSection : UserControl
     private void EnabledToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.Llm.Enabled = EnabledToggle.IsOn;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Current.Enabled = EnabledToggle.IsOn;
+        LlmSettingsService.Instance.Save();
         IsRewritingEnabled = EnabledToggle.IsOn;
     }
 
     private void EndpointBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_loading) return;
-        SettingsService.Instance.Current.Llm.OllamaEndpoint = EndpointBox.Text.Trim();
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Current.OllamaEndpoint = EndpointBox.Text.Trim();
+        LlmSettingsService.Instance.Save();
         EndpointChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -72,10 +72,10 @@ public sealed partial class LlmGeneralSection : UserControl
     private void ResetSection_Click(object sender, RoutedEventArgs e)
     {
         var defaults = new LlmSettings();
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         s.Enabled = defaults.Enabled;
         s.OllamaEndpoint = defaults.OllamaEndpoint;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
         Reload();
         EndpointChanged?.Invoke(this, EventArgs.Empty);
     }
