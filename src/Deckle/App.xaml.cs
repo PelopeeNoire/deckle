@@ -15,8 +15,8 @@ public partial class App : Microsoft.UI.Xaml.Application
     private HotkeyManager? _hotkeyManager;
     private LogWindow? _logWindow;
 
-    internal static SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
-    private SettingsWindow? _settingsWindow;
+    internal static Settings.SettingsWindow? SettingsWin => (Current as App)?._settingsWindow;
+    private Settings.SettingsWindow? _settingsWindow;
     private PlaygroundWindow? _playgroundWindow;
     private HudWindow? _hudWindow;
     private HudOverlayManager? _overlayManager;
@@ -177,6 +177,26 @@ public partial class App : Microsoft.UI.Xaml.Application
         // (Capture page slider). Provider is invoked from UpdateClock at vsync.
         Deckle.Chrono.Hud.HudChrono.MaxRecordingDurationSecondsProvider =
             () => Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds;
+
+        // SettingsHost — App-side hooks the Deckle.Settings UI surface
+        // calls back into to drive theme broadcast, level-window
+        // propagation, restart, and the parent-window accessor for
+        // dialogs. Must be wired before any Settings page is created.
+        // Pattern aligned on HudChrono.MaxRecordingDurationSecondsProvider
+        // above: lib exposes static delegates, App owns the contract.
+        Settings.SettingsHost.ApplyTheme       = ApplyTheme;
+        Settings.SettingsHost.ApplyLevelWindow = ApplyLevelWindow;
+        Settings.SettingsHost.RestartApp       = RestartApp;
+        Settings.SettingsHost.GetSettingsWindow = () => _settingsWindow;
+        Settings.SettingsHost.OpenSetupWizard  = () =>
+        {
+            // Wizard XAML lives in src/Deckle/Shell/Setup/ (namespace
+            // Deckle.Shell.Setup, App-side). Detached from the Settings
+            // window — Settings stays open behind it.
+            var setup = new Deckle.Shell.Setup.SetupWindow();
+            setup.Body.Navigate(typeof(Deckle.Shell.Setup.ChoicesPage), setup);
+            setup.Activate();
+        };
 
         // HudWindow created once, never destroyed. No initial Show: the
         // constructor captures the HWND and sets up subclass / raw input /
@@ -466,7 +486,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         if (_settingsWindow is null)
         {
-            _settingsWindow = new SettingsWindow
+            _settingsWindow = new Settings.SettingsWindow
             {
                 OnShowLogsRequested = () => ShowLogWindowLazy(),
             };

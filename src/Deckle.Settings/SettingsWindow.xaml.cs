@@ -11,7 +11,7 @@ using Deckle.Localization;
 using Deckle.Logging;
 using Deckle.Shell;
 
-namespace Deckle;
+namespace Deckle.Settings;
 
 // ─── Fenêtre Settings ─────────────────────────────────────────────────────────
 //

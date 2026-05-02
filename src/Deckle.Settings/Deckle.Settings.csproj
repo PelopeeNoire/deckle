@@ -6,19 +6,38 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
+    <!-- WinUI XAML compilation : Deckle.Settings ships the SettingsWindow
+         NavView shell + every settings page (General / Whisper / Llm) +
+         their dialogs and ViewModels. The plain SettingsService /
+         AppSettings POCOs that don't touch UI live in the same assembly —
+         they all share the persistence + UI lifecycle and there's no
+         downstream consumer that needs the POCOs without the UI surface. -->
+    <UseWinUI>true</UseWinUI>
+    <!-- Generates the lib's own .pri so x:Uid lookups (Settings/*.resw via
+         Deckle.Localization) and ResourceDictionary keys ship inside the
+         assembly. Mirrors Deckle.Chrono.Hud (cf. WindowsAppSDK#3451). -->
+    <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
-  <!-- Pure service module — load/save settings.json with debounce, backup
-       infrastructure, and the AppSettings POCO root that aggregates each
-       module's own settings type. No XAML, no WindowsAppSDK. The Settings
-       UI pages stay App-side for now (each will migrate to its owning
-       module in a follow-up slice). -->
+  <ItemGroup>
+    <!-- Versions aligned on Deckle.csproj : single WinAppSDK runtime per
+         process, bump synchrone obligatoire. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <!-- MVVM Toolkit — [ObservableProperty] / [RelayCommand] sources gen
+         used by GeneralViewModel / WhisperViewModel / ProfileViewModel. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- SettingsCard / SettingsExpander — every page consumes them. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
+    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+    <ProjectReference Include="..\Deckle.Shell\Deckle.Shell.csproj" />
     <ProjectReference Include="..\Deckle.Whisp\Deckle.Whisp.csproj" />
   </ItemGroup>
 </Project>

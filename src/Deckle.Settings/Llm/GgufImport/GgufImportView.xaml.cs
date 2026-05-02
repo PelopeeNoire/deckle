@@ -66,7 +66,9 @@ public sealed partial class GgufImportView : UserControl
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileOpenPicker();
-        var hwnd = WindowNative.GetWindowHandle(App.SettingsWin!);
+        var settingsWin = SettingsHost.GetSettingsWindow?.Invoke()
+            ?? throw new InvalidOperationException("Settings window not initialized");
+        var hwnd = WindowNative.GetWindowHandle(settingsWin);
         InitializeWithWindow.Initialize(picker, hwnd);
         picker.FileTypeFilter.Add(".gguf");
         picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
