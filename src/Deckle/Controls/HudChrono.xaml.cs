@@ -34,21 +34,26 @@ public sealed partial class HudChrono : UserControl
     private int _lastSec = -1;
     private int _lastCs  = -1;
 
-    // Per-digit "was modified during Recording" flag. Preserved across the
-    // Recording → Transcribing / Rewriting transition so the swipe can tell
-    // which digits are eligible for the accent flash (dots and unchanged
-    // digits stay at Opacity 0 on their accent overlay forever).
-    // Index order matches `_digitPrimary` / `_digitAccent` / `_digitHeat`:
+    // Per-digit changed flags + heat — owned by the SwipeWaveAnimator
+    // since 2026-05-02 (canonical extraction into Deckle.Composition).
+    // The animator holds two parallel arrays of length DigitCount:
+    //   - changed[i] : "was modified during Recording" — preserved across
+    //                  the Recording → Transcribing / Rewriting transition
+    //                  so the swipe can tell which digits are eligible for
+    //                  the accent flash (dots and unchanged digits stay at
+    //                  Opacity 0 on their accent overlay forever).
+    //   - heat[i]    : 0..1 driving the accent overlay's Opacity. Rises
+    //                  fast when the swipe head is on a changed digit,
+    //                  decays slowly afterwards. The asymmetric rise/decay
+    //                  (see SwipeWaveAnimator.SwipeRiseAlpha /
+    //                  SwipeDecayAlpha) gives the wave effect described in
+    //                  the spec: a digit keeps glowing for a moment after
+    //                  the head has moved on, so several digits are
+    //                  partially lit at once — a trailing comet instead of
+    //                  a single moving pixel.
+    // Index order matches `_digitPrimary` / `_digitAccent`:
     //   0 Min1, 1 Min2, 2 Sec1, 3 Sec2, 4 Cs1, 5 Cs2.
-    private readonly bool[] _digitChanged = new bool[6];
-
-    // Per-digit heat 0..1 driving the accent overlay's Opacity. Rises fast
-    // when the swipe head is on a changed digit, decays slowly afterwards.
-    // The asymmetric rise/decay (see SwipeRiseAlpha / SwipeDecayAlpha below)
-    // gives the wave effect described in the spec: a digit keeps glowing for a
-    // moment after the head has moved on, so several digits are partially
-    // lit at once — a trailing comet instead of a single moving pixel.
-    private readonly float[] _digitHeat = new float[6];
+    private readonly SwipeWaveAnimator _swipe = new(DigitCount);
 
     // Cached references assembled in EnsureSwipeInfra. Parallel arrays so
     // the per-frame loop is a tight zip over three indices. Accent elements
@@ -176,10 +181,10 @@ public sealed partial class HudChrono : UserControl
 
         // Clear local Foreground so each primary TextBlock inherits its
         // Style default (TextFillColorPrimaryBrush, theme-resource-bound).
-        // UpdateClock will then bump _digitHeat[i] = 1 on any digit that
-        // changes — the accent overlay cross-fades in immediately (no
-        // latency during Recording, because the head isn't "sweeping"
-        // here — each change is an independent event).
+        // UpdateClock will then bump the swipe animator's heat to 1 on
+        // any digit that changes — the accent overlay cross-fades in
+        // immediately (no latency during Recording, because the head
+        // isn't "sweeping" here — each change is an independent event).
         ClearDigitForegrounds();
 
         UpdateClock();
@@ -194,8 +199,8 @@ public sealed partial class HudChrono : UserControl
         // Order matters: UpdateClock first to write the final elapsed value
         // (which may mark the last-changed digit because the stopwatch
         // advanced between the last vsync tick and the Stop), then the
-        // swipe starts. We KEEP the _digitChanged flags so the swipe knows
-        // which digits are eligible for the accent flash.
+        // swipe starts. We KEEP the animator's changed flags so the swipe
+        // knows which digits are eligible for the accent flash.
         UpdateClock();
         ClearDigitForegrounds();
 
@@ -223,7 +228,7 @@ public sealed partial class HudChrono : UserControl
     // swipe reveal can target only the digits that actually moved.
     private void ClearDigitChanged()
     {
-        for (int i = 0; i < _digitChanged.Length; i++) _digitChanged[i] = false;
+        _swipe.ClearAllChanged();
     }
 
     // Drops all heat to zero and pushes Opacity=0 onto the accent
@@ -233,7 +238,7 @@ public sealed partial class HudChrono : UserControl
     // as the swipe picks them up.
     private void ClearDigitHeat()
     {
-        for (int i = 0; i < _digitHeat.Length; i++) _digitHeat[i] = 0f;
+        _swipe.ClearAllHeat();
         if (_digitAccent is null) return;
         foreach (var t in _digitAccent) t.Opacity = 0;
         // Restore the primary-glyph invariant: accent = 0 ⇒ primary = 1.
@@ -514,14 +519,14 @@ public sealed partial class HudChrono : UserControl
         bool sec1, bool sec2,
         bool cs1,  bool cs2)
     {
-        // Index order matches _digitChanged: 0 Min1, 1 Min2,
+        // Index order matches the animator's flags: 0 Min1, 1 Min2,
         // 2 Sec1, 3 Sec2, 4 Cs1, 5 Cs2.
-        _digitChanged[0] = min1;
-        _digitChanged[1] = min2;
-        _digitChanged[2] = sec1;
-        _digitChanged[3] = sec2;
-        _digitChanged[4] = cs1;
-        _digitChanged[5] = cs2;
+        _swipe.SetChanged(0, min1);
+        _swipe.SetChanged(1, min2);
+        _swipe.SetChanged(2, sec1);
+        _swipe.SetChanged(3, sec2);
+        _swipe.SetChanged(4, cs1);
+        _swipe.SetChanged(5, cs2);
     }
 
     // HudPlayground-only: arms a config override to be consumed by the
@@ -628,15 +633,15 @@ public sealed partial class HudChrono : UserControl
     // immediately — the Recording-time "each change flashes red" UX
     // we have been iterating on. Returns early if the text didn't
     // actually change (no-op on every vsync for stationary digits).
-    // Index order matches the `_digitChanged` / `_digitHeat` arrays:
+    // Index order matches the swipe animator's per-element arrays:
     // 0 Min1, 1 Min2, 2 Sec1, 3 Sec2, 4 Cs1, 5 Cs2.
     private void WriteDigit(int index, string newText, TextBlock primary, TextBlock accent)
     {
         if (primary.Text == newText) return;
         primary.Text = newText;
         accent.Text  = newText;
-        _digitChanged[index] = true;
-        _digitHeat[index]    = 1f;
+        _swipe.SetChanged(index, true);
+        _swipe.SetHeat(index, 1f);
         // Push the flash directly on the overlay. During Recording the
         // vsync loop (UpdateClock) runs but UpdateSwipe is dormant
         // (_swipeRunning=false), so without this line heat=1 never
@@ -697,23 +702,21 @@ public sealed partial class HudChrono : UserControl
     // rises, the overlay (SystemFillColorCriticalBrush) cross-fades in
     // over the primary; at heat=1 the digit reads as pure red.
     //
-    // The key property (the "wave effect") is
-    // *asymmetric rise and decay*. When the wave's head lands on a
-    // changed digit, its heat target becomes 1 and heat rises at
-    // SwipeRiseAlpha per frame. When the head moves on, the target drops
-    // back to 0 but heat decays at the much slower SwipeDecayAlpha per
-    // frame. So a digit takes a few frames to light up, and many frames
-    // to dim out — which means by the time digit N is near full heat,
-    // the head is already on digit N+1, which itself has started rising.
-    // The trail of partially-lit digits behind the head reads as a comet
-    // trailing left→right.
+    // The wave motion math (head walk + asymmetric rise/decay lerp) lives
+    // in `SwipeWaveAnimator` (Deckle.Composition.Primitives) since
+    // 2026-05-02. HudChrono drives the animator's Tick() each vsync and
+    // copies the per-element heat values onto the digits' XAML
+    // TextBlock.Opacity. Tunables (cycle, easing, rise/decay alphas,
+    // head domain) are public statics on SwipeWaveAnimator and can be
+    // tuned live by the playground. See the type-level comment on
+    // SwipeWaveAnimator for the full algorithm description.
     //
     // Dots (DotA / DotB) have no accent overlay and no heat tracking —
     // they stay primary the whole cycle. Unchanged digits (those that
-    // did not flip during Recording, per _digitChanged[]) have their
-    // target pinned at 0 so their heat only decays; if they inherit any
-    // heat from the Recording hand-off, it fades and then they stay
-    // dark.
+    // did not flip during Recording, per the animator's changed flags)
+    // have their target pinned at 0 so their heat only decays; if they
+    // inherit any heat from the Recording hand-off, it fades and then
+    // they stay dark.
     //
     // Why managed driving instead of CompositionPropertySet + animation:
     // the heat state depends on the head index *and* the per-digit
@@ -721,45 +724,9 @@ public sealed partial class HudChrono : UserControl
     // Composition Expression. At 6 elements × vsync the per-frame cost
     // is trivial in managed code.
 
-    // Swipe reveal animation — tunables.
-    // SwipeCycleSeconds   full head-sweep duration (seconds).
-    //                     Lower = faster wave, higher = contemplative.
-    // SwipeEaseP1/P2      cubic-bezier control points for the head's
-    //                     progress curve. Defaults (0.7, 0) → (0.1, 1)
-    //                     for a hard ease-out — the head lingers near
-    //                     the start, then snaps through the digits.
-    // SwipeRiseAlpha      per-frame lerp factor toward the active target
-    //                     (head on digit = 1). 0.05 ≈ ~45 frames to reach
-    //                     90 % at 60 Hz → ~750 ms ramp-up; soft enough
-    //                     that the pic never feels punchy, slow enough
-    //                     that the digit is still "catching up" when the
-    //                     head has already moved on.
-    // SwipeDecayAlpha     per-frame lerp factor back to 0 when the head
-    //                     is elsewhere. 0.015 ≈ ~150 frames to drop below
-    //                     10 % at 60 Hz → ~2.5 s trail — much longer than
-    //                     rise so heat accumulates into a long, soft
-    //                     comet that bleeds across cycles. Keep
-    //                     DecayAlpha < RiseAlpha / 3 for the wave
-    //                     character; otherwise the trail reads as
-    //                     "tremblement" rather than "vague".
-    // `public static` (not const / readonly) so HudPlayground can tune
-    // the cadence, easing, and rise/decay alphas live.
-    public static float   SwipeCycleSeconds = 2.0f;
-    public static Vector2 SwipeEaseP1       = new(0.25f, 0f);
-    public static Vector2 SwipeEaseP2       = new(0.25f, 1f);
-    public static float   SwipeRiseAlpha    = 0.05f;
-    public static float   SwipeDecayAlpha   = 0.025f;
-
-    // Virtual head domain. The head walks `SwipeHeadDomain` slots per cycle;
-    // only slots [0, DigitCount) map to a real digit, the rest are silent
-    // — target=0 everywhere — so the easing's tail decelerates "into the
-    // void" instead of pinning the last digit while progress crawls toward
-    // the seam. Tune > DigitCount to gain breathing room before the next
-    // cycle's snap; equal to DigitCount reproduces the pre-fix stall.
-    public static int     SwipeHeadDomain   = 8;
-
-    // Digit count — structural, mirrors _digitHeat.Length and the 6 accent
-    // overlays declared in HudChrono.xaml. Not a tunable.
+    // Digit count — structural, must match the 6 accent overlays declared
+    // in HudChrono.xaml. Not a tunable. Passed to the animator at
+    // construction so its internal arrays are sized identically.
     private const int DigitCount = 6;
 
     private readonly System.Diagnostics.Stopwatch _swipeStopwatch = new();
@@ -797,38 +764,13 @@ public sealed partial class HudChrono : UserControl
     {
         if (!_swipeRunning || _digitPrimary is null || _digitAccent is null) return;
 
-        // Fraction of the cycle that has elapsed, wrapped into [0, 1). The
-        // modulo gives us the looping behaviour for free — no keyframe
-        // roll-over to worry about.
-        double elapsed = _swipeStopwatch.Elapsed.TotalSeconds;
-        float t = (float)((elapsed / SwipeCycleSeconds) % 1.0);
-        float progress = Easing.CubicBezier(t, SwipeEaseP1, SwipeEaseP2);
-
-        // Head slot in [0, SwipeHeadDomain). Only the first DigitCount
-        // slots map to a real digit; slots >= DigitCount are silent (head
-        // is "off-screen"), which lets the eased tail run out before the
-        // next cycle's snap — the fix for the last-digit stall.
-        // Sentinel -1 means "no digit is the head this frame", so the
-        // i==headIndex test below is false everywhere and every digit
-        // decays toward 0.
-        int domain = SwipeHeadDomain > 0 ? SwipeHeadDomain : DigitCount;
-        int headIndex = (int)MathF.Floor(progress * domain);
-        if (headIndex >= DigitCount) headIndex = -1;
-        else if (headIndex < 0)      headIndex = 0;
+        // Advance the animator: it computes new heats given the seconds
+        // elapsed since the cycle started, reading the SwipeWaveAnimator
+        // statics for cadence / easing / rise-decay alphas.
+        _swipe.Tick(_swipeStopwatch.Elapsed.TotalSeconds);
 
         for (int i = 0; i < DigitCount; i++)
         {
-            // Target heat: 1 when the head is on this digit AND the digit
-            // was modified during Recording. Everywhere else, 0. Unchanged
-            // digits never receive target = 1, so their heat only ever
-            // decays and stays dark after the initial fade-out.
-            float target = (i == headIndex && _digitChanged[i]) ? 1f : 0f;
-
-            // Asymmetric lerp: fast rise, slow decay. The asymmetry is
-            // what creates the comet trail.
-            float alpha = target > _digitHeat[i] ? SwipeRiseAlpha : SwipeDecayAlpha;
-            _digitHeat[i] += (target - _digitHeat[i]) * alpha;
-
             // Push the new heat onto the overlay's Opacity. TextBlock
             // Opacity is a DP so the set is a no-op when unchanged; no
             // need to guard manually — but we round to 3 decimals first
@@ -839,7 +781,7 @@ public sealed partial class HudChrono : UserControl
             // the two layers never double up on subpixel coverage (see
             // WriteDigit comment). Skipping this invariant makes
             // Recording-time flashes look bolder than unchanged digits.
-            double rounded = System.Math.Round(_digitHeat[i], 3);
+            double rounded = System.Math.Round(_swipe.GetHeat(i), 3);
             if (_digitAccent[i].Opacity != rounded)
                 _digitAccent[i].Opacity = rounded;
             double primaryOpacity = 1.0 - rounded;

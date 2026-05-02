@@ -42,7 +42,7 @@ namespace Deckle.Composition;
 // stroke edge flush with the visual extent on all four sides. pxSquare
 // (rotation coverage) is computed from innerSize directly, not from the
 // rounded pxW/pxH, so it always clears the visual diagonal.
-internal static class HudComposition
+public static class HudComposition
 {
     // ╔════════════════════════════════════════════════════════════════════╗
     // ║  Shared geometry                                                   ║
@@ -181,7 +181,7 @@ internal static class HudComposition
     //
     // See the Lexicon above for what each field means; only per-field
     // deviations from the generic definition are repeated here.
-    internal readonly struct ConicArcStrokeConfig
+    public readonly struct ConicArcStrokeConfig
     {
         public ConicArcStrokeConfig() {}
 
@@ -331,7 +331,7 @@ internal static class HudComposition
     private static int _creationCounter;
     private static int _liveStrokeCount;
     internal static int TotalStrokesCreated => _creationCounter;
-    internal static int LiveStrokeCount     => _liveStrokeCount;
+    public   static int LiveStrokeCount     => _liveStrokeCount;
     internal static event Action<int, string>? StrokeLifecycle; // (creationId, event)
 
     // ── DeviceLost hook ──────────────────────────────────────────────────
@@ -379,7 +379,7 @@ internal static class HudComposition
         CanvasDeviceLost?.Invoke($"CanvasDevice.DeviceLost fired (live strokes = {_liveStrokeCount})");
     }
 
-    internal sealed class ProcessingStroke : IDisposable
+    public sealed class ProcessingStroke : IDisposable
     {
         public ContainerVisual Visual { get; }
         public int CreationId { get; }
@@ -651,7 +651,7 @@ internal static class HudComposition
     //
     // Struct defaults on ConicArcStrokeConfig ARE the whole config.
     // Tweak the defaults to iterate on the visual.
-    internal static ProcessingStroke CreateProcessingStroke(
+    public static ProcessingStroke CreateProcessingStroke(
         Compositor compositor, Vector2 hostSize,
         ConicArcStrokeConfig? configOverride = null)
     {
@@ -701,7 +701,7 @@ internal static class HudComposition
     // kept at 0. RecordingHuePeriodSeconds > 0 overrides the generic
     // HuePeriodSeconds to let the hue drift slowly under the frozen arc
     // lobes — requires RecordingSaturation > 0 to be visible.
-    internal static ProcessingStroke CreateRecordingStroke(
+    public static ProcessingStroke CreateRecordingStroke(
         Compositor compositor, Vector2 hostSize,
         ConicArcStrokeConfig? configOverride = null)
     {
@@ -1510,7 +1510,7 @@ internal static class HudComposition
     // silhouette and lets the full pxSquare × pxSquare footprint rotate
     // openly. Not referenced by shipping code — only the playground's
     // Naked rail wires it up.
-    internal enum NakedMaskPart
+    public enum NakedMaskPart
     {
         Conic    = 1,   // raw 360° HSV rainbow ring, full square
         ArcMask  = 2,   // alpha-ramped pie slice(s), monochrome
@@ -1532,7 +1532,7 @@ internal static class HudComposition
     // it with a fresh one (and before the host Window closes). Dispose
     // stops both rotations' Linear + Eased animations and releases every
     // Composition object the bundle allocated.
-    internal sealed class NakedPreview : IDisposable
+    public sealed class NakedPreview : IDisposable
     {
         public ContainerVisual Container { get; }
 
@@ -1638,7 +1638,7 @@ internal static class HudComposition
     //
     // Returns a NakedPreview bundle the caller MUST hold and Dispose when
     // replaced — see the type-level comment on NakedPreview for why.
-    internal static NakedPreview CreateNakedMaskPreview(
+    public static NakedPreview CreateNakedMaskPreview(
         Compositor compositor, Vector2 hudSize,
         ConicArcStrokeConfig cfg, NakedMaskPart part,
         Color arcFillColor)

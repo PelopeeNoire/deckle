@@ -466,14 +466,16 @@ public sealed partial class PlaygroundWindow : Window
         _simManualValue        = 0.012f;
         _simulateChangedDigits = true;
 
-        // HudChrono static mutables tuned via the Swipe + Audio mapping
-        // expanders — the same values the individual Reset* methods use.
-        HudChrono.SwipeCycleSeconds = 3.0f;
-        HudChrono.SwipeEaseP1       = new Vector2(0.5f, 0f);
-        HudChrono.SwipeEaseP2       = new Vector2(0.2f, 1f);
-        HudChrono.SwipeRiseAlpha    = 0.1f;
-        HudChrono.SwipeDecayAlpha   = 0.025f;
-        HudChrono.SwipeHeadDomain   = 8;
+        // Swipe + Audio mapping expanders — the same values the individual
+        // Reset* methods use. Swipe statics live on SwipeWaveAnimator since
+        // 2026-05-02 (Deckle.Composition); audio mapping statics still
+        // belong to HudChrono pending a future Capture migration.
+        SwipeWaveAnimator.SwipeCycleSeconds = 3.0f;
+        SwipeWaveAnimator.SwipeEaseP1       = new Vector2(0.5f, 0f);
+        SwipeWaveAnimator.SwipeEaseP2       = new Vector2(0.2f, 1f);
+        SwipeWaveAnimator.SwipeRiseAlpha    = 0.1f;
+        SwipeWaveAnimator.SwipeDecayAlpha   = 0.025f;
+        SwipeWaveAnimator.SwipeHeadDomain   = 8;
         HudChrono.EmaAlpha          = 0.25f;
         HudChrono.MinDbfs           = -55f;
         HudChrono.MaxDbfs           = -32f;
@@ -667,24 +669,25 @@ public sealed partial class PlaygroundWindow : Window
     private void AddSwipeExpander()
     {
         var stack = NewExpander("Swipe (Transcribing / Rewriting)", ResetSwipe);
-        // Static mutables on HudChrono — read live each vsync, no rebuild.
+        // Static mutables on SwipeWaveAnimator (Deckle.Composition) — read
+        // live each vsync by the animator's Tick, no rebuild needed.
         AddFloatRow(stack, "SwipeCycleSeconds", 0.1, 6.0, 0.1,
-            HudChrono.SwipeCycleSeconds,
-            v => HudChrono.SwipeCycleSeconds = (float)v);
-        AddFloatRow(stack, "SwipeEaseP1.X", 0, 1, 0.05, HudChrono.SwipeEaseP1.X,
-            v => HudChrono.SwipeEaseP1 = new Vector2((float)v, HudChrono.SwipeEaseP1.Y));
-        AddFloatRow(stack, "SwipeEaseP1.Y", -0.5, 1.5, 0.05, HudChrono.SwipeEaseP1.Y,
-            v => HudChrono.SwipeEaseP1 = new Vector2(HudChrono.SwipeEaseP1.X, (float)v));
-        AddFloatRow(stack, "SwipeEaseP2.X", 0, 1, 0.05, HudChrono.SwipeEaseP2.X,
-            v => HudChrono.SwipeEaseP2 = new Vector2((float)v, HudChrono.SwipeEaseP2.Y));
-        AddFloatRow(stack, "SwipeEaseP2.Y", -0.5, 1.5, 0.05, HudChrono.SwipeEaseP2.Y,
-            v => HudChrono.SwipeEaseP2 = new Vector2(HudChrono.SwipeEaseP2.X, (float)v));
-        AddFloatRow(stack, "SwipeRiseAlpha", 0.01, 1.0, 0.01, HudChrono.SwipeRiseAlpha,
-            v => HudChrono.SwipeRiseAlpha = (float)v);
-        AddFloatRow(stack, "SwipeDecayAlpha", 0.005, 0.5, 0.005, HudChrono.SwipeDecayAlpha,
-            v => HudChrono.SwipeDecayAlpha = (float)v);
-        AddIntRow(stack, "SwipeHeadDomain", 6, 12, HudChrono.SwipeHeadDomain,
-            v => HudChrono.SwipeHeadDomain = v);
+            SwipeWaveAnimator.SwipeCycleSeconds,
+            v => SwipeWaveAnimator.SwipeCycleSeconds = (float)v);
+        AddFloatRow(stack, "SwipeEaseP1.X", 0, 1, 0.05, SwipeWaveAnimator.SwipeEaseP1.X,
+            v => SwipeWaveAnimator.SwipeEaseP1 = new Vector2((float)v, SwipeWaveAnimator.SwipeEaseP1.Y));
+        AddFloatRow(stack, "SwipeEaseP1.Y", -0.5, 1.5, 0.05, SwipeWaveAnimator.SwipeEaseP1.Y,
+            v => SwipeWaveAnimator.SwipeEaseP1 = new Vector2(SwipeWaveAnimator.SwipeEaseP1.X, (float)v));
+        AddFloatRow(stack, "SwipeEaseP2.X", 0, 1, 0.05, SwipeWaveAnimator.SwipeEaseP2.X,
+            v => SwipeWaveAnimator.SwipeEaseP2 = new Vector2((float)v, SwipeWaveAnimator.SwipeEaseP2.Y));
+        AddFloatRow(stack, "SwipeEaseP2.Y", -0.5, 1.5, 0.05, SwipeWaveAnimator.SwipeEaseP2.Y,
+            v => SwipeWaveAnimator.SwipeEaseP2 = new Vector2(SwipeWaveAnimator.SwipeEaseP2.X, (float)v));
+        AddFloatRow(stack, "SwipeRiseAlpha", 0.01, 1.0, 0.01, SwipeWaveAnimator.SwipeRiseAlpha,
+            v => SwipeWaveAnimator.SwipeRiseAlpha = (float)v);
+        AddFloatRow(stack, "SwipeDecayAlpha", 0.005, 0.5, 0.005, SwipeWaveAnimator.SwipeDecayAlpha,
+            v => SwipeWaveAnimator.SwipeDecayAlpha = (float)v);
+        AddIntRow(stack, "SwipeHeadDomain", 6, 12, SwipeWaveAnimator.SwipeHeadDomain,
+            v => SwipeWaveAnimator.SwipeHeadDomain = v);
         AddToggleRow(stack, "Simulate changed digits",
             _simulateChangedDigits,
             v => { _simulateChangedDigits = v; ApplyTarget(); });
@@ -692,12 +695,12 @@ public sealed partial class PlaygroundWindow : Window
 
     private void ResetSwipe()
     {
-        HudChrono.SwipeCycleSeconds = 3.0f;
-        HudChrono.SwipeEaseP1       = new Vector2(0.7f, 0f);
-        HudChrono.SwipeEaseP2       = new Vector2(0.1f, 1f);
-        HudChrono.SwipeRiseAlpha    = 0.05f;
-        HudChrono.SwipeDecayAlpha   = 0.025f;
-        HudChrono.SwipeHeadDomain   = 8;
+        SwipeWaveAnimator.SwipeCycleSeconds = 3.0f;
+        SwipeWaveAnimator.SwipeEaseP1       = new Vector2(0.7f, 0f);
+        SwipeWaveAnimator.SwipeEaseP2       = new Vector2(0.1f, 1f);
+        SwipeWaveAnimator.SwipeRiseAlpha    = 0.05f;
+        SwipeWaveAnimator.SwipeDecayAlpha   = 0.025f;
+        SwipeWaveAnimator.SwipeHeadDomain   = 8;
         _simulateChangedDigits      = true;
         RebuildTuningPanel();
         ApplyTarget();
