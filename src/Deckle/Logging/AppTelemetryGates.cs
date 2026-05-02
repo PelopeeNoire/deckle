@@ -1,16 +1,15 @@
 using System;
-using Deckle.Settings;  // SettingsService.Instance — kept; TelemetrySettings now lives in this same Deckle.Logging namespace.
 
 namespace Deckle.Logging;
 
 // ── AppTelemetryGates ───────────────────────────────────────────────────────
 //
-// App-side bridge between Deckle.Logging's gates contract and the host's
-// TelemetrySettings. Reads SettingsService on every property access — same
-// posture as the legacy ReadSettingsToggle helper that lived in
-// JsonlFileSink: a setting flipped through the Settings UI takes effect on
-// the next emit, and a read happening before SettingsService is fully
-// initialized falls through to "false" / null instead of throwing.
+// App-side bridge between Deckle.Logging's gates contract and
+// TelemetrySettingsService. Reads on every property access — same posture
+// as the legacy ReadSettingsToggle helper that lived in JsonlFileSink:
+// a setting flipped through the Settings UI takes effect on the next
+// emit, and a read happening before the service is fully initialized
+// falls through to "false" / null instead of throwing.
 //
 // Wired into Deckle.Logging once at startup via TelemetryGates.Configure
 // in App.OnLaunched, before the first sink is attached.
@@ -27,7 +26,7 @@ internal sealed class AppTelemetryGates : ITelemetryGates
         {
             try
             {
-                string s = SettingsService.Instance.Current.Telemetry.StorageDirectory ?? "";
+                string s = TelemetrySettingsService.Instance.Current.StorageDirectory ?? "";
                 return string.IsNullOrWhiteSpace(s) ? null : s;
             }
             catch
@@ -41,7 +40,7 @@ internal sealed class AppTelemetryGates : ITelemetryGates
     {
         try
         {
-            return reader(SettingsService.Instance.Current.Telemetry);
+            return reader(TelemetrySettingsService.Instance.Current);
         }
         catch
         {

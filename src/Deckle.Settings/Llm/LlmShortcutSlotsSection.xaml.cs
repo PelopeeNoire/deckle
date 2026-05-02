@@ -37,7 +37,7 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
     public void Reload()
     {
         _loading = true;
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
 
         // Primary: "(None)" first, then every defined profile. Default to
         // (None) when nothing resolves. Match the saved slot first by stable
@@ -82,24 +82,24 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
     {
         if (_loading || PrimaryRewriteProfileCombo.SelectedItem is not ComboBoxItem item) return;
         string? content = item.Content?.ToString();
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         bool none = string.Equals(content, NoneSentinel, StringComparison.Ordinal);
         s.PrimaryRewriteProfileName = none ? null : content;
         s.PrimaryRewriteProfileId = none ? null : s.Profiles.Find(p =>
             string.Equals(p.Name, content, StringComparison.OrdinalIgnoreCase))?.Id;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
     }
 
     private void SecondaryRewriteProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || SecondaryRewriteProfileCombo.SelectedItem is not ComboBoxItem item) return;
         string? content = item.Content?.ToString();
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         bool none = string.Equals(content, NoneSentinel, StringComparison.Ordinal);
         s.SecondaryRewriteProfileName = none ? null : content;
         s.SecondaryRewriteProfileId = none ? null : s.Profiles.Find(p =>
             string.Equals(p.Name, content, StringComparison.OrdinalIgnoreCase))?.Id;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
     }
 
     // Scope: Primary/Secondary rewrite slot bindings only. The Profiles list
@@ -120,12 +120,12 @@ public sealed partial class LlmShortcutSlotsSection : UserControl
             return;
 
         var defaults = new LlmSettings();
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         s.PrimaryRewriteProfileName   = defaults.PrimaryRewriteProfileName;
         s.PrimaryRewriteProfileId     = defaults.PrimaryRewriteProfileId;
         s.SecondaryRewriteProfileName = defaults.SecondaryRewriteProfileName;
         s.SecondaryRewriteProfileId   = defaults.SecondaryRewriteProfileId;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
         Reload();
     }
 }

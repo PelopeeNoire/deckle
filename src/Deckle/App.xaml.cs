@@ -90,6 +90,22 @@ public partial class App : Microsoft.UI.Xaml.Application
         var milestones = new List<string>();
         void Milestone(string name) => milestones.Add($"{name} +{sw.ElapsedMilliseconds}ms");
 
+        // Per-module persistence migration runs FIRST — before any module
+        // SettingsService.Instance is touched. Detects the legacy combined
+        // settings.json and dispatches each module section to its own
+        // modules/<id>/settings.json file. Idempotent across launches: on
+        // subsequent boots the legacy file no longer carries module
+        // sections, so the bootstrap is a no-op.
+        //
+        // Why first? Because module SettingsService singletons load their
+        // file in their constructor — if a module service initialized before
+        // the dispatch ran, it would see a missing module file and write
+        // defaults, defeating the migration. AppTelemetryGates below
+        // touches TelemetrySettingsService on first emit, so we must dispatch
+        // before that.
+        Settings.SettingsBootstrap.MigrateLegacyToPerModule();
+        Milestone("settings-bootstrap");
+
         // Wire Deckle.Logging's gates to the host's TelemetrySettings BEFORE
         // attaching JsonlFileSink: the sink's first emit reads
         // TelemetryGates.Current to decide whether to land on disk, and an
@@ -176,7 +192,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Settings on every vsync to honour live edits to MaxRecordingDurationSeconds
         // (Capture page slider). Provider is invoked from UpdateClock at vsync.
         Deckle.Chrono.Hud.HudChrono.MaxRecordingDurationSecondsProvider =
-            () => Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds;
+            () => Capture.CaptureSettingsService.Instance.Current.MaxRecordingDurationSeconds;
 
         // SettingsHost — App-side hooks the Deckle.Settings UI surface
         // calls back into to drive theme broadcast, level-window
@@ -360,7 +376,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Apply persisted level window (MinDbfs / MaxDbfs / DbfsCurveExponent)
         // into HudChrono statics so the first Recording reflects the user's
         // calibration without a restart-from-defaults round-trip.
-        ApplyLevelWindow(Settings.SettingsService.Instance.Current.Capture.LevelWindow);
+        ApplyLevelWindow(Capture.CaptureSettingsService.Instance.Current.LevelWindow);
 
         // If launched with --settings (restart from Settings), automatically
         // reopen the Settings window on the right page.
@@ -598,7 +614,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Prefer the stable ProfileId (survives renames): resolve it to the
         // profile's current Name. Fall back to the legacy *ProfileName field
         // when the Id slot is empty (pre-migration configs).
-        var llm = Settings.SettingsService.Instance.Current.Llm;
+        var llm = Llm.LlmSettingsService.Instance.Current;
         string? ResolveSlotName(string? id, string? nameFallback) =>
             (!string.IsNullOrEmpty(id)
                 ? llm.Profiles.Find(p => p.Id == id)?.Name
