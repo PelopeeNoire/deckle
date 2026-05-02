@@ -461,7 +461,7 @@ public sealed partial class GeneralPage : Page
             // theme switch, level-window statics — without going through
             // the property setters (which are guarded by _initializing).
             App.ApplyTheme(ViewModel.Theme);
-            App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+            App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
         }
         finally
         {
