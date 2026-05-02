@@ -7,7 +7,31 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WinUI XAML compilation : Deckle.Whisp now ships WhisperPage.xaml +
+         WhisperViewModel.cs (moved from Deckle.Settings in slice C1). The
+         engine, native runtime setup, and capture host stay in this same
+         assembly — they share the lifecycle and the Whisp module's owner
+         is the natural home for both engine and UI. -->
+    <UseWinUI>true</UseWinUI>
+    <!-- Neutral language for the lib's PRI fallback. Mirrors Deckle.csproj. -->
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <!-- Generates the lib's own .pri so x:Uid lookups in WhisperPage
+         resolve against the Deckle.Whisp/Resources subtree. The resw
+         under Strings/en-US/ is a copy of the App's resw — same pattern
+         as Deckle.Settings (cf. Microsoft Learn "Localize a class
+         library", PowerToys, WindowsAppSDK#3451). -->
+    <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Versions aligned on Deckle.csproj. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <!-- MVVM Toolkit — [ObservableProperty] in WhisperViewModel. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- SettingsCard / SettingsExpander — WhisperPage canonical layout. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
@@ -15,5 +39,9 @@
     <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
+    <!-- For SettingsHost.RestartApp — cross-assembly App-side hook called
+         from WhisperPage's "Restart now" footer. WhisperPage participates
+         in the Settings shell UI; the back-reference is intentional. -->
+    <ProjectReference Include="..\Deckle.Settings\Deckle.Settings.csproj" />
   </ItemGroup>
 </Project>

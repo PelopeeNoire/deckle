@@ -7,7 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using Deckle.Llm;
 using Deckle.Localization;
 
-namespace Deckle.Settings.Llm;
+namespace Deckle.Llm;
 
 // ─── Auto-rewrite rules section of LlmPage ─────────────────────────────────
 //

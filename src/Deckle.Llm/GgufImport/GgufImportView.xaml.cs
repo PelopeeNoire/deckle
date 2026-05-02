@@ -6,10 +6,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
-using Deckle.Llm;
 using Deckle.Localization;
+using Deckle.Settings;
 
-namespace Deckle.Settings.Llm.GgufImport;
+namespace Deckle.Llm.GgufImport;
 
 // ─── Vue du dialogue d'import GGUF ─────────────────────────────────────────
 //

@@ -568,8 +568,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         var exePath = Environment.ProcessPath;
         if (exePath is not null)
         {
+            // Quote pageTag because assembly-qualified tags
+            // ("Deckle.Whisp.WhisperPage, Deckle.Whisp") contain a space
+            // — without quoting, the relaunched process would split it
+            // into two argv entries and the SettingsWindow tag match
+            // would fail.
             var args = pageTag is not null
-                ? $"--settings {pageTag}"
+                ? $"--settings \"{pageTag}\""
                 : "--settings";
             _log.Verbose(LogSource.App, $"spawn new process | exe={exePath} | args={args}");
             System.Diagnostics.Process.Start(exePath, args);

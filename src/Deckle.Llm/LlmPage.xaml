@@ -1,8 +1,8 @@
 <Page
-    x:Class="Deckle.Settings.LlmPage"
+    x:Class="Deckle.Llm.LlmPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:llm="using:Deckle.Settings.Llm">
+    xmlns:llm="using:Deckle.Llm">
 
     <Grid Background="Transparent"
           Tapped="OnBackgroundTapped">
