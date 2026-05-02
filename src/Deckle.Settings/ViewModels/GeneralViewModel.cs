@@ -42,10 +42,11 @@ public partial class GeneralViewModel : ObservableObject
 
     // ── Level window (calibration) ──────────────────────────────────────────
     //
-    // Three sliders + an auto toggle that map onto HudChrono.{Min,Max}Dbfs +
-    // DbfsCurveExponent. Each change pushes to settings AND directly into the
-    // HudChrono statics via App.ApplyLevelWindow so the HUD reflects the new
-    // window on the next sub-window without restart.
+    // Three sliders + an auto toggle that map onto AudioLevelMapper's
+    // {Min,Max}Dbfs + DbfsCurveExponent statics in Deckle.Capture. Each
+    // change pushes to settings AND directly into those statics via
+    // SettingsHost.ApplyLevelWindow (wired by App at boot) so the HUD
+    // reflects the new window on the next sub-window without restart.
 
     [ObservableProperty]
     public partial double LevelWindowMinDbfs { get; set; }
@@ -64,14 +65,14 @@ public partial class GeneralViewModel : ObservableObject
     // All filter for debugging, hidden from Activity / Steps where it
     // would drown the actual pipeline narrative. PushToSettings is fine
     // on every step (the file save is debounced one level deeper inside
-    // SettingsService); App.ApplyLevelWindow is a static-field write,
-    // also free.
+    // SettingsService); SettingsHost.ApplyLevelWindow ultimately writes
+    // a few static fields in Capture.AudioLevelMapper, also free.
     partial void OnLevelWindowMinDbfsChanged(double value)
     {
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
     }
 
     partial void OnLevelWindowMaxDbfsChanged(double value)
@@ -79,7 +80,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
     }
 
     partial void OnLevelWindowExponentChanged(double value)
@@ -87,7 +88,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
     }
 
     partial void OnLevelWindowAutoCalibrationChanged(bool value)
@@ -185,7 +186,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Theme ← {value}");
         PushToSettings();
-        App.ApplyTheme(value);
+        SettingsHost.ApplyTheme?.Invoke(value);
     }
 
     // ── Telemetry ────────────────────────────────────────────────────────────
@@ -428,7 +429,7 @@ public partial class GeneralViewModel : ObservableObject
         }
         finally { _isSyncing = false; }
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
         _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
     }
 
@@ -456,7 +457,7 @@ public partial class GeneralViewModel : ObservableObject
         try { Theme = "System"; }
         finally { _isSyncing = false; }
         PushToSettings();
-        App.ApplyTheme(Theme);
+        SettingsHost.ApplyTheme?.Invoke(Theme);
         _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
     }
 
