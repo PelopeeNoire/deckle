@@ -10,14 +10,10 @@ using Windows.UI;
 
 namespace Deckle.Composition;
 
-// Variant the processing stroke is rendering. HudChrono picks one based
-// on the HUD state (Recording / Transcribing / Rewriting); the live stroke
-// animates its own effect properties toward the matching variant values
-// without rebuilding anything — except on Recording ↔ (Transcribing /
-// Rewriting) crossings where the rotation-frozen vs spinning pipelines
-// cannot share a SpriteVisual, and HudChrono tears the stroke down and
-// rebuilds a fresh one (see AttachProcessingVisual).
-internal enum ProcessingVariant { Recording, Transcribing, Rewriting }
+// ProcessingVariant moved to Deckle.Composition module 2026-05-02 — see
+// Core/ProcessingVariant.cs. Same namespace (Deckle.Composition) so
+// in-file references resolve unchanged via the cross-assembly project
+// reference.
 
 // HUD Composition pipeline — processing strokes for the chrono surface.
 //
@@ -1312,7 +1308,7 @@ internal static class HudComposition
         {
             float centreTurns = (i + 0.5f) / wedges;
             float hue = cfg.HueStart + centreTurns * cfg.HueRange;
-            var c = OklchToRgb(cfg.OklchLightness, cfg.OklchChroma, hue);
+            var c = ColorSpace.OklchToRgb(cfg.OklchLightness, cfg.OklchChroma, hue);
             int p = i * 3;
             palette[p + 0] = c.B;
             palette[p + 1] = c.G;
@@ -1748,64 +1744,9 @@ internal static class HudComposition
             conicRotationProps, arcRotationProps);
     }
 
-    // OKLCh → sRGB conversion. L and C are OKLab cylindrical
-    // coordinates (Björn Ottosson, 2020). hTurns is the hue in turns
-    // (0..1 = full wheel), matching the rest of the paint code.
-    //
-    // Why OKLCh — the OKLab colour space is designed to be
-    // perceptually uniform. At a fixed L, every hue at the same C
-    // reads as the same perceived lightness, so the conic wheel has
-    // no brightness asymmetry — yellow at the top is not lighter
-    // than blue at the bottom. This is the asymmetry HSV exhibits
-    // (Rec. 709 luminance for pure yellow ≈ 0.93, pure blue ≈ 0.07),
-    // which was visible as a top/bottom gradient when the Saturation
-    // effect pulled the stroke to greyscale.
-    //
-    // Pipeline: OKLCh → OKLab → linear sRGB → gamma-corrected sRGB.
-    // Linear sRGB values may fall outside [0, 1] for L/C combinations
-    // that exit the sRGB gamut (yellows and blues at L=0.75 start
-    // clipping around C ≈ 0.18). We clamp to [0, 1] on the gamma
-    // output — that reads as a gentle flattening of the out-of-gamut
-    // hues rather than a hard stop, which is good enough for a
-    // rotating conic wheel where no individual hue lingers.
-    private static Color OklchToRgb(float L, float C, float hTurns)
-    {
-        float hRad = hTurns * MathF.Tau;
-        float a    = C * MathF.Cos(hRad);
-        float b    = C * MathF.Sin(hRad);
-
-        // OKLab → non-linear cone responses (Björn Ottosson's matrix).
-        float l_ = L + 0.3963377774f * a + 0.2158037573f * b;
-        float m_ = L - 0.1055613458f * a - 0.0638541728f * b;
-        float s_ = L - 0.0894841775f * a - 1.2914855480f * b;
-
-        // Cube to recover linear cone responses.
-        float lc = l_ * l_ * l_;
-        float mc = m_ * m_ * m_;
-        float sc = s_ * s_ * s_;
-
-        // Cone responses → linear sRGB.
-        float rLin = +4.0767416621f * lc - 3.3077115913f * mc + 0.2309699292f * sc;
-        float gLin = -1.2684380046f * lc + 2.6097574011f * mc - 0.3413193965f * sc;
-        float bLin = -0.0041960863f * lc - 0.7034186147f * mc + 1.7076147010f * sc;
-
-        return Color.FromArgb(
-            0xFF,
-            (byte)MathF.Round(Math.Clamp(LinearToSrgb(rLin), 0f, 1f) * 255f),
-            (byte)MathF.Round(Math.Clamp(LinearToSrgb(gLin), 0f, 1f) * 255f),
-            (byte)MathF.Round(Math.Clamp(LinearToSrgb(bLin), 0f, 1f) * 255f));
-    }
-
-    // sRGB OETF (IEC 61966-2-1). Handles the linear toe for small
-    // values so the curve stays continuous at the piecewise seam.
-    // Negative inputs are mirrored through the curve — produces a
-    // symmetric result that clamps cleanly to 0 afterwards.
-    private static float LinearToSrgb(float x)
-    {
-        if (x < 0f) return -LinearToSrgb(-x);
-        return x <= 0.0031308f
-            ? 12.92f * x
-            : 1.055f * MathF.Pow(x, 1f / 2.4f) - 0.055f;
-    }
-
+    // OklchToRgb + LinearToSrgb moved to Deckle.Composition module
+    // 2026-05-02 — see Primitives/ColorSpace.cs. The methods are pure
+    // math and stayed in the same namespace, so the call to
+    // ColorSpace.OklchToRgb in PaintConicSurface resolves via the
+    // cross-assembly project reference.
 }
