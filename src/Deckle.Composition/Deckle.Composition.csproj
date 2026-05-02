@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Deckle.Composition</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WindowsAppSDK : Microsoft.UI.Composition (Visual / Compositor /
+         CompositionEffectFactory / animations) consommé par les primitives
+         de stroke conique et de swipe. Version pinnée identique à
+         Deckle.csproj — un seul runtime WinAppSDK chargé par process. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <!-- Win2D : Direct2D-backed CanvasDrawingSession sur
+         CompositionDrawingSurface. Utilisé pour peindre le conic gradient
+         arc-en-ciel et le mask arc — primitives pures, pas de dépendance
+         XAML. -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+    <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+  </ItemGroup>
+</Project>
