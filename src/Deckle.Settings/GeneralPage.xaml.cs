@@ -287,7 +287,7 @@ public sealed partial class GeneralPage : Page
             };
             picker.FileTypeFilter.Add("*");
 
-            var settingsWin = App.SettingsWin
+            var settingsWin = SettingsHost.GetSettingsWindow?.Invoke()
                 ?? throw new InvalidOperationException("Settings window not initialized");
             var hwnd = WindowNative.GetWindowHandle(settingsWin);
             InitializeWithWindow.Initialize(picker, hwnd);
@@ -392,9 +392,16 @@ public sealed partial class GeneralPage : Page
     {
         try
         {
-            var setup = new Shell.Setup.SetupWindow();
-            setup.Body.Navigate(typeof(Shell.Setup.ChoicesPage), setup);
-            setup.Activate();
+            // The first-run wizard lives in Deckle.Shell.Setup (App-side
+            // until factored into a dedicated module). Going through the
+            // SettingsHost hook keeps Deckle.Settings free of a back
+            // reference to Deckle.exe.
+            if (SettingsHost.OpenSetupWizard is null)
+            {
+                _log.Warning(LogSource.SetGeneral, "setup wizard hook not wired — ignoring");
+                return;
+            }
+            SettingsHost.OpenSetupWizard.Invoke();
             _log.Info(LogSource.SetGeneral, "setup window opened from Settings");
         }
         catch (Exception ex)
@@ -460,8 +467,8 @@ public sealed partial class GeneralPage : Page
             // Apply settings that have side-effects beyond the VM —
             // theme switch, level-window statics — without going through
             // the property setters (which are guarded by _initializing).
-            App.ApplyTheme(ViewModel.Theme);
-            App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
+            SettingsHost.ApplyTheme?.Invoke(ViewModel.Theme);
+            SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
         }
         finally
         {
@@ -479,7 +486,7 @@ public sealed partial class GeneralPage : Page
             };
             picker.FileTypeFilter.Add("*");
 
-            var settingsWin = App.SettingsWin
+            var settingsWin = SettingsHost.GetSettingsWindow?.Invoke()
                 ?? throw new InvalidOperationException("Settings window not initialized");
             var hwnd = WindowNative.GetWindowHandle(settingsWin);
             InitializeWithWindow.Initialize(picker, hwnd);
