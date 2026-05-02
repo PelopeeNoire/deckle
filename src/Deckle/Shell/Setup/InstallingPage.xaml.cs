@@ -110,15 +110,30 @@ internal sealed partial class InstallingPage : Page
             return;
         }
 
-        // Step 2 — Whisper model.
-        await DownloadModelStepAsync(
-            entry:     _context.SelectedModel,
-            stepIndex: 1,
-            icon:      WhisperIcon,
-            label:     WhisperLabel,
-            bar:       WhisperProgress,
-            status:    WhisperStatus,
-            ct:        ct);
+        // Step 2 — Whisper model (skip if already on disk — saves a 3 GB
+        // re-download when the user only wiped the native bundle).
+        if (SpeechModels.IsInstalled(_context.SelectedModel))
+        {
+            _context.Results.Add(new InstallResult(
+                ItemId:      _context.SelectedModel.Id,
+                DisplayName: _context.SelectedModel.DisplayName,
+                Success:     true,
+                ErrorMessage: null,
+                Bytes:        new FileInfo(Path.Combine(AppPaths.ModelsDirectory, _context.SelectedModel.FileName)).Length));
+            UpdateGlobalStep(2, Loc.Get("Setup_Install_AlreadyInstalled"));
+            SetItemDone(WhisperIcon, WhisperProgress, WhisperStatus, Loc.Get("Setup_Install_AlreadyInstalled"));
+        }
+        else
+        {
+            await DownloadModelStepAsync(
+                entry:     _context.SelectedModel,
+                stepIndex: 1,
+                icon:      WhisperIcon,
+                label:     WhisperLabel,
+                bar:       WhisperProgress,
+                status:    WhisperStatus,
+                ct:        ct);
+        }
 
         // Step 3 — Silero VAD (only if not already there — saves a redundant ~700 KB).
         if (SpeechModels.IsVadInstalled())
