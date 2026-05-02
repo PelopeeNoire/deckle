@@ -216,7 +216,7 @@
     <value>Only level statistics — minimum, percentiles (p10, p25, p50, p75, p90), maximum, and mean RMS — in dBFS. No audio. No transcription. No words. Nothing is sent over the network.</value>
   </data>
   <data name="MicrophoneTelemetryConsent_Body_Remind" xml:space="preserve">
-    <value>One short JSON line per recording — small file. Useful when calibrating, then turn it off. The same data also appears in the LogWindow under [RECORD] for live inspection.</value>
+    <value>One short JSON line per recording — small file. Useful when calibrating, then turn it off. The same data also appears in the LogWindow under [CAPTURE] for live inspection.</value>
   </data>
 
   <!-- ─── Engine status ──────────────────────────────────────────────
@@ -325,9 +325,10 @@
   </data>
 
   <!-- ─── Microphone errors ──────────────────────────────────────────
-       UserFeedback pairs raised by WhispEngine.DescribeMicError when
-       the WaveIn open fails. The Unavailable body interpolates the
-       raw MMSYSERR code as {0} for diagnostic clarity. -->
+       UserFeedback pairs raised by WhispEngine.LocalizeMicError when
+       MicrophoneCapture.Probe / Record returns a MicErrorKind. The
+       Unavailable body interpolates the raw MMSYSERR code as {0}
+       for diagnostic clarity. -->
   <data name="MicError_NotDetected_Title" xml:space="preserve">
     <value>No microphone detected</value>
   </data>

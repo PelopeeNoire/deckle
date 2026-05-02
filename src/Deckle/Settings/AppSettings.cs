@@ -1,3 +1,4 @@
+using Deckle.Capture;
 using Deckle.Llm;
 using Deckle.Logging;
 using Deckle.Whisp;
@@ -14,16 +15,16 @@ namespace Deckle.Settings;
 // Toute modification passe par SettingsService (Load/Save, debounced, Changed).
 //
 // Chaque module porte son propre POCO de settings dans son projet :
-//   RecordingSettings, LevelWindowSettings, WhispSettings (et ses 6 sections)
-//                                                          → Deckle.Whisp
-//   TelemetrySettings                                       → Deckle.Logging
-//   LlmSettings                                             → Deckle.Llm
+//   CaptureSettings, LevelWindowSettings                    → Deckle.Capture
+//   WhispSettings (et ses 6 sections)                       → Deckle.Whisp
+//   TelemetrySettings                                        → Deckle.Logging
+//   LlmSettings                                              → Deckle.Llm
 // Les sections shell (Paths / Appearance / Startup / Overlay / Paste) restent
 // ici, dans le projet App.
 public sealed class AppSettings
 {
     public PathsSettings       Paths       { get; set; } = new();
-    public RecordingSettings   Recording   { get; set; } = new();
+    public CaptureSettings     Capture     { get; set; } = new();
     public AppearanceSettings  Appearance  { get; set; } = new();
     public StartupSettings     Startup     { get; set; } = new();
     public OverlaySettings     Overlay     { get; set; } = new();

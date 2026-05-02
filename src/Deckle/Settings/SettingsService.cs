@@ -168,6 +168,21 @@ public sealed class SettingsService
                 }
             }
 
+            // recording → capture (capture module extraction, 2026-05-02).
+            // The settings shape stayed identical; only the JSON key changed
+            // when RecordingSettings moved from Deckle.Whisp to Deckle.Capture
+            // and was renamed CaptureSettings to align with its owning module.
+            // Silently rebind the legacy key so existing settings.json files
+            // keep their custom AudioInputDeviceId / LevelWindow values.
+            if (root["recording"] is JsonNode legacyRecording &&
+                root["capture"] is null)
+            {
+                root["capture"] = legacyRecording.DeepClone();
+                root.Remove("recording");
+                LogService.Instance.Info(LogSource.Settings, "migrated recording → capture");
+                mutated = true;
+            }
+
             // corpusLogging → telemetry (telemetry unification, 2026-04-21).
             // `enabled` becomes `corpusEnabled` (the corpus is one of two opt-in
             // streams now; the other is `latencyEnabled`, which defaults to off
