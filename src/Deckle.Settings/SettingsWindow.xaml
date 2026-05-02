@@ -1,5 +1,5 @@
 <Window
-    x:Class="Deckle.SettingsWindow"
+    x:Class="Deckle.Settings.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Deckle Settings">

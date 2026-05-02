@@ -457,7 +457,7 @@ public sealed partial class WhisperPage : Page
 
     private void RestartNow_Click(object sender, RoutedEventArgs e)
     {
-        App.RestartApp("Deckle.Settings.WhisperPage");
+        SettingsHost.RestartApp?.Invoke("Deckle.Settings.WhisperPage");
     }
 
     private void RestartDiscard_Click(object sender, RoutedEventArgs e)
