@@ -117,7 +117,7 @@ public sealed partial class LlmPage : Page
 
     private async Task RefreshOllamaStateAsync()
     {
-        var service = new OllamaService(() => SettingsService.Instance.Current.Llm.OllamaEndpoint);
+        var service = new OllamaService(() => LlmSettingsService.Instance.Current.OllamaEndpoint);
 
         bool available = false;
         IReadOnlyList<OllamaModel> models = Array.Empty<OllamaModel>();
@@ -147,7 +147,7 @@ public sealed partial class LlmPage : Page
         _context.Available = available;
         _context.Models = models;
 
-        string ep = SettingsService.Instance.Current.Llm.OllamaEndpoint;
+        string ep = LlmSettingsService.Instance.Current.OllamaEndpoint;
         OllamaStatusBar.Message = Loc.Format("Settings_OllamaStatusMessage_Format", ep);
         OllamaStatusBar.IsOpen = !available;
 
@@ -201,9 +201,13 @@ public sealed partial class LlmPage : Page
             if (await dialog.ShowAsync() != ContentDialogResult.Primary)
                 return;
 
-            SettingsService.Instance.Current.Llm = new LlmSettings();
-            SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
-            SettingsService.Instance.Save();
+            // Replace the live LlmSettings with a fresh defaults instance,
+            // then run profile-id reconciliation so the freshly-built default
+            // profiles get their stable 12-char Guid suffixes before any
+            // dependent rule/slot binds to them.
+            var fresh = new LlmSettings();
+            LlmSettingsMigrations.RepairProfileReferences(fresh);
+            LlmSettingsService.Instance.Replace(fresh);
             Hydrate();
             await RefreshOllamaStateAsync();
         }

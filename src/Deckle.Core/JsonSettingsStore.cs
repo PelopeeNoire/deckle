@@ -158,6 +158,23 @@ public sealed class JsonSettingsStore<T> where T : class, new()
     }
 
     /// <summary>
+    /// Replace the in-memory POCO with a fresh instance and schedule a
+    /// debounced save. Used by "Reset to defaults" UI actions: callers
+    /// build a freshly-instantiated <typeparamref name="T"/> with the
+    /// constructor defaults and pass it here. The Changed event fires
+    /// once the disk write lands.
+    /// </summary>
+    public void Replace(T newValue)
+    {
+        if (newValue is null) throw new ArgumentNullException(nameof(newValue));
+        lock (_lock)
+        {
+            _current = newValue;
+        }
+        Save();
+    }
+
+    /// <summary>
     /// Synchronous write. Used directly when a debounce window is
     /// inappropriate (process exit, restart, restore from backup).
     /// Holds a per-store named mutex so two concurrent app instances

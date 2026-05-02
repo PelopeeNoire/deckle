@@ -69,7 +69,7 @@ public sealed partial class LlmRulesSection : UserControl
         _loading = true;
         try
         {
-            var s = SettingsService.Instance.Current.Llm;
+            var s = LlmSettingsService.Instance.Current;
 
             // Display order: ascending. Engine evaluates descending (longest
             // matching rule wins) at runtime — kept in the same list, so we
@@ -100,8 +100,8 @@ public sealed partial class LlmRulesSection : UserControl
     {
         if (_loading) return;
         bool byWords = MetricRadios.SelectedIndex == 0;
-        SettingsService.Instance.Current.Llm.RuleMetric = byWords ? "Words" : "Duration";
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Current.RuleMetric = byWords ? "Words" : "Duration";
+        LlmSettingsService.Instance.Save();
         ApplyMetricVisibility(byWords);
     }
 
@@ -169,11 +169,11 @@ public sealed partial class LlmRulesSection : UserControl
         if (sender.Tag is not int index) return;
         if (double.IsNaN(args.NewValue)) return;
 
-        var rules = SettingsService.Instance.Current.Llm.AutoRewriteRulesByWords;
+        var rules = LlmSettingsService.Instance.Current.AutoRewriteRulesByWords;
         if (index >= rules.Count) return;
 
         rules[index].MinWordCount = (int)args.NewValue;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
 
         // Refresh the description live — the Header (= profile name) does
         // not depend on the threshold so it stays untouched.
@@ -189,14 +189,14 @@ public sealed partial class LlmRulesSection : UserControl
         string? name = item.Content?.ToString();
         if (string.IsNullOrEmpty(name)) return;
 
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         if (index >= s.AutoRewriteRulesByWords.Count) return;
 
         var rule = s.AutoRewriteRulesByWords[index];
         rule.ProfileName = name;
         rule.ProfileId   = s.Profiles.Find(p =>
             string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Id ?? "";
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
 
         // Live header refresh — the user expects the card title (= profile
         // name) to change with the dropdown without waiting for a reload.
@@ -208,17 +208,17 @@ public sealed partial class LlmRulesSection : UserControl
     {
         if (_loading) return;
         if (sender is not FrameworkElement fe || fe.Tag is not int index) return;
-        var rules = SettingsService.Instance.Current.Llm.AutoRewriteRulesByWords;
+        var rules = LlmSettingsService.Instance.Current.AutoRewriteRulesByWords;
         if (index >= rules.Count) return;
 
         rules.RemoveAt(index);
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
         Reload();
     }
 
     private void AddRuleByWords_Click(object sender, RoutedEventArgs e)
     {
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         string defaultProfileName = s.Profiles.Count > 0 ? s.Profiles[0].Name : "";
         string defaultProfileId   = s.Profiles.Count > 0 ? s.Profiles[0].Id   : "";
         s.AutoRewriteRulesByWords.Add(new AutoRewriteRuleByWords
@@ -227,7 +227,7 @@ public sealed partial class LlmRulesSection : UserControl
             ProfileName  = defaultProfileName,
             ProfileId    = defaultProfileId
         });
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
         Reload();
     }
 
@@ -295,11 +295,11 @@ public sealed partial class LlmRulesSection : UserControl
         if (sender.Tag is not int index) return;
         if (double.IsNaN(args.NewValue)) return;
 
-        var rules = SettingsService.Instance.Current.Llm.AutoRewriteRules;
+        var rules = LlmSettingsService.Instance.Current.AutoRewriteRules;
         if (index >= rules.Count) return;
 
         rules[index].MinDurationSeconds = (int)args.NewValue;
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
 
         if (sender.Parent is Panel p && p.Parent is SettingsCard card)
             card.Description = $"Recordings longer than {(int)args.NewValue}s";
@@ -313,14 +313,14 @@ public sealed partial class LlmRulesSection : UserControl
         string? name = item.Content?.ToString();
         if (string.IsNullOrEmpty(name)) return;
 
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         if (index >= s.AutoRewriteRules.Count) return;
 
         var rule = s.AutoRewriteRules[index];
         rule.ProfileName = name;
         rule.ProfileId   = s.Profiles.Find(p =>
             string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Id ?? "";
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
 
         if (combo.Parent is Panel p && p.Parent is SettingsCard card)
             card.Header = HeaderForRule(name);
@@ -330,17 +330,17 @@ public sealed partial class LlmRulesSection : UserControl
     {
         if (_loading) return;
         if (sender is not FrameworkElement fe || fe.Tag is not int index) return;
-        var rules = SettingsService.Instance.Current.Llm.AutoRewriteRules;
+        var rules = LlmSettingsService.Instance.Current.AutoRewriteRules;
         if (index >= rules.Count) return;
 
         rules.RemoveAt(index);
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
         Reload();
     }
 
     private void AddRule_Click(object sender, RoutedEventArgs e)
     {
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         string defaultProfileName = s.Profiles.Count > 0 ? s.Profiles[0].Name : "";
         string defaultProfileId   = s.Profiles.Count > 0 ? s.Profiles[0].Id   : "";
         s.AutoRewriteRules.Add(new AutoRewriteRule
@@ -349,7 +349,7 @@ public sealed partial class LlmRulesSection : UserControl
             ProfileName        = defaultProfileName,
             ProfileId          = defaultProfileId
         });
-        SettingsService.Instance.Save();
+        LlmSettingsService.Instance.Save();
         Reload();
     }
 
@@ -376,12 +376,12 @@ public sealed partial class LlmRulesSection : UserControl
             return;
 
         var defaults = new LlmSettings();
-        var s = SettingsService.Instance.Current.Llm;
+        var s = LlmSettingsService.Instance.Current;
         s.AutoRewriteRules        = defaults.AutoRewriteRules;
         s.AutoRewriteRulesByWords = defaults.AutoRewriteRulesByWords;
         s.RuleMetric              = defaults.RuleMetric;
-        SettingsService.MigrateProfileIds(SettingsService.Instance.Current);
-        SettingsService.Instance.Save();
+        LlmSettingsMigrations.RepairProfileReferences(LlmSettingsService.Instance.Current);
+        LlmSettingsService.Instance.Save();
         Reload();
     }
 

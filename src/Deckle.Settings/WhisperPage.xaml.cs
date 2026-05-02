@@ -38,7 +38,9 @@ public sealed partial class WhisperPage : Page
     private bool _startupUseGpu;
 
     // Defaults resolved from POCOs — single source of truth for Reset.
-    private static readonly PathsSettings _pathsDefaults = new();
+    // ModelsDirectory's default lives on WhispSettings since slice C2b
+    // (it migrated off PathsSettings into the Whisp module's POCO).
+    private static readonly WhispSettings _whispDefaults = new();
     private static readonly TranscriptionSettings _transcriptionDefaults = new();
     private static readonly SpeechDetectionSettings _speechDefaults = new();
     private static readonly DecodingSettings _decodingDefaults = new();
@@ -237,7 +239,7 @@ public sealed partial class WhisperPage : Page
         var items = new List<string>();
         try
         {
-            string dir = SettingsService.Instance.ResolveModelsDirectory();
+            string dir = WhispSettingsService.Instance.ResolveModelsDirectory();
             if (Directory.Exists(dir))
             {
                 items = Directory.EnumerateFiles(dir, "*.bin")
@@ -369,7 +371,7 @@ public sealed partial class WhisperPage : Page
     // PushToSettings. For combos, SelectionChanged fires → handler sets VM.
 
     private void ModelsDirectoryReset_Click(object sender, RoutedEventArgs e) =>
-        ViewModel.ModelsDirectory = _pathsDefaults.ModelsDirectory;
+        ViewModel.ModelsDirectory = _whispDefaults.ModelsDirectory;
 
     private void ModelReset_Click(object sender, RoutedEventArgs e)
     {
@@ -506,10 +508,13 @@ public sealed partial class WhisperPage : Page
 
         _log.Info(LogSource.SetWhisper, "Reset all Whisper settings to defaults");
 
-        var s = SettingsService.Instance.Current;
-        s.Whisp = new WhispSettings();
-        s.Paths = new PathsSettings();
-        SettingsService.Instance.Save();
+        // After slice C2b, all Whisper settings (including ModelsDirectory)
+        // live in a single WhispSettings POCO at modules/whisp/settings.json.
+        // PathsSettings used to be reset alongside, but BackupDirectory is
+        // unrelated to Whisper — leaving it untouched fixes a long-standing
+        // pre-existing bug where "Reset Whisper" wiped the user's backup
+        // directory override.
+        WhispSettingsService.Instance.Replace(new WhispSettings());
 
         // Reload everything from the fresh POCO defaults.
         _initializing = true;

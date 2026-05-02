@@ -7,6 +7,16 @@ namespace Deckle.Whisp;
 // engine reads from `WhispSettings` exclusively (via IWhispEngineHost.Whisp).
 public sealed class WhispSettings
 {
+    // User override for the directory containing .bin files (Whisper models +
+    // VAD Silero). Empty = fall back to AppPaths.ModelsDirectory
+    // (= <UserDataRoot>/models/). Migrated from the legacy
+    // PathsSettings.ModelsDirectory key in 2026-05-02 when the WhispSettings
+    // POCO took ownership of its own JSON file under
+    // <UserDataRoot>/modules/whisp/settings.json — the model directory is
+    // a Whisper-engine concern, not a shell concern, and it travels with
+    // the rest of the engine config.
+    public string ModelsDirectory { get; set; } = "";
+
     public TranscriptionSettings   Transcription   { get; set; } = new();
     public SpeechDetectionSettings SpeechDetection { get; set; } = new();
     public ConfidenceSettings      Confidence      { get; set; } = new();
