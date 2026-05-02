@@ -1,5 +1,5 @@
 <UserControl
-    x:Class="Deckle.Settings.Llm.GgufImport.GgufImportView"
+    x:Class="Deckle.Llm.GgufImport.GgufImportView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 

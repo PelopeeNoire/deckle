@@ -38,8 +38,9 @@ public static class SettingsHost
     public static Action<LevelWindowSettings>? ApplyLevelWindow;
 
     // Restart the process, optionally returning to a Settings page
-    // tag (e.g. "Deckle.Settings.WhisperPage") so the user lands back
-    // on the page that triggered the restart. Wired by App.
+    // tag (e.g. "Deckle.Whisp.WhisperPage, Deckle.Whisp" — assembly-
+    // qualified for cross-assembly Type.GetType resolution) so the user
+    // lands back on the page that triggered the restart. Wired by App.
     public static Action<string?>? RestartApp;
 
     // Accessor for the currently-open SettingsWindow so dialogs can

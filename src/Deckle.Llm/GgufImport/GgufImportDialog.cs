@@ -5,7 +5,7 @@ using Deckle.Llm;
 using Deckle.Localization;
 using Deckle.Logging;
 
-namespace Deckle.Settings.Llm.GgufImport;
+namespace Deckle.Llm.GgufImport;
 
 // ─── Wrapper ContentDialog autour de GgufImportView ────────────────────────
 //
