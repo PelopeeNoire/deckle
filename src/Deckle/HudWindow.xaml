@@ -2,7 +2,8 @@
     x:Class="Deckle.HudWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:Deckle.Controls">
+    xmlns:controls="using:Deckle.Controls"
+    xmlns:chrono="using:Deckle.Chrono.Hud">
     <!-- Window is fixed 272x78. The RootGrid paints the same card fill as
          each hosted control's Border so the sliver between the card's XAML
          CornerRadius and the HWND rectangle is the same color end-to-end —
@@ -11,7 +12,7 @@
          radius. Theme follows the system. -->
     <Grid x:Name="RootGrid"
           Background="{ThemeResource LayerFillColorDefaultBrush}">
-        <controls:HudChrono  x:Name="Chrono"  Visibility="Visible" />
+        <chrono:HudChrono    x:Name="Chrono"  Visibility="Visible" />
         <controls:HudMessage x:Name="Message" Visibility="Collapsed" />
     </Grid>
 </Window>
