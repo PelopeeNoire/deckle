@@ -7,11 +7,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
     <!-- WinUI XAML compilation : Deckle.Settings ships the SettingsWindow
-         NavView shell + every settings page (General / Whisper / Llm) +
-         their dialogs and ViewModels. The plain SettingsService /
-         AppSettings POCOs that don't touch UI live in the same assembly —
-         they all share the persistence + UI lifecycle and there's no
-         downstream consumer that needs the POCOs without the UI surface. -->
+         NavView shell + GeneralPage + the four ConsentDialogs + the
+         GeneralViewModel. WhisperPage and LlmPage moved out to
+         Deckle.Whisp / Deckle.Llm in slice C1 — Frame.Navigate resolves
+         them via assembly-qualified Tag strings on the NavigationViewItem
+         (e.g. "Deckle.Whisp.WhisperPage, Deckle.Whisp"), no compile-time
+         reference required. The plain SettingsService / AppSettings
+         POCOs and SettingsBootstrap live in the same assembly. -->
     <UseWinUI>true</UseWinUI>
     <!-- Neutral language for the lib's PRI. Without this, the lib's
          Strings/en-US/Resources.resw is found at runtime but no language is
@@ -42,12 +44,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Capture: GeneralPage + GeneralViewModel still read CaptureSettings
+         (microphone device, level window). Capture stays a direct ref. -->
     <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
-    <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
     <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+    <!-- Shell: AutostartService + SettingsWindow's IconAssets + native methods. -->
     <ProjectReference Include="..\Deckle.Shell\Deckle.Shell.csproj" />
-    <ProjectReference Include="..\Deckle.Whisp\Deckle.Whisp.csproj" />
+    <!-- Deckle.Whisp and Deckle.Llm refs dropped in slice C1: their pages
+         moved out, and the Settings shell no longer references their
+         POCOs (each module owns its own JSON file via
+         WhispSettingsService / LlmSettingsService since C2b). -->
   </ItemGroup>
 </Project>

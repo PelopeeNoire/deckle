@@ -7,12 +7,10 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
-using Deckle.Llm;
 using Deckle.Localization;
 using Deckle.Logging;
-using Deckle.Settings.Llm;
 
-namespace Deckle.Settings;
+namespace Deckle.Llm;
 
 // ─── LlmPage — host fin ────────────────────────────────────────────────────
 //

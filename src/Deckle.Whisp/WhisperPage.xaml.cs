@@ -12,10 +12,10 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Deckle.Localization;
 using Deckle.Logging;
-using Deckle.Settings.ViewModels;
-using Deckle.Whisp;
+using Deckle.Settings;
+using Deckle.Whisp.ViewModels;
 
-namespace Deckle.Settings;
+namespace Deckle.Whisp;
 
 public sealed partial class WhisperPage : Page
 {
@@ -459,7 +459,7 @@ public sealed partial class WhisperPage : Page
 
     private void RestartNow_Click(object sender, RoutedEventArgs e)
     {
-        SettingsHost.RestartApp?.Invoke("Deckle.Settings.WhisperPage");
+        SettingsHost.RestartApp?.Invoke("Deckle.Whisp.WhisperPage, Deckle.Whisp");
     }
 
     private void RestartDiscard_Click(object sender, RoutedEventArgs e)
