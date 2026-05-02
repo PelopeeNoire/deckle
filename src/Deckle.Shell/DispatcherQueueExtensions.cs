@@ -20,7 +20,7 @@ namespace Deckle.Shell;
 // garantit que le pattern de garde anti-récursion est partout, sans risque
 // d'oubli.
 
-internal static class DispatcherQueueExtensions
+public static class DispatcherQueueExtensions
 {
     private static readonly LogService _log = LogService.Instance;
 

@@ -27,7 +27,7 @@ namespace Deckle.Shell;
 // References:
 //   learn.microsoft.com/windows/win32/winmsg/window-features#window-types
 //   learn.microsoft.com/windows/win32/inputdev/about-keyboard-input#hot-key-support
-internal sealed class MessageOnlyHost : IDisposable
+public sealed class MessageOnlyHost : IDisposable
 {
     private const string ClassName = "WhispMessageHost";
 
