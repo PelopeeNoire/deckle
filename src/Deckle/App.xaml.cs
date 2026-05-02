@@ -333,7 +333,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Apply persisted level window (MinDbfs / MaxDbfs / DbfsCurveExponent)
         // into HudChrono statics so the first Recording reflects the user's
         // calibration without a restart-from-defaults round-trip.
-        ApplyLevelWindow(Settings.SettingsService.Instance.Current.Recording.LevelWindow);
+        ApplyLevelWindow(Settings.SettingsService.Instance.Current.Capture.LevelWindow);
 
         // If launched with --settings (restart from Settings), automatically
         // reopen the Settings window on the right page.
@@ -364,7 +364,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     // GeneralPage propagate without restart. Idempotent — safe to call
     // multiple times.
 
-    public static void ApplyLevelWindow(Whisp.LevelWindowSettings cfg)
+    public static void ApplyLevelWindow(Capture.LevelWindowSettings cfg)
     {
         if (cfg is null) return;
         Controls.HudChrono.MinDbfs           = cfg.MinDbfs;

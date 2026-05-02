@@ -16,7 +16,12 @@ public static class LogSource
     public const string Engine     = "ENGINE";
     public const string Model      = "MODEL";
     public const string Init       = "INIT";
-    public const string Record     = "RECORD";
+    // Capture (microphone polling, ring buffer, RMS) — emitted from
+    // Deckle.Capture. Replaces the legacy "RECORD" value: the module is
+    // shared between Whisp and future modules (Ask-Ollama), so the source
+    // tag now reflects the capability ("CAPTURE") rather than one
+    // orchestrator's intent.
+    public const string Capture    = "CAPTURE";
     public const string Transcribe = "TRANSCRIBE";
     public const string Callback   = "CALLBACK";
     public const string Clipboard  = "CLIPBOARD";

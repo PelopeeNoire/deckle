@@ -1,3 +1,4 @@
+using Deckle.Capture;
 using Deckle.Llm;
 using Deckle.Logging;
 
@@ -12,7 +13,7 @@ namespace Deckle.Whisp;
 public interface IWhispEngineHost
 {
     WhispSettings     Whisp     { get; }
-    RecordingSettings Recording { get; }
+    CaptureSettings   Capture   { get; }
     TelemetrySettings Telemetry { get; }
     LlmSettings       Llm       { get; }
 

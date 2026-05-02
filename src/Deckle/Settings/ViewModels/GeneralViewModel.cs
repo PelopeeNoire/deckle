@@ -71,7 +71,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
     }
 
     partial void OnLevelWindowMaxDbfsChanged(double value)
@@ -79,7 +79,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
     }
 
     partial void OnLevelWindowExponentChanged(double value)
@@ -87,7 +87,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
     }
 
     partial void OnLevelWindowAutoCalibrationChanged(bool value)
@@ -348,12 +348,12 @@ public partial class GeneralViewModel : ObservableObject
         try
         {
             var s = SettingsService.Instance.Current;
-            AudioInputDeviceId = s.Recording.AudioInputDeviceId;
+            AudioInputDeviceId = s.Capture.AudioInputDeviceId;
             AutoPasteEnabled = s.Paste.AutoPasteEnabled;
-            LevelWindowMinDbfs = s.Recording.LevelWindow.MinDbfs;
-            LevelWindowMaxDbfs = s.Recording.LevelWindow.MaxDbfs;
-            LevelWindowExponent = s.Recording.LevelWindow.DbfsCurveExponent;
-            LevelWindowAutoCalibration = s.Recording.LevelWindow.AutoCalibrationEnabled;
+            LevelWindowMinDbfs = s.Capture.LevelWindow.MinDbfs;
+            LevelWindowMaxDbfs = s.Capture.LevelWindow.MaxDbfs;
+            LevelWindowExponent = s.Capture.LevelWindow.DbfsCurveExponent;
+            LevelWindowAutoCalibration = s.Capture.LevelWindow.AutoCalibrationEnabled;
             MicrophoneTelemetry = s.Telemetry.MicrophoneTelemetry;
             OverlayEnabled = s.Overlay.Enabled;
             OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
@@ -382,12 +382,12 @@ public partial class GeneralViewModel : ObservableObject
     private void PushToSettings()
     {
         var s = SettingsService.Instance.Current;
-        s.Recording.AudioInputDeviceId = AudioInputDeviceId;
+        s.Capture.AudioInputDeviceId = AudioInputDeviceId;
         s.Paste.AutoPasteEnabled = AutoPasteEnabled;
-        s.Recording.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
-        s.Recording.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
-        s.Recording.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
-        s.Recording.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
+        s.Capture.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
+        s.Capture.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
+        s.Capture.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
+        s.Capture.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
         s.Telemetry.MicrophoneTelemetry = MicrophoneTelemetry;
         s.Overlay.Enabled = OverlayEnabled;
         s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
@@ -428,7 +428,7 @@ public partial class GeneralViewModel : ObservableObject
         }
         finally { _isSyncing = false; }
         PushToSettings();
-        App.ApplyLevelWindow(SettingsService.Instance.Current.Recording.LevelWindow);
+        App.ApplyLevelWindow(SettingsService.Instance.Current.Capture.LevelWindow);
         _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
     }
 
