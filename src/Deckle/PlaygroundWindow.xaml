@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Deckle.Controls"
+    xmlns:chrono="using:Deckle.Chrono.Hud"
     Title="Deckle Playground">
 
     <!-- RootGrid is hit-testable (Background="Transparent") + focusable
@@ -117,7 +118,7 @@
                         Margin="24">
                     <Grid HorizontalAlignment="Center"
                           VerticalAlignment="Center">
-                        <controls:HudChrono x:Name="ChronoPreview"
+                        <chrono:HudChrono   x:Name="ChronoPreview"
                                             Width="272"
                                             Height="78" />
                         <Grid x:Name="NakedPreviewHost"

@@ -171,6 +171,13 @@ public partial class App : Microsoft.UI.Xaml.Application
         // chain + DWM visual tree at boot for a window rarely used.
         // Same Closing→Hide contract once created.
 
+        // Wire the recording cap into the chrono lib. Deckle.Chrono.Hud is
+        // a Settings-agnostic module ; the App is the one that reads
+        // Settings on every vsync to honour live edits to MaxRecordingDurationSeconds
+        // (Capture page slider). Provider is invoked from UpdateClock at vsync.
+        Deckle.Chrono.Hud.HudChrono.MaxRecordingDurationSecondsProvider =
+            () => Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds;
+
         // HudWindow created once, never destroyed. No initial Show: the
         // constructor captures the HWND and sets up subclass / raw input /
         // extended styles directly on the native handle — no need to show the
@@ -367,9 +374,9 @@ public partial class App : Microsoft.UI.Xaml.Application
     public static void ApplyLevelWindow(Capture.LevelWindowSettings cfg)
     {
         if (cfg is null) return;
-        Controls.HudChrono.MinDbfs           = cfg.MinDbfs;
-        Controls.HudChrono.MaxDbfs           = cfg.MaxDbfs;
-        Controls.HudChrono.DbfsCurveExponent = cfg.DbfsCurveExponent;
+        Capture.AudioLevelMapper.MinDbfs           = cfg.MinDbfs;
+        Capture.AudioLevelMapper.MaxDbfs           = cfg.MaxDbfs;
+        Capture.AudioLevelMapper.DbfsCurveExponent = cfg.DbfsCurveExponent;
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────
