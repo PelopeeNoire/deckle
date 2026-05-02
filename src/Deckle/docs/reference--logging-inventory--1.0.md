@@ -115,8 +115,8 @@ outcome). Exemples :
 ```
 Info     MODEL       Loading model
 Success  MODEL       Model loaded (Vulkan)
-Info     RECORD      Recording start
-Info     RECORD      Recording complete (12.3 s)
+Info     CAPTURE     Recording start
+Info     CAPTURE     Recording complete (12.3 s)
 Info     TRANSCRIBE  Transcribing
 Success  TRANSCRIBE  Transcription complete (5 seg)
 Info     LLM         Rewriting (Short)
@@ -140,7 +140,7 @@ exposer les champs machine-greppables en parallèle.
 
 - Préfixe court (verbe ou état) en tête, mesures séparées par ` | `
 - Premier mot en minuscule, une seule ligne
-- Ne jamais répéter l'étape dans le message : la source (`RECORD`, `LLM`…)
+- Ne jamais répéter l'étape dans le message : la source (`CAPTURE`, `LLM`…)
   la porte déjà
 - Une Info/Success est **toujours** accompagnée d'un Verbose miroir quand
   des mesures techniques existent. Jamais de doublon visible dans Activity.
@@ -189,7 +189,7 @@ Ne pas en ajouter sans raison. Mapping étape → source :
 | Tray | `TRAY` |
 | Chargement modèle | `MODEL` |
 | Warmup | `INIT` |
-| Enregistrement | `RECORD` |
+| Enregistrement | `CAPTURE` |
 | VAD | `WHISPER` (interne whisper.cpp) + consolidation via `TRANSCRIBE` |
 | Transcription | `TRANSCRIBE` |
 | Callback segment | `CALLBACK` |
@@ -303,8 +303,9 @@ Les flags sont stockés et consultés au premier hotkey :
 
 ### 4. Enregistrement audio
 
-**Fichier** : `src/Deckle/WhispEngine.cs:620-905` (Record), `715-747` (mic probe),
-`911-930` (tail RMS analysis), `939-963` (EmitAudioLevels)
+**Fichier** : `src/Deckle.Capture/MicrophoneCapture.cs` (Record + Probe),
+`src/Deckle.Capture/Internal/WaveInLoop.cs` (polling loop + EmitSubWindows),
+`src/Deckle.Capture/Telemetry/MicrophoneTelemetryCalculator.cs` (tail RMS + percentiles)
 
 **Mesures disponibles**
 
@@ -325,13 +326,19 @@ Les flags sont stockés et consultés au premier hotkey :
 **Gabarit standard**
 
 ```
-Info      RECORD  Recording start
-Verbose   RECORD  capture start | sample_rate=16 kHz | channels=mono
-Info      RECORD  Recording complete ({X:F1} s)
-Verbose   RECORD  capture complete | audio_sec={X:F1} | buffers={n} | bytes={n} | rms_avg={X:F4} | rms_peak={X:F4} | dbfs_avg={X:F1}
-Verbose   RECORD  tail | tail_ms={X:F0} | rms={X:F4} | dbfs={X:F1} | state={active|silent}
-Narrative RECORD  Captured {X:F1} s of audio. Moving on to analysis and transcription.
+Info      CAPTURE  Recording start
+Verbose   CAPTURE  capture start | sample_rate=16 kHz | channels=mono
+Info      CAPTURE  Recording complete ({X:F1} s)
+Verbose   CAPTURE  capture complete | audio_sec={X:F1} | buffers={n} | bytes={n} | rms_avg={X:F4} | rms_peak={X:F4} | dbfs_avg={X:F1}
+Verbose   CAPTURE  tail | tail_ms={X:F0} | rms={X:F4} | dbfs={X:F1} | state={active|silent}
+Narrative CAPTURE  Captured {X:F1} s of audio. Moving on to analysis and transcription.
 ```
+
+> Source renommée le 2026-05-02 : `RECORD` → `CAPTURE` lors de l'extraction
+> du module `Deckle.Capture`. La capture micro est partagée entre Whisp et
+> les futurs modules (Ask-Ollama), donc le tag reflète la capability plutôt
+> que l'intention d'un orchestrateur. Voir
+> `src/Deckle.Capture/MicrophoneCapture.cs` pour l'émetteur unique.
 
 **Supprimé** : `+Xs captured` toutes les 50 ms. Bruit pur, aucune valeur
 agrégée.
@@ -598,8 +605,8 @@ Récap croisé : quelle erreur, où, quelle sévérité, quel message utilisateu
 5. **Un UserFeedback est toujours doublé d'un log** du même niveau. Le
    log reste pour diagnostic, le HUD est pour l'utilisateur.
 6. **Jamais de log multi-ligne.** Une entrée = une ligne.
-7. **La source porte le contexte.** Ne pas écrire "RECORD: started
-   recording..." dans le message : la colonne Source affiche déjà `RECORD`.
+7. **La source porte le contexte.** Ne pas écrire "CAPTURE: started
+   recording..." dans le message : la colonne Source affiche déjà `CAPTURE`.
 
 ---
 

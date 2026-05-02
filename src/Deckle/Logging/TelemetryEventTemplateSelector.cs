@@ -12,8 +12,8 @@ namespace Deckle.Logging;
 //   Kind.Latency     → compact [LATENCY] row
 //   Kind.Corpus      → compact [CORPUS] row
 //   Kind.Microphone  → routes through the Info template (the prebuilt
-//                      Text already carries "[RECORD] Mic telemetry over
-//                      …" so the row reads like any other [RECORD] line)
+//                      Text already carries "[CAPTURE] Mic telemetry over
+//                      …" so the row reads like any other [CAPTURE] line)
 //
 // Instantiated twice in XAML resources (NoWrapSelector / WrapSelector) so
 // the Word-wrap toggle swaps the entire set. Every slot is required at

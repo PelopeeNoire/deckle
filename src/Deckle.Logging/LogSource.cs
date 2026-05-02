@@ -20,11 +20,8 @@ public static class LogSource
     // Deckle.Capture. Replaces the legacy "RECORD" value: the module is
     // shared between Whisp and future modules (Ask-Ollama), so the source
     // tag now reflects the capability ("CAPTURE") rather than one
-    // orchestrator's intent. The legacy `Record` constant is kept
-    // temporarily during the extraction window — call sites will be
-    // migrated to `Capture` then `Record` will be removed.
+    // orchestrator's intent.
     public const string Capture    = "CAPTURE";
-    public const string Record     = "RECORD";
     public const string Transcribe = "TRANSCRIBE";
     public const string Callback   = "CALLBACK";
     public const string Clipboard  = "CLIPBOARD";
