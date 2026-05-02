@@ -802,7 +802,7 @@ public sealed partial class HudChrono : UserControl
         // roll-over to worry about.
         double elapsed = _swipeStopwatch.Elapsed.TotalSeconds;
         float t = (float)((elapsed / SwipeCycleSeconds) % 1.0);
-        float progress = CubicBezierEase(t, SwipeEaseP1, SwipeEaseP2);
+        float progress = Easing.CubicBezier(t, SwipeEaseP1, SwipeEaseP2);
 
         // Head slot in [0, SwipeHeadDomain). Only the first DigitCount
         // slots map to a real digit; slots >= DigitCount are silent (head
@@ -848,31 +848,7 @@ public sealed partial class HudChrono : UserControl
         }
     }
 
-    // Cubic-bezier ease with anchor points P0=(0,0), P3=(1,1) and free
-    // control points p1, p2. Given input x on [0, 1], solves Bx(u) = x via
-    // Newton-Raphson, then returns By(u). WebKit's UnitBezier formulation —
-    // the polynomial coefficients collapse to 3 fused-multiply-adds per
-    // sample, and 8 Newton iterations get us well below sub-pixel accuracy
-    // for any reasonable control-point layout.
-    private static float CubicBezierEase(float x, Vector2 p1, Vector2 p2)
-    {
-        float cx = 3f * p1.X;
-        float bx = 3f * (p2.X - p1.X) - cx;
-        float ax = 1f - cx - bx;
-        float cy = 3f * p1.Y;
-        float by = 3f * (p2.Y - p1.Y) - cy;
-        float ay = 1f - cy - by;
-
-        float u = x;
-        for (int i = 0; i < 8; i++)
-        {
-            float sampleX = ((ax * u + bx) * u + cx) * u - x;
-            if (MathF.Abs(sampleX) < 1e-4f) break;
-            float dx = (3f * ax * u + 2f * bx) * u + cx;
-            if (MathF.Abs(dx) < 1e-6f) break;
-            u -= sampleX / dx;
-        }
-        u = Math.Clamp(u, 0f, 1f);
-        return ((ay * u + by) * u + cy) * u;
-    }
+    // CubicBezierEase moved to Deckle.Composition.Primitives.Easing
+    // 2026-05-02 — see Deckle.Composition/Primitives/Easing.cs. Pure
+    // math, callers reach it as Easing.CubicBezier(...).
 }
