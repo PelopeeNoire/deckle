@@ -240,9 +240,12 @@ public sealed class SettingsService
     // Returns true if anything was mutated so the caller can flush the
     // rewritten config to disk on first launch after upgrade.
     //
-    // Internal (not private) so page-level resets can re-run the migration
-    // against a freshly-instantiated LlmSettings block.
-    internal static bool MigrateProfileIds(AppSettings s)
+    // Public (not private) so page-level resets can re-run the migration
+    // against a freshly-instantiated LlmSettings block. Public — not
+    // internal — because the Settings pages live in the App assembly while
+    // SettingsService now ships in Deckle.Settings; cross-assembly callers
+    // need a public surface.
+    public static bool MigrateProfileIds(AppSettings s)
     {
         bool mutated = false;
 
