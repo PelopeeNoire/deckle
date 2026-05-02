@@ -3,6 +3,7 @@ using System.Threading;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using WinRT.Interop;
+using Deckle.Chrono.Hud;
 using Deckle.Controls;
 using Deckle.Interop;
 using Deckle.Localization;
