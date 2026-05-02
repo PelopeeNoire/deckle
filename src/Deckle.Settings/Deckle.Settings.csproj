@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Deckle.Settings</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <!-- Pure service module — load/save settings.json with debounce, backup
+       infrastructure, and the AppSettings POCO root that aggregates each
+       module's own settings type. No XAML, no WindowsAppSDK. The Settings
+       UI pages stay App-side for now (each will migrate to its owning
+       module in a follow-up slice). -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
+    <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+    <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
+    <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+    <ProjectReference Include="..\Deckle.Whisp\Deckle.Whisp.csproj" />
+  </ItemGroup>
+</Project>
