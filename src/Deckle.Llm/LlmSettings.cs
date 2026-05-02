@@ -12,7 +12,7 @@ namespace Deckle.Llm;
 public sealed class RewriteProfile
 {
     // Stable identifier across renames. 12 hex chars (Guid N format truncated).
-    // Generated on first load for legacy profiles by SettingsService.MigrateProfileIds.
+    // Generated on first load for legacy profiles by LlmSettingsMigrations.RepairProfileReferences.
     // Used as the join key for corpus telemetry — survives a user renaming Name.
     public string Id { get; set; } = "";
 
@@ -71,7 +71,7 @@ public sealed class LlmSettings
 
     // Stable companions to the *ProfileName* fields above — resolved to
     // RewriteProfile.Id. Lookup at runtime prefers Id, falls back to Name
-    // for legacy configs. Filled by SettingsService.MigrateProfileIds.
+    // for legacy configs. Filled by LlmSettingsMigrations.RepairProfileReferences.
     public string? PrimaryRewriteProfileId { get; set; }
     public string? SecondaryRewriteProfileId { get; set; }
 

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Deckle.Capture;
 using Deckle.Logging;
 using Deckle.Shell;
 
@@ -72,7 +73,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
         PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
     }
 
     partial void OnLevelWindowMaxDbfsChanged(double value)
@@ -80,7 +81,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
         PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
     }
 
     partial void OnLevelWindowExponentChanged(double value)
@@ -88,7 +89,7 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Verbose(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
         PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
     }
 
     partial void OnLevelWindowAutoCalibrationChanged(bool value)
@@ -348,27 +349,30 @@ public partial class GeneralViewModel : ObservableObject
         _isSyncing = true;
         try
         {
-            var s = SettingsService.Instance.Current;
-            AudioInputDeviceId = s.Capture.AudioInputDeviceId;
-            AutoPasteEnabled = s.Paste.AutoPasteEnabled;
-            LevelWindowMinDbfs = s.Capture.LevelWindow.MinDbfs;
-            LevelWindowMaxDbfs = s.Capture.LevelWindow.MaxDbfs;
-            LevelWindowExponent = s.Capture.LevelWindow.DbfsCurveExponent;
-            LevelWindowAutoCalibration = s.Capture.LevelWindow.AutoCalibrationEnabled;
-            MicrophoneTelemetry = s.Telemetry.MicrophoneTelemetry;
-            OverlayEnabled = s.Overlay.Enabled;
-            OverlayFadeOnProximity = s.Overlay.FadeOnProximity;
-            OverlayAnimations = s.Overlay.Animations;
-            OverlayPosition = s.Overlay.Position;
+            var shell    = SettingsService.Instance.Current;
+            var capture  = CaptureSettingsService.Instance.Current;
+            var telemetry = TelemetrySettingsService.Instance.Current;
+
+            AudioInputDeviceId = capture.AudioInputDeviceId;
+            AutoPasteEnabled = shell.Paste.AutoPasteEnabled;
+            LevelWindowMinDbfs = capture.LevelWindow.MinDbfs;
+            LevelWindowMaxDbfs = capture.LevelWindow.MaxDbfs;
+            LevelWindowExponent = capture.LevelWindow.DbfsCurveExponent;
+            LevelWindowAutoCalibration = capture.LevelWindow.AutoCalibrationEnabled;
+            MicrophoneTelemetry = telemetry.MicrophoneTelemetry;
+            OverlayEnabled = shell.Overlay.Enabled;
+            OverlayFadeOnProximity = shell.Overlay.FadeOnProximity;
+            OverlayAnimations = shell.Overlay.Animations;
+            OverlayPosition = shell.Overlay.Position;
             AutostartEnabled = AutostartService.IsEnabled();
-            WarmupOnLaunch = s.Startup.WarmupOnLaunch;
-            Theme = s.Appearance.Theme;
-            TelemetryLatencyEnabled = s.Telemetry.LatencyEnabled;
-            TelemetryCorpusEnabled = s.Telemetry.CorpusEnabled;
-            RecordAudioCorpus = s.Telemetry.RecordAudioCorpus;
-            ApplicationLogToDisk = s.Telemetry.ApplicationLogToDisk;
-            TelemetryStorageDirectory = s.Telemetry.StorageDirectory;
-            BackupDirectory = s.Paths.BackupDirectory;
+            WarmupOnLaunch = shell.Startup.WarmupOnLaunch;
+            Theme = shell.Appearance.Theme;
+            TelemetryLatencyEnabled = telemetry.LatencyEnabled;
+            TelemetryCorpusEnabled = telemetry.CorpusEnabled;
+            RecordAudioCorpus = telemetry.RecordAudioCorpus;
+            ApplicationLogToDisk = telemetry.ApplicationLogToDisk;
+            TelemetryStorageDirectory = telemetry.StorageDirectory;
+            BackupDirectory = shell.Paths.BackupDirectory;
         }
         finally
         {
@@ -380,28 +384,40 @@ public partial class GeneralViewModel : ObservableObject
         RefreshBackups();
     }
 
+    // PushToSettings writes to three module services rather than one root
+    // (slice C2b: per-module persistence). Each service has its own Save()
+    // and its own debounce timer; calling all three on every property
+    // change is cheap (debounced) and keeps the on-disk files independent.
     private void PushToSettings()
     {
-        var s = SettingsService.Instance.Current;
-        s.Capture.AudioInputDeviceId = AudioInputDeviceId;
-        s.Paste.AutoPasteEnabled = AutoPasteEnabled;
-        s.Capture.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
-        s.Capture.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
-        s.Capture.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
-        s.Capture.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
-        s.Telemetry.MicrophoneTelemetry = MicrophoneTelemetry;
-        s.Overlay.Enabled = OverlayEnabled;
-        s.Overlay.FadeOnProximity = OverlayFadeOnProximity;
-        s.Overlay.Animations = OverlayAnimations;
-        s.Overlay.Position = OverlayPosition;
-        s.Startup.WarmupOnLaunch = WarmupOnLaunch;
-        s.Appearance.Theme = Theme;
-        s.Telemetry.LatencyEnabled = TelemetryLatencyEnabled;
-        s.Telemetry.CorpusEnabled = TelemetryCorpusEnabled;
-        s.Telemetry.RecordAudioCorpus = RecordAudioCorpus;
-        s.Telemetry.ApplicationLogToDisk = ApplicationLogToDisk;
-        s.Telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
-        s.Paths.BackupDirectory = BackupDirectory ?? "";
+        var shell    = SettingsService.Instance.Current;
+        var capture  = CaptureSettingsService.Instance.Current;
+        var telemetry = TelemetrySettingsService.Instance.Current;
+
+        capture.AudioInputDeviceId = AudioInputDeviceId;
+        capture.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
+        capture.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
+        capture.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
+        capture.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
+
+        telemetry.MicrophoneTelemetry = MicrophoneTelemetry;
+        telemetry.LatencyEnabled = TelemetryLatencyEnabled;
+        telemetry.CorpusEnabled = TelemetryCorpusEnabled;
+        telemetry.RecordAudioCorpus = RecordAudioCorpus;
+        telemetry.ApplicationLogToDisk = ApplicationLogToDisk;
+        telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
+
+        shell.Paste.AutoPasteEnabled = AutoPasteEnabled;
+        shell.Overlay.Enabled = OverlayEnabled;
+        shell.Overlay.FadeOnProximity = OverlayFadeOnProximity;
+        shell.Overlay.Animations = OverlayAnimations;
+        shell.Overlay.Position = OverlayPosition;
+        shell.Startup.WarmupOnLaunch = WarmupOnLaunch;
+        shell.Appearance.Theme = Theme;
+        shell.Paths.BackupDirectory = BackupDirectory ?? "";
+
+        CaptureSettingsService.Instance.Save();
+        TelemetrySettingsService.Instance.Save();
         SettingsService.Instance.Save();
     }
 
@@ -429,7 +445,7 @@ public partial class GeneralViewModel : ObservableObject
         }
         finally { _isSyncing = false; }
         PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(SettingsService.Instance.Current.Capture.LevelWindow);
+        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
         _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
     }
 
