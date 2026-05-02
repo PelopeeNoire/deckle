@@ -148,7 +148,7 @@ public sealed partial class PlaygroundWindow : Window
         SystemBackdrop = new MicaBackdrop();
 
         Title = "Deckle Playground";
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 880));
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1580, 880));
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;

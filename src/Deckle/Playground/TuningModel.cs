@@ -72,8 +72,8 @@ internal sealed class TuningModel
     public float  TranscribingSaturationDark  = 0f;
     public float  TranscribingSaturationLight = 0f;
     public float  TranscribingHueShiftTurns   = 0f;
-    public float  TranscribingExposureDark    = 0f;
-    public float  TranscribingExposureLight   = 0f;
+    public float  TranscribingExposureDark    = 1.0f;
+    public float  TranscribingExposureLight   = -1.0f;
     public float  TranscribingOpacity         = 1f;
     public double TranscribingBlendSeconds    = 2;
 
@@ -89,7 +89,7 @@ internal sealed class TuningModel
     public float  RecordingSaturationDark  = 0f;
     public float  RecordingSaturationLight = 0f;
     public float  RecordingHueShiftTurns   = 0f;
-    public float  RecordingExposureDark    = 0.5f;
+    public float  RecordingExposureDark    = 1.0f;
     public float  RecordingExposureLight   = -1.0f;
     public double RecordingBlendSeconds    = 2;
     public double RecordingHuePeriodSeconds = 0;
