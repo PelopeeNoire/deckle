@@ -8,7 +8,7 @@ using Deckle.Capture;
 using Deckle.Chrono;
 using Deckle.Composition;
 
-namespace Deckle.Controls;
+namespace Deckle.Chrono.Hud;
 
 // Chrono card — container + clock + processing stroke attach.
 //
@@ -29,6 +29,19 @@ namespace Deckle.Controls;
 // — no DispatcherTimer, no jitter when the UI thread is busy.
 public sealed partial class HudChrono : UserControl
 {
+    // Cross-assembly hook for the recording cap used by UpdateClock to
+    // freeze the chrono at the configured ceiling. The shipping App wires
+    // this to Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds
+    // at boot; until wired, the default `int.MaxValue` is a no-op (no cap),
+    // which keeps the lib usable standalone (HudPlayground tests, future
+    // host modules) without a Settings module dependency.
+    //
+    // Read by ChronoFormatter.Decompose on every vsync tick — must be
+    // cheap (a single delegate invoke). Mutating it live is allowed; the
+    // change takes effect on the next render frame.
+    public static System.Func<int> MaxRecordingDurationSecondsProvider { get; set; }
+        = () => int.MaxValue;
+
     private readonly ChronoTimer _stopwatch = new();
     private bool _renderingHooked;
 
@@ -120,7 +133,7 @@ public sealed partial class HudChrono : UserControl
         ?? new SolidColorBrush(Microsoft.UI.Colors.Gray);
 
     // Single state-driven entry point. Called by HudWindow.SetState.
-    internal void ApplyState(HudState next)
+    public void ApplyState(HudState next)
     {
         _state = next;
         switch (next)
@@ -343,7 +356,7 @@ public sealed partial class HudChrono : UserControl
     // strokes have ApplyVariant-driven opacity and must not be pushed
     // from the RMS pump. CompositionPropertySet + StartAnimation are
     // thread-safe per Composition's contract — no DispatcherQueue.
-    internal void UpdateAudioLevel(float rms)
+    public void UpdateAudioLevel(float rms)
     {
         if (_processingStroke is null) return;
         if (_currentVariant != ProcessingVariant.Recording) return;
@@ -455,7 +468,7 @@ public sealed partial class HudChrono : UserControl
     // tenths of a second. Minutes stay unflagged unless a call supplies
     // true for them explicitly — mirrors the shipping pattern where
     // minutes only flip on recordings longer than 60s.
-    internal void SimulateChangedDigits(
+    public void SimulateChangedDigits(
         bool min1, bool min2,
         bool sec1, bool sec2,
         bool cs1,  bool cs2)
@@ -477,12 +490,12 @@ public sealed partial class HudChrono : UserControl
     // subsequent ApplyState calls without a fresh Set* would fall back to
     // the factories' defaults. Use RebuildStroke after the state is live
     // to apply a new config without changing state.
-    internal void SetNextStrokeConfig(HudComposition.ConicArcStrokeConfig config)
+    public void SetNextStrokeConfig(HudComposition.ConicArcStrokeConfig config)
     {
         _nextStrokeConfig = config;
     }
 
-    internal void RebuildStroke(
+    public void RebuildStroke(
         HudComposition.ConicArcStrokeConfig config,
         System.Action<string, string>? log = null)
     {
@@ -603,7 +616,7 @@ public sealed partial class HudChrono : UserControl
 
     private void UpdateClock()
     {
-        int capSec = Settings.SettingsService.Instance.Current.Capture.MaxRecordingDurationSeconds;
+        int capSec = MaxRecordingDurationSecondsProvider();
         var d = ChronoFormatter.Decompose(_stopwatch.Elapsed, capSec);
         int min = d.Minutes;
         int sec = d.Seconds;

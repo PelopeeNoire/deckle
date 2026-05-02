@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
 using Deckle.Capture;
+using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;

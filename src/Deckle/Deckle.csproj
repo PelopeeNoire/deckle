@@ -71,6 +71,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
     <ProjectReference Include="..\Deckle.Chrono\Deckle.Chrono.csproj" />
+    <ProjectReference Include="..\Deckle.Chrono.Hud\Deckle.Chrono.Hud.csproj" />
     <ProjectReference Include="..\Deckle.Composition\Deckle.Composition.csproj" />
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
     <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
