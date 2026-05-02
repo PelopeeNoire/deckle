@@ -1,27 +1,29 @@
 using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading;
+using Deckle.Core;
 using Deckle.Logging;
 
 namespace Deckle.Settings;
 
 // ── SettingsService ───────────────────────────────────────────────────────────
 //
-// Singleton. Charge AppSettings depuis settings.json au démarrage, expose
-// l'instance courante, et écrit le fichier sur demande avec un léger
-// debounce (300 ms) pour ne pas réécrire à chaque tick de slider.
+// Singleton owner of the AppSettings POCO. Persists to settings.json under
+// AppPaths.SettingsFilePath (= <UserDataRoot>/settings.json).
 //
-// Emplacement résolu via AppPaths.SettingsFilePath : settings.json à la
-// racine du UserDataRoot (par défaut %LOCALAPPDATA%\<AppFolderName>\,
-// override via DECKLE_DATA_ROOT en dev). Le binaire reste read-only et
-// Program Files-friendly ; la config vit dans le profil utilisateur.
+// Disk discipline (load/save/debounce/atomic write/inter-process mutex)
+// is delegated to JsonSettingsStore<AppSettings> living in Deckle.Core.
+// What stays here is the Settings-specific glue: which migrations apply,
+// how to resolve user-overridable paths (ResolveModelsDirectory /
+// ResolveBackupDirectory), and the Reload entry point used by the
+// SettingsBackupService restore flow.
 //
-// Thread-safety : toutes les mutations de Current doivent passer par Save().
-// Les lecteurs (WhispEngine côté thread de transcription) prennent une
-// référence locale à Current au début de Transcribe() — AppSettings est un
-// graphe de POCO, le snapshot est suffisant.
+// Why the split? The same disk discipline applies module-by-module once
+// per-module persistence lands (Slice C2b). Keeping the JSON store
+// generic means each module's SettingsService can reuse the same
+// primitive without duplicating the debounce / mutex / atomic-write code.
+//
+// Thread-safety: see JsonSettingsStore<T>.
 public sealed class SettingsService
 {
     private static readonly Lazy<SettingsService> _instance = new(() => new SettingsService());
@@ -33,102 +35,90 @@ public sealed class SettingsService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    private readonly string _configPath;
-    private readonly object _lock = new();
-    private readonly Timer _debounceTimer;
-    private AppSettings _current;
+    private readonly JsonSettingsStore<AppSettings> _store;
 
-    public AppSettings Current
-    {
-        get { lock (_lock) return _current; }
-    }
+    public AppSettings Current => _store.Current;
 
     // Exposed read-only so SettingsBackupService can locate the live file
     // without re-resolving AppPaths.SettingsFilePath. Internal callers
     // only — this is not part of any settings-changing surface.
-    internal string ConfigPath => _configPath;
+    internal string ConfigPath => _store.Path;
 
-    // Levé après une écriture disque réussie. Les consommateurs (UI, engine)
-    // peuvent s'abonner pour réagir à un changement externe au fichier ou à
-    // un Save explicite. L'engine, lui, re-lit Current au début de chaque
-    // Transcribe(), donc il n'a pas besoin de s'abonner pour les params
-    // hot-reload — seulement pour les réglages lourds (reload modèle).
-    public event Action? Changed;
+    /// <summary>
+    /// Raised after a successful disk write. UI consumers subscribe to
+    /// refresh bound state when settings.json changes externally
+    /// (Restore from backup) or on an explicit Save flush.
+    /// </summary>
+    public event Action? Changed
+    {
+        add    => _store.Changed += value;
+        remove => _store.Changed -= value;
+    }
 
     private SettingsService()
     {
         // UserDataRoot is created by AppPaths static ctor; redundant
         // CreateDirectory left out on purpose so this constructor reads
         // as "AppPaths owns the location, we just consume it".
-        _configPath = AppPaths.SettingsFilePath;
-
-        _current = Load(out bool migrated);
-        _debounceTimer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
-
-        // If the on-disk file carried legacy keys, rewrite it now so the
-        // obsolete entries are gone after the first launch — no need to wait
-        // for the user to mutate a setting in the UI.
-        if (migrated) Flush();
+        _store = new JsonSettingsStore<AppSettings>(
+            path:        AppPaths.SettingsFilePath,
+            mutexName:   AppPaths.SettingsMutexName,
+            jsonOptions: _jsonOptions,
+            logInfo:     msg => LogService.Instance.Info(LogSource.Settings, msg),
+            logVerbose:  msg => LogService.Instance.Verbose(LogSource.Settings, msg),
+            logWarning:  msg => LogService.Instance.Warning(LogSource.Settings, msg),
+            logError:    msg => LogService.Instance.Error(LogSource.Settings, msg),
+            preDeserializeMigration: MigrateLegacyKeys,
+            postLoadMigration:       MigrateProfileIds);
     }
 
-    // Charge depuis le disque. En cas d'absence, d'erreur JSON ou de fichier
-    // tronqué, retourne des défauts et réécrit un fichier propre.
-    // `migrated` out: true when the on-disk JSON carried legacy keys that
-    // were rewritten in memory — the caller flushes to persist the cleanup.
-    private AppSettings Load(out bool migrated)
+    /// <summary>Schedule a debounced disk write (300 ms).</summary>
+    public void Save() => _store.Save();
+
+    /// <summary>Synchronous flush. Use before process exit / restart.</summary>
+    public void Flush() => _store.Flush();
+
+    /// <summary>Re-read from disk and replace the in-memory snapshot.</summary>
+    public void Reload() => _store.Reload();
+
+    // Resolves the directory containing .bin files (Whisper models + VAD
+    // Silero). If the user has configured a custom path, that wins.
+    // Otherwise delegates to AppPaths.ModelsDirectory (= <UserDataRoot>\models\).
+    // Layered this way so the user override stays reachable from the
+    // Settings UI without leaking the resolution policy into AppPaths.
+    public string ResolveModelsDirectory()
     {
-        migrated = false;
-        try
-        {
-            if (!File.Exists(_configPath))
-            {
-                var defaults = new AppSettings();
-                MigrateProfileIds(defaults);
-                File.WriteAllText(_configPath, JsonSerializer.Serialize(defaults, _jsonOptions));
-                // Doctrine logging : Info = jalon en phrase Capital courte ;
-                // détails techniques (path, source) en Verbose miroir.
-                LogService.Instance.Info(LogSource.Settings, "Settings initialized (defaults)");
-                LogService.Instance.Verbose(LogSource.Settings,
-                    $"load complete | source=defaults | path={_configPath} | reason=file_missing");
-                return defaults;
-            }
+        string user = Current.Paths.ModelsDirectory;
+        if (!string.IsNullOrWhiteSpace(user))
+            return user;
 
-            string json = File.ReadAllText(_configPath);
-
-            // One-shot migrations applied before strict deserialization so legacy
-            // keys are consumed even though AppSettings no longer carries them.
-            // The caller flushes right after if `migrated` is true so the file
-            // on disk ends up without the obsolete keys.
-            //   • manualProfileName         → slotAProfileName            (V1 slots, 2026-04-15)
-            //   • slotAProfileName          → primaryRewriteProfileName   (primary/secondary rename, 2026-04-16)
-            //   • slotBProfileName          → secondaryRewriteProfileName (primary/secondary rename, 2026-04-16)
-            (json, migrated) = MigrateLegacyKeys(json);
-
-            var parsed = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
-            if (MigrateProfileIds(parsed)) migrated = true;
-            // Doctrine logging : Info = jalon en phrase Capital courte ;
-            // détails techniques (path, bytes, migration flag) en Verbose miroir.
-            LogService.Instance.Info(LogSource.Settings,
-                migrated ? "Settings loaded (migrated)" : "Settings loaded");
-            LogService.Instance.Verbose(LogSource.Settings,
-                $"load complete | source=disk | path={_configPath} | bytes={json.Length} | migrated={migrated}");
-            return parsed;
-        }
-        catch (Exception ex)
-        {
-            // Parse failure falls back to defaults — the app still runs, so
-            // this is a Warning rather than an Error. Includes the path +
-            // exception type so the broken file is easy to locate.
-            LogService.Instance.Warning(LogSource.Settings,
-                $"parse failed, fallback to defaults | path={_configPath} | error={ex.GetType().Name}: {ex.Message}");
-            return new AppSettings();
-        }
+        return AppPaths.ModelsDirectory;
     }
 
-    // One-shot rename of legacy JSON keys before strict deserialization.
-    // Non-destructive: for each rename, if the legacy key is missing or the
-    // new key is already present, that rename is skipped. Returns the input
-    // unchanged (and migrated=false) when no mutation applied.
+    // Resolves the directory where settings backups (snapshots) live. Same
+    // layered pattern as ResolveModelsDirectory: user override wins, otherwise
+    // a `backups/` folder next to settings.json. Returned path may not exist
+    // yet — SettingsBackupService creates it on the first CreateBackup call.
+    public string ResolveBackupDirectory()
+    {
+        string user = Current.Paths.BackupDirectory;
+        if (!string.IsNullOrWhiteSpace(user))
+            return user;
+
+        return AppPaths.SettingsBackupDirectory;
+    }
+
+    // ── One-shot key renames ──────────────────────────────────────────────
+    //
+    // Applied by JsonSettingsStore before strict deserialization so legacy
+    // keys are consumed even though AppSettings no longer carries them.
+    // The store flushes right after if migrated=true so the file on disk
+    // ends up without the obsolete keys.
+    //   • manualProfileName         → slotAProfileName            (V1 slots, 2026-04-15)
+    //   • slotAProfileName          → primaryRewriteProfileName   (primary/secondary rename, 2026-04-16)
+    //   • slotBProfileName          → secondaryRewriteProfileName (primary/secondary rename, 2026-04-16)
+    //   • recording                 → capture                     (Capture module extraction, 2026-05-02)
+    //   • corpusLogging             → telemetry                   (telemetry unification, 2026-04-21)
     private static (string json, bool migrated) MigrateLegacyKeys(string json)
     {
         try
@@ -213,6 +203,8 @@ public sealed class SettingsService
         return (json, false);
     }
 
+    // ── Profile id reconciliation ────────────────────────────────────────
+    //
     // Reconciles profile references across the LlmSettings graph. Two jobs:
     //
     //   1. Fill missing stable ids — each RewriteProfile gets a 12-char Guid
@@ -237,8 +229,8 @@ public sealed class SettingsService
     // in LlmProfilesSection.DeleteProfile_Click, which clears references
     // explicitly **before** the profile is removed.
     //
-    // Returns true if anything was mutated so the caller can flush the
-    // rewritten config to disk on first launch after upgrade.
+    // Returns true if anything was mutated so the JsonSettingsStore can
+    // flush the rewritten config to disk on first launch after upgrade.
     //
     // Public (not private) so page-level resets can re-run the migration
     // against a freshly-instantiated LlmSettings block. Public — not
@@ -358,127 +350,5 @@ public sealed class SettingsService
         }
 
         return mutated;
-    }
-
-    // Appelé par l'UI après chaque mutation. Ne bloque pas — debounce 300 ms
-    // puis écriture effective sur le thread pool via Flush().
-    public void Save()
-    {
-        _debounceTimer.Change(300, Timeout.Infinite);
-    }
-
-    // Resolves the directory containing .bin files (Whisper models + VAD
-    // Silero). If the user has configured a custom path, that wins. Otherwise
-    // delegates to AppPaths.ModelsDirectory (= <UserDataRoot>\models\).
-    // Layered this way so the user override stays reachable from the
-    // Settings UI without leaking the resolution policy into AppPaths.
-    public string ResolveModelsDirectory()
-    {
-        string user = Current.Paths.ModelsDirectory;
-        if (!string.IsNullOrWhiteSpace(user))
-            return user;
-
-        return AppPaths.ModelsDirectory;
-    }
-
-    // Resolves the directory where settings backups (snapshots) live. Same
-    // layered pattern as ResolveModelsDirectory: user override wins, otherwise
-    // a `backups/` folder next to settings.json. Returned path may not exist
-    // yet — SettingsBackupService creates it on the first CreateBackup call.
-    public string ResolveBackupDirectory()
-    {
-        string user = Current.Paths.BackupDirectory;
-        if (!string.IsNullOrWhiteSpace(user))
-            return user;
-
-        return AppPaths.SettingsBackupDirectory;
-    }
-
-    // Re-reads settings.json from disk and replaces the in-memory snapshot.
-    // Used by SettingsBackupService.RestoreFromBackup after it has overwritten
-    // the live settings.json with the contents of a snapshot file. Mutates
-    // Current under the lock and raises Changed so subscribed UI pages
-    // refresh their bound state.
-    //
-    // Bypasses the debounce timer on purpose: we want the new state visible
-    // immediately, not 300 ms later. Any in-flight Save() (a slider mutation
-    // happening at the same time) loses to this reload — that's acceptable
-    // because Restore is an explicit user action that supersedes any pending
-    // edit.
-    public void Reload()
-    {
-        var fresh = Load(out bool migrated);
-        lock (_lock)
-        {
-            _current = fresh;
-        }
-        if (migrated) Flush();
-        LogService.Instance.Info(LogSource.Settings, "reloaded from disk");
-        Changed?.Invoke();
-    }
-
-    // Mutex inter-process : si une autre instance de l'app tourne en
-    // parallèle (double-clic accidentel, login script qui relance), évite
-    // les écritures concurrentes sur settings.json qui causeraient une
-    // perte de configuration silencieuse (dernier writer gagne sans
-    // warning, modifs de l'instance "perdante" effacées). Scope local
-    // (per-session Terminal Services) — pas besoin de Global\, settings
-    // est per-user. Nom dérivé de AppPaths.AppFolderName pour suivre le
-    // rename du Lot C en un seul endroit.
-
-    // Public pour permettre un flush synchrone avant un arrêt du process
-    // (RestartApp, QuitApp) — le debounce timer ne survivrait pas à Environment.Exit.
-    public void Flush()
-    {
-        using var processMutex = new Mutex(initiallyOwned: false, AppPaths.SettingsMutexName);
-        bool acquired = false;
-        try
-        {
-            try
-            {
-                // Timeout court : on n'attend pas indéfiniment qu'une autre
-                // instance finisse — si elle tarde, on logue et on skip
-                // plutôt que de bloquer. La modif sera retentée au prochain
-                // Save (debounce), donc pas de perte structurelle.
-                acquired = processMutex.WaitOne(TimeSpan.FromSeconds(2));
-            }
-            catch (AbandonedMutexException)
-            {
-                // L'autre instance a crashé en tenant le mutex — on l'a
-                // hérité (WaitOne a réussi malgré l'exception). État anormal
-                // mais récupérable, on continue avec l'écriture.
-                acquired = true;
-                LogService.Instance.Warning(LogSource.Settings, "settings mutex was abandoned (other Deckle instance crashed?) — recovering");
-            }
-
-            if (!acquired)
-            {
-                LogService.Instance.Warning(LogSource.Settings, "save skipped: another Deckle instance holds the settings mutex");
-                return;
-            }
-
-            string json;
-            lock (_lock)
-            {
-                json = JsonSerializer.Serialize(_current, _jsonOptions);
-            }
-
-            // Écriture atomique : fichier temporaire puis Move. Évite un
-            // settings.json tronqué si le process est tué pendant l'écriture.
-            string tmp = _configPath + ".tmp";
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, _configPath, overwrite: true);
-
-            LogService.Instance.Verbose(LogSource.Settings, "saved to disk");
-            Changed?.Invoke();
-        }
-        catch (Exception ex)
-        {
-            LogService.Instance.Error(LogSource.Settings, $"save failed: {ex.GetType().Name}: {ex.Message}");
-        }
-        finally
-        {
-            if (acquired) processMutex.ReleaseMutex();
-        }
     }
 }
