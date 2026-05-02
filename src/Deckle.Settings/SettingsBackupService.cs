@@ -39,7 +39,7 @@ namespace Deckle.Settings;
 // Fail-soft: every public method returns a result type or false on error and
 // logs at Warning. The UI surfaces failures via overlay feedback; nothing
 // here throws into the caller.
-internal static class SettingsBackupService
+public static class SettingsBackupService
 {
     private const string FilenamePrefix = "settings-";
     private const string FilenameExtension = ".json";
