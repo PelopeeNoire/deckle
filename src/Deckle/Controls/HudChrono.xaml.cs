@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Deckle.Capture;
 using Deckle.Composition;
 
 namespace Deckle.Controls;
@@ -328,74 +329,12 @@ public sealed partial class HudChrono : UserControl
     // configs. Shipping behaviour is byte-identical.
     private HudComposition.ConicArcStrokeConfig? _nextStrokeConfig;
 
-    // EMA smoothing after the dBFS remap below. EmaAlpha 0.72 at 20 Hz
-    // source → τ = -T / ln(alpha) ≈ 0.05 / 0.328 ≈ 0.15 s — fast enough
-    // to track intonations at the word scale (typical word = 200–500 ms)
-    // while still ironing out the sample grid into a continuous ramp.
-    // The 50 ms Composition-side keyframes interpolate between samples at
-    // the monitor refresh rate, so perceived motion is smooth regardless.
+    // EMA-smoothed perceptual level. The mapping math + the four
+    // tunables (EmaAlpha / MinDbfs / MaxDbfs / DbfsCurveExponent) live
+    // in Deckle.Capture.AudioLevelMapper — they're audio-domain, not
+    // HUD-domain. The smoother STATE is per-consumer though, so it
+    // stays here.
     private float _smoothedLevel;
-
-    // `public static` (not const / readonly) so HudPlayground can override
-    // the audio-mapping tunables live. Shipping code still resolves them
-    // as if they were constants — the field reads are inlined by the JIT
-    // when nothing mutates them in a given process. Defaults preserved.
-    public static float EmaAlpha = 0.25f;
-
-    // Linear RMS mapped through a dBFS window, then through a power
-    // curve, before EMA smoothing. The window [MinDbfs, MaxDbfs] folds
-    // the dBFS range into a linear [0, 1] parameter t; the power curve
-    // t^p then reshapes the response so the visual reacts softly in
-    // the lower half and aggressively in the upper half of the window.
-    //
-    // Reference table with MinDbfs = -40, MaxDbfs = -22 (18 dB window)
-    // and DbfsCurveExponent = 2.0 (quadratic):
-    //   rms ≤ 0.010 (-40 dBFS)  → t=0.00  → y=0.00   silence / gate
-    //   rms = 0.018 (-35 dBFS)  → t=0.28  → y=0.08   breath / ambient
-    //   rms = 0.032 (-30 dBFS)  → t=0.56  → y=0.31   soft onset
-    //   rms = 0.040 (-28 dBFS)  → t=0.67  → y=0.44   conversational
-    //   rms = 0.050 (-26 dBFS)  → t=0.78  → y=0.61   louder
-    //   rms = 0.063 (-24 dBFS)  → t=0.89  → y=0.79   assertive speech
-    //   rms = 0.079 (-22 dBFS)  → t=1.00  → y=1.00   emphatic ceiling
-    //
-    // Calibration — typical voice peaks around -18 dBFS but the 50 ms
-    // RMS average sits 6-10 dB below peak, landing in -28..-24 dBFS
-    // for normal speech and brushing -22 dBFS only on emphatic
-    // stress. Previous ceiling at -18 dBFS was unreachable in
-    // practice: conversational RMS reached y ≈ 0.30 and even loud
-    // speech stayed below y=0.55, so the stroke barely lit up during
-    // real recordings (the playground's sim pump masked this because
-    // its peak value saturated the upper range). The -22 dBFS
-    // ceiling puts conversational RMS at y=0.44-0.79 — clearly
-    // visible, with real dynamics — and the quadratic curve keeps
-    // the low-end soft so ambient noise still fades to zero.
-    //
-    // MinDbfs -40: matches the engine's noise-gate threshold, so the
-    // visual floor coincides with the audible floor.
-    //
-    // DbfsCurveExponent 1.0 restores the old linear mapping; values
-    // above 1 push the response to the upper end of the window; below
-    // 1 pushes it to the low end (only useful for debugging).
-    //
-    // `public static` (not const) — HudPlayground mutates these live to
-    // explore the window and the curve shape. Defaults preserved.
-    public static float MinDbfs           = -55f;
-    public static float MaxDbfs           = -32f;
-    public static float DbfsCurveExponent = 1.0f;
-
-    private static float RmsToPerceptualLevel(float rms)
-    {
-        if (rms <= 0f) return 0f;
-        float dbfs = 20f * MathF.Log10(rms);
-        float t = (dbfs - MinDbfs) / (MaxDbfs - MinDbfs);
-        t = Math.Clamp(t, 0f, 1f);
-        // Power-curve response. p = 1 is linear; p > 1 compresses the
-        // low end and expands the high end. Guarded against p ≤ 0 so
-        // the playground can't nuke the mapping by dragging to 0.
-        float p = DbfsCurveExponent;
-        if (p <= 0f) return t;
-        return MathF.Pow(t, p);
-    }
 
     // Forwarded from HudWindow.OnAudioLevel. Called from the recording
     // audio thread. Gated on _currentVariant == Recording so the engine
@@ -408,8 +347,9 @@ public sealed partial class HudChrono : UserControl
         if (_processingStroke is null) return;
         if (_currentVariant != ProcessingVariant.Recording) return;
 
-        float perceptual = RmsToPerceptualLevel(rms);
-        _smoothedLevel = _smoothedLevel * EmaAlpha + perceptual * (1f - EmaAlpha);
+        float perceptual = AudioLevelMapper.RmsToPerceptualLevel(rms);
+        float a = AudioLevelMapper.EmaAlpha;
+        _smoothedLevel = _smoothedLevel * a + perceptual * (1f - a);
         _processingStroke.UpdateLevel(_smoothedLevel);
     }
 

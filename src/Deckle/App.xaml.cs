@@ -367,9 +367,9 @@ public partial class App : Microsoft.UI.Xaml.Application
     public static void ApplyLevelWindow(Capture.LevelWindowSettings cfg)
     {
         if (cfg is null) return;
-        Controls.HudChrono.MinDbfs           = cfg.MinDbfs;
-        Controls.HudChrono.MaxDbfs           = cfg.MaxDbfs;
-        Controls.HudChrono.DbfsCurveExponent = cfg.DbfsCurveExponent;
+        Capture.AudioLevelMapper.MinDbfs           = cfg.MinDbfs;
+        Capture.AudioLevelMapper.MaxDbfs           = cfg.MaxDbfs;
+        Capture.AudioLevelMapper.DbfsCurveExponent = cfg.DbfsCurveExponent;
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────
