@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
+using Deckle.Capture;
 using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;
@@ -476,10 +477,10 @@ public sealed partial class PlaygroundWindow : Window
         SwipeWaveAnimator.SwipeRiseAlpha    = 0.1f;
         SwipeWaveAnimator.SwipeDecayAlpha   = 0.025f;
         SwipeWaveAnimator.SwipeHeadDomain   = 8;
-        HudChrono.EmaAlpha          = 0.25f;
-        HudChrono.MinDbfs           = -55f;
-        HudChrono.MaxDbfs           = -32f;
-        HudChrono.DbfsCurveExponent = 1.0f;
+        AudioLevelMapper.EmaAlpha          = 0.25f;
+        AudioLevelMapper.MinDbfs           = -55f;
+        AudioLevelMapper.MaxDbfs           = -32f;
+        AudioLevelMapper.DbfsCurveExponent = 1.0f;
 
         // HudComposition geometry mutables tuned via the HUD geometry
         // expander.
@@ -797,23 +798,24 @@ public sealed partial class PlaygroundWindow : Window
     private void AddAudioMappingExpander()
     {
         var stack = NewExpander("Audio mapping (Recording)", ResetAudioMapping);
-        // Static mutables on HudChrono — no rebuild, read live each sample.
-        AddFloatRow(stack, "EmaAlpha", 0, 1, 0.05, HudChrono.EmaAlpha,
-            v => HudChrono.EmaAlpha = (float)v);
-        AddFloatRow(stack, "MinDbfs", -80, 0, 1, HudChrono.MinDbfs,
-            v => HudChrono.MinDbfs = (float)v);
-        AddFloatRow(stack, "MaxDbfs", -60, 0, 1, HudChrono.MaxDbfs,
-            v => HudChrono.MaxDbfs = (float)v);
-        AddFloatRow(stack, "DbfsCurveExponent", 0.5, 4, 0.05, HudChrono.DbfsCurveExponent,
-            v => HudChrono.DbfsCurveExponent = (float)v);
+        // Static mutables on AudioLevelMapper (Deckle.Capture) — no
+        // rebuild, read live each sample.
+        AddFloatRow(stack, "EmaAlpha", 0, 1, 0.05, AudioLevelMapper.EmaAlpha,
+            v => AudioLevelMapper.EmaAlpha = (float)v);
+        AddFloatRow(stack, "MinDbfs", -80, 0, 1, AudioLevelMapper.MinDbfs,
+            v => AudioLevelMapper.MinDbfs = (float)v);
+        AddFloatRow(stack, "MaxDbfs", -60, 0, 1, AudioLevelMapper.MaxDbfs,
+            v => AudioLevelMapper.MaxDbfs = (float)v);
+        AddFloatRow(stack, "DbfsCurveExponent", 0.5, 4, 0.05, AudioLevelMapper.DbfsCurveExponent,
+            v => AudioLevelMapper.DbfsCurveExponent = (float)v);
     }
 
     private void ResetAudioMapping()
     {
-        HudChrono.EmaAlpha          = 0.25f;
-        HudChrono.MinDbfs           = -55f;
-        HudChrono.MaxDbfs           = -32f;
-        HudChrono.DbfsCurveExponent = 1.0f;
+        AudioLevelMapper.EmaAlpha          = 0.25f;
+        AudioLevelMapper.MinDbfs           = -55f;
+        AudioLevelMapper.MaxDbfs           = -32f;
+        AudioLevelMapper.DbfsCurveExponent = 1.0f;
         RebuildTuningPanel();
     }
 
