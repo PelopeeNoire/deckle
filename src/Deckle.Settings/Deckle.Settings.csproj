@@ -13,9 +13,19 @@
          they all share the persistence + UI lifecycle and there's no
          downstream consumer that needs the POCOs without the UI surface. -->
     <UseWinUI>true</UseWinUI>
-    <!-- Generates the lib's own .pri so x:Uid lookups (Settings/*.resw via
-         Deckle.Localization) and ResourceDictionary keys ship inside the
-         assembly. Mirrors Deckle.Chrono.Hud (cf. WindowsAppSDK#3451). -->
+    <!-- Neutral language for the lib's PRI. Without this, the lib's
+         Strings/en-US/Resources.resw is found at runtime but no language is
+         declared as fallback, which can leave x:Uid lookups empty when the
+         system display language doesn't match en-US. Mirrors Deckle.csproj. -->
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <!-- Generates the lib's own .pri so x:Uid lookups in pages that ship
+         from this assembly (GeneralPage / WhisperPage / LlmPage / Llm
+         sections) resolve against the Deckle.Settings/Resources subtree,
+         which the build merges into the main resource map. The resw lives
+         under src/Deckle.Settings/Strings/en-US/Resources.resw — a copy of
+         the App's resw (each WinUI assembly with x:Uid needs its own resw,
+         see Microsoft Learn "Localize a class library" + PowerToys pattern,
+         + WindowsAppSDK#3451 for EnableMsixTooling). -->
     <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
