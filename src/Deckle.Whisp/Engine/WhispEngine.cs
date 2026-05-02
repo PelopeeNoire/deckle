@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Deckle.Capture;
+using Deckle.Capture.Telemetry;
 using Deckle.Interop;
 using Deckle.Llm;
 using Deckle.Localization;
@@ -38,8 +40,9 @@ public enum TranscriptionOutcome { None, Pasted, ClipboardOnly }
 //   *            → Disposed     (Dispose, terminal)
 //
 // See WhispEngine.RequestToggle, TryStartFromIdle, and WorkerRun for the
-// actual CAS sites; the cap-duration branch inside Record() also drives
-// the Recording → Stopping transition when MaxRecordingDurationSeconds hits.
+// actual CAS sites. The cap-duration branch is now handled inside
+// MicrophoneCapture / WaveInLoop — WorkerRun observes CaptureOutcome.CapHit
+// on return and runs the Recording → Stopping CAS itself.
 public enum PipelineState { Idle, Starting, Recording, Stopping, Transcribing, Disposed }
 
 // Outcome of a hotkey toggle request — returned to App.OnHotkey so the
@@ -164,18 +167,15 @@ public sealed class WhispEngine : IDisposable
     // those.
     private int _state = (int)PipelineState.Idle;
 
-    // Stop signal for the Record() polling loop. 0 = continue, 1 = drain and
-    // exit. Read every iteration via Volatile.Read; written by the Stop path
-    // (RequestToggle after CAS Recording → Stopping) and by the cap-duration
-    // branch inside Record(). Separate from _state so the hot loop doesn't
-    // cast and compare an enum every iteration.
+    // Cancellation channel for the active capture session. Recreated at the
+    // top of each WorkerRun (Idle → Recording transition), cancelled by the
+    // Stop path (RequestToggle after CAS Recording → Stopping) and by Dispose.
+    // Disposed inside WorkerRun's finally once the capture call has returned.
     //
-    // NOT declared `volatile` — the keyword would conflict with passing the
-    // field by `ref` to Volatile.Read / Volatile.Write (CS0420: "a reference
-    // to a volatile field will not be treated as volatile"). The Volatile.*
-    // API provides the acquire/release semantics we need without the keyword,
-    // which is the pattern Microsoft recommends.
-    private int _stopFlag;
+    // The cap-duration branch is now owned by MicrophoneCapture / WaveInLoop
+    // — the orchestrator observes it via CaptureResult.Outcome on return.
+    // No second channel needed.
+    private CancellationTokenSource? _recordCts;
 
     // Signaled when the engine returns to Idle (worker exits + state reset).
     // Initialised "set" because no recording is in flight at construction time.
@@ -291,18 +291,6 @@ public sealed class WhispEngine : IDisposable
     // Stopwatch started at the beginning of each recording (used for logs).
     private System.Diagnostics.Stopwatch? _recordingSw;
 
-    // Per-recording RMS history — one linear-RMS sample per 50 ms sub-window
-    // (so ~20 Hz). Cleared at every Recording start, fed by EmitAudioLevels
-    // in flow order. Drives:
-    //   - the Tail-600 ms diagnostic at Stop (last 12 samples — sidesteps the
-    //     bytes-buffer ordering ambiguity of the old re-computation path),
-    //   - the per-recording mic telemetry summary (min / percentiles / max
-    //     in dBFS) used to calibrate MinDbfs / MaxDbfs / EmaAlpha against
-    //     the actual hardware response.
-    // Pre-reserved for ~10 minutes at 20 Hz; the List grows past that without
-    // a resize allocation explosion thanks to standard doubling.
-    private readonly List<float> _rmsLog = new(capacity: 20 * 60 * 10);
-
     // Auto-calibration ring buffer — one MicrophoneTelemetryPayload per
     // recording. Only filled when LevelWindow.AutoCalibrationEnabled is on.
     // Once the buffer has AutoCalibrationSamples entries, the engine pushes
@@ -361,10 +349,12 @@ public sealed class WhispEngine : IDisposable
     //                         On a cold run includes _modelLoadMs (load runs on
     //                         the worker thread before the mic opens), plus
     //                         the mic probe and worker thread spin-up.
-    //   _recordDrainSw      — _stopFlag flips → end of Record() (just before
-    //                         the float[] return). Subset of _stopToPipelineSw —
-    //                         shows how much of the stop-to-pipeline cost is
-    //                         spent in the mic drain alone.
+    //   _recordDrainDuration — CT cancels → end of CaptureResult drain phase.
+    //                         Subset of _stopToPipelineSw — shows how much of
+    //                         the stop-to-pipeline cost is spent in the mic
+    //                         drain alone. Captured from CaptureResult on
+    //                         Record() return; the Capture module owns the
+    //                         underlying stopwatch.
     //   _stopToPipelineSw   — entry of RequestToggle (Stop branch) → first whisper_vad log.
     //                         Captures Record() drain + Transcribe() entry.
     //   _whisperInitSw      — just before whisper_full() → first whisper_vad log.
@@ -373,7 +363,12 @@ public sealed class WhispEngine : IDisposable
     // The latter two stop in the same hook branch that starts _vadSw.
     private long _modelLoadMs;
     private System.Diagnostics.Stopwatch? _hotkeySw;
-    private System.Diagnostics.Stopwatch? _recordDrainSw;
+    // Drain duration of the post-Stop waveIn drain phase. Captured from
+    // CaptureResult.DrainDuration on Record() return — the legacy
+    // _recordDrainSw stopwatch lived inside the Record() body, this field
+    // now persists the value across the WorkerRun for the LatencyPayload
+    // builder to pick up.
+    private System.TimeSpan _recordDrainDuration;
     private System.Diagnostics.Stopwatch? _stopToPipelineSw;
     private System.Diagnostics.Stopwatch? _whisperInitSw;
 
@@ -425,12 +420,39 @@ public sealed class WhispEngine : IDisposable
 
     private readonly IWhispEngineHost _host;
 
+    // Microphone capture service — extracted from the legacy 331-line Record()
+    // body. The engine owns the orchestration (state machine, narratives,
+    // auto-calibration enveloppe) and consumes Capture as a black-box PCM
+    // producer. Future modules (Ask-Ollama) will share the same instance
+    // type without dragging Whisp's transcription dependencies along.
+    private readonly MicrophoneCapture _capture;
+
+    // Adapter that exposes IWhispEngineHost as IRecordingHost — keeps
+    // IWhispEngineHost free of an IRecordingHost inheritance (Ask-Ollama
+    // would not have wanted that coupling).
+    private readonly RecordingHostAdapter _recordingHost;
+
     public WhispEngine(IWhispEngineHost host)
     {
         _host = host;
         _modelPath = ResolveModelPath();
 
         _llm = new LlmService();
+
+        _capture = new MicrophoneCapture(_log);
+        _recordingHost = new RecordingHostAdapter(_host);
+        // Forward the per-sub-window RMS to whoever subscribes to the engine
+        // (HUD chrono today). Capture stays unaware of UI consumers.
+        _capture.AudioLevel += rms => AudioLevel?.Invoke(rms);
+        // Close the hotkey-to-capture latency stopwatch the moment waveInStart
+        // confirms the mic is live. The legacy code did this directly inside
+        // Record(); the event keeps the orchestrator in charge of its own
+        // stopwatches.
+        _capture.CaptureStarted += () => _hotkeySw?.Stop();
+        // Surface the localized low-audio overlay when the live tracker
+        // detects no sustained healthy voice in the first 5 s. Capture only
+        // emits a technical log; the localized UserFeedback is built here.
+        _capture.LowAudioDetected += OnCaptureLowAudioDetected;
 
         // Hook the global whisper.cpp log callback before any model load to
         // catch Vulkan/CUDA initialization logs and model parsing warnings.
@@ -439,6 +461,35 @@ public sealed class WhispEngine : IDisposable
 
         // Model loaded on-demand at first hotkey press (see EnsureModelLoaded).
         // Unloaded after MODEL_IDLE_TIMEOUT_MS of inactivity to free VRAM.
+    }
+
+    // Localized UserFeedback for the low-audio condition. Capture emits a
+    // bare `LowAudioDetected` event so it stays free of any Loc.Get
+    // dependency; the engine owns the localization (Engine_LowAudio_Title /
+    // Body) and the UserFeedback role (Overlay — capture continues).
+    private void OnCaptureLowAudioDetected()
+    {
+        _log.Warning(
+            LogSource.Capture,
+            "low audio overlay surfaced",
+            new UserFeedback(
+                Loc.Get("Engine_LowAudio_Title"),
+                Loc.Get("Engine_LowAudio_Body"),
+                UserFeedbackSeverity.Warning,
+                UserFeedbackRole.Overlay));
+    }
+
+    // Adapter that maps IWhispEngineHost → IRecordingHost. Lives inside
+    // WhispEngine so the engine project owns the coupling rather than
+    // requiring IWhispEngineHost to inherit from IRecordingHost (which would
+    // bleed Capture's contract into every host that wants to drive Whisp).
+    private sealed class RecordingHostAdapter : IRecordingHost
+    {
+        private readonly IWhispEngineHost _h;
+        public RecordingHostAdapter(IWhispEngineHost h) { _h = h; }
+        public int  AudioInputDeviceId         => _h.Capture.AudioInputDeviceId;
+        public int  MaxRecordingDurationSeconds => _h.Capture.MaxRecordingDurationSeconds;
+        public bool MicrophoneTelemetryEnabled  => _h.Telemetry.MicrophoneTelemetry;
     }
 
     // Resolves the model path. Order of precedence:
@@ -974,7 +1025,7 @@ public sealed class WhispEngine : IDisposable
 
                 // 1) Mic probe — same code path StartRecording uses, just the
                 //    probe result is stored instead of blocking the recording.
-                _micWarmupOk = TryProbeMicrophone(out _) ? 1 : 0;
+                _micWarmupOk = _capture.Probe(_host.Capture.AudioInputDeviceId).Ok ? 1 : 0;
 
                 if (ct.IsCancellationRequested)
                 {
@@ -1133,10 +1184,12 @@ public sealed class WhispEngine : IDisposable
             // so we don't need the previous "if (_isRecording)" guard.
             _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
 
-            // Signal the Record() polling loop to drain and return. Volatile
-            // write so the loop's Volatile.Read picks it up on the next
-            // iteration without a memory barrier round-trip.
-            Volatile.Write(ref _stopFlag, 1);
+            // Signal the capture polling loop to drain and return. The CTS
+            // is created at the top of WorkerRun and disposed at its
+            // finally; Cancel() is safe even if Record() has already
+            // returned (the token is then unobserved).
+            try { _recordCts?.Cancel(); }
+            catch (ObjectDisposedException) { /* worker raced our cancel */ }
             return ToggleResult.Stopped;
         }
 
@@ -1169,9 +1222,9 @@ public sealed class WhispEngine : IDisposable
     // is bound. CAS Idle → Starting up front so a second hotkey press
     // arriving inside the warmup gate or the mic probe rebounds immediately.
     // The entire Starting window is mutually exclusive with any other Start
-    // attempt, even one that fires while TryProbeMicrophone is blocked on
-    // the Win32 audio device (~1-2 ms typical, but can spike on contended
-    // hardware).
+    // attempt, even one that fires while MicrophoneCapture.Probe() is
+    // blocked on the Win32 audio device (~1-2 ms typical, but can spike on
+    // contended hardware).
     //
     // CRITICAL: every early-return path below MUST roll the state back to
     // Idle and signal _idleEvent, otherwise the engine permanently locks
@@ -1200,13 +1253,14 @@ public sealed class WhispEngine : IDisposable
         {
             // Reset per-run latency stage timers. _modelLoadMs is overwritten
             // by LoadModel() if it runs (cold path); _hotkeySw is stopped
-            // after waveInStart in Record(); _recordDrainSw is started/
-            // stopped inside Record() around the post-stop drain;
-            // _stopToPipelineSw and _whisperInitSw are stopped from the
-            // whisper.cpp log hook on the first whisper_vad line.
+            // after waveInStart via the MicrophoneCapture.CaptureStarted
+            // event; _recordDrainDuration is set from CaptureResult on
+            // Record() return; _stopToPipelineSw and _whisperInitSw are
+            // stopped from the whisper.cpp log hook on the first whisper_vad
+            // line.
             _modelLoadMs = 0;
             _hotkeySw = System.Diagnostics.Stopwatch.StartNew();
-            _recordDrainSw = null;
+            _recordDrainDuration = System.TimeSpan.Zero;
             _stopToPipelineSw = null;
             _whisperInitSw = null;
 
@@ -1281,12 +1335,13 @@ public sealed class WhispEngine : IDisposable
             // Probe the audio device BEFORE firing StatusChanged("Recording").
             // If the mic is absent/busy, short-circuit the entire pipeline:
             // no HUD chrono, no worker thread, no Transcribe(empty).
-            if (!TryProbeMicrophone(out uint probeErr))
+            var probe = _capture.Probe(_host.Capture.AudioInputDeviceId);
+            if (!probe.Ok)
             {
-                var (title, body) = DescribeMicError(probeErr);
+                var (title, body) = LocalizeMicError(probe.Kind, probe.MmsysErr);
                 _log.Error(
-                    LogSource.Record,
-                    $"probe MMSYSERR={probeErr} — {title}",
+                    LogSource.Capture,
+                    $"probe MMSYSERR={probe.MmsysErr} — {title}",
                     new UserFeedback(title, body,
                         UserFeedbackSeverity.Error, UserFeedbackRole.Replacement));
                 return ToggleResult.IgnoredBusy;
@@ -1294,7 +1349,6 @@ public sealed class WhispEngine : IDisposable
 
             _shouldPaste       = shouldPaste;
             _manualProfileName = manualProfileName;
-            Volatile.Write(ref _stopFlag, 0);
             lock (_segmentsLock) _segments.Clear();
 
             // Cancel any pending idle unload — a new pipeline is starting.
@@ -1365,6 +1419,11 @@ public sealed class WhispEngine : IDisposable
     // also gate on _state == Idle to avoid clobbering this invariant.
     private void WorkerRun()
     {
+        // Cancellation channel for this run — Stop / Dispose call Cancel()
+        // on it to drain the capture polling loop. Recreated each run so
+        // a previous Cancel() doesn't leak into the next session.
+        _recordCts = new CancellationTokenSource();
+
         try
         {
             if (!EnsureModelLoaded())
@@ -1375,9 +1434,68 @@ public sealed class WhispEngine : IDisposable
 
             _recordingSw = System.Diagnostics.Stopwatch.StartNew();
             RaiseStatus(Loc.Get("Status_Recording"));
-            RaiseNarrative(LogSource.Record, "Recording from the microphone. Capture continues until you press the hotkey again.");
+            RaiseNarrative(LogSource.Capture, "Recording from the microphone. Capture continues until you press the hotkey again.");
 
-            float[] audio = Record();
+            CaptureResult capture = _capture.Record(_recordingHost, _recordCts.Token);
+            _recordDrainDuration = capture.DrainDuration;
+
+            // Surface the post-capture narrative + cap-hit handling here in
+            // the orchestrator (Capture only emits codes — no localized
+            // text). The narratives mirror the legacy phrasing so existing
+            // log readers stay calibrated.
+            if (capture.Outcome == CaptureOutcome.MicError)
+            {
+                var (title, body) = LocalizeMicError(
+                    MicErrorKind.Unavailable, capture.MmsysErr);
+                _log.Error(
+                    LogSource.Capture,
+                    $"capture mic error MMSYSERR={capture.MmsysErr} — {title}",
+                    new UserFeedback(title, body,
+                        UserFeedbackSeverity.Error, UserFeedbackRole.Replacement));
+                RaiseFinished(TranscriptionOutcome.None);
+                return;
+            }
+
+            if (capture.Outcome == CaptureOutcome.CapHit)
+            {
+                int minutes = _host.Capture.MaxRecordingDurationSeconds / 60;
+                RaiseNarrative(LogSource.Capture,
+                    $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
+                // CAS Recording → Stopping ourselves so the rest of the
+                // transition sequence below stays uniform with the user-
+                // driven Stop path. If Dispose won (state already Disposed)
+                // we just lose this CAS and the post-Record CAS fails too.
+                //
+                // _stopToPipelineSw timing semantics on cap-hit:
+                // legacy code started this stopwatch at the moment the cap
+                // was hit, BEFORE the drain phase. After extraction the
+                // drain runs inside MicrophoneCapture.Record so we only
+                // start the stopwatch on return — the metric now excludes
+                // the ~100 ms drain on cap-hit (rare path; user-driven
+                // Stop path is unchanged because RequestToggle starts the
+                // stopwatch BEFORE Cancel()). Acceptable drift.
+                if (Interlocked.CompareExchange(
+                        ref _state,
+                        (int)PipelineState.Stopping,
+                        (int)PipelineState.Recording)
+                    == (int)PipelineState.Recording)
+                {
+                    _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
+                }
+            }
+
+            RaiseNarrative(LogSource.Capture,
+                $"Captured {capture.Pcm.Length / 16000.0:F1} s of audio. Moving on to analysis and transcription.");
+
+            // Auto-calibration enveloppe — pure compute lives in
+            // MicrophoneCalibrationCalculator; the ring buffer + side
+            // effects (SaveSettings, ApplyLevelWindow, log) stay here.
+            if (capture.Telemetry is not null)
+            {
+                TryAutoCalibrate(capture.Telemetry);
+            }
+
+            float[] audio = capture.Pcm;
 
             // Record() returns either because RequestToggle CAS'd
             // Recording → Stopping (the user pressed Stop), or because the
@@ -1444,6 +1562,15 @@ public sealed class WhispEngine : IDisposable
             }
             bool reachedIdle = prev != (int)PipelineState.Disposed;
             _worker = null;
+
+            // Dispose and clear the per-run cancellation token. Done before
+            // _idleEvent.Set() so a Dispose Wait that races on the event
+            // doesn't see a still-live CTS field — fields read from there
+            // are observably consistent with the worker exit.
+            try { _recordCts?.Dispose(); }
+            catch (ObjectDisposedException) { /* worker raced our dispose */ }
+            _recordCts = null;
+
             _idleEvent.Set();
             if (reachedIdle)
             {
@@ -1452,508 +1579,20 @@ public sealed class WhispEngine : IDisposable
         }
     }
 
-    // ── Audio device probe (before StartRecording) ─────────────────────────────
+    // ── Microphone error localization ──────────────────────────────────────────
     //
-    // Attempts waveInOpen + waveInClose in sequence with the target format and
-    // configured device. If it passes, we know the recording session can start;
-    // otherwise we get the MMSYSERR code for a detailed message.
-    // Measured cost ~1-2 ms on a healthy device — negligible vs Whisper latency.
-
-    private bool TryProbeMicrophone(out uint err)
+    // MicErrorKind → (title, body) for UI. Messages formulated for the end user
+    // — no Win32 jargon. Raw MMSYSERR code is included verbatim in the
+    // Unavailable_Body_Format path so users can paste it back when reporting.
+    // Capture itself stays free of any Loc.Get dependency; the engine owns
+    // the localization step.
+    private static (string Title, string Body) LocalizeMicError(MicErrorKind kind, uint err) => kind switch
     {
-        const uint WAVE_MAPPER = 0xFFFFFFFF;
-        var wfx = new WAVEFORMATEX
-        {
-            wFormatTag      = 1,
-            nChannels       = 1,
-            nSamplesPerSec  = 16000,
-            nAvgBytesPerSec = 32000,
-            nBlockAlign     = 2,
-            wBitsPerSample  = 16,
-            cbSize          = 0,
-        };
-
-        int configuredDevice = _host.Capture.AudioInputDeviceId;
-        uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
-
-        err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, IntPtr.Zero, IntPtr.Zero, 0u);
-        if (err != 0) return false;
-
-        NativeMethods.waveInClose(hWaveIn);
-        return true;
-    }
-
-    // MMSYSERR → (title, body) for UI. Messages formulated for the end user
-    // — no Win32 jargon. Raw code is logged elsewhere for debug.
-    private static (string Title, string Body) DescribeMicError(uint err) => err switch
-    {
-        2 => (Loc.Get("MicError_NotDetected_Title"), Loc.Get("MicError_NotDetected_Body")),
-        6 => (Loc.Get("MicError_NotDetected_Title"), Loc.Get("MicError_NotDetected_Body")),
-        4 => (Loc.Get("MicError_InUse_Title"),      Loc.Get("MicError_InUse_Body")),
-        _ => (Loc.Get("MicError_Unavailable_Title"), Loc.Format("MicError_Unavailable_Body_Format", err))
+        MicErrorKind.NotDetected => (Loc.Get("MicError_NotDetected_Title"), Loc.Get("MicError_NotDetected_Body")),
+        MicErrorKind.InUse       => (Loc.Get("MicError_InUse_Title"),       Loc.Get("MicError_InUse_Body")),
+        _                        => (Loc.Get("MicError_Unavailable_Title"), Loc.Format("MicError_Unavailable_Body_Format", err)),
     };
 
-    // ── Audio recording ─────────────────────────────────────────────────────
-    //
-    // Captures the microphone continuously into a single resizable buffer.
-    // When _stopFlag becomes 1 (set by RequestToggle on Recording → Stopping
-    // CAS, or by the cap-duration branch below), returns all accumulated
-    // audio as float[] (PCM16 → float [-1, 1]) to be passed in a single call
-    // to whisper_full(). Whisper handles its own internal windowing
-    // (30s + dynamic seek) and inter-window context propagation via tokens
-    // — no chunking here.
-
-    private float[] Record()
-    {
-        const uint WAVE_MAPPER    = 0xFFFFFFFF;
-        const uint CALLBACK_EVENT = 0x00050000;
-        const uint WHDR_DONE      = 0x00000001;
-        const int  N_BUFFERS      = 4;
-        // 50 ms buffers (1600 bytes) so AudioLevel events fire at a steady
-        // ~20 Hz spread across time, not in bursts of 10 every 500 ms.
-        // 500 ms bursts were the original size — trivial driver workload
-        // back then but catastrophic for a real-time HUD animation because
-        // the outline couldn't react inside a spoken word. 4 circular
-        // buffers give 200 ms of headroom if the drain loop stalls, still
-        // enough on any modern scheduler. 20 waveIn callbacks/s is a
-        // no-op for modern drivers (WASAPI defaults to 10 ms periods).
-        const int  BYTES_PER_BUF  = 16000 * 2 * 50 / 1000; // 50ms × 16kHz × 2 bytes/sample
-
-        var wfx = new WAVEFORMATEX
-        {
-            wFormatTag      = 1,     // uncompressed PCM
-            nChannels       = 1,     // mono
-            nSamplesPerSec  = 16000,
-            nAvgBytesPerSec = 32000,
-            nBlockAlign     = 2,
-            wBitsPerSample  = 16,
-            cbSize          = 0,
-        };
-
-        IntPtr hEvent = NativeMethods.CreateEvent(IntPtr.Zero, bManualReset: false, bInitialState: false, null);
-
-        // Device selected in Settings. -1 = WAVE_MAPPER (system default).
-        int configuredDevice = _host.Capture.AudioInputDeviceId;
-        uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
-
-        uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
-        if (err != 0)
-        {
-            _log.Error(LogSource.Record, $"waveInOpen error {err}");
-            NativeMethods.CloseHandle(hEvent);
-            return Array.Empty<float>();
-        }
-
-        uint hdrSize = (uint)Marshal.SizeOf<WAVEHDR>();
-        IntPtr[] hdrPtrs = new IntPtr[N_BUFFERS];
-        IntPtr[] bufPtrs  = new IntPtr[N_BUFFERS];
-
-        for (int i = 0; i < N_BUFFERS; i++)
-        {
-            bufPtrs[i] = Marshal.AllocHGlobal(BYTES_PER_BUF);
-            hdrPtrs[i] = Marshal.AllocHGlobal((int)hdrSize);
-            Marshal.StructureToPtr(new WAVEHDR
-            {
-                lpData         = bufPtrs[i],
-                dwBufferLength = BYTES_PER_BUF,
-            }, hdrPtrs[i], fDeleteOld: false);
-            NativeMethods.waveInPrepareHeader(hWaveIn, hdrPtrs[i], hdrSize);
-            NativeMethods.waveInAddBuffer(hWaveIn, hdrPtrs[i], hdrSize);
-        }
-
-        NativeMethods.waveInStart(hWaveIn);
-        // Hotkey-to-capture latency closes here — the mic is now live and the
-        // first 50 ms buffer is on its way. Includes EnsureModelLoaded (and
-        // therefore _modelLoadMs on cold runs), the mic probe, and worker
-        // thread spin-up. Stopwatch may be null if Record() is called outside
-        // the StartRecording path (e.g. Warmup) — guard before reading.
-        _hotkeySw?.Stop();
-        // Single buffer, grows throughout the recording.
-        // 1 sample = 2 bytes PCM16. At 16 kHz, 1 minute = 1.92M bytes.
-        var allBytes = new List<byte>(capacity: 16000 * 2 * 60); // pre-reserve ~1 min
-        // Reset the per-recording RMS series — the previous session's tail
-        // must not leak into this run's telemetry summary.
-        _rmsLog.Clear();
-        _log.Info(LogSource.Record, "Recording start");
-        _log.Verbose(LogSource.Record, "capture start | sample_rate=16 kHz | channels=mono");
-
-        // Snapshot the cap at recording start so a mid-recording Settings
-        // change doesn't shorten or extend a session already in progress.
-        int maxDurationSec = _host.Capture.MaxRecordingDurationSeconds;
-        bool capHit = false;
-        int buffersReceived = 0;
-
-        // Live low-audio tracker — "did the user speak at a healthy volume
-        // at least once in the first 5 s?" phrasing. The warning fires once
-        // per recording if the answer is no.
-        //
-        // Why not just count sub-threshold duration: a short peak (finger
-        // snap, breath hit) spikes above -50 dBFS for 50-100 ms, which would
-        // reset a naive consecutive counter and hide a genuinely broken mic.
-        // Instead we track the positive case — a stretch of ≥200 ms where
-        // dBFS stays ≥-45 is strong evidence of real speech (one full
-        // syllable on a typical USB mic), and we lock the warning off for
-        // the rest of the recording. Peaks are too short to clear 200 ms
-        // consecutively, so they can't fake a pass.
-        //
-        // Threshold chosen by observation: modern condenser/USB mics at
-        // typing distance produce normal conversation around -35 to -45
-        // dBFS. The old -35 dBFS threshold rejected typical condenser
-        // mics even during active speech. -45 dBFS leaves headroom for
-        // quieter setups while
-        // still catching the broken-mic / unplugged / miles-away scenarios
-        // (those sit below -55 dBFS).
-        const double NormalVoiceDbfsThreshold = -45.0;
-        const int    NormalVoiceSustainedMs   = 200;
-        const int    WarnAfterSilenceMs       = 5000;
-        int  healthyVoiceConsecutiveMs = 0;
-        int  recordingMs               = 0;
-        bool userVoiceConfirmed        = false;
-        bool lowAudioWarned            = false;
-        bool captureLagWarned          = false;
-
-        // TEMP DIAG (capture-lag investigation) — strip after collecting
-        // 5–10 occurrences in the wild. Tells us which of GC pause /
-        // CPU preemption / cold-start / heavy inline work caused the
-        // 3-buffer pile-up. Plan:
-        // C:\Users\Louis\.claude\plans\pourquoi-le-ring-buffer-effervescent-ritchie.md
-        long diagIterationCount = 0;
-        long diagLastIterMs     = 0;
-        int  diagGcStart0       = GC.CollectionCount(0);
-        int  diagGcStart1       = GC.CollectionCount(1);
-        int  diagGcStart2       = GC.CollectionCount(2);
-        var  diagWaitWatch      = new System.Diagnostics.Stopwatch();
-        var  diagIterWatch      = new System.Diagnostics.Stopwatch();
-
-        while (Volatile.Read(ref _stopFlag) == 0)
-        {
-            diagWaitWatch.Restart();
-            NativeMethods.WaitForSingleObject(hEvent, 100);
-            long diagWaitMs = diagWaitWatch.ElapsedMilliseconds;
-
-            diagIterWatch.Restart();
-            diagIterationCount++;
-
-            int bufferDoneCount = 0;
-            for (int i = 0; i < N_BUFFERS; i++)
-            {
-                WAVEHDR hdr = Marshal.PtrToStructure<WAVEHDR>(hdrPtrs[i]);
-                if ((hdr.dwFlags & WHDR_DONE) != 0)
-                {
-                    bufferDoneCount++;
-                    if (hdr.dwBytesRecorded == 0)
-                    {
-                        _log.Warning(LogSource.Record, $"empty buffer | index={i}");
-                    }
-                    else
-                    {
-                        var data = new byte[hdr.dwBytesRecorded];
-                        Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
-                        allBytes.AddRange(data);
-                        EmitAudioLevels(data);
-                        buffersReceived++;
-
-                        // Per-buffer low-audio tracker. 16 kHz mono PCM16 = 32
-                        // bytes per ms. Two state machines side by side:
-                        //   • healthyVoiceConsecutiveMs: consecutive duration
-                        //     above NormalVoiceDbfsThreshold. Hitting
-                        //     NormalVoiceSustainedMs flips userVoiceConfirmed,
-                        //     which permanently disarms the warning for this
-                        //     recording.
-                        //   • recordingMs: total captured duration. Once we
-                        //     pass WarnAfterSilenceMs without
-                        //     userVoiceConfirmed being set, emit the overlay
-                        //     warning (one-shot).
-                        int bufferMs = data.Length / 32;
-                        recordingMs += bufferMs;
-
-                        if (!userVoiceConfirmed)
-                        {
-                            double bufferDbfs = ComputeBufferDbfs(data);
-                            if (bufferDbfs >= NormalVoiceDbfsThreshold)
-                            {
-                                healthyVoiceConsecutiveMs += bufferMs;
-                                if (healthyVoiceConsecutiveMs >= NormalVoiceSustainedMs)
-                                {
-                                    userVoiceConfirmed = true;
-                                }
-                            }
-                            else
-                            {
-                                healthyVoiceConsecutiveMs = 0;
-                            }
-                        }
-
-                        if (!lowAudioWarned && !userVoiceConfirmed && recordingMs >= WarnAfterSilenceMs)
-                        {
-                            lowAudioWarned = true;
-                            _log.Warning(
-                                LogSource.Record,
-                                $"low audio detected | recording_ms={recordingMs} | no healthy voice ≥{NormalVoiceSustainedMs} ms above {NormalVoiceDbfsThreshold} dBFS",
-                                new UserFeedback(
-                                    Loc.Get("Engine_LowAudio_Title"),
-                                    Loc.Get("Engine_LowAudio_Body"),
-                                    UserFeedbackSeverity.Warning,
-                                    UserFeedbackRole.Overlay));
-                        }
-                    }
-
-                    hdr.dwFlags &= ~(uint)0x00000001;
-                    Marshal.StructureToPtr(hdr, hdrPtrs[i], fDeleteOld: false);
-                    NativeMethods.waveInAddBuffer(hWaveIn, hdrPtrs[i], hdrSize);
-                }
-            }
-
-            // Capture lag — fire once per recording when the ring buffer is
-            // really under pressure. With 4 buffers × 50 ms and a 100 ms
-            // wait, finding 1-2 buffers WHDR_DONE per iteration is normal;
-            // 3+ means the consumer fell at least 150 ms behind the producer.
-            //
-            // TEMP DIAG fields decode the cause:
-            //   iter         — iteration index when the lag fires (low → cold-start)
-            //   wait_ms      — time spent in WaitForSingleObject (high → GC pause / CPU preemption during sleep)
-            //   prev_iter_ms — time the previous scan loop took (high → heavy inline work let buffers pile up)
-            //   gcN          — GC count delta from start of recording (gen1/gen2 bump → STW pause)
-            if (!captureLagWarned && bufferDoneCount >= 3)
-            {
-                captureLagWarned = true;
-                int diagGcNow0 = GC.CollectionCount(0);
-                int diagGcNow1 = GC.CollectionCount(1);
-                int diagGcNow2 = GC.CollectionCount(2);
-                _log.Warning(LogSource.Record,
-                    $"capture lag | buffers_ready={bufferDoneCount} iter={diagIterationCount} wait_ms={diagWaitMs} prev_iter_ms={diagLastIterMs} gc0={diagGcStart0}->{diagGcNow0} gc1={diagGcStart1}->{diagGcNow1} gc2={diagGcStart2}->{diagGcNow2}");
-            }
-
-            // Duration cap — forces a stop as if the user had pressed the
-            // hotkey. Audio captured so far still flows through the full
-            // pipeline. Only triggers once per session.
-            //
-            // We CAS Recording → Stopping ourselves so the state machine
-            // matches the user-driven Stop path: the worker's post-Record
-            // CAS (Stopping → Transcribing) sees a consistent state. If the
-            // user pressed Stop in the very same instant and won the CAS,
-            // we lose ours; the _stopFlag write below still ends the loop
-            // cleanly, and the user-side ArmStopToPipelineLatency already
-            // started the stopwatch.
-            double curSec = allBytes.Count / 32000.0;
-            if (!capHit && maxDurationSec > 0 && curSec >= maxDurationSec)
-            {
-                capHit = true;
-                int minutes = maxDurationSec / 60;
-                _log.Warning(LogSource.Record,
-                    $"duration cap reached | audio_sec={curSec:F1} | cap_sec={maxDurationSec}");
-                RaiseNarrative(LogSource.Record,
-                    $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
-                if (Interlocked.CompareExchange(
-                        ref _state,
-                        (int)PipelineState.Stopping,
-                        (int)PipelineState.Recording)
-                    == (int)PipelineState.Recording)
-                {
-                    _stopToPipelineSw = System.Diagnostics.Stopwatch.StartNew();
-                }
-                Volatile.Write(ref _stopFlag, 1);
-            }
-
-            diagLastIterMs = diagIterWatch.ElapsedMilliseconds;
-        }
-
-        // Drain phase starts here — measured separately from the in-loop
-        // recording time so the LatencyPayload can show how much of
-        // StopToPipelineMs is spent draining the mic alone (the 100 ms guard
-        // sleep below is the obvious lower bound).
-        _recordDrainSw = System.Diagnostics.Stopwatch.StartNew();
-
-        NativeMethods.waveInStop(hWaveIn);
-        Thread.Sleep(100);
-
-        for (int i = 0; i < N_BUFFERS; i++)
-        {
-            WAVEHDR hdr = Marshal.PtrToStructure<WAVEHDR>(hdrPtrs[i]);
-            if ((hdr.dwFlags & WHDR_DONE) != 0 && hdr.dwBytesRecorded > 0)
-            {
-                var data = new byte[hdr.dwBytesRecorded];
-                Marshal.Copy(hdr.lpData, data, 0, (int)hdr.dwBytesRecorded);
-                allBytes.AddRange(data);
-                // Push the drained tail through the same sub-window mill so
-                // _rmsLog covers the full session (the in-loop EmitAudioLevels
-                // path stops as soon as _stopFlag flips, leaving the last
-                // 1-3 buffers undrained without this explicit pass).
-                EmitAudioLevels(data);
-            }
-            NativeMethods.waveInUnprepareHeader(hWaveIn, hdrPtrs[i], hdrSize);
-            Marshal.FreeHGlobal(bufPtrs[i]);
-            Marshal.FreeHGlobal(hdrPtrs[i]);
-        }
-
-        NativeMethods.waveInClose(hWaveIn);
-        NativeMethods.CloseHandle(hEvent);
-
-        double totalSec = allBytes.Count / 32000.0;
-
-        // Full-buffer aggregate: mean RMS + peak amplitude over the entire
-        // recording. Single pass over allBytes, cost is negligible vs the
-        // upcoming whisper_full call (~1 ms for a minute of audio at 16 kHz).
-        // dbfs_avg = 20*log10(rms_avg), floored at -120 dBFS when the buffer
-        // is pure zero to avoid −∞ in the log.
-        double aggSumSq = 0;
-        double aggPeak  = 0;
-        int nAggSamples = allBytes.Count / 2;
-        for (int i = 0; i < nAggSamples; i++)
-        {
-            short s = (short)(allBytes[i * 2] | (allBytes[i * 2 + 1] << 8));
-            double v = s / 32768.0;
-            aggSumSq += v * v;
-            double av = v < 0 ? -v : v;
-            if (av > aggPeak) aggPeak = av;
-        }
-        double rmsAvg  = nAggSamples > 0 ? Math.Sqrt(aggSumSq / nAggSamples) : 0;
-        double dbfsAvg = rmsAvg > 0 ? 20.0 * Math.Log10(rmsAvg) : -120.0;
-
-        _log.Info(LogSource.Record, $"Recording complete ({totalSec:F1} s)");
-        _log.Verbose(LogSource.Record,
-            $"capture complete | audio_sec={totalSec:F1} | buffers={buffersReceived} | bytes={allBytes.Count} | rms_avg={rmsAvg:F4} | rms_peak={aggPeak:F4} | dbfs_avg={dbfsAvg:F1}");
-        RaiseNarrative(LogSource.Record, $"Captured {totalSec:F1} s of audio. Moving on to analysis and transcription.");
-
-        // Mic telemetry — distribution + tail summary derived from _rmsLog.
-        // Replaces the previous Tail-on-allBytes computation, which was
-        // returning RMS=0 (= -96.7 dBFS, the "uninitialised buffer" floor)
-        // even on sessions Whisper transcribed perfectly. Root cause:
-        // the post-Stop drain loop concatenates buffers in WHDR index order
-        // 0..N-1, which does not always match temporal order at Stop, so
-        // the last 600 ms read from the byte tail could land on an
-        // out-of-order or partially-zeroed buffer. _rmsLog is fed in flow
-        // order by EmitAudioLevels (during Recording AND in the drain
-        // pass above), so its tail genuinely reflects the final ~600 ms
-        // of audio.
-        LogRecordingTelemetry();
-
-        // Drain done — _recordDrainSw is read once by the LatencyPayload
-        // builder. Anything past this point (Transcribe entry, params build,
-        // whisper_full setup) is captured by _stopToPipelineSw / _whisperInitSw.
-        _recordDrainSw?.Stop();
-
-        return PcmToFloat(allBytes.ToArray());
-    }
-
-    // Logs the per-recording mic telemetry: full-session percentile sweep
-    // (min / p10 / p25 / p50 / p75 / p90 / max in dBFS) plus the legacy
-    // Tail-600 ms diagnostic (active vs silent at Stop). Both lines are
-    // Info level so they appear in the Activity selector without forcing
-    // Verbose. Called once per Recording cycle from the Stop path.
-    //
-    // Linear RMS → dBFS via 20·log10(rms); guarded against rms ≤ 0
-    // (returns -120 dBFS, the conventional "digital silence" floor — the
-    // -96.7 dBFS we used to see corresponded to a single-LSB residual
-    // from a zero-initialised buffer, indistinguishable from true silence
-    // and historically misleading).
-    private void LogRecordingTelemetry()
-    {
-        if (_rmsLog.Count == 0)
-        {
-            _log.Warning(LogSource.Record, "Mic telemetry: no RMS samples captured (recording too short or audio thread starved)");
-            return;
-        }
-
-        static double ToDbfs(float linear) =>
-            linear > 0f ? 20.0 * Math.Log10(linear) : -120.0;
-
-        int n = _rmsLog.Count;
-
-        // ── Tail-600 ms diagnostic (always on) ─────────────────────────────
-        //
-        // Root-mean-square of the last 12 sub-windows. Sums the sub-window
-        // squared RMS values and re-roots, which is the mathematically
-        // correct way to combine RMS samples (NOT a plain mean of RMS).
-        // -50 dBFS keeps the active/silent threshold from the previous
-        // diagnostic so existing log readers stay calibrated.
-        //
-        // The line is user-facing in the Activity selector: it tells you
-        // whether you stopped after a silence (the natural case) or while
-        // still speaking (often a hotkey hit too early — last words may be
-        // clipped). The dBFS measurement stays in the line as a check for
-        // anyone calibrating the gate, but the leading clause speaks plain
-        // English.
-        int tailCount = Math.Min(12, n);
-        double tailSumSq = 0;
-        for (int i = _rmsLog.Count - tailCount; i < _rmsLog.Count; i++)
-        {
-            double v = _rmsLog[i];
-            tailSumSq += v * v;
-        }
-        double tailRms = Math.Sqrt(tailSumSq / tailCount);
-        double tailDbfs = ToDbfs((float)tailRms);
-        int tailMs = tailCount * 50;
-        bool tailActive = tailDbfs > -50;
-        string tailState = tailActive ? "active" : "silent";
-        string tailHeadline = tailActive
-            ? "You were still speaking at Stop — the last words may be clipped."
-            : "You stopped after a silence — capture ends cleanly.";
-        _log.Info(LogSource.Record,
-            $"{tailHeadline} (last {tailMs} ms at {tailDbfs:F1} dBFS)");
-
-        // ── Distribution payload (always computed) ─────────────────────────
-        //
-        // Builds the per-Recording percentile + mean payload regardless of
-        // the log/disk toggles, because auto-calibration consumes it
-        // independently. Computing this is cheap — sort of ~few thousand
-        // floats — so we don't gate it.
-        var sorted = _rmsLog.ToArray();
-        Array.Sort(sorted);
-
-        // Percentile picker: nearest-rank, clamped to [0, n-1]. Good enough
-        // for human-readable telemetry; we're not feeding a stats engine.
-        float Pick(double frac) => sorted[Math.Clamp((int)(n * frac), 0, n - 1)];
-
-        float min = sorted[0];
-        float max = sorted[n - 1];
-        float p10 = Pick(0.10), p25 = Pick(0.25), p50 = Pick(0.50);
-        float p75 = Pick(0.75), p90 = Pick(0.90);
-
-        // Mean of linear RMS — the number to compare against MaxDbfs window
-        // when calibrating the HUD response. NOT the mean of dBFS values
-        // (logs of small numbers skew that mean).
-        double meanLinear = 0;
-        for (int i = 0; i < n; i++) meanLinear += sorted[i];
-        meanLinear /= n;
-        double meanDbfs = ToDbfs((float)meanLinear);
-
-        double durSec = n * 0.05; // 50 ms per sub-window
-
-        var payload = new Logging.MicrophoneTelemetryPayload(
-            DurationSeconds: durSec,
-            Samples:         n,
-            MinDbfs:         ToDbfs(min),
-            P10Dbfs:         ToDbfs(p10),
-            P25Dbfs:         ToDbfs(p25),
-            P50Dbfs:         ToDbfs(p50),
-            P75Dbfs:         ToDbfs(p75),
-            P90Dbfs:         ToDbfs(p90),
-            MaxDbfs:         ToDbfs(max),
-            MeanRms:         meanLinear,
-            MeanDbfs:        meanDbfs,
-            TailRms:         tailRms,
-            TailDbfs:        tailDbfs,
-            TailState:       tailState);
-
-        // ── Optional: emit the Microphone telemetry event ──────────────────
-        //
-        // Single event, two consumers fanned out by the bus:
-        //   - LogWindow renders the human-readable Text via the Microphone
-        //     template (kind=Microphone routes through the template
-        //     selector to the Info layout).
-        //   - JsonlFileSink writes the structured payload to
-        //     <telemetry>/microphone.jsonl.
-        // Both gated by Settings ▸ Telemetry ▸ Log microphone — the sink
-        // re-checks the toggle at write time (defence in depth) and
-        // returning early here keeps the LogWindow quiet too.
-        bool micTelemetryEnabled = _host.Telemetry.MicrophoneTelemetry;
-        if (micTelemetryEnabled)
-            Logging.TelemetryService.Instance.Microphone(payload);
-
-        // ── Optional: auto-calibrate the dBFS window ───────────────────────
-        TryAutoCalibrate(payload);
-    }
 
     // Auto-calibration heuristic — runs after every Recording when
     // LevelWindow.AutoCalibrationEnabled is true, independent of the
@@ -1999,44 +1638,18 @@ public sealed class WhispEngine : IDisposable
         while (_autoCalibBuffer.Count > needed) _autoCalibBuffer.Dequeue();
         if (_autoCalibBuffer.Count < needed) return;
 
-        // Median across the buffer — avoids one rogue session pulling the
-        // window in either direction.
-        var p25s = _autoCalibBuffer.Select(p => p.P25Dbfs).OrderBy(v => v).ToArray();
-        var p90s = _autoCalibBuffer.Select(p => p.P90Dbfs).OrderBy(v => v).ToArray();
-        double medianP25 = p25s[p25s.Length / 2];
-        double medianP90 = p90s[p90s.Length / 2];
+        // Pure compute lives in MicrophoneCalibrationCalculator — the
+        // constants (-5 dB / +5 dB margins, -75 floor, ≥10 dB spread,
+        // [-90,-10] / [-60,-10] clamps, 0.5 dB no-change tolerance) are
+        // preserved exactly. The enveloppe (ring buffer, SaveSettings,
+        // ApplyLevelWindow, log) stays here because the side effects
+        // belong to the orchestrator.
+        var calib = MicrophoneCalibrationCalculator.Compute(
+            _autoCalibBuffer, lw.MinDbfs, lw.MaxDbfs);
+        if (!calib.ShouldUpdate) return;
 
-        // -5 dB / +5 dB margins keep the HUD from sitting flush against
-        // the user's measured percentiles — peaks above the median p90
-        // still saturate cleanly, and the floor doesn't trigger on the
-        // very edge of the silence band.
-        double newMin = Math.Round(medianP25 - 5.0);
-        double newMax = Math.Round(medianP90 + 5.0);
-
-        // Floor guard — even with p25, a session dominated by gate-induced
-        // silence can drag the median into the digital floor zone. Clamp
-        // at -75 dBFS so we never calibrate the HUD to react to gated
-        // silence. The user can still go lower manually via the slider
-        // if they want to capture a quieter mic.
-        if (newMin < -75) newMin = -75;
-
-        // Sanity: dBFS window must span at least 10 dB to give the HUD a
-        // visible dynamic range. A pathological all-silence buffer would
-        // produce a near-flat window — skip and wait for richer sessions.
-        if (newMax - newMin < 10) return;
-
-        // Clamp to the slider domains so the persisted values stay editable.
-        newMin = Math.Clamp(newMin, -90, -10);
-        newMax = Math.Clamp(newMax, -60, -10);
-        if (newMax <= newMin) return;
-
-        // Check whether anything changed — avoid log spam on stable mics.
-        bool changed = Math.Abs(lw.MinDbfs - newMin) >= 0.5f
-                    || Math.Abs(lw.MaxDbfs - newMax) >= 0.5f;
-        if (!changed) return;
-
-        lw.MinDbfs = (float)newMin;
-        lw.MaxDbfs = (float)newMax;
+        lw.MinDbfs = calib.NewMinDbfs;
+        lw.MaxDbfs = calib.NewMaxDbfs;
         _host.SaveSettings();
 
         // Push live into HudChrono so the next sub-window already uses the
@@ -2044,70 +1657,9 @@ public sealed class WhispEngine : IDisposable
         // (App.ApplyLevelWindow on the App side).
         _host.ApplyLevelWindow(lw);
 
-        _log.Success(LogSource.Record,
-            $"Auto-calibrated level window: Min={newMin:F0} Max={newMax:F0} dBFS "
+        _log.Success(LogSource.Capture,
+            $"Auto-calibrated level window: Min={calib.NewMinDbfs:F0} Max={calib.NewMaxDbfs:F0} dBFS "
           + $"(median over {needed} sessions, p25-5dB / p90+5dB margins)");
-    }
-
-    // waveIn delivers 50ms PCM16 buffers (BYTES_PER_BUF = 1600 bytes); the
-    // sub-window walker below loops at most once per call but keeps the
-    // pattern in case the buffer size changes. AudioLevel fires at ~20 Hz —
-    // fine enough for a smooth contour animation without swamping
-    // subscribers. RMS is linear [0, 1], clamped so a rare overshoot from
-    // quantization never escapes the range.
-    //
-    // Collect side-effect: every sub-window RMS is appended to _rmsLog. The
-    // accumulation runs unconditionally (independent of AudioLevel
-    // subscription) so the Stop-time mic-telemetry summary reflects the
-    // entire session even when the HUD isn't listening.
-    private void EmitAudioLevels(byte[] pcm16)
-    {
-        var handler = AudioLevel;
-
-        const int SubWindowMs     = 50;
-        const int BytesPerSubWin  = 16000 * 2 * SubWindowMs / 1000; // 1600 bytes
-        const int SamplesPerSubWin = BytesPerSubWin / 2;            // 800 samples
-
-        int offset = 0;
-        while (offset + BytesPerSubWin <= pcm16.Length)
-        {
-            double sumSq = 0;
-            for (int i = 0; i < SamplesPerSubWin; i++)
-            {
-                short s = (short)(pcm16[offset + i * 2] | (pcm16[offset + i * 2 + 1] << 8));
-                double v = s / 32768.0;
-                sumSq += v * v;
-            }
-            double rms = Math.Sqrt(sumSq / SamplesPerSubWin);
-            if (rms > 1.0) rms = 1.0;
-            float rmsF = (float)rms;
-            _rmsLog.Add(rmsF);
-            handler?.Invoke(rmsF);
-            offset += BytesPerSubWin;
-        }
-    }
-
-    // Full-buffer dBFS — single pass over a PCM16 mono buffer, returns the
-    // 20*log10(rms) value floored at -120 dBFS for a pure-zero buffer (so the
-    // log domain never sees 0). Used by the live low-audio tracker in
-    // Record(); intentionally coarse (whole-buffer average rather than per
-    // sub-window) because the tracker is already running at buffer cadence
-    // and we don't need finer granularity for a "did it stay quiet for 5 s?"
-    // check.
-    private static double ComputeBufferDbfs(byte[] pcm16)
-    {
-        int nSamples = pcm16.Length / 2;
-        if (nSamples == 0) return -120.0;
-
-        double sumSq = 0;
-        for (int i = 0; i < nSamples; i++)
-        {
-            short s = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
-            double v = s / 32768.0;
-            sumSq += v * v;
-        }
-        double rms = Math.Sqrt(sumSq / nSamples);
-        return rms > 0 ? 20.0 * Math.Log10(rms) : -120.0;
     }
 
     // ── Whisper transcription ────────────────────────────────────────────────
@@ -2417,11 +1969,12 @@ public sealed class WhispEngine : IDisposable
             return;
         }
 
-        // Low-audio warning is emitted live from Record() once 5 s of
-        // sustained sub-threshold signal has accumulated — see the tracker in
-        // the capture loop. Alerting during recording is the whole point of
-        // that message: we want the user to stop talking into a broken mic
-        // within seconds, not discover it 20 min later.
+        // Low-audio warning is emitted live by MicrophoneCapture once 5 s
+        // of sustained sub-threshold signal has accumulated — see the
+        // tracker in WaveInLoop.Pump and the OnCaptureLowAudioDetected
+        // localizer above. Alerting during recording is the whole point
+        // of that message: we want the user to stop talking into a broken
+        // mic within seconds, not discover it 20 min later.
 
         // Always copy raw text first — safety net even if LLM fails. If the
         // copy fails (all three CopyToClipboard error paths already emit a
@@ -2584,7 +2137,7 @@ public sealed class WhispEngine : IDisposable
         // _hotkeySw is null on the Warmup path) — coerce to 0 so the payload
         // stays well-formed.
         long hotkeyToCaptureMs = _hotkeySw?.ElapsedMilliseconds         ?? 0;
-        long recordDrainMs     = _recordDrainSw?.ElapsedMilliseconds    ?? 0;
+        long recordDrainMs     = (long)_recordDrainDuration.TotalMilliseconds;
         long stopToPipelineMs  = _stopToPipelineSw?.ElapsedMilliseconds ?? 0;
         // _vadInferenceMs is parsed from the whisper.cpp `vad time = X ms`
         // log line as a float; rounded to long here to match the inventory
@@ -2855,20 +2408,6 @@ public sealed class WhispEngine : IDisposable
         return true;
     }
 
-    // ── PCM → float conversion ─────────────────────────────────────────────
-
-    private static float[] PcmToFloat(byte[] pcm)
-    {
-        int n = pcm.Length / 2;
-        float[] result = new float[n];
-        for (int i = 0; i < n; i++)
-        {
-            short s = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
-            result[i] = s / 32768.0f;
-        }
-        return result;
-    }
-
     // ── Dispose ───────────────────────────────────────────────────────────────
 
     // Tray Quit → App.QuitApp → here. The state machine flips to Disposed
@@ -2900,11 +2439,13 @@ public sealed class WhispEngine : IDisposable
         var prevState = (PipelineState)Volatile.Read(ref _state);
         Interlocked.Exchange(ref _state, (int)PipelineState.Disposed);
 
-        // Tell the Record() loop to stop, in case the worker is still in
+        // Tell the capture loop to stop, in case the worker is still in
         // there. WorkerRun's Stopping → Transcribing CAS will lose to our
         // Disposed write and skip Transcribe entirely, but it still needs
-        // to exit Record() cleanly to release the waveIn handles.
-        Volatile.Write(ref _stopFlag, 1);
+        // to exit MicrophoneCapture.Record() cleanly to release the waveIn
+        // handles. CTS may already be disposed if WorkerRun raced ahead.
+        try { _recordCts?.Cancel(); }
+        catch (ObjectDisposedException) { }
 
         var worker = _worker;
         if (worker is not null && worker.IsAlive)
@@ -2946,5 +2487,7 @@ public sealed class WhispEngine : IDisposable
                 _ctx = IntPtr.Zero;
             }
         }
+
+        _capture.Dispose();
     }
 }

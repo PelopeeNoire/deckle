@@ -139,7 +139,7 @@ public sealed class TelemetryService
     // MicrophoneTelemetry) — same posture as Latency / Corpus.
     //
     // Single emission: the same event carries both the human-readable Text
-    // (for LogWindow display, prefixed [RECORD] like the matching capture
+    // (for LogWindow display, prefixed [CAPTURE] like the matching capture
     // log lines) and the structured payload (for the microphone.jsonl
     // sink). One source of truth — no parallel _log.Info on the Log
     // pipeline, no duplicate row.
@@ -147,7 +147,7 @@ public sealed class TelemetryService
     {
         var c = CultureInfo.InvariantCulture;
         string text =
-            $"{DateTime.Now:HH:mm:ss.fff} [RECORD] " +
+            $"{DateTime.Now:HH:mm:ss.fff} [CAPTURE] " +
             $"Mic telemetry over {p.DurationSeconds.ToString("F1", c)}s " +
             $"({p.Samples} samples @20Hz): " +
             $"min={p.MinDbfs.ToString("F1", c)} " +
