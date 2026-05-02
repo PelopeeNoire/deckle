@@ -57,7 +57,7 @@ public static class HudComposition
     // rebuilding the stroke (paint-time geometry); the playground triggers
     // that via its existing rebuild path.
     public  static       float InsetDip                = -2f;  // dip, inset from HUD edge
-    private const float  CornerRadiusDip              = 7f;    // dip, rounded-rect corner radius
+    private const float  CornerRadiusDip               = 8f;   // dip, rounded-rect corner radius
 
     // ╔════════════════════════════════════════════════════════════════════╗
     // ║  Processing stroke — single visual, live-modulated variants        ║
