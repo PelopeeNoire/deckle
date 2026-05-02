@@ -13,7 +13,7 @@ namespace Deckle.Shell;
 // of "1" (scancode 0x29). At registration time we resolve the current VK for
 // that scancode via MapVirtualKeyExW(GetKeyboardLayout(0)). On layout switch
 // we receive WM_INPUTLANGCHANGE, unregister, re-resolve, re-register.
-internal sealed class HotkeyManager : IDisposable
+public sealed class HotkeyManager : IDisposable
 {
     private readonly IntPtr _hwnd;
     private readonly Action<int> _onHotkey;
