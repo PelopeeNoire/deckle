@@ -18,7 +18,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <!-- Forces the Publish pipeline to generate/copy Deckle.pri into PublishDir.
          Without this, in unpackaged + WindowsAppSDK 1.8, the .pri doesn't land in
          publish\ and all compiled XAML resources (.xbf embedded in .pri since 1.8)
