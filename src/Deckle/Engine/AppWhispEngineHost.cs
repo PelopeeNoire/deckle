@@ -1,3 +1,4 @@
+using Deckle.Capture;
 using Deckle.Llm;
 using Deckle.Logging;
 using Deckle.Settings;
@@ -18,7 +19,7 @@ namespace Deckle;
 internal sealed class AppWhispEngineHost : IWhispEngineHost
 {
     public WhispSettings     Whisp     => SettingsService.Instance.Current.Whisp;
-    public RecordingSettings Recording => SettingsService.Instance.Current.Recording;
+    public CaptureSettings   Capture   => SettingsService.Instance.Current.Capture;
     public TelemetrySettings Telemetry => SettingsService.Instance.Current.Telemetry;
     public LlmSettings       Llm       => SettingsService.Instance.Current.Llm;
 

@@ -1,8 +1,14 @@
-namespace Deckle.Whisp;
+namespace Deckle.Capture;
 
-// Paramètres d'enregistrement audio. AudioInputDeviceId = index du périphérique
-// waveIn à utiliser. -1 = WAVE_MAPPER (périphérique par défaut du système).
-public sealed class RecordingSettings
+// Microphone capture settings. AudioInputDeviceId = waveIn device index;
+// -1 = WAVE_MAPPER (system default device).
+//
+// Renamed from RecordingSettings on 2026-05-02 when the capture subsystem
+// was extracted into its own project. The page Settings ▸ Recording label
+// stays unchanged on the UI side — only the C# property and the JSON key
+// change. Migration from the legacy "Recording" JSON key is handled
+// silently in SettingsService.Load.
+public sealed class CaptureSettings
 {
     public int AudioInputDeviceId { get; set; } = -1;
 

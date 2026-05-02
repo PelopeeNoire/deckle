@@ -1473,7 +1473,7 @@ public sealed class WhispEngine : IDisposable
             cbSize          = 0,
         };
 
-        int configuredDevice = _host.Recording.AudioInputDeviceId;
+        int configuredDevice = _host.Capture.AudioInputDeviceId;
         uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
 
         err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, IntPtr.Zero, IntPtr.Zero, 0u);
@@ -1533,7 +1533,7 @@ public sealed class WhispEngine : IDisposable
         IntPtr hEvent = NativeMethods.CreateEvent(IntPtr.Zero, bManualReset: false, bInitialState: false, null);
 
         // Device selected in Settings. -1 = WAVE_MAPPER (system default).
-        int configuredDevice = _host.Recording.AudioInputDeviceId;
+        int configuredDevice = _host.Capture.AudioInputDeviceId;
         uint deviceId = configuredDevice < 0 ? WAVE_MAPPER : (uint)configuredDevice;
 
         uint err = NativeMethods.waveInOpen(out IntPtr hWaveIn, deviceId, ref wfx, hEvent, IntPtr.Zero, CALLBACK_EVENT);
@@ -1579,7 +1579,7 @@ public sealed class WhispEngine : IDisposable
 
         // Snapshot the cap at recording start so a mid-recording Settings
         // change doesn't shorten or extend a session already in progress.
-        int maxDurationSec = _host.Recording.MaxRecordingDurationSeconds;
+        int maxDurationSec = _host.Capture.MaxRecordingDurationSeconds;
         bool capHit = false;
         int buffersReceived = 0;
 
@@ -1990,7 +1990,7 @@ public sealed class WhispEngine : IDisposable
     // last wins, which is the natural behaviour from the user's POV.
     private void TryAutoCalibrate(Logging.MicrophoneTelemetryPayload payload)
     {
-        var lw = _host.Recording.LevelWindow;
+        var lw = _host.Capture.LevelWindow;
         if (!lw.AutoCalibrationEnabled) return;
 
         int needed = Math.Max(1, lw.AutoCalibrationSamples);
