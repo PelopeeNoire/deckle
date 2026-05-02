@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
+using WinRT.Interop;
+using Deckle.Interop;
 using Deckle.Localization;
 using Deckle.Logging;
 using Deckle.Whisp.Setup;
@@ -103,9 +105,14 @@ internal sealed partial class SetupWindow : Window
 
     private void ConfigureWindow()
     {
-        // 720×520 centred on the primary work area — matches Dev Home
-        // SetupFlowPage / Settings Win11 OOBE. Tall enough for a card-
-        // based choices page plus a progress section without scrolling.
+        // 560×720 DIPs centred on the primary work area — narrow card
+        // shape, taller than wide; tuned by hand. Edit the literals on
+        // lines 125-126 to retune.
+        //
+        // AppWindow.MoveAndResize takes raw pixels, so DIPs are scaled by
+        // GetDpiForWindow / 96 (same pattern as HudOverlayWindow.ShowAt).
+        // Without scaling, the wizard rendered at 50–66 % of intended size
+        // on high-DPI displays.
         ExtendsContentIntoTitleBar = true;
         if (AppWindow is { } appWindow)
         {
@@ -114,7 +121,10 @@ internal sealed partial class SetupWindow : Window
             var area = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Primary);
             if (area is not null)
             {
-                int w = 720, h = 520;
+                IntPtr hwnd  = WindowNative.GetWindowHandle(this);
+                double scale = NativeMethods.GetDpiForWindow(hwnd) / 96.0;
+                int w = (int)Math.Round(560 * scale);
+                int h = (int)Math.Round(720 * scale);
                 int x = area.WorkArea.X + (area.WorkArea.Width  - w) / 2;
                 int y = area.WorkArea.Y + (area.WorkArea.Height - h) / 2;
                 appWindow.MoveAndResize(new RectInt32(x, y, w, h));
