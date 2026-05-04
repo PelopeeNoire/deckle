@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Deckle.Settings.RecordingPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI"
+    xmlns:vm="using:Deckle.Settings.ViewModels">
+
+    <!-- Same canvas pattern as GeneralPage / DiagnosticsPage / WhisperPage:
+         Grid wrapper + StackPanel MaxWidth=1000 + SettingsCardSpacing=4 +
+         section headers in BodyStrong + Margin 1,30,0,6. Page extracted
+         from GeneralPage in slice S3 — owns everything around the capture
+         pipeline (microphone device, auto-paste, level window calibration,
+         overlay HUD). -->
+    <Page.Resources>
+        <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+        <Style x:Key="SettingsSectionHeaderTextBlockStyle"
+               BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+               TargetType="TextBlock">
+            <Style.Setters>
+                <Setter Property="Margin" Value="1,30,0,6" />
+            </Style.Setters>
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer Padding="32,24,32,24"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <Grid>
+            <StackPanel MaxWidth="1000"
+                        HorizontalAlignment="Stretch"
+                        Spacing="{StaticResource SettingsCardSpacing}">
+
+                <TextBlock x:Uid="RecordingPageTitleLabel"
+                           Style="{StaticResource TitleTextBlockStyle}"
+                           Margin="0,0,0,8" />
+
+                <TextBlock x:Uid="RecordingPageSubtitleLabel"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,12" />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="RecordingPageSectionHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetRecording_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Name="AudioInputCard"
+                                       x:Uid="GeneralMicrophoneCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                    <ComboBox x:Name="AudioInputCombo"
+                              MinWidth="240"
+                              SelectionChanged="AudioInputCombo_SelectionChanged" />
+                </controls:SettingsCard>
+
+                <controls:SettingsCard x:Uid="GeneralAutoPasteCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <!-- Voice level window — same calibration block as before. The
+                     master toggle in the header enables auto-calibration; the
+                     three sliders push live into AudioLevelMapper statics via
+                     SettingsHost.ApplyLevelWindow. -->
+                <controls:SettingsExpander x:Uid="GeneralVoiceLevelExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE993;}">
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <TextBlock x:Uid="GeneralVoiceLevelAutoLabel"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <ToggleSwitch IsOn="{x:Bind ViewModel.LevelWindowAutoCalibration, Mode=TwoWay}"
+                                      OnContent=""
+                                      OffContent="" />
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="GeneralVoiceLevelFloorCard">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowMinSlider"
+                                        Minimum="-90" Maximum="-10"
+                                        Value="{x:Bind ViewModel.LevelWindowMinDbfs, Mode=TwoWay}"
+                                        StepFrequency="1"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowMinDbfs, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="dBFS"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralVoiceLevelCeilingCard">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowMaxSlider"
+                                        Minimum="-60" Maximum="-10"
+                                        Value="{x:Bind ViewModel.LevelWindowMaxDbfs, Mode=TwoWay}"
+                                        StepFrequency="1"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowMaxDbfs, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="dBFS"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralVoiceLevelCurveCard">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <Slider x:Name="LevelWindowExponentSlider"
+                                        Minimum="0.3" Maximum="3.0"
+                                        Value="{x:Bind ViewModel.LevelWindowExponent, Mode=TwoWay}"
+                                        StepFrequency="0.05"
+                                        Width="220"
+                                        IsThumbToolTipEnabled="False"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Text="{x:Bind ViewModel.LevelWindowExponent, Mode=OneWay}"
+                                           MinWidth="36"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <controls:SettingsExpander x:Uid="GeneralOverlayExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="GeneralOverlayFadeCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralOverlayAnimationsCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayAnimations, Mode=TwoWay}" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralOverlayPositionCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ComboBox x:Name="OverlayPositionCombo"
+                                      MinWidth="160"
+                                      SelectionChanged="OverlayPositionCombo_SelectionChanged">
+                                <ComboBoxItem x:Uid="GeneralOverlayPositionTop" Tag="TopCenter" />
+                                <ComboBoxItem x:Uid="GeneralOverlayPositionBottom" Tag="BottomCenter" />
+                            </ComboBox>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Page>
