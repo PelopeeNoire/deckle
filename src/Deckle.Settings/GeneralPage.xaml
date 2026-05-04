@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     xmlns:ui="using:CommunityToolkit.WinUI"
+    xmlns:settings="using:Deckle.Settings"
     xmlns:vm="using:Deckle.Settings.ViewModels">
 
     <!-- Pattern canonique Microsoft Learn (SettingsExpander sample "Settings page
@@ -296,42 +297,9 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <controls:SettingsCard x:Name="TelemetryFolderCard"
-                                       x:Uid="GeneralStorageFolderCard"
-                                       ContentAlignment="Vertical">
-                    <!-- Grid + "*" column lets the TextBox shrink when the
-                         Settings window is narrow. A StackPanel Horizontal
-                         would keep children at their natural width and
-                         clip the rightmost buttons. -->
-                    <Grid ColumnSpacing="8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="TelemetryFolderBox"
-                                 Grid.Column="0"
-                                 Text="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
-                        <Button x:Name="ChangeTelemetryFolderButton"
-                                x:Uid="GeneralStorageFolderSetButton"
-                                Grid.Column="1"
-                                Click="ChangeCorpusFolderButton_Click">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon Glyph="&#xE838;" FontSize="14" />
-                                <TextBlock x:Uid="GeneralStorageFolderSetLabel" />
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="OpenTelemetryFolderButton"
-                                x:Uid="GeneralStorageFolderOpenButton"
-                                Grid.Column="2"
-                                Click="OpenCorpusFolderButton_Click">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock x:Uid="GeneralStorageFolderOpenLabel" />
-                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
-                            </StackPanel>
-                        </Button>
-                    </Grid>
-                </controls:SettingsCard>
+                <settings:FolderPickerCard x:Name="TelemetryFolderPicker"
+                                           x:Uid="GeneralStorageFolderCard"
+                                           Path="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
 
                 <!-- ── Back up & restore ───────────────────────────────────── -->
                 <!--
@@ -356,20 +324,9 @@
                                 IsEnabled="{x:Bind ViewModel.HasBackup, Mode=OneWay}" />
                     </StackPanel>
                     <controls:SettingsExpander.Items>
-                        <controls:SettingsCard x:Uid="GeneralBackupLocationCard">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <TextBlock Text="{x:Bind ViewModel.BackupLocationDisplay, Mode=OneWay}"
-                                           VerticalAlignment="Center"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           MaxWidth="380" />
-                                <Button x:Name="ChangeBackupFolderButton"
-                                        x:Uid="GeneralBackupChangeButton"
-                                        Click="ChangeBackupFolderButton_Click">
-                                    <FontIcon Glyph="&#xE838;" FontSize="14" />
-                                </Button>
-                            </StackPanel>
-                        </controls:SettingsCard>
+                        <settings:FolderPickerCard x:Name="BackupFolderPicker"
+                                                   x:Uid="GeneralBackupLocationCard"
+                                                   Path="{x:Bind ViewModel.BackupDirectory, Mode=TwoWay}" />
 
                         <controls:SettingsCard x:Uid="GeneralBackupInfoCard"
                                                ContentAlignment="Vertical">

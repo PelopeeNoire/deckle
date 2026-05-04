@@ -1016,9 +1016,6 @@
   <data name="WhisperModelsDirCard.Description" xml:space="preserve">
     <value>Leave empty to use the default location next to the application.</value>
   </data>
-  <data name="WhisperModelsDirBox.PlaceholderText" xml:space="preserve">
-    <value>(auto)</value>
-  </data>
   <data name="WhisperRestartDiscard.Content" xml:space="preserve">
     <value>Discard</value>
   </data>
