@@ -246,63 +246,6 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <!-- ── Telemetry ───────────────────────────────────────────── -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Uid="GeneralPageTelemetryHeaderLabel"
-                               Grid.Column="0"
-                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
-                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
-                                     Grid.Column="1"
-                                     VerticalAlignment="Bottom"
-                                     Margin="0,0,0,2"
-                                     Click="ResetTelemetry_Click" />
-                </Grid>
-
-                <controls:SettingsCard x:Uid="GeneralLogMicrophoneCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
-                    <ToggleSwitch x:Name="MicrophoneTelemetryToggle"
-                                  IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}"
-                                  Toggled="MicrophoneTelemetryToggle_Toggled" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard x:Uid="GeneralLatencyCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard x:Uid="GeneralAppLogCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9A4;}">
-                    <ToggleSwitch x:Name="ApplicationLogToggle"
-                                  IsOn="{x:Bind ViewModel.ApplicationLogToDisk, Mode=TwoWay}"
-                                  Toggled="ApplicationLogToggle_Toggled" />
-                </controls:SettingsCard>
-
-                <controls:SettingsExpander x:Uid="GeneralCorpusExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xEFA9;}">
-                    <ToggleSwitch x:Name="CorpusLoggingToggle"
-                                  IsOn="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=TwoWay}"
-                                  Toggled="CorpusLoggingToggle_Toggled" />
-                    <controls:SettingsExpander.Items>
-                        <controls:SettingsCard x:Name="AudioCorpusCard"
-                                               x:Uid="GeneralAudioCorpusCard"
-                                               IsEnabled="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=OneWay}">
-                            <ToggleSwitch x:Name="AudioCorpusToggle"
-                                          IsOn="{x:Bind ViewModel.RecordAudioCorpus, Mode=TwoWay}"
-                                          Toggled="AudioCorpusToggle_Toggled" />
-                        </controls:SettingsCard>
-                    </controls:SettingsExpander.Items>
-                </controls:SettingsExpander>
-
-                <controls:SettingsCard x:Uid="GeneralStorageFolderCard"
-                                       ContentAlignment="Vertical">
-                    <settings:FolderPickerCard x:Name="TelemetryFolderPicker"
-                                               Path="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
                 <!-- ── Back up & restore ───────────────────────────────────── -->
                 <!--
                     Pattern PowerToys (Settings → General → "Back up & restore"):

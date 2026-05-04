@@ -52,6 +52,12 @@
                         <FontIcon Glyph="&#xF6C7;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Uid="SettingsNavDiagnostics"
+                                    Tag="Deckle.Settings.DiagnosticsPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE9D9;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <NavigationView.FooterMenuItems>
