@@ -1004,17 +1004,11 @@
   <data name="WhisperNoSpeechCard.Description" xml:space="preserve">
     <value>Controls silence suppression. When the model flags a segment as silence and confidence is also low, the segment is dropped. Lower values suppress more aggressively. Default: 0.6.</value>
   </data>
-  <data name="WhisperPathsCard.Header" xml:space="preserve">
+  <data name="WhisperModelsDirCard.Header" xml:space="preserve">
     <value>Models folder</value>
   </data>
-  <data name="WhisperPathsCard.Description" xml:space="preserve">
-    <value>Where Whisper and Silero model files are stored on disk.</value>
-  </data>
-  <data name="WhisperModelsDirCard.Header" xml:space="preserve">
-    <value>Folder path</value>
-  </data>
   <data name="WhisperModelsDirCard.Description" xml:space="preserve">
-    <value>Leave empty to use the default location next to the application.</value>
+    <value>Where Whisper and Silero model files are stored on disk. Leave empty to use the default location next to the application.</value>
   </data>
   <data name="WhisperRestartDiscard.Content" xml:space="preserve">
     <value>Discard</value>
@@ -1242,9 +1236,6 @@
   </data>
   <data name="WhisperConfidenceExpander.Description" xml:space="preserve">
     <value>When Whisper retries a segment or treats it as silence.</value>
-  </data>
-  <data name="WhisperPageStorageHeaderLabel.Text" xml:space="preserve">
-    <value>Storage</value>
   </data>
   <data name="WhisperPageResetAllLabel.Text" xml:space="preserve">
     <value>Reset all</value>
