@@ -150,11 +150,11 @@
        each instance are passed in via the consumer's x:Uid (e.g.
        GeneralStorageFolderCard.Header). These two strings stay
        generic so a single key covers every folder picker in the app. -->
-  <data name="FolderPickerCard_PickButton_Label.Text" xml:space="preserve">
-    <value>Change...</value>
+  <data name="FolderPickerCard_PickButton.Content" xml:space="preserve">
+    <value>Set</value>
   </data>
-  <data name="FolderPickerCard_OpenButton_Label.Text" xml:space="preserve">
-    <value>Show</value>
+  <data name="FolderPickerCard_OpenButton.Content" xml:space="preserve">
+    <value>Open</value>
   </data>
 
   <!-- ─── Consent dialogs ────────────────────────────────────────────
@@ -805,11 +805,8 @@
   <data name="GeneralDataFolderCard.Description" xml:space="preserve">
     <value>Settings, telemetry, models, and native libraries — everything mutable lives here. Defaults to %LOCALAPPDATA%\Deckle\.</value>
   </data>
-  <data name="GeneralDataFolderOpenText.Text" xml:space="preserve">
+  <data name="GeneralDataFolderOpenButton.Content" xml:space="preserve">
     <value>Open</value>
-  </data>
-  <data name="GeneralDataFolderOpenButton.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Open in File Explorer</value>
   </data>
   <data name="GeneralRerunSetupCard.Header" xml:space="preserve">
     <value>First-run setup</value>

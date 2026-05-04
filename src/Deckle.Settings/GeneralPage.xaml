@@ -297,7 +297,8 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <controls:SettingsCard x:Uid="GeneralStorageFolderCard">
+                <controls:SettingsCard x:Uid="GeneralStorageFolderCard"
+                                       ContentAlignment="Vertical">
                     <settings:FolderPickerCard x:Name="TelemetryFolderPicker"
                                                Path="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
                 </controls:SettingsCard>
@@ -325,7 +326,8 @@
                                 IsEnabled="{x:Bind ViewModel.HasBackup, Mode=OneWay}" />
                     </StackPanel>
                     <controls:SettingsExpander.Items>
-                        <controls:SettingsCard x:Uid="GeneralBackupLocationCard">
+                        <controls:SettingsCard x:Uid="GeneralBackupLocationCard"
+                                               ContentAlignment="Vertical">
                             <settings:FolderPickerCard x:Name="BackupFolderPicker"
                                                        Path="{x:Bind ViewModel.BackupDirectory, Mode=TwoWay}" />
                         </controls:SettingsCard>
@@ -362,22 +364,26 @@
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
                 <controls:SettingsCard x:Uid="GeneralDataFolderCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
-                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}"
+                                       ContentAlignment="Vertical">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
                         <TextBlock x:Name="DataFolderPathText"
+                                   Grid.Column="0"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   IsTextSelectionEnabled="True"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
                                    TextTrimming="CharacterEllipsis"
-                                   MaxWidth="380" />
-                        <Button x:Name="OpenDataFolderButton"
+                                   TextWrapping="NoWrap" />
+                        <Button Grid.Column="1"
+                                x:Name="OpenDataFolderButton"
                                 x:Uid="GeneralDataFolderOpenButton"
-                                Click="OpenDataFolderButton_Click">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock x:Uid="GeneralDataFolderOpenText" />
-                                <FontIcon Glyph="&#xE8A7;" FontSize="12" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
+                                Click="OpenDataFolderButton_Click" />
+                    </Grid>
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="GeneralRerunSetupCard"
