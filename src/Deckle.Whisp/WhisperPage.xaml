@@ -3,7 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
-    xmlns:ui="using:CommunityToolkit.WinUI">
+    xmlns:ui="using:CommunityToolkit.WinUI"
+    xmlns:settings="using:Deckle.Settings">
 
     <Page.Resources>
         <x:Double x:Key="SettingsCardSpacing">4</x:Double>
@@ -561,17 +562,16 @@
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard x:Uid="WhisperModelsDirCard"
                                                ContentAlignment="Vertical">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBox x:Name="ModelsDirectoryBox"
-                                         x:Uid="WhisperModelsDirBox"
-                                         MinWidth="400"
-                                         Text="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}" />
-                                <Button x:Name="ModelsDirectoryReset"
-                                        Style="{StaticResource ResetButtonStyle}"
-                                        Click="ModelsDirectoryReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
-                                </Button>
-                            </StackPanel>
+                            <settings:FolderPickerEditableCard x:Name="ModelsDirectoryPicker"
+                                                               Path="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}">
+                                <settings:FolderPickerEditableCard.RightContent>
+                                    <Button x:Name="ModelsDirectoryReset"
+                                            Style="{StaticResource ResetButtonStyle}"
+                                            Click="ModelsDirectoryReset_Click">
+                                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    </Button>
+                                </settings:FolderPickerEditableCard.RightContent>
+                            </settings:FolderPickerEditableCard>
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>

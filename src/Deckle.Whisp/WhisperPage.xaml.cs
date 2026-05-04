@@ -99,6 +99,12 @@ public sealed partial class WhisperPage : Page
                 InitialPromptCard.PointerExited += (_, _) => InitialPromptReset.Opacity = 0;
                 PathsCard.PointerEntered += (_, _) => ModelsDirectoryReset.Opacity = 1;
                 PathsCard.PointerExited += (_, _) => ModelsDirectoryReset.Opacity = 0;
+                // FolderPickerEditableCard.DefaultPath drives the TextBox
+                // PlaceholderText shown when ModelsDirectory is empty (the
+                // legacy "(auto)" placeholder is gone — users see the actual
+                // resolved path instead). Set once on first load; the value
+                // is stable for the lifetime of the process.
+                ModelsDirectoryPicker.DefaultPath = AppPaths.ModelsDirectory;
                 VadEnabledCard.PointerEntered += (_, _) => VadEnabledReset.Opacity = 1;
                 VadEnabledCard.PointerExited += (_, _) => VadEnabledReset.Opacity = 0;
                 WireHover(VadThresholdCard, VadThresholdReset);
