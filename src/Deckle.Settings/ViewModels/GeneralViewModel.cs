@@ -1,14 +1,16 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Deckle.Capture;
 using Deckle.Logging;
 using Deckle.Shell;
 
 namespace Deckle.Settings.ViewModels;
 
-// ViewModel for GeneralPage — bridges the 4 AppSettings sections
-// (Recording, Overlay, Startup, Appearance) to the XAML via x:Bind.
+// ViewModel for GeneralPage — bridges shell-level AppSettings sections
+// (Startup, Appearance, Backup) to the XAML via x:Bind. Recording was
+// extracted in slice S3 to RecordingViewModel ; Telemetry in slice S2 to
+// DiagnosticsViewModel. What remains is the cross-cutting shell config
+// (theme + autostart + warmup + backup directory).
 //
 // Pattern: Load() pulls from the POCO, property changes push back via
 // PushToSettings(). The _isSyncing flag prevents re-saving during Load().
@@ -18,128 +20,6 @@ public partial class GeneralViewModel : ObservableObject
 {
     private static readonly LogService _log = LogService.Instance;
     private bool _isSyncing;
-
-    // ── Recording ────────────────────────────────────────────────────────────
-
-    [ObservableProperty]
-    public partial int AudioInputDeviceId { get; set; }
-
-    partial void OnAudioInputDeviceIdChanged(int value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Audio input device ← {value}");
-        PushToSettings();
-    }
-
-    [ObservableProperty]
-    public partial bool AutoPasteEnabled { get; set; }
-
-    partial void OnAutoPasteEnabledChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Auto-paste ← {value}");
-        PushToSettings();
-    }
-
-    // ── Level window (calibration) ──────────────────────────────────────────
-    //
-    // Three sliders + an auto toggle that map onto AudioLevelMapper's
-    // {Min,Max}Dbfs + DbfsCurveExponent statics in Deckle.Capture. Each
-    // change pushes to settings AND directly into those statics via
-    // SettingsHost.ApplyLevelWindow (wired by App at boot) so the HUD
-    // reflects the new window on the next sub-window without restart.
-
-    [ObservableProperty]
-    public partial double LevelWindowMinDbfs { get; set; }
-
-    [ObservableProperty]
-    public partial double LevelWindowMaxDbfs { get; set; }
-
-    [ObservableProperty]
-    public partial double LevelWindowExponent { get; set; }
-
-    [ObservableProperty]
-    public partial bool LevelWindowAutoCalibration { get; set; }
-
-    // Slider drags fire ValueChanged on every step (50+ events per drag),
-    // so we keep the per-edit log line at Verbose level — visible in the
-    // All filter for debugging, hidden from Activity / Steps where it
-    // would drown the actual pipeline narrative. PushToSettings is fine
-    // on every step (the file save is debounced one level deeper inside
-    // SettingsService); SettingsHost.ApplyLevelWindow ultimately writes
-    // a few static fields in Capture.AudioLevelMapper, also free.
-    partial void OnLevelWindowMinDbfsChanged(double value)
-    {
-        if (_isSyncing) return;
-        _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MinDbfs ← {value:F1} dBFS");
-        PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
-    }
-
-    partial void OnLevelWindowMaxDbfsChanged(double value)
-    {
-        if (_isSyncing) return;
-        _log.Verbose(LogSource.SetGeneral, $"LevelWindow.MaxDbfs ← {value:F1} dBFS");
-        PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
-    }
-
-    partial void OnLevelWindowExponentChanged(double value)
-    {
-        if (_isSyncing) return;
-        _log.Verbose(LogSource.SetGeneral, $"LevelWindow.DbfsCurveExponent ← {value:F2}");
-        PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
-    }
-
-    partial void OnLevelWindowAutoCalibrationChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"LevelWindow.AutoCalibration ← {value}");
-        PushToSettings();
-    }
-
-    // ── Overlay ──────────────────────────────────────────────────────────────
-
-    [ObservableProperty]
-    public partial bool OverlayEnabled { get; set; }
-
-    [ObservableProperty]
-    public partial bool OverlayFadeOnProximity { get; set; }
-
-    [ObservableProperty]
-    public partial bool OverlayAnimations { get; set; }
-
-    [ObservableProperty]
-    public partial string OverlayPosition { get; set; }
-
-    partial void OnOverlayEnabledChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Overlay enabled ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnOverlayFadeOnProximityChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Overlay fade ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnOverlayAnimationsChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Overlay animations ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnOverlayPositionChanged(string value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Overlay position ← {value}");
-        PushToSettings();
-    }
 
     // ── Startup ──────────────────────────────────────────────────────────────
 
@@ -240,21 +120,8 @@ public partial class GeneralViewModel : ObservableObject
 
     public GeneralViewModel()
     {
-        // Guard BEFORE any property assignment — the partial property setters
-        // trigger OnXChanged which would call PushToSettings() and corrupt
-        // the POCO with partially-initialized defaults.
         _isSyncing = true;
 
-        AudioInputDeviceId = -1;
-        AutoPasteEnabled = false;
-        LevelWindowMinDbfs = -55;
-        LevelWindowMaxDbfs = -32;
-        LevelWindowExponent = 1.0;
-        LevelWindowAutoCalibration = false;
-        OverlayEnabled = true;
-        OverlayFadeOnProximity = true;
-        OverlayAnimations = true;
-        OverlayPosition = "BottomCenter";
         AutostartEnabled = false;
         WarmupOnLaunch = true;
         Theme = "System";
@@ -268,19 +135,7 @@ public partial class GeneralViewModel : ObservableObject
         _isSyncing = true;
         try
         {
-            var shell    = SettingsService.Instance.Current;
-            var capture  = CaptureSettingsService.Instance.Current;
-
-            AudioInputDeviceId = capture.AudioInputDeviceId;
-            AutoPasteEnabled = shell.Paste.AutoPasteEnabled;
-            LevelWindowMinDbfs = capture.LevelWindow.MinDbfs;
-            LevelWindowMaxDbfs = capture.LevelWindow.MaxDbfs;
-            LevelWindowExponent = capture.LevelWindow.DbfsCurveExponent;
-            LevelWindowAutoCalibration = capture.LevelWindow.AutoCalibrationEnabled;
-            OverlayEnabled = shell.Overlay.Enabled;
-            OverlayFadeOnProximity = shell.Overlay.FadeOnProximity;
-            OverlayAnimations = shell.Overlay.Animations;
-            OverlayPosition = shell.Overlay.Position;
+            var shell = SettingsService.Instance.Current;
             AutostartEnabled = AutostartService.IsEnabled();
             WarmupOnLaunch = shell.Startup.WarmupOnLaunch;
             Theme = shell.Appearance.Theme;
@@ -296,61 +151,16 @@ public partial class GeneralViewModel : ObservableObject
         RefreshBackups();
     }
 
-    // PushToSettings writes to two module services rather than one root
-    // (slice C2b: per-module persistence ; slice S2 moved telemetry out
-    // to DiagnosticsViewModel + TelemetrySettingsService). Each service
-    // has its own Save() and its own debounce timer.
     private void PushToSettings()
     {
-        var shell    = SettingsService.Instance.Current;
-        var capture  = CaptureSettingsService.Instance.Current;
-
-        capture.AudioInputDeviceId = AudioInputDeviceId;
-        capture.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
-        capture.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
-        capture.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
-        capture.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
-
-        shell.Paste.AutoPasteEnabled = AutoPasteEnabled;
-        shell.Overlay.Enabled = OverlayEnabled;
-        shell.Overlay.FadeOnProximity = OverlayFadeOnProximity;
-        shell.Overlay.Animations = OverlayAnimations;
-        shell.Overlay.Position = OverlayPosition;
+        var shell = SettingsService.Instance.Current;
         shell.Startup.WarmupOnLaunch = WarmupOnLaunch;
         shell.Appearance.Theme = Theme;
         shell.Paths.BackupDirectory = BackupDirectory ?? "";
-
-        CaptureSettingsService.Instance.Save();
         SettingsService.Instance.Save();
     }
 
     // ── Reset per section ───────────────────────────────────────────────────
-    //
-    // Each reset writes the AppSettings defaults back through the VM so x:Bind
-    // TwoWay refreshes the visual tree. _isSyncing suppresses the per-property
-    // PushToSettings so we issue a single Save() at the end.
-
-    public void ResetRecordingDefaults()
-    {
-        _isSyncing = true;
-        try
-        {
-            AudioInputDeviceId = -1;
-            AutoPasteEnabled = false;
-            LevelWindowMinDbfs = -55;
-            LevelWindowMaxDbfs = -32;
-            LevelWindowExponent = 1.0;
-            LevelWindowAutoCalibration = false;
-            OverlayEnabled = true;
-            OverlayFadeOnProximity = true;
-            OverlayAnimations = true;
-            OverlayPosition = "BottomCenter";
-        }
-        finally { _isSyncing = false; }
-        PushToSettings();
-        SettingsHost.ApplyLevelWindow?.Invoke(CaptureSettingsService.Instance.Current.LevelWindow);
-        _log.Info(LogSource.SetGeneral, "Recording section reset to defaults");
-    }
 
     public void ResetStartupDefaults()
     {
@@ -379,5 +189,4 @@ public partial class GeneralViewModel : ObservableObject
         SettingsHost.ApplyTheme?.Invoke(Theme);
         _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
     }
-
 }
