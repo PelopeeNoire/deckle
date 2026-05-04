@@ -11,12 +11,13 @@ namespace Deckle.Settings;
 
 // ── RecordingPage ───────────────────────────────────────────────────────────
 //
-// Extracted from GeneralPage in slice S3. Owns everything around the
-// capture pipeline : microphone device selection (Win32 waveIn
-// enumeration), auto-paste, voice level window calibration (sliders +
-// auto-calibration toggle), overlay HUD configuration. Same patterns
-// as GeneralPage / DiagnosticsPage : NavigationCacheMode.Required,
-// _initializing guard around the initial sync pass.
+// Extracted from GeneralPage in slice S3. In pass2 the Behaviour
+// settings (auto-paste + overlay HUD) were moved back to GeneralPage —
+// what remains is the capture pipeline itself : microphone device
+// selection (Win32 waveIn enumeration) and voice level window
+// calibration (sliders + auto-calibration toggle). Same patterns as
+// GeneralPage / DiagnosticsPage : NavigationCacheMode.Required and
+// the _initializing guard around the initial sync pass.
 public sealed partial class RecordingPage : Page
 {
     private static readonly LogService _log = LogService.Instance;
@@ -43,7 +44,6 @@ public sealed partial class RecordingPage : Page
         _initializing = true;
         ViewModel.Load();
         PopulateAudioInputDevices();
-        SyncOverlayPositionCombo();
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low,
             () => _initializing = false);
     }
@@ -83,42 +83,6 @@ public sealed partial class RecordingPage : Page
         ViewModel.AudioInputDeviceId = deviceId;
     }
 
-    // ── Overlay position ─────────────────────────────────────────────────────
-    //
-    // ComboBoxItem avec Tag — pas bindable en TwoWay, conversion manuelle.
-
-    private void SyncOverlayPositionCombo()
-    {
-        // Normalize legacy corner values (TopLeft/TopRight/BottomLeft/BottomRight)
-        // from older settings.json to their Top/Bottom equivalent — the combo now
-        // only exposes centered positions.
-        string current = ViewModel.OverlayPosition ?? "BottomCenter";
-        string normalized = current.StartsWith("Top") ? "TopCenter" : "BottomCenter";
-        if (normalized != current)
-            ViewModel.OverlayPosition = normalized;
-
-        for (int i = 0; i < OverlayPositionCombo.Items.Count; i++)
-        {
-            if (OverlayPositionCombo.Items[i] is ComboBoxItem item &&
-                item.Tag as string == normalized)
-            {
-                OverlayPositionCombo.SelectedIndex = i;
-                return;
-            }
-        }
-        OverlayPositionCombo.SelectedIndex = 0;
-    }
-
-    private void OverlayPositionCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_initializing) return;
-        if (OverlayPositionCombo.SelectedItem is ComboBoxItem item &&
-            item.Tag is string position)
-        {
-            ViewModel.OverlayPosition = position;
-        }
-    }
-
     private void ResetRecording_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.ResetRecordingDefaults();
@@ -126,7 +90,6 @@ public sealed partial class RecordingPage : Page
         try
         {
             AudioInputCombo.SelectedIndex = 0;
-            SyncOverlayPositionCombo();
         }
         finally { _initializing = false; }
     }

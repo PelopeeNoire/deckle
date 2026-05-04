@@ -91,27 +91,15 @@
                            Margin="0,0,0,12" />
 
                 <!-- ── Transcription ───────────────────────────────────────── -->
+                <!--
+                    Order : Language → Initial prompt → GPU acceleration →
+                    Whisper model. Model goes last because (a) it requires
+                    a restart and (b) it owns the storage location for
+                    downloaded weights, surfaced as an inline child of the
+                    SettingsExpander rather than a separate "Storage" section.
+                -->
                 <TextBlock x:Uid="WhisperPageModelEngineHeaderLabel"
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
-
-                <controls:SettingsCard x:Name="ModelCard"
-                                       x:Uid="WhisperModelCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <AutoSuggestBox x:Name="ModelSuggest"
-                                        x:Uid="WhisperModelSuggest"
-                                        MinWidth="240"
-                                        GotFocus="ModelSuggest_GotFocus"
-                                        TextChanged="ModelSuggest_TextChanged"
-                                        SuggestionChosen="ModelSuggest_SuggestionChosen"
-                                        LostFocus="ModelSuggest_LostFocus" />
-                        <Button x:Name="ModelReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="ModelReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
 
                 <controls:SettingsCard x:Name="LanguageCard"
                                        x:Uid="WhisperLanguageCard"
@@ -176,6 +164,47 @@
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
+
+                <!-- Whisper model is a SettingsExpander : the AutoSuggestBox
+                     model selector lives in the header (so picking a model
+                     stays a one-click affair), and the storage location for
+                     downloaded weights is revealed as an inline child. The
+                     standalone "Storage" section is gone — there's only one
+                     path that ever mattered, and it belongs with the model
+                     it points to. -->
+                <controls:SettingsExpander x:Name="ModelCard"
+                                           x:Uid="WhisperModelCard"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <AutoSuggestBox x:Name="ModelSuggest"
+                                        x:Uid="WhisperModelSuggest"
+                                        MinWidth="240"
+                                        GotFocus="ModelSuggest_GotFocus"
+                                        TextChanged="ModelSuggest_TextChanged"
+                                        SuggestionChosen="ModelSuggest_SuggestionChosen"
+                                        LostFocus="ModelSuggest_LostFocus" />
+                        <Button x:Name="ModelReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="ModelReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="WhisperModelsDirCard"
+                                               ContentAlignment="Vertical">
+                            <settings:FolderPickerEditableCard x:Name="ModelsDirectoryPicker"
+                                                               Path="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}">
+                                <settings:FolderPickerEditableCard.RightContent>
+                                    <Button x:Name="ModelsDirectoryReset"
+                                            Style="{StaticResource ResetButtonStyle}"
+                                            Click="ModelsDirectoryReset_Click">
+                                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    </Button>
+                                </settings:FolderPickerEditableCard.RightContent>
+                            </settings:FolderPickerEditableCard>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
 
                 <!-- ── Speech filtering ────────────────────────────────────── -->
                 <TextBlock x:Uid="WhisperPageSpeechFilteringHeaderLabel"
@@ -570,30 +599,6 @@
                             </StackPanel>
                         </controls:SettingsCard>
 
-                    </controls:SettingsExpander.Items>
-                </controls:SettingsExpander>
-
-                <!-- ── Storage ─────────────────────────────────────────────── -->
-                <TextBlock x:Uid="WhisperPageStorageHeaderLabel"
-                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
-
-                <controls:SettingsExpander x:Name="PathsCard"
-                                           x:Uid="WhisperPathsCard"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
-                    <controls:SettingsExpander.Items>
-                        <controls:SettingsCard x:Uid="WhisperModelsDirCard"
-                                               ContentAlignment="Vertical">
-                            <settings:FolderPickerEditableCard x:Name="ModelsDirectoryPicker"
-                                                               Path="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}">
-                                <settings:FolderPickerEditableCard.RightContent>
-                                    <Button x:Name="ModelsDirectoryReset"
-                                            Style="{StaticResource ResetButtonStyle}"
-                                            Click="ModelsDirectoryReset_Click">
-                                        <FontIcon Glyph="&#xE777;" FontSize="14" />
-                                    </Button>
-                                </settings:FolderPickerEditableCard.RightContent>
-                            </settings:FolderPickerEditableCard>
-                        </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
