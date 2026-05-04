@@ -190,73 +190,6 @@ public partial class GeneralViewModel : ObservableObject
         SettingsHost.ApplyTheme?.Invoke(value);
     }
 
-    // ── Telemetry ────────────────────────────────────────────────────────────
-
-    // Microphone telemetry — when on, every Recording Stop logs an extra
-    // line summarising the per-recording RMS distribution (min / p10 / p25 /
-    // p50 / p75 / p90 / max in dBFS + linear mean RMS) AND writes a
-    // structured row to <telemetry>/microphone.jsonl. Calibration tool —
-    // off by default to keep the All filter readable for everyday use.
-    [ObservableProperty]
-    public partial bool MicrophoneTelemetry { get; set; }
-
-    partial void OnMicrophoneTelemetryChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Telemetry.MicrophoneTelemetry ← {value}");
-        PushToSettings();
-    }
-
-    [ObservableProperty]
-    public partial bool TelemetryLatencyEnabled { get; set; }
-
-    [ObservableProperty]
-    public partial bool TelemetryCorpusEnabled { get; set; }
-
-    [ObservableProperty]
-    public partial bool RecordAudioCorpus { get; set; }
-
-    [ObservableProperty]
-    public partial bool ApplicationLogToDisk { get; set; }
-
-    [ObservableProperty]
-    public partial string TelemetryStorageDirectory { get; set; }
-
-    partial void OnTelemetryLatencyEnabledChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Telemetry.LatencyEnabled ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnTelemetryCorpusEnabledChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Telemetry.CorpusEnabled ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnRecordAudioCorpusChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Telemetry.RecordAudioCorpus ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnApplicationLogToDiskChanged(bool value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Telemetry.ApplicationLogToDisk ← {value}");
-        PushToSettings();
-    }
-
-    partial void OnTelemetryStorageDirectoryChanged(string value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Telemetry.StorageDirectory ← \"{value}\"");
-        PushToSettings();
-    }
-
     // ── Backup ───────────────────────────────────────────────────────────────
     //
     // BackupDirectory is the user override for where snapshots live (empty =
@@ -318,7 +251,6 @@ public partial class GeneralViewModel : ObservableObject
         LevelWindowMaxDbfs = -32;
         LevelWindowExponent = 1.0;
         LevelWindowAutoCalibration = false;
-        MicrophoneTelemetry = false;
         OverlayEnabled = true;
         OverlayFadeOnProximity = true;
         OverlayAnimations = true;
@@ -326,11 +258,6 @@ public partial class GeneralViewModel : ObservableObject
         AutostartEnabled = false;
         WarmupOnLaunch = true;
         Theme = "System";
-        TelemetryLatencyEnabled = false;
-        TelemetryCorpusEnabled = false;
-        RecordAudioCorpus = false;
-        ApplicationLogToDisk = false;
-        TelemetryStorageDirectory = "";
         BackupDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
@@ -343,7 +270,6 @@ public partial class GeneralViewModel : ObservableObject
         {
             var shell    = SettingsService.Instance.Current;
             var capture  = CaptureSettingsService.Instance.Current;
-            var telemetry = TelemetrySettingsService.Instance.Current;
 
             AudioInputDeviceId = capture.AudioInputDeviceId;
             AutoPasteEnabled = shell.Paste.AutoPasteEnabled;
@@ -351,7 +277,6 @@ public partial class GeneralViewModel : ObservableObject
             LevelWindowMaxDbfs = capture.LevelWindow.MaxDbfs;
             LevelWindowExponent = capture.LevelWindow.DbfsCurveExponent;
             LevelWindowAutoCalibration = capture.LevelWindow.AutoCalibrationEnabled;
-            MicrophoneTelemetry = telemetry.MicrophoneTelemetry;
             OverlayEnabled = shell.Overlay.Enabled;
             OverlayFadeOnProximity = shell.Overlay.FadeOnProximity;
             OverlayAnimations = shell.Overlay.Animations;
@@ -359,11 +284,6 @@ public partial class GeneralViewModel : ObservableObject
             AutostartEnabled = AutostartService.IsEnabled();
             WarmupOnLaunch = shell.Startup.WarmupOnLaunch;
             Theme = shell.Appearance.Theme;
-            TelemetryLatencyEnabled = telemetry.LatencyEnabled;
-            TelemetryCorpusEnabled = telemetry.CorpusEnabled;
-            RecordAudioCorpus = telemetry.RecordAudioCorpus;
-            ApplicationLogToDisk = telemetry.ApplicationLogToDisk;
-            TelemetryStorageDirectory = telemetry.StorageDirectory;
             BackupDirectory = shell.Paths.BackupDirectory;
         }
         finally
@@ -376,28 +296,20 @@ public partial class GeneralViewModel : ObservableObject
         RefreshBackups();
     }
 
-    // PushToSettings writes to three module services rather than one root
-    // (slice C2b: per-module persistence). Each service has its own Save()
-    // and its own debounce timer; calling all three on every property
-    // change is cheap (debounced) and keeps the on-disk files independent.
+    // PushToSettings writes to two module services rather than one root
+    // (slice C2b: per-module persistence ; slice S2 moved telemetry out
+    // to DiagnosticsViewModel + TelemetrySettingsService). Each service
+    // has its own Save() and its own debounce timer.
     private void PushToSettings()
     {
         var shell    = SettingsService.Instance.Current;
         var capture  = CaptureSettingsService.Instance.Current;
-        var telemetry = TelemetrySettingsService.Instance.Current;
 
         capture.AudioInputDeviceId = AudioInputDeviceId;
         capture.LevelWindow.MinDbfs = (float)LevelWindowMinDbfs;
         capture.LevelWindow.MaxDbfs = (float)LevelWindowMaxDbfs;
         capture.LevelWindow.DbfsCurveExponent = (float)LevelWindowExponent;
         capture.LevelWindow.AutoCalibrationEnabled = LevelWindowAutoCalibration;
-
-        telemetry.MicrophoneTelemetry = MicrophoneTelemetry;
-        telemetry.LatencyEnabled = TelemetryLatencyEnabled;
-        telemetry.CorpusEnabled = TelemetryCorpusEnabled;
-        telemetry.RecordAudioCorpus = RecordAudioCorpus;
-        telemetry.ApplicationLogToDisk = ApplicationLogToDisk;
-        telemetry.StorageDirectory = TelemetryStorageDirectory ?? "";
 
         shell.Paste.AutoPasteEnabled = AutoPasteEnabled;
         shell.Overlay.Enabled = OverlayEnabled;
@@ -409,7 +321,6 @@ public partial class GeneralViewModel : ObservableObject
         shell.Paths.BackupDirectory = BackupDirectory ?? "";
 
         CaptureSettingsService.Instance.Save();
-        TelemetrySettingsService.Instance.Save();
         SettingsService.Instance.Save();
     }
 
@@ -469,20 +380,4 @@ public partial class GeneralViewModel : ObservableObject
         _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
     }
 
-    public void ResetTelemetryDefaults()
-    {
-        _isSyncing = true;
-        try
-        {
-            MicrophoneTelemetry = false;
-            TelemetryLatencyEnabled = false;
-            TelemetryCorpusEnabled = false;
-            RecordAudioCorpus = false;
-            ApplicationLogToDisk = false;
-            TelemetryStorageDirectory = "";
-        }
-        finally { _isSyncing = false; }
-        PushToSettings();
-        _log.Info(LogSource.SetGeneral, "Telemetry section reset to defaults");
-    }
 }
