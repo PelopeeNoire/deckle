@@ -560,17 +560,19 @@
                                            x:Uid="WhisperPathsCard"
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
                     <controls:SettingsExpander.Items>
-                        <settings:FolderPickerEditableCard x:Name="ModelsDirectoryPicker"
-                                                           x:Uid="WhisperModelsDirCard"
-                                                           Path="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}">
-                            <settings:FolderPickerEditableCard.RightContent>
-                                <Button x:Name="ModelsDirectoryReset"
-                                        Style="{StaticResource ResetButtonStyle}"
-                                        Click="ModelsDirectoryReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
-                                </Button>
-                            </settings:FolderPickerEditableCard.RightContent>
-                        </settings:FolderPickerEditableCard>
+                        <controls:SettingsCard x:Uid="WhisperModelsDirCard"
+                                               ContentAlignment="Vertical">
+                            <settings:FolderPickerEditableCard x:Name="ModelsDirectoryPicker"
+                                                               Path="{x:Bind ViewModel.ModelsDirectory, Mode=TwoWay}">
+                                <settings:FolderPickerEditableCard.RightContent>
+                                    <Button x:Name="ModelsDirectoryReset"
+                                            Style="{StaticResource ResetButtonStyle}"
+                                            Click="ModelsDirectoryReset_Click">
+                                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    </Button>
+                                </settings:FolderPickerEditableCard.RightContent>
+                            </settings:FolderPickerEditableCard>
+                        </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 

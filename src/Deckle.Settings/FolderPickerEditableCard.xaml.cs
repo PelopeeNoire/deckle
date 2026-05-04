@@ -10,7 +10,7 @@ namespace Deckle.Settings;
 // ── FolderPickerEditableCard ────────────────────────────────────────────────
 //
 // Editable variant of FolderPickerCard. Replaces the read-only TextBlock
-// with a TextBox the user can type into, while keeping the Pick + Open
+// with a TextBox the user can type into, while keeping the Change + Show
 // buttons. Useful when the user might import a folder from another machine
 // (e.g. a pre-populated Whisper models directory) — the typing path is
 // faster than picking. Mirrors PowerToys AdvancedPaste model-path pattern.
@@ -19,42 +19,13 @@ namespace Deckle.Settings;
 // controls inline (Whisper's per-setting Reset button is the canonical
 // example; the slot keeps that affordance inside the card layout instead
 // of breaking it out into a sibling element).
+//
+// Designed to live inside a SettingsCard at the consumer site — same
+// architectural pattern as FolderPickerCard, see its file header for the
+// reason.
 public sealed partial class FolderPickerEditableCard : UserControl
 {
     private static readonly LogService _log = LogService.Instance;
-
-    public static readonly DependencyProperty HeaderProperty =
-        DependencyProperty.Register(
-            nameof(Header), typeof(string), typeof(FolderPickerEditableCard),
-            new PropertyMetadata(null));
-
-    public string? Header
-    {
-        get => (string?)GetValue(HeaderProperty);
-        set => SetValue(HeaderProperty, value);
-    }
-
-    public static readonly DependencyProperty DescriptionProperty =
-        DependencyProperty.Register(
-            nameof(Description), typeof(string), typeof(FolderPickerEditableCard),
-            new PropertyMetadata(null));
-
-    public string? Description
-    {
-        get => (string?)GetValue(DescriptionProperty);
-        set => SetValue(DescriptionProperty, value);
-    }
-
-    public static readonly DependencyProperty HeaderIconProperty =
-        DependencyProperty.Register(
-            nameof(HeaderIcon), typeof(IconElement), typeof(FolderPickerEditableCard),
-            new PropertyMetadata(null));
-
-    public IconElement? HeaderIcon
-    {
-        get => (IconElement?)GetValue(HeaderIconProperty);
-        set => SetValue(HeaderIconProperty, value);
-    }
 
     public static readonly DependencyProperty PathProperty =
         DependencyProperty.Register(
