@@ -10,9 +10,10 @@
     <!-- Same canvas pattern as GeneralPage / DiagnosticsPage / WhisperPage:
          Grid wrapper + StackPanel MaxWidth=1000 + SettingsCardSpacing=4 +
          section headers in BodyStrong + Margin 1,30,0,6. Page extracted
-         from GeneralPage in slice S3 — owns everything around the capture
-         pipeline (microphone device, auto-paste, level window calibration,
-         overlay HUD). -->
+         from GeneralPage in slice S3 ; auto-paste + overlay HUD were
+         moved back to GeneralPage (Behaviour section) in pass2. What's
+         left here is the capture pipeline itself : microphone device
+         and voice level window calibration. -->
     <Page.Resources>
         <x:Double x:Key="SettingsCardSpacing">4</x:Double>
         <Style x:Key="SettingsSectionHeaderTextBlockStyle"
@@ -63,11 +64,6 @@
                     <ComboBox x:Name="AudioInputCombo"
                               MinWidth="240"
                               SelectionChanged="AudioInputCombo_SelectionChanged" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard x:Uid="GeneralAutoPasteCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
                 <!-- Voice level window — same calibration block as before. The
@@ -135,30 +131,6 @@
                                            VerticalAlignment="Center"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                        </controls:SettingsCard>
-                    </controls:SettingsExpander.Items>
-                </controls:SettingsExpander>
-
-                <controls:SettingsExpander x:Uid="GeneralOverlayExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
-                    <controls:SettingsExpander.Items>
-                        <controls:SettingsCard x:Uid="GeneralOverlayFadeCard"
-                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
-                        </controls:SettingsCard>
-                        <controls:SettingsCard x:Uid="GeneralOverlayAnimationsCard"
-                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
-                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayAnimations, Mode=TwoWay}" />
-                        </controls:SettingsCard>
-                        <controls:SettingsCard x:Uid="GeneralOverlayPositionCard"
-                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
-                            <ComboBox x:Name="OverlayPositionCombo"
-                                      MinWidth="160"
-                                      SelectionChanged="OverlayPositionCombo_SelectionChanged">
-                                <ComboBoxItem x:Uid="GeneralOverlayPositionTop" Tag="TopCenter" />
-                                <ComboBoxItem x:Uid="GeneralOverlayPositionBottom" Tag="BottomCenter" />
-                            </ComboBox>
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>

@@ -93,6 +93,57 @@
                     </ComboBox>
                 </controls:SettingsCard>
 
+                <!-- ── Behaviour ───────────────────────────────────────────── -->
+                <!--
+                    Auto-paste + overlay HUD : the app's user-facing behaviours
+                    around transcription. Used to live on the Recording page in
+                    slice S3 ; moved here in pass2 because they describe what
+                    Deckle does for the user, not how the capture pipeline works.
+                -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="GeneralPageBehaviourHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetBehaviour_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Uid="GeneralAutoPasteCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
+
+                <controls:SettingsExpander x:Uid="GeneralOverlayExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="GeneralOverlayFadeCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayFadeOnProximity, Mode=TwoWay}" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralOverlayAnimationsCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayAnimations, Mode=TwoWay}" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="GeneralOverlayPositionCard"
+                                               IsEnabled="{x:Bind ViewModel.OverlayEnabled, Mode=OneWay}">
+                            <ComboBox x:Name="OverlayPositionCombo"
+                                      MinWidth="160"
+                                      SelectionChanged="OverlayPositionCombo_SelectionChanged">
+                                <ComboBoxItem x:Uid="GeneralOverlayPositionTop" Tag="TopCenter" />
+                                <ComboBoxItem x:Uid="GeneralOverlayPositionBottom" Tag="BottomCenter" />
+                            </ComboBox>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
                 <!-- ── Startup ─────────────────────────────────────────────── -->
                 <Grid>
                     <Grid.ColumnDefinitions>
