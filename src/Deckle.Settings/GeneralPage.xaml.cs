@@ -51,6 +51,7 @@ public sealed partial class GeneralPage : Page
         _initializing = true;
         ViewModel.Load();
         SyncThemeCombo();
+        SyncOverlayPositionCombo();
         SyncFolderPickerDefaults();
         DataFolderPathText.Text = AppPaths.UserDataRoot;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low,
@@ -83,6 +84,42 @@ public sealed partial class GeneralPage : Page
         }
     }
 
+    // ── Overlay position ─────────────────────────────────────────────────────
+    //
+    // ComboBoxItem avec Tag — pas bindable en TwoWay, conversion manuelle.
+    // Older settings.json may carry corner values (TopLeft / BottomRight…)
+    // that the combo no longer exposes — Sync normalizes them to
+    // TopCenter / BottomCenter on Load.
+
+    private void SyncOverlayPositionCombo()
+    {
+        string current = ViewModel.OverlayPosition ?? "BottomCenter";
+        string normalized = current.StartsWith("Top") ? "TopCenter" : "BottomCenter";
+        if (normalized != current)
+            ViewModel.OverlayPosition = normalized;
+
+        for (int i = 0; i < OverlayPositionCombo.Items.Count; i++)
+        {
+            if (OverlayPositionCombo.Items[i] is ComboBoxItem item &&
+                item.Tag as string == normalized)
+            {
+                OverlayPositionCombo.SelectedIndex = i;
+                return;
+            }
+        }
+        OverlayPositionCombo.SelectedIndex = 0;
+    }
+
+    private void OverlayPositionCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_initializing) return;
+        if (OverlayPositionCombo.SelectedItem is ComboBoxItem item &&
+            item.Tag is string position)
+        {
+            ViewModel.OverlayPosition = position;
+        }
+    }
+
     // ── Folder picker defaults ───────────────────────────────────────────────
 
     private void SyncFolderPickerDefaults()
@@ -102,6 +139,14 @@ public sealed partial class GeneralPage : Page
         ViewModel.ResetAppearanceDefaults();
         _initializing = true;
         try { SyncThemeCombo(); }
+        finally { _initializing = false; }
+    }
+
+    private void ResetBehaviour_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetBehaviourDefaults();
+        _initializing = true;
+        try { SyncOverlayPositionCombo(); }
         finally { _initializing = false; }
     }
 
@@ -204,6 +249,7 @@ public sealed partial class GeneralPage : Page
         {
             ViewModel.Load();
             SyncThemeCombo();
+            SyncOverlayPositionCombo();
             SyncFolderPickerDefaults();
 
             // Apply theme side-effect beyond the VM — RecordingViewModel

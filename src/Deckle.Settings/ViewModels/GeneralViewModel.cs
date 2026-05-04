@@ -7,10 +7,11 @@ using Deckle.Shell;
 namespace Deckle.Settings.ViewModels;
 
 // ViewModel for GeneralPage — bridges shell-level AppSettings sections
-// (Startup, Appearance, Backup) to the XAML via x:Bind. Recording was
-// extracted in slice S3 to RecordingViewModel ; Telemetry in slice S2 to
-// DiagnosticsViewModel. What remains is the cross-cutting shell config
-// (theme + autostart + warmup + backup directory).
+// (Hotkeys, Appearance, Behaviour, Startup, Backup) to the XAML via x:Bind.
+// Recording was extracted in slice S3 to RecordingViewModel ; Telemetry
+// in slice S2 to DiagnosticsViewModel. Behaviour (auto-paste + overlay)
+// was rapatriated here in pass2 — these are user-facing behaviors of the
+// app as a whole, not Recording-page-specific settings.
 //
 // Pattern: Load() pulls from the POCO, property changes push back via
 // PushToSettings(). The _isSyncing flag prevents re-saving during Load().
@@ -20,6 +21,81 @@ public partial class GeneralViewModel : ObservableObject
 {
     private static readonly LogService _log = LogService.Instance;
     private bool _isSyncing;
+
+    // ── Appearance ───────────────────────────────────────────────────────────
+
+    [ObservableProperty]
+    public partial string Theme { get; set; }
+
+    partial void OnThemeChanged(string value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Theme ← {value}");
+        PushToSettings();
+        SettingsHost.ApplyTheme?.Invoke(value);
+    }
+
+    // ── Behaviour ────────────────────────────────────────────────────────────
+    //
+    // Auto-paste : whether the transcript text is pasted into the focused
+    // window after copy. Overlay : the on-screen HUD shown during recording
+    // (master toggle + fade-on-proximity, animations, position). Both used
+    // to live on the Recording page in slice S3 — moved here in pass2
+    // because they describe the app's overall behaviour, not the capture
+    // pipeline itself.
+    //
+    // Persistence stays in shell.Paste / shell.Overlay (settings.json).
+    // The Recording page no longer reads or writes these.
+
+    [ObservableProperty]
+    public partial bool AutoPasteEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial bool OverlayEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial bool OverlayFadeOnProximity { get; set; }
+
+    [ObservableProperty]
+    public partial bool OverlayAnimations { get; set; }
+
+    [ObservableProperty]
+    public partial string OverlayPosition { get; set; }
+
+    partial void OnAutoPasteEnabledChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Auto-paste ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnOverlayEnabledChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Overlay enabled ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnOverlayFadeOnProximityChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Overlay fade ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnOverlayAnimationsChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Overlay animations ← {value}");
+        PushToSettings();
+    }
+
+    partial void OnOverlayPositionChanged(string value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Overlay position ← {value}");
+        PushToSettings();
+    }
 
     // ── Startup ──────────────────────────────────────────────────────────────
 
@@ -55,19 +131,6 @@ public partial class GeneralViewModel : ObservableObject
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Warmup on launch ← {value}");
         PushToSettings();
-    }
-
-    // ── Appearance ───────────────────────────────────────────────────────────
-
-    [ObservableProperty]
-    public partial string Theme { get; set; }
-
-    partial void OnThemeChanged(string value)
-    {
-        if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Theme ← {value}");
-        PushToSettings();
-        SettingsHost.ApplyTheme?.Invoke(value);
     }
 
     // ── Backup ───────────────────────────────────────────────────────────────
@@ -122,9 +185,14 @@ public partial class GeneralViewModel : ObservableObject
     {
         _isSyncing = true;
 
+        Theme = "System";
+        AutoPasteEnabled = false;
+        OverlayEnabled = true;
+        OverlayFadeOnProximity = true;
+        OverlayAnimations = true;
+        OverlayPosition = "BottomCenter";
         AutostartEnabled = false;
         WarmupOnLaunch = true;
-        Theme = "System";
         BackupDirectory = "";
 
         // _isSyncing stays true — Load() will set it to false.
@@ -136,9 +204,14 @@ public partial class GeneralViewModel : ObservableObject
         try
         {
             var shell = SettingsService.Instance.Current;
+            Theme = shell.Appearance.Theme;
+            AutoPasteEnabled = shell.Paste.AutoPasteEnabled;
+            OverlayEnabled = shell.Overlay.Enabled;
+            OverlayFadeOnProximity = shell.Overlay.FadeOnProximity;
+            OverlayAnimations = shell.Overlay.Animations;
+            OverlayPosition = shell.Overlay.Position;
             AutostartEnabled = AutostartService.IsEnabled();
             WarmupOnLaunch = shell.Startup.WarmupOnLaunch;
-            Theme = shell.Appearance.Theme;
             BackupDirectory = shell.Paths.BackupDirectory;
         }
         finally
@@ -154,13 +227,44 @@ public partial class GeneralViewModel : ObservableObject
     private void PushToSettings()
     {
         var shell = SettingsService.Instance.Current;
-        shell.Startup.WarmupOnLaunch = WarmupOnLaunch;
         shell.Appearance.Theme = Theme;
+        shell.Paste.AutoPasteEnabled = AutoPasteEnabled;
+        shell.Overlay.Enabled = OverlayEnabled;
+        shell.Overlay.FadeOnProximity = OverlayFadeOnProximity;
+        shell.Overlay.Animations = OverlayAnimations;
+        shell.Overlay.Position = OverlayPosition;
+        shell.Startup.WarmupOnLaunch = WarmupOnLaunch;
         shell.Paths.BackupDirectory = BackupDirectory ?? "";
         SettingsService.Instance.Save();
     }
 
     // ── Reset per section ───────────────────────────────────────────────────
+
+    public void ResetAppearanceDefaults()
+    {
+        _isSyncing = true;
+        try { Theme = "System"; }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        SettingsHost.ApplyTheme?.Invoke(Theme);
+        _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
+    }
+
+    public void ResetBehaviourDefaults()
+    {
+        _isSyncing = true;
+        try
+        {
+            AutoPasteEnabled = false;
+            OverlayEnabled = true;
+            OverlayFadeOnProximity = true;
+            OverlayAnimations = true;
+            OverlayPosition = "BottomCenter";
+        }
+        finally { _isSyncing = false; }
+        PushToSettings();
+        _log.Info(LogSource.SetGeneral, "Behaviour section reset to defaults");
+    }
 
     public void ResetStartupDefaults()
     {
@@ -178,15 +282,5 @@ public partial class GeneralViewModel : ObservableObject
         finally { _isSyncing = false; }
         PushToSettings();
         _log.Info(LogSource.SetGeneral, "Startup section reset to defaults");
-    }
-
-    public void ResetAppearanceDefaults()
-    {
-        _isSyncing = true;
-        try { Theme = "System"; }
-        finally { _isSyncing = false; }
-        PushToSettings();
-        SettingsHost.ApplyTheme?.Invoke(Theme);
-        _log.Info(LogSource.SetGeneral, "Appearance section reset to defaults");
     }
 }

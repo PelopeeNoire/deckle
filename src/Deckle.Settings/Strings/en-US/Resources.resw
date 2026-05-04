@@ -1182,13 +1182,16 @@
     <value>General</value>
   </data>
   <data name="GeneralPageSubtitleLabel.Text" xml:space="preserve">
-    <value>Hotkeys, appearance, startup, backups and application data.</value>
+    <value>Hotkeys, appearance, behaviour, startup, backups and application data.</value>
   </data>
   <data name="GeneralPageShortcutsHeaderLabel.Text" xml:space="preserve">
     <value>Hotkeys</value>
   </data>
   <data name="GeneralPageAppearanceHeaderLabel.Text" xml:space="preserve">
     <value>Appearance</value>
+  </data>
+  <data name="GeneralPageBehaviourHeaderLabel.Text" xml:space="preserve">
+    <value>Behaviour</value>
   </data>
   <data name="GeneralPageStartupHeaderLabel.Text" xml:space="preserve">
     <value>Startup</value>
@@ -1203,7 +1206,7 @@
     <value>Recording</value>
   </data>
   <data name="RecordingPageSubtitleLabel.Text" xml:space="preserve">
-    <value>Audio capture, voice level mapping, and the on-screen HUD that mirrors the recording state.</value>
+    <value>Microphone selection and voice level window calibration.</value>
   </data>
   <data name="RecordingPageSectionHeaderLabel.Text" xml:space="preserve">
     <value>Defaults</value>
