@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Deckle.Settings.FolderPickerCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Renders the right-side content of a SettingsCard for a folder
+         path : the resolved path on the left (read-only, full width via
+         star column), Set + Open text-only buttons on the right. The
+         consumer wraps this in a controls:SettingsCard (ContentAlignment
+         = Vertical) so the description above gets full width and the
+         path lands on its own row below it. -->
+    <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock x:Name="PathTextBlock"
+                   Grid.Column="0"
+                   VerticalAlignment="Center"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   IsTextSelectionEnabled="True"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   TextTrimming="CharacterEllipsis"
+                   TextWrapping="NoWrap"
+                   ToolTipService.ToolTip="{x:Bind PathTextBlock.Text, Mode=OneWay}" />
+
+        <Button Grid.Column="1"
+                x:Uid="FolderPickerCard_PickButton"
+                Click="PickButton_Click" />
+
+        <Button Grid.Column="2"
+                x:Uid="FolderPickerCard_OpenButton"
+                Click="OpenButton_Click" />
+    </Grid>
+</UserControl>
