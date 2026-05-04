@@ -3,57 +3,27 @@ using System.Diagnostics;
 using System.IO;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Deckle.Logging;
 
 namespace Deckle.Settings;
 
 // ── FolderPickerCard ────────────────────────────────────────────────────────
 //
-// Read-only display of a folder path with two actions: Pick (FolderPicker)
-// and Open (Explorer). Models PowerToys' General → Settings Backup pattern.
-// Path is exposed as a TwoWay DependencyProperty so callers can bind it to
-// a ViewModel property and let auto-save handle persistence.
+// Read-only display of a folder path with two actions: Change (opens the
+// FolderPicker) and Show (opens the path in Explorer). Designed to live
+// inside a SettingsCard at the consumer site — that lets the SettingsCard
+// own Header / Description / HeaderIcon via x:Uid, and keeps the visual
+// tree compatible with SettingsExpander.Items (which rejects UserControl
+// wrappers around SettingsCard children).
 //
-// When Path is empty, the TextBlock falls back to DefaultPath in the same
-// secondary styling — same UX as the legacy TextBox PlaceholderText, but
+// Path is exposed as a TwoWay DependencyProperty bound to a ViewModel
+// property; auto-save handles persistence. When Path is empty, the
+// TextBlock falls back to DefaultPath in the same secondary styling at
+// reduced opacity — same UX as the legacy TextBox PlaceholderText, but
 // without the misleading affordance of an editable input field.
 public sealed partial class FolderPickerCard : UserControl
 {
     private static readonly LogService _log = LogService.Instance;
-
-    public static readonly DependencyProperty HeaderProperty =
-        DependencyProperty.Register(
-            nameof(Header), typeof(string), typeof(FolderPickerCard),
-            new PropertyMetadata(null));
-
-    public string? Header
-    {
-        get => (string?)GetValue(HeaderProperty);
-        set => SetValue(HeaderProperty, value);
-    }
-
-    public static readonly DependencyProperty DescriptionProperty =
-        DependencyProperty.Register(
-            nameof(Description), typeof(string), typeof(FolderPickerCard),
-            new PropertyMetadata(null));
-
-    public string? Description
-    {
-        get => (string?)GetValue(DescriptionProperty);
-        set => SetValue(DescriptionProperty, value);
-    }
-
-    public static readonly DependencyProperty HeaderIconProperty =
-        DependencyProperty.Register(
-            nameof(HeaderIcon), typeof(IconElement), typeof(FolderPickerCard),
-            new PropertyMetadata(null));
-
-    public IconElement? HeaderIcon
-    {
-        get => (IconElement?)GetValue(HeaderIconProperty);
-        set => SetValue(HeaderIconProperty, value);
-    }
 
     public static readonly DependencyProperty PathProperty =
         DependencyProperty.Register(
@@ -91,14 +61,14 @@ public sealed partial class FolderPickerCard : UserControl
     }
 
     // The TextBlock displays Path when set, otherwise falls back to
-    // DefaultPath in the same secondary brush. We tweak Opacity so the
-    // fallback reads as a placeholder rather than a real value.
+    // DefaultPath in the same secondary brush. Opacity dials down when
+    // showing the fallback so it reads as a placeholder rather than a
+    // real value.
     private void RefreshDisplay()
     {
         string effective = string.IsNullOrEmpty(Path) ? (DefaultPath ?? string.Empty) : Path;
         PathTextBlock.Text = effective;
         PathTextBlock.Opacity = string.IsNullOrEmpty(Path) ? 0.6 : 1.0;
-        PathTooltip.Content = effective;
     }
 
     // FolderPicker (WindowsAppSDK 1.7+ namespace Microsoft.Windows.Storage.Pickers).

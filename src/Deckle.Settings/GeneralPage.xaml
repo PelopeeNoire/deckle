@@ -297,9 +297,10 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <settings:FolderPickerCard x:Name="TelemetryFolderPicker"
-                                           x:Uid="GeneralStorageFolderCard"
-                                           Path="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
+                <controls:SettingsCard x:Uid="GeneralStorageFolderCard">
+                    <settings:FolderPickerCard x:Name="TelemetryFolderPicker"
+                                               Path="{x:Bind ViewModel.TelemetryStorageDirectory, Mode=TwoWay}" />
+                </controls:SettingsCard>
 
                 <!-- ── Back up & restore ───────────────────────────────────── -->
                 <!--
@@ -324,9 +325,10 @@
                                 IsEnabled="{x:Bind ViewModel.HasBackup, Mode=OneWay}" />
                     </StackPanel>
                     <controls:SettingsExpander.Items>
-                        <settings:FolderPickerCard x:Name="BackupFolderPicker"
-                                                   x:Uid="GeneralBackupLocationCard"
-                                                   Path="{x:Bind ViewModel.BackupDirectory, Mode=TwoWay}" />
+                        <controls:SettingsCard x:Uid="GeneralBackupLocationCard">
+                            <settings:FolderPickerCard x:Name="BackupFolderPicker"
+                                                       Path="{x:Bind ViewModel.BackupDirectory, Mode=TwoWay}" />
+                        </controls:SettingsCard>
 
                         <controls:SettingsCard x:Uid="GeneralBackupInfoCard"
                                                ContentAlignment="Vertical">

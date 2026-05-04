@@ -150,11 +150,11 @@
        each instance are passed in via the consumer's x:Uid (e.g.
        GeneralStorageFolderCard.Header). These two strings stay
        generic so a single key covers every folder picker in the app. -->
-  <data name="FolderPickerCard_PickButton.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Pick a folder</value>
+  <data name="FolderPickerCard_PickButton_Label.Text" xml:space="preserve">
+    <value>Change...</value>
   </data>
-  <data name="FolderPickerCard_OpenButton.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Open in File Explorer</value>
+  <data name="FolderPickerCard_OpenButton_Label.Text" xml:space="preserve">
+    <value>Show</value>
   </data>
 
   <!-- ─── Consent dialogs ────────────────────────────────────────────
