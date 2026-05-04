@@ -92,13 +92,26 @@ public sealed partial class WhisperPage : Page
             try
             {
                 // Hover reveal for reset buttons — one-time setup.
-                WireHover(ModelCard, ModelReset);
+                // ModelCard is a SettingsExpander (with the Models directory
+                // as a child) so we hook PointerEntered/Exited directly,
+                // same as InitialPromptCard. WireHover only handles
+                // SettingsCard. The hover wiring on ModelCard reveals
+                // ModelReset only — ModelsDirectoryReset gets its own
+                // hover via the inner card's bubbled pointer events.
+                ModelCard.PointerEntered += (_, _) =>
+                {
+                    ModelReset.Opacity = 1;
+                    ModelsDirectoryReset.Opacity = 1;
+                };
+                ModelCard.PointerExited += (_, _) =>
+                {
+                    ModelReset.Opacity = 0;
+                    ModelsDirectoryReset.Opacity = 0;
+                };
                 WireHover(UseGpuCard, UseGpuReset);
                 WireHover(LanguageCard, LanguageReset);
                 InitialPromptCard.PointerEntered += (_, _) => InitialPromptReset.Opacity = 1;
                 InitialPromptCard.PointerExited += (_, _) => InitialPromptReset.Opacity = 0;
-                PathsCard.PointerEntered += (_, _) => ModelsDirectoryReset.Opacity = 1;
-                PathsCard.PointerExited += (_, _) => ModelsDirectoryReset.Opacity = 0;
                 // FolderPickerEditableCard.DefaultPath drives the TextBox
                 // PlaceholderText shown when ModelsDirectory is empty (the
                 // legacy "(auto)" placeholder is gone — users see the actual
