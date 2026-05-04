@@ -632,7 +632,7 @@
     <value>Application data</value>
   </data>
   <data name="GeneralTranscribeCard.Header" xml:space="preserve">
-    <value>Transcribe</value>
+    <value>Principal hotkey</value>
   </data>
   <data name="GeneralTranscribeCard.Description" xml:space="preserve">
     <value>Start and stop transcription. The text is copied to the clipboard.</value>
@@ -1182,10 +1182,10 @@
     <value>General</value>
   </data>
   <data name="GeneralPageSubtitleLabel.Text" xml:space="preserve">
-    <value>Keyboard shortcuts, appearance, startup behavior, recording and data.</value>
+    <value>Hotkeys, appearance, startup, backups and application data.</value>
   </data>
   <data name="GeneralPageShortcutsHeaderLabel.Text" xml:space="preserve">
-    <value>Shortcuts</value>
+    <value>Hotkeys</value>
   </data>
   <data name="GeneralPageAppearanceHeaderLabel.Text" xml:space="preserve">
     <value>Appearance</value>
