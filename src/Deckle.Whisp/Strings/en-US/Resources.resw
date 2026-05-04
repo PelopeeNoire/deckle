@@ -1231,11 +1231,17 @@
   <data name="WhisperPageContextSegmentationHeaderLabel.Text" xml:space="preserve">
     <value>Context and segmentation</value>
   </data>
-  <data name="WhisperPageDecodingHeaderLabel.Text" xml:space="preserve">
+  <data name="WhisperDecodingExpander.Header" xml:space="preserve">
     <value>Decoding</value>
   </data>
-  <data name="WhisperPageConfidenceThresholdsHeaderLabel.Text" xml:space="preserve">
+  <data name="WhisperDecodingExpander.Description" xml:space="preserve">
+    <value>Randomness of the decoder and fallback retry behavior.</value>
+  </data>
+  <data name="WhisperConfidenceExpander.Header" xml:space="preserve">
     <value>Confidence thresholds</value>
+  </data>
+  <data name="WhisperConfidenceExpander.Description" xml:space="preserve">
+    <value>When Whisper retries a segment or treats it as silence.</value>
   </data>
   <data name="WhisperPageStorageHeaderLabel.Text" xml:space="preserve">
     <value>Storage</value>
