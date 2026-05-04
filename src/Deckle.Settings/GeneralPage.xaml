@@ -115,11 +115,6 @@
                                      Click="ResetBehaviour_Click" />
                 </Grid>
 
-                <controls:SettingsCard x:Uid="GeneralAutoPasteCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
                 <controls:SettingsExpander x:Uid="GeneralOverlayExpander"
                                            HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.OverlayEnabled, Mode=TwoWay}" />
@@ -143,6 +138,11 @@
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
+
+                <controls:SettingsCard x:Uid="GeneralAutoPasteCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE77F;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.AutoPasteEnabled, Mode=TwoWay}" />
+                </controls:SettingsCard>
 
                 <!-- ── Startup ─────────────────────────────────────────────── -->
                 <Grid>
@@ -170,15 +170,8 @@
                     <ToggleSwitch IsOn="{x:Bind ViewModel.WarmupOnLaunch, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
-                <!-- ── Back up & restore ───────────────────────────────────── -->
-                <!--
-                    Pattern PowerToys (Settings → General → "Back up & restore"):
-                    a single SettingsExpander with the Back up / Restore actions
-                    in the header and the body revealing Location + the latest
-                    snapshot info. Restore targets the most recent snapshot;
-                    older snapshots are accessible by opening the folder.
-                -->
-                <TextBlock x:Uid="GeneralPageBackupRestoreHeaderLabel"
+                <!-- ── Application data ────────────────────────────────────── -->
+                <TextBlock x:Uid="GeneralPageApplicationDataHeaderLabel"
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
                 <controls:SettingsExpander x:Uid="GeneralBackupExpander"
@@ -226,9 +219,12 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <!-- ── Application data ────────────────────────────────────── -->
-                <TextBlock x:Uid="GeneralPageApplicationDataHeaderLabel"
-                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                <controls:SettingsCard x:Uid="GeneralRerunSetupCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9F5;}">
+                    <Button x:Name="ReRunSetupButton"
+                            x:Uid="GeneralRerunSetupButton"
+                            Click="ReRunSetupButton_Click" />
+                </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="GeneralDataFolderCard"
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}"
@@ -251,13 +247,6 @@
                                 x:Uid="GeneralDataFolderOpenButton"
                                 Click="OpenDataFolderButton_Click" />
                     </Grid>
-                </controls:SettingsCard>
-
-                <controls:SettingsCard x:Uid="GeneralRerunSetupCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9F5;}">
-                    <Button x:Name="ReRunSetupButton"
-                            x:Uid="GeneralRerunSetupButton"
-                            Click="ReRunSetupButton_Click" />
                 </controls:SettingsCard>
 
             </StackPanel>
