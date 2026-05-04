@@ -248,11 +248,12 @@ lire son fichier `docs/*.md`.
   re-capture cible au Stop avec filet PID, fix race `HideSync`
   (rendez-vous synchrone via `ManualResetEventSlim`), refus explicites
   de `PasteFromClipboard`, bug paste fantôme intermittent.
-- [docs/reference--settings-architecture--1.0.md](docs/reference--settings-architecture--1.0.md) —
-  NavigationView Auto (natif, 3 modes), TitleBar natif Standard,
-  Frame+Page, SettingsCard CommunityToolkit, GeneralPage 4 sections
-  câblées, WhisperPage 6 sections, persistance JSON portable,
-  restart ciblé.
+- [docs/reference--settings-architecture--2.0.md](docs/reference--settings-architecture--2.0.md) —
+  NavigationView Auto + 5 pages (General, Recording, Transcription,
+  Rewriting, Diagnostics) + footer Logs, FolderPickerCard pattern
+  unique, SettingsExpander parent pour groupes de sliders denses,
+  SettingsHost registry de delegates côté shell, persistance per-module
+  (5 services).
 - [docs/reference--logging-inventory--1.0.md](docs/reference--logging-inventory--1.0.md)
   — inventaire normatif des mesures par étape (vocabulaire d'unités,
   niveaux de sévérité, gabarits standards, recap UserFeedback). Référence
