@@ -283,18 +283,11 @@ public partial class GeneralViewModel : ObservableObject
         ? "No backup yet"
         : LatestBackup.Timestamp.LocalDateTime.ToString("g");
 
-    // Projection of the resolved backup directory (user override or default).
-    // Read-only display string used in the SettingsExpander Location card —
-    // shows where snapshots actually land, not what the user typed in the
-    // override field. Refreshed when BackupDirectory changes.
-    public string BackupLocationDisplay => SettingsBackupService.GetDirectory();
-
     partial void OnBackupDirectoryChanged(string value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Paths.BackupDirectory ← \"{value}\"");
         PushToSettings();
-        OnPropertyChanged(nameof(BackupLocationDisplay));
         RefreshBackups();
     }
 
@@ -308,7 +301,6 @@ public partial class GeneralViewModel : ObservableObject
         OnPropertyChanged(nameof(HasBackup));
         OnPropertyChanged(nameof(LatestBackupFileName));
         OnPropertyChanged(nameof(LatestBackupCreatedAt));
-        OnPropertyChanged(nameof(BackupLocationDisplay));
     }
 
     // ── Sync with SettingsService ────────────────────────────────────────────

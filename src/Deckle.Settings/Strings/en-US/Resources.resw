@@ -144,6 +144,19 @@
     <value>Browse...</value>
   </data>
 
+  <!-- ─── FolderPickerCard / FolderPickerEditableCard ────────────────
+       Shared tooltips for the Pick + Open buttons rendered by the two
+       UserControls under Deckle.Settings/. Header / Description for
+       each instance are passed in via the consumer's x:Uid (e.g.
+       GeneralStorageFolderCard.Header). These two strings stay
+       generic so a single key covers every folder picker in the app. -->
+  <data name="FolderPickerCard_PickButton.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Pick a folder</value>
+  </data>
+  <data name="FolderPickerCard_OpenButton.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open in File Explorer</value>
+  </data>
+
   <!-- ─── Consent dialogs ────────────────────────────────────────────
        Opt-in prompts for local data capture. Each dialog follows the
        same structure: Title, Body_Intro paragraph, then three
@@ -762,18 +775,6 @@
   <data name="GeneralStorageFolderCard.Description" xml:space="preserve">
     <value>Shared root for every telemetry stream enabled above. Leave empty to use the default %LOCALAPPDATA%\Deckle\telemetry\.</value>
   </data>
-  <data name="GeneralStorageFolderSetLabel.Text" xml:space="preserve">
-    <value>Set</value>
-  </data>
-  <data name="GeneralStorageFolderSetButton.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Pick a folder</value>
-  </data>
-  <data name="GeneralStorageFolderOpenLabel.Text" xml:space="preserve">
-    <value>Open</value>
-  </data>
-  <data name="GeneralStorageFolderOpenButton.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Open in File Explorer</value>
-  </data>
   <data name="GeneralBackupExpander.Header" xml:space="preserve">
     <value>Back up and restore your settings</value>
   </data>
@@ -788,9 +789,6 @@
   </data>
   <data name="GeneralBackupLocationCard.Header" xml:space="preserve">
     <value>Location</value>
-  </data>
-  <data name="GeneralBackupChangeButton.ToolTipService.ToolTip" xml:space="preserve">
-    <value>Pick a folder</value>
   </data>
   <data name="GeneralBackupInfoCard.Header" xml:space="preserve">
     <value>Backup information</value>

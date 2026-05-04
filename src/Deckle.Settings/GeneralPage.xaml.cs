@@ -9,8 +9,6 @@ using Deckle.Interop;
 using Deckle.Localization;
 using Deckle.Logging;
 using Deckle.Settings.ViewModels;
-using Windows.Storage.Pickers;
-using WinRT.Interop;
 
 namespace Deckle.Settings;
 
@@ -64,7 +62,7 @@ public sealed partial class GeneralPage : Page
         PopulateAudioInputDevices();
         SyncOverlayPositionCombo();
         SyncThemeCombo();
-        SyncCorpusFolderPlaceholder();
+        SyncFolderPickerDefaults();
         DataFolderPathText.Text = AppPaths.UserDataRoot;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low,
             () => _initializing = false);
@@ -167,16 +165,17 @@ public sealed partial class GeneralPage : Page
         }
     }
 
-    // ── Corpus storage folder ────────────────────────────────────────────────
+    // ── Folder picker defaults ───────────────────────────────────────────────
     //
-    // Show the default resolver's path as the TextBox placeholder rather than
-    // a generic "(auto)" — lets the user see where logs will land without
-    // opening File Explorer. The default resolver always returns a concrete
-    // path under <UserDataRoot>\telemetry\.
+    // FolderPickerCard.DefaultPath drives the secondary placeholder shown
+    // when Path is empty + the Open button's target. Both resolve to a
+    // concrete location under <UserDataRoot> so the UI never shows
+    // "(auto)" — the user sees the folder data actually lands in.
 
-    private void SyncCorpusFolderPlaceholder()
+    private void SyncFolderPickerDefaults()
     {
-        TelemetryFolderBox.PlaceholderText = CorpusPaths.GetDefaultDirectoryPath();
+        TelemetryFolderPicker.DefaultPath = AppPaths.TelemetryDirectory;
+        BackupFolderPicker.DefaultPath = AppPaths.SettingsBackupDirectory;
     }
 
     // ── Corpus logging handlers ─────────────────────────────────────────────
@@ -274,36 +273,6 @@ public sealed partial class GeneralPage : Page
         }
     }
 
-    // FolderPicker is a WinRT API designed for packaged apps — in an
-    // unpackaged WinUI 3 host it needs the parent HWND wired via
-    // WinRT.Interop or ShowAsync throws E_INVALIDARG (COMException 0x80070057).
-    private async void ChangeCorpusFolderButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var picker = new FolderPicker
-            {
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-            };
-            picker.FileTypeFilter.Add("*");
-
-            var settingsWin = SettingsHost.GetSettingsWindow?.Invoke()
-                ?? throw new InvalidOperationException("Settings window not initialized");
-            var hwnd = WindowNative.GetWindowHandle(settingsWin);
-            InitializeWithWindow.Initialize(picker, hwnd);
-
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder is null) return;
-
-            ViewModel.TelemetryStorageDirectory = folder.Path;
-        }
-        catch (Exception ex)
-        {
-            _log.Error(LogSource.SetGeneral,
-                $"Change telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
     // ── Reset per section ───────────────────────────────────────────────────
     //
     // The VM mutates its partial properties; x:Bind TwoWay refreshes the
@@ -338,28 +307,6 @@ public sealed partial class GeneralPage : Page
     private void ResetTelemetry_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.ResetTelemetryDefaults();
-    }
-
-    private void OpenCorpusFolderButton_Click(object sender, RoutedEventArgs e)
-    {
-        // GetDirectoryPath() falls back to <UserDataRoot>\telemetry\ when
-        // Telemetry.StorageDirectory is empty — always returns a usable path.
-        string path = CorpusPaths.GetDirectoryPath();
-
-        try
-        {
-            Directory.CreateDirectory(path);
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = path,
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception ex)
-        {
-            _log.Error(LogSource.SetGeneral,
-                $"Open telemetry folder failed: {ex.GetType().Name}: {ex.Message}");
-        }
     }
 
     // Opens the UserDataRoot in File Explorer — entry point for users who
@@ -416,9 +363,9 @@ public sealed partial class GeneralPage : Page
     // PowerToys-style: a single SettingsExpander, two header actions
     // (Back up / Restore), and a folder picker for the location. Restore
     // targets the latest snapshot — older ones live in the folder and are
-    // restorable by hand if ever needed. The folder picker mirrors the
-    // telemetry one — same FolderPicker + InitializeWithWindow dance for
-    // unpackaged WinUI 3.
+    // restorable by hand if ever needed. The folder picker is a
+    // FolderPickerCard bound to ViewModel.BackupDirectory; its DefaultPath
+    // is wired in SyncFolderPickerDefaults to AppPaths.SettingsBackupDirectory.
 
     private void CreateBackupButton_Click(object sender, RoutedEventArgs e)
     {
@@ -462,7 +409,7 @@ public sealed partial class GeneralPage : Page
             PopulateAudioInputDevices();
             SyncOverlayPositionCombo();
             SyncThemeCombo();
-            SyncCorpusFolderPlaceholder();
+            SyncFolderPickerDefaults();
 
             // Apply settings that have side-effects beyond the VM —
             // theme switch, level-window statics — without going through
@@ -476,30 +423,4 @@ public sealed partial class GeneralPage : Page
         }
     }
 
-    private async void ChangeBackupFolderButton_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var picker = new FolderPicker
-            {
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-            };
-            picker.FileTypeFilter.Add("*");
-
-            var settingsWin = SettingsHost.GetSettingsWindow?.Invoke()
-                ?? throw new InvalidOperationException("Settings window not initialized");
-            var hwnd = WindowNative.GetWindowHandle(settingsWin);
-            InitializeWithWindow.Initialize(picker, hwnd);
-
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder is null) return;
-
-            ViewModel.BackupDirectory = folder.Path;
-        }
-        catch (Exception ex)
-        {
-            _log.Error(LogSource.SetGeneral,
-                $"Change backup folder failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
 }
