@@ -40,6 +40,12 @@
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Uid="SettingsNavRecording"
+                                    Tag="Deckle.Settings.RecordingPage">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE720;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavTranscription"
                                     Tag="Deckle.Whisp.WhisperPage, Deckle.Whisp">
                     <NavigationViewItem.Icon>
