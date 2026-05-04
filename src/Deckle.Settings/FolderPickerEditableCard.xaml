@@ -4,15 +4,11 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Renders the right-side content of a SettingsCard (editable path
-         + Change/Show buttons + an inline RightContent slot for callers
-         that need to attach extra controls — e.g. the per-setting Reset
-         button used on Whisper's Models directory). The consumer wraps
-         this in a controls:SettingsCard that owns Header / Description /
-         HeaderIcon via x:Uid. Same architectural reason as
-         FolderPickerCard: keeps the visual tree compatible with
-         SettingsExpander.Items, which rejects UserControl wrappers
-         around SettingsCard children. -->
+    <!-- Editable variant : TextBox (typeable) + Set + Open text-only
+         buttons + an inline RightContent slot for callers that need to
+         attach extra controls (Whisper's per-setting Reset button is
+         the canonical example). The consumer wraps this in a
+         controls:SettingsCard (ContentAlignment = Vertical). -->
     <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -28,21 +24,11 @@
 
         <Button Grid.Column="1"
                 x:Uid="FolderPickerCard_PickButton"
-                Click="PickButton_Click">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <FontIcon Glyph="&#xE838;" FontSize="14" />
-                <TextBlock x:Uid="FolderPickerCard_PickButton_Label" />
-            </StackPanel>
-        </Button>
+                Click="PickButton_Click" />
 
         <Button Grid.Column="2"
                 x:Uid="FolderPickerCard_OpenButton"
-                Click="OpenButton_Click">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock x:Uid="FolderPickerCard_OpenButton_Label" />
-                <FontIcon Glyph="&#xE8A7;" FontSize="14" />
-            </StackPanel>
-        </Button>
+                Click="OpenButton_Click" />
 
         <ContentPresenter Grid.Column="3"
                           Content="{x:Bind RightContent, Mode=OneWay}"

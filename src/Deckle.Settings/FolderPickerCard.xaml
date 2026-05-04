@@ -4,22 +4,21 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- The UserControl renders just the right-side content of a
-         SettingsCard (path display + Change/Show buttons). The consumer
-         wraps it in a controls:SettingsCard that owns Header / Description /
-         HeaderIcon via x:Uid. This keeps the visual tree compatible with
-         SettingsExpander.Items, which expects SettingsCard direct children
-         and rejects nested wrappers. -->
+    <!-- Renders the right-side content of a SettingsCard for a folder
+         path : the resolved path on the left (read-only, full width via
+         star column), Set + Open text-only buttons on the right. The
+         consumer wraps this in a controls:SettingsCard (ContentAlignment
+         = Vertical) so the description above gets full width and the
+         path lands on its own row below it. -->
     <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <TextBlock x:Name="PathTextBlock"
                    Grid.Column="0"
-                   MaxWidth="286"
                    VerticalAlignment="Center"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                    IsTextSelectionEnabled="True"
@@ -30,20 +29,10 @@
 
         <Button Grid.Column="1"
                 x:Uid="FolderPickerCard_PickButton"
-                Click="PickButton_Click">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <FontIcon Glyph="&#xE838;" FontSize="14" />
-                <TextBlock x:Uid="FolderPickerCard_PickButton_Label" />
-            </StackPanel>
-        </Button>
+                Click="PickButton_Click" />
 
         <Button Grid.Column="2"
                 x:Uid="FolderPickerCard_OpenButton"
-                Click="OpenButton_Click">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock x:Uid="FolderPickerCard_OpenButton_Label" />
-                <FontIcon Glyph="&#xE8A7;" FontSize="14" />
-            </StackPanel>
-        </Button>
+                Click="OpenButton_Click" />
     </Grid>
 </UserControl>
