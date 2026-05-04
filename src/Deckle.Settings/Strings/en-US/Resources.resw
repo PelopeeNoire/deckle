@@ -577,6 +577,9 @@
   <data name="SettingsNavRewriting.Content" xml:space="preserve">
     <value>Rewriting</value>
   </data>
+  <data name="SettingsNavDiagnostics.Content" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
   <data name="SettingsNavLogs.Content" xml:space="preserve">
     <value>Logs</value>
   </data>
@@ -1190,11 +1193,26 @@
   <data name="GeneralPageRecordingHeaderLabel.Text" xml:space="preserve">
     <value>Recording</value>
   </data>
-  <data name="GeneralPageTelemetryHeaderLabel.Text" xml:space="preserve">
-    <value>Telemetry</value>
-  </data>
   <data name="GeneralPageBackupRestoreHeaderLabel.Text" xml:space="preserve">
     <value>Back up &amp; restore</value>
+  </data>
+
+  <!-- ─── DiagnosticsPage ─────────────────────────────────────────────
+       Page extracted from GeneralPage in slice S2. Hosts the telemetry
+       opt-ins (Application log, Microphone, Latency, Corpus + Audio
+       corpus, Storage folder). Card-level x:Uid keys (GeneralLog…,
+       GeneralLatency…, GeneralAppLog…, GeneralCorpus…, GeneralStorage…)
+       are reused as-is — the General* prefix is a historical naming
+       artifact, not a page binding ; renaming would require touching
+       every translation file. -->
+  <data name="DiagnosticsPageTitleLabel.Text" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="DiagnosticsPageSubtitleLabel.Text" xml:space="preserve">
+    <value>Telemetry and log output Deckle persists to disk for offline troubleshooting and prompt tuning. Everything is opt-in and stored locally.</value>
+  </data>
+  <data name="DiagnosticsPageTelemetryHeaderLabel.Text" xml:space="preserve">
+    <value>Telemetry</value>
   </data>
   <data name="GeneralPageApplicationDataHeaderLabel.Text" xml:space="preserve">
     <value>Application data</value>

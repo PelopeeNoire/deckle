@@ -22,14 +22,6 @@ public sealed partial class GeneralPage : Page
     // set VM properties which would trigger PushToSettings() needlessly.
     private bool _initializing;
 
-    // Re-entry guard for the corpus consent flow: the Toggled handler reverts
-    // the switch when the user cancels the dialog, and that revert would
-    // retrigger Toggled in turn.
-    private bool _suppressCorpusToggle;
-    private bool _suppressAudioCorpusToggle;
-    private bool _suppressApplicationLogToggle;
-    private bool _suppressMicrophoneTelemetryToggle;
-
     public GeneralPage()
     {
         InitializeComponent();
@@ -174,103 +166,7 @@ public sealed partial class GeneralPage : Page
 
     private void SyncFolderPickerDefaults()
     {
-        TelemetryFolderPicker.DefaultPath = AppPaths.TelemetryDirectory;
         BackupFolderPicker.DefaultPath = AppPaths.SettingsBackupDirectory;
-    }
-
-    // ── Corpus logging handlers ─────────────────────────────────────────────
-    //
-    // Off → On: show a consent dialog. Cancel reverts the toggle (guarded
-    // via _suppressCorpusToggle to avoid re-entering this handler during
-    // the revert). On → Off: no confirmation — the user can turn it back on
-    // later if needed.
-
-    private async void CorpusLoggingToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_initializing || _suppressCorpusToggle) return;
-        if (!CorpusLoggingToggle.IsOn) return;
-
-        bool confirmed = await CorpusConsentDialog.ShowAsync(this.XamlRoot);
-        if (confirmed) return;
-
-        _suppressCorpusToggle = true;
-        try
-        {
-            CorpusLoggingToggle.IsOn = false;
-        }
-        finally
-        {
-            _suppressCorpusToggle = false;
-        }
-    }
-
-    // Audio corpus consent — separate from the text corpus dialog because
-    // voice recordings carry a different privacy posture. The toggle is
-    // guarded by IsEnabled={CorpusLoggingEnabled} in XAML so it can't reach
-    // the on state while the master text toggle is off.
-    private async void AudioCorpusToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_initializing || _suppressAudioCorpusToggle) return;
-        if (!AudioCorpusToggle.IsOn) return;
-
-        bool confirmed = await AudioCorpusConsentDialog.ShowAsync(this.XamlRoot);
-        if (confirmed) return;
-
-        _suppressAudioCorpusToggle = true;
-        try
-        {
-            AudioCorpusToggle.IsOn = false;
-        }
-        finally
-        {
-            _suppressAudioCorpusToggle = false;
-        }
-    }
-
-    // Application log consent — same pattern as corpus / audio-corpus. Same
-    // privacy concern level as corpus text (log lines occasionally include
-    // partial transcription fragments), plus an explicit note that the file
-    // grows fast.
-    private async void ApplicationLogToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_initializing || _suppressApplicationLogToggle) return;
-        if (!ApplicationLogToggle.IsOn) return;
-
-        bool confirmed = await ApplicationLogConsentDialog.ShowAsync(this.XamlRoot);
-        if (confirmed) return;
-
-        _suppressApplicationLogToggle = true;
-        try
-        {
-            ApplicationLogToggle.IsOn = false;
-        }
-        finally
-        {
-            _suppressApplicationLogToggle = false;
-        }
-    }
-
-    // Microphone telemetry consent — lighter posture than corpus / app log
-    // (no audio, no text, just dBFS percentiles), but the calibration-tool
-    // framing still benefits from an explicit opt-in so the user knows a
-    // microphone.jsonl file gets created.
-    private async void MicrophoneTelemetryToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_initializing || _suppressMicrophoneTelemetryToggle) return;
-        if (!MicrophoneTelemetryToggle.IsOn) return;
-
-        bool confirmed = await MicrophoneTelemetryConsentDialog.ShowAsync(this.XamlRoot);
-        if (confirmed) return;
-
-        _suppressMicrophoneTelemetryToggle = true;
-        try
-        {
-            MicrophoneTelemetryToggle.IsOn = false;
-        }
-        finally
-        {
-            _suppressMicrophoneTelemetryToggle = false;
-        }
     }
 
     // ── Reset per section ───────────────────────────────────────────────────
@@ -302,11 +198,6 @@ public sealed partial class GeneralPage : Page
         _initializing = true;
         try { SyncThemeCombo(); }
         finally { _initializing = false; }
-    }
-
-    private void ResetTelemetry_Click(object sender, RoutedEventArgs e)
-    {
-        ViewModel.ResetTelemetryDefaults();
     }
 
     // Opens the UserDataRoot in File Explorer — entry point for users who
