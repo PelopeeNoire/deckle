@@ -68,7 +68,7 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="GeneralLogMicrophoneCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
                     <ToggleSwitch x:Name="MicrophoneTelemetryToggle"
                                   IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}"
                                   Toggled="MicrophoneTelemetryToggle_Toggled" />
