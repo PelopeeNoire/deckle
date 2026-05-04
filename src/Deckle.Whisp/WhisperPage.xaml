@@ -433,53 +433,69 @@
                 </controls:SettingsCard>
 
                 <!-- ── Decoding ────────────────────────────────────────────── -->
-                <TextBlock x:Uid="WhisperPageDecodingHeaderLabel"
-                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                <!--
+                    Pattern PowerToys / Win11 Settings : grouper les sliders
+                    apparentés sous un SettingsExpander parent, contenu en
+                    ContentAlignment="Vertical" pour que la description longue
+                    et le slider full-width respirent. Header + icône fixés
+                    sur le parent, enfants sans icône (le glyph parent porte
+                    l'identité visuelle du groupe).
+                -->
+                <controls:SettingsExpander x:Name="DecodingExpander"
+                                           x:Uid="WhisperDecodingExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE9CA;}">
+                    <controls:SettingsExpander.Items>
 
-                <controls:SettingsCard x:Name="TemperatureCard"
-                                       x:Uid="WhisperTemperatureCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9CA;}">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Slider x:Name="TemperatureSlider"
-                                Style="{StaticResource SettingSliderStyle}"
-                                Minimum="0"
-                                Maximum="1"
-                                StepFrequency="0.1"
-                                TickFrequency="0.1"
-                                Value="{x:Bind ViewModel.Temperature, Mode=TwoWay}"
-                                ValueChanged="TemperatureSlider_ValueChanged" />
-                        <TextBlock x:Name="TemperatureValue"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Button x:Name="TemperatureReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="TemperatureReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="TemperatureCard"
+                                               x:Uid="WhisperTemperatureCard"
+                                               ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="TemperatureSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Minimum="0"
+                                        Maximum="1"
+                                        StepFrequency="0.1"
+                                        TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.Temperature, Mode=TwoWay}"
+                                        ValueChanged="TemperatureSlider_ValueChanged" />
+                                <TextBlock x:Name="TemperatureValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="TemperatureReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="TemperatureReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
 
-                <controls:SettingsCard x:Name="TemperatureIncrementCard"
-                                       x:Uid="WhisperTemperatureIncrementCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE72C;}">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Slider x:Name="TemperatureIncrementSlider"
-                                Style="{StaticResource SettingSliderStyle}"
-                                Minimum="0"
-                                Maximum="1"
-                                StepFrequency="0.1"
-                                TickFrequency="0.1"
-                                Value="{x:Bind ViewModel.TemperatureIncrement, Mode=TwoWay}"
-                                ValueChanged="TemperatureIncrementSlider_ValueChanged" />
-                        <TextBlock x:Name="TemperatureIncrementValue"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Button x:Name="TemperatureIncrementReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="TemperatureIncrementReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="TemperatureIncrementCard"
+                                               x:Uid="WhisperTemperatureIncrementCard"
+                                               ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="TemperatureIncrementSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Minimum="0"
+                                        Maximum="1"
+                                        StepFrequency="0.1"
+                                        TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.TemperatureIncrement, Mode=TwoWay}"
+                                        ValueChanged="TemperatureIncrementSlider_ValueChanged" />
+                                <TextBlock x:Name="TemperatureIncrementValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="TemperatureIncrementReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="TemperatureIncrementReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
 
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- L'InfoBar reste hors expander : un warning sur fallback
+                     désactivé doit rester visible même quand le groupe
+                     Decoding est replié. -->
                 <InfoBar x:Name="TemperatureIncrementWarning"
                          x:Uid="WhisperTemperatureIncrementWarning"
                          IsOpen="False"
@@ -487,70 +503,75 @@
                          Severity="Warning" />
 
                 <!-- ── Confidence thresholds ───────────────────────────────── -->
-                <TextBlock x:Uid="WhisperPageConfidenceThresholdsHeaderLabel"
-                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                <controls:SettingsExpander x:Name="ConfidenceExpander"
+                                           x:Uid="WhisperConfidenceExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                    <controls:SettingsExpander.Items>
 
-                <controls:SettingsCard x:Name="EntropyCard"
-                                       x:Uid="WhisperEntropyCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Slider x:Name="EntropySlider"
-                                Style="{StaticResource SettingSliderStyle}"
-                                Maximum="3.5"
-                                StepFrequency="0.1"
-                                TickFrequency="0.5"
-                                Value="{x:Bind ViewModel.EntropyThreshold, Mode=TwoWay}"
-                                ValueChanged="EntropySlider_ValueChanged" />
-                        <TextBlock x:Name="EntropyValue"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Button x:Name="EntropyReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="EntropyReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="EntropyCard"
+                                               x:Uid="WhisperEntropyCard"
+                                               ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="EntropySlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Maximum="3.5"
+                                        StepFrequency="0.1"
+                                        TickFrequency="0.5"
+                                        Value="{x:Bind ViewModel.EntropyThreshold, Mode=TwoWay}"
+                                        ValueChanged="EntropySlider_ValueChanged" />
+                                <TextBlock x:Name="EntropyValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="EntropyReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="EntropyReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
 
-                <controls:SettingsCard x:Name="LogprobCard"
-                                       x:Uid="WhisperLogprobCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Slider x:Name="LogprobSlider"
-                                Style="{StaticResource SettingSliderStyle}"
-                                StepFrequency="0.05"
-                                TickFrequency="0.1"
-                                Value="{x:Bind ViewModel.LogprobThreshold, Mode=TwoWay}"
-                                ValueChanged="LogprobSlider_ValueChanged" />
-                        <TextBlock x:Name="LogprobValue"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Button x:Name="LogprobReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="LogprobReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="LogprobCard"
+                                               x:Uid="WhisperLogprobCard"
+                                               ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="LogprobSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        StepFrequency="0.05"
+                                        TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.LogprobThreshold, Mode=TwoWay}"
+                                        ValueChanged="LogprobSlider_ValueChanged" />
+                                <TextBlock x:Name="LogprobValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="LogprobReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="LogprobReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
 
-                <controls:SettingsCard x:Name="NoSpeechCard"
-                                       x:Uid="WhisperNoSpeechCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Slider x:Name="NoSpeechSlider"
-                                Style="{StaticResource SettingSliderStyle}"
-                                Maximum="0.80"
-                                StepFrequency="0.05"
-                                TickFrequency="0.1"
-                                Value="{x:Bind ViewModel.NoSpeechThreshold, Mode=TwoWay}"
-                                ValueChanged="NoSpeechSlider_ValueChanged" />
-                        <TextBlock x:Name="NoSpeechValue"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Button x:Name="NoSpeechReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="NoSpeechReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
+                        <controls:SettingsCard x:Name="NoSpeechCard"
+                                               x:Uid="WhisperNoSpeechCard"
+                                               ContentAlignment="Vertical">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Slider x:Name="NoSpeechSlider"
+                                        Style="{StaticResource SettingSliderStyle}"
+                                        Maximum="0.80"
+                                        StepFrequency="0.05"
+                                        TickFrequency="0.1"
+                                        Value="{x:Bind ViewModel.NoSpeechThreshold, Mode=TwoWay}"
+                                        ValueChanged="NoSpeechSlider_ValueChanged" />
+                                <TextBlock x:Name="NoSpeechValue"
+                                           Style="{StaticResource SliderValueTextStyle}" />
+                                <Button x:Name="NoSpeechReset"
+                                        Style="{StaticResource ResetButtonStyle}"
+                                        Click="NoSpeechReset_Click">
+                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingsCard>
+
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
 
                 <!-- ── Storage ─────────────────────────────────────────────── -->
                 <TextBlock x:Uid="WhisperPageStorageHeaderLabel"
