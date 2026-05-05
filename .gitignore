@@ -27,12 +27,21 @@ build-log.txt
 **/xamlcompiler.log
 **/xaml.out
 
+# MSBuild leftovers occasionally written outside bin/obj.
+**/*.tlog
+**/*.lastbuildstate
+MSBuild_*.failure.txt
+
 # ─────────────────────────────────────────────────────────────────────────
 #  IDE / OS junk
 # ─────────────────────────────────────────────────────────────────────────
 
 # Visual Studio local state.
 .vs/
+*.user
+*.suo
+*.userprefs
+*.vsidx
 
 # JetBrains, Vim swap, macOS, Windows Explorer thumbnails.
 .idea/
@@ -41,6 +50,22 @@ build-log.txt
 *~
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# VSCode Local History extension.
+.history/
+
+# Backup / patch / merge leftovers.
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+.~lock.*
+
+# Aider AI session state — may contain private context.
+.aider*
 
 # ─────────────────────────────────────────────────────────────────────────
 #  Secrets / credentials — preventive, no such file should ever exist here
@@ -50,20 +75,50 @@ Thumbs.db
 *.env
 .env
 .env.*
+.envrc
 
 # Private keys, certificates, secret stores.
 *.pem
 *.key
 *.p12
 *.pfx
+*.secret
+*.secrets
 secrets/
 credentials*
 *.credential
+auth.json
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
 
-# Misplaced MCP config (the only one that ever leaked here was purged
-# from history; this entry is preventive).
+# Cloud / container credentials.
+.aws/
+.gcloud/
+.docker/config.json
+*.kubeconfig
+kubeconfig
+
+# Local config overrides — Microsoft / .NET conventions.
+appsettings.local.json
+appsettings.Development.json
+appsettings.development.json
+local.settings.json
+*.local.json
+
+# Misplaced MCP config (a token leaked here once and was purged from
+# history; this entry is preventive).
 .mcp.json
 mcp.json
+
+# Windows shortcuts (.lnk) and Internet Shortcuts (.url) — embed
+# metadata that fingerprints the host (LocalBasePath, MachineID, user
+# SID via target). Keep them off the repo even if their target is
+# benign. Convenience links to %LocalAppData%\Deckle\, the auto-memory
+# directory, etc., live next to the working tree but stay local.
+*.lnk
+*.url
 
 # ─────────────────────────────────────────────────────────────────────────
 #  Runtime artifacts
@@ -76,7 +131,9 @@ mcp.json
 .tmp/
 **/.tmp-*
 *.dmp
+*.mdmp
 crash-*.log
+crashdumps/
 
 # File-based crash logs (see HudComposition.DebugLog pattern). The
 # folder itself stays versioned so the path exists when code writes
@@ -105,6 +162,42 @@ benchmark/logs/
 benchmark/results.tsv
 
 # ─────────────────────────────────────────────────────────────────────────
+#  Python tooling — caches and virtualenvs (benchmark/ + ad hoc scripts)
+# ─────────────────────────────────────────────────────────────────────────
+
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+*.egg-info/
+venv/
+.venv/
+env/
+ENV/
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Node / npx caches — preventive (MCP servers run via npx may write here)
+# ─────────────────────────────────────────────────────────────────────────
+
+node_modules/
+.npm/
+npm-debug.log*
+yarn-error.log
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Test / coverage output
+# ─────────────────────────────────────────────────────────────────────────
+
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# ─────────────────────────────────────────────────────────────────────────
 #  Claude Code runtime state and local-only customisation
 # ─────────────────────────────────────────────────────────────────────────
 # Tracked agent / skill / instruction files stay versioned — only
@@ -123,7 +216,3 @@ benchmark/results.tsv
 
 # Personal-workflow skills not meant for the public repo.
 .claude/skills/benchmark-loop/
-
-# Link to Claude auto-memory directory (created locally, never
-# versioned).
-memory.lnk

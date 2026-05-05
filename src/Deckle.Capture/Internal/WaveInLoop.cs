@@ -106,8 +106,7 @@ internal static class WaveInLoop
         // TEMP DIAG (capture-lag investigation) — strip after collecting
         // 5–10 occurrences in the wild. Tells us which of GC pause /
         // CPU preemption / cold-start / heavy inline work caused the
-        // 3-buffer pile-up. Plan:
-        // C:\Users\Louis\.claude\plans\pourquoi-le-ring-buffer-effervescent-ritchie.md
+        // 3-buffer pile-up.
         long diagIterationCount = 0;
         long diagLastIterMs     = 0;
         int  diagGcStart0       = System.GC.CollectionCount(0);

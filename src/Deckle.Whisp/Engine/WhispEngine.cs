@@ -1199,8 +1199,7 @@ public sealed class WhispEngine : IDisposable
             // still in flight. Silent no-op, only a Verbose telemetry line
             // for diagnosis when the user reports "I pressed but nothing
             // happened". Decision: ignore (Settings Win11 voice-typing
-            // semantics). See plan
-            // C:\Users\Louis\.claude\plans\j-ai-un-petit-probl-me-quiet-pebble.md
+            // semantics).
             _log.Verbose(LogSource.Hotkey, $"toggle ignored | state={current}");
             return ToggleResult.IgnoredBusy;
         }

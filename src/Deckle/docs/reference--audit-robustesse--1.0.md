@@ -277,9 +277,6 @@ ordonné de la table 3) :
   avant que le contexte natif ne soit libéré, plus de race
   RaiseStatus-après-tray-Dispose ni de double-free.
 
-Plan détaillé :
-[`C:\Users\Louis\.claude\plans\j-ai-un-petit-probl-me-quiet-pebble.md`](../../../C:%5CUsers%5CLouis%5C.claude%5Cplans%5Cj-ai-un-petit-probl-me-quiet-pebble.md).
-
 ### Sessions suivantes
 
 Tous les findings marqués 📋 backlog sont à reprendre :
