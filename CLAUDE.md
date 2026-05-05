@@ -24,6 +24,11 @@ Ne jamais lancer de build ni de publish Deckle — ni `build-run.ps1`, ni
 `MSBuild.exe`, aucune variante. Le maintainer s'en charge. S'arrêter au
 résumé des changements et laisser le maintainer builder puis valider
 runtime.
+
+Le commit sort sous la seule identité du maintainer. Les trailers
+`Co-Authored-By: Claude …` et lignes `🤖 Generated with [Claude Code]`
+sont exclus — ils inscrivent Claude comme contributeur GitHub, ce qui
+est faux.
 </rules>
 
 <observability>
