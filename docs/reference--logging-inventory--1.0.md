@@ -61,11 +61,23 @@ grep `rms=` trouve exactement la même chose partout.
 | Confiance | `[0, 1]` | 2 décimales | `p̄=0.87 min=0.42` |
 | Probabilité | `%` | entier | `nsp=12%` |
 
+### Image / capture vidéo
+
+| Mesure | Unité | Précision | Exemple | Notes |
+|---|---|---|---|---|
+| Frames par seconde | `fps` | 1 décimale | `fps=59.8` | mesuré sur fenêtre glissante 1 s |
+| Compte de frames | `frames` | entier | `frames=124` | depuis Start de la session |
+| Résolution écran | `WxH` | entier | `size=1920x1080` | `Direct3D11CaptureFrame.ContentSize` |
+| Format pixel | nom | — | `format=B8G8R8A8UIntNormalized` | enum DirectXPixelFormat |
+| Buffers pool | `bufs` | entier | `bufs=2` | typiquement 2 |
+| Handle moniteur | `hex` | — | `hmon=0x000100A3` | retour `MonitorFromPoint` |
+
 ### Retours d'appel
 
 | Mesure | Format | Exemple |
 |---|---|---|
 | Code natif | `name={int}` | `result=0`, `mmsys=4` |
+| HRESULT | `name=0x{hex}` | `hr=0x80004005` |
 | Outcome enum | `outcome={value}` | `outcome=Pasted` |
 | Pointeur natif | `hex` | `ctx=0x7ff8a3c01400` |
 
@@ -199,6 +211,7 @@ Ne pas en ajouter sans raison. Mapping étape → source :
 | Recap final | `DONE` |
 | App lifecycle | `APP`, `STATUS`, `CRASH` |
 | Settings | `SETTINGS`, `SET.*` |
+| Capture écran (ambient lighting) | `SCREEN` |
 
 ---
 
@@ -568,6 +581,60 @@ HH:mm:ss.fff [LATENCY] audio={X.X}s hotkey={X}ms vad={X}ms whisper={X}ms llm={X}
 
 ---
 
+## Pipeline ambient lighting
+
+Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active la fonction depuis le panneau Playground (J1, période d'investigation) ou plus tard depuis le toggle Settings (J3+). Les étapes côté capture écran sont décrites ici ; les étapes analyse image et pilotage LED s'ajouteront au fil des jalons.
+
+### 11. Capture écran
+
+**Fichier** : `src/Deckle.Vision/ScreenCaptureService.cs` (lifecycle, FrameArrived dispatch), `src/Deckle.Vision/ScreenCaptureInterop.cs` (P/Invoke D3D11 + IGraphicsCaptureItemInterop COM).
+
+**Mesures disponibles**
+
+- `[logué]` taille frame initiale au Start (W×H)
+- `[logué]` format pixel utilisé (DirectXPixelFormat)
+- `[logué]` nombre de buffers dans le pool
+- `[logué]` HMONITOR ciblé (hex)
+- `[logué]` HRESULT D3D11CreateDevice (Verbose si succès, Error si échec)
+- `[logué]` HRESULT CreateForMonitor (Verbose si succès, Error si échec)
+- `[logué]` compte total de frames au Stop
+- `[logué]` durée de session
+- `[logué]` FPS moyen sur la session (frames / durée)
+- `[à instrumenter]` taille frame courante au resize (resize en cours d'exécution si l'écran change)
+- `[à instrumenter]` FPS instantané (fenêtre glissante 1 s) — émis par le consumer Playground côté UI, pas dans le service
+- `[à instrumenter]` flag HDR (présent sur Windows 11 24H2+, non utilisé tant qu'on reste en SDR B8G8R8A8 ; arrivera en J7)
+
+**Gabarit standard**
+
+```
+Info      SCREEN  Screen capture starting
+Verbose   SCREEN  start | hmon=0x{X} | size={W}x{H} | format={pixelFormat} | bufs={n}
+Success   SCREEN  Screen capture started
+Info      SCREEN  Screen capture stopped ({frames} frames in {duration_sec:F1} s)
+Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
+```
+
+**Erreurs et sévérités**
+
+| Condition | Sévérité | UserFeedback | Notes |
+|---|---|---|---|
+| `GraphicsCaptureSession.IsSupported()` false | Error | ➕ Critical (vague Ambient) | OS trop ancien (< Windows 10 1809) |
+| D3D11CreateDevice échoue (HRESULT) | Error | ➕ Critical (vague Ambient) | Pas de GPU compatible / driver KO |
+| `MonitorFromPoint` retourne `IntPtr.Zero` | Error | ➕ Critical (vague Ambient) | Pas d'écran primaire détecté (cas pathologique) |
+| `CreateForMonitor` échoue (HRESULT) | Error | ➕ Critical (vague Ambient) | API capture refuse le moniteur |
+| `FrameArrived` callback exception | Warning | non (frame ignorée, session continue) | logged Verbose avec stack |
+| Resize en cours (`ContentSize` change) | Verbose | non | non-traité en J1, log seul |
+
+**Threading**
+
+Le `FrameArrived` event est levé sur le worker thread interne du `Direct3D11CaptureFramePool` (parce qu'on utilise `CreateFreeThreaded`, pas `Create`). Le service relaye l'event vers ses consommateurs sur ce même thread — c'est au consommateur de marshaler vers son thread UI s'il en a besoin (cas typique : le panneau Playground utilise `DispatcherQueue.TryEnqueue` pour rafraîchir les labels).
+
+**Disposable**
+
+`ScreenCaptureService` est `IDisposable`. `Dispose()` est idempotent et appelle `Stop()` si la session est encore active. Le consommateur est responsable du `Dispose()` quand il n'a plus besoin du service — typiquement à la fermeture de la fenêtre Playground ou à l'arrêt explicite de l'utilisateur.
+
+---
+
 ## Tableau synthétique des erreurs et surface UX
 
 Récap croisé : quelle erreur, où, quelle sévérité, quel message utilisateur
@@ -589,6 +656,9 @@ Récap croisé : quelle erreur, où, quelle sévérité, quel message utilisateu
 | 12 | Hotkey collision err 1409 | Hotkey register | Error | ➕ Critical (vague 3) |
 | 13 | Repetition loop | Transcribe | Warning | ✅ Narrative |
 | 14 | No speech detected | VAD | Info | ✅ Narrative |
+| 15 | OS too old (no `GraphicsCaptureSession`) | Screen capture | Error | ➕ Critical (vague Ambient) |
+| 16 | D3D11 device creation fails | Screen capture | Error | ➕ Critical (vague Ambient) |
+| 17 | `CreateForMonitor` fails (HRESULT) | Screen capture | Error | ➕ Critical (vague Ambient) |
 
 ---
 

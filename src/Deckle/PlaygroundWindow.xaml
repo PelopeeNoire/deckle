@@ -29,32 +29,70 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Main content: two panels, both responsive, no sash.
-               Col 0 (preview): Width="*" — grows with the window, absorbs
-                                all extra horizontal space. MinWidth=720
-                                so the 7-tab SelectorBar fits without
-                                horizontal scroll. Preview content is
-                                center-aligned so the HudChrono stays
-                                centered as the column widens.
-               Col 1 (tuning):  Width="Auto" — desired width reported by
-                                the inner ScrollViewer, which is capped
-                                at MaxWidth=840 (~900 is "too much
-                                whitespace", ~700 feels cramped). The
-                                column never exceeds that cap no matter
-                                how wide the window gets; Col 0 picks up
-                                the slack.
+        <!-- Top-level navigation. Same pattern as SettingsWindow — Auto
+             pane mode (Left ≥1008, LeftCompact 640-1008, Minimal <640),
+             back button + system Settings entry suppressed. Two sections:
+                 • HUD            — existing two-column layout (preview +
+                                    tuning) ; selected by default.
+                 • Ambient light  — dedicated full-width page for the
+                                    screen capture pipeline (J1) and the
+                                    visualisations that land in J4+.
+             Pages are inline (Visibility toggle), not Frame-navigated —
+             both surfaces are small enough that loading them lazily would
+             add complexity without payoff. -->
+        <NavigationView Grid.Row="1"
+                        x:Name="PlaygroundNav"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        SelectionChanged="OnPlaygroundNavSelectionChanged">
+            <NavigationView.MenuItems>
+                <!-- Glyph E916 (Stopwatch) — the HUD's anchor visual is the
+                     chrono stroke, so the timer icon reads naturally. -->
+                <NavigationViewItem x:Name="NavItemHud"
+                                    Content="HUD"
+                                    Tag="hud"
+                                    IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE916;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <!-- Glyph E781 (Lightbulb) — matches the Ambient entry in
+                     SettingsWindow's NavView for visual consistency across
+                     the two windows. -->
+                <NavigationViewItem x:Name="NavItemAmbient"
+                                    Content="Ambient lighting"
+                                    Tag="ambient">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE781;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
-             The earlier draggable sash was removed: a user-set PreviewCol
-             width survived window shrinks, leaving the tuning panel clipped
-             off-screen with no way back short of re-enlarging the window.
-             Fluid columns with a MaxWidth-capped tuning panel make the
-             responsive contract explicit and avoid the stuck-state
-             regression. -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="720" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+            <Grid x:Name="PageContent">
+
+                <!-- ── HUD page ──────────────────────────────────────────
+                     Existing two-column layout: preview (Col 0) + tuning
+                     panel (Col 1). Unchanged from the J0 Playground ; the
+                     SelectorBar inside Col 0 still picks the HUD target,
+                     and the tuning Expanders in Col 1 still drive the
+                     in-memory _tuning state.
+
+                     Col 0 (preview): Width="*" — grows with the window,
+                                      absorbs extra horizontal space.
+                                      MinWidth=720 so the 7-tab SelectorBar
+                                      fits without horizontal scroll.
+                                      Preview content centered so HudChrono
+                                      stays centered as the column widens.
+                     Col 1 (tuning):  Width="Auto" — desired width reported
+                                      by the inner ScrollViewer, capped at
+                                      MaxWidth=920 (≥900 wastes whitespace,
+                                      ≤700 cramps). Col 0 picks up the
+                                      slack past the cap. -->
+                <Grid x:Name="HudPage" Visibility="Visible">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="720" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
             <!-- ── Col 0 — preview (grows, content centered) ───────────── -->
             <Grid Grid.Column="0">
@@ -227,6 +265,150 @@
                     </Grid>
                 </StackPanel>
             </ScrollViewer>
-        </Grid>
+                </Grid>
+
+                <!-- ── Ambient lighting page ─────────────────────────────
+                     Dedicated full-width surface for the ambient lighting
+                     pipeline. J1 only ships the screen capture pump (Start
+                     / Stop + frames counter + FPS). Subsequent milestones
+                     (J4+) fill the lower area with downsample previews,
+                     extracted zone colours, and animation tunables ; this
+                     layout reserves the room without requiring re-org.
+
+                     ScrollViewer wraps the StackPanel so the controls
+                     remain reachable on a narrow Playground window ; the
+                     400 dip MaxWidth on the description matches the HUD
+                     page's typography contract. -->
+                <Grid x:Name="AmbientPage" Visibility="Collapsed">
+                    <ScrollViewer Padding="32"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="24"
+                                    MaxWidth="980"
+                                    HorizontalAlignment="Left">
+
+                            <!-- Page title block. TitleLargeTextBlockStyle
+                                 matches the H1 in Settings pages. -->
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Ambient lighting"
+                                           Style="{ThemeResource TitleLargeTextBlockStyle}" />
+                                <TextBlock Text="Screen capture and downstream colour pipeline. Used to validate the capture pump end-to-end before wiring up the Hue driver and the visualisations."
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           MaxWidth="640" />
+                            </StackPanel>
+
+                            <!-- Screen capture controls card. AccentButtonStyle
+                                 on the toggle so the primary action reads at a
+                                 glance ; the icon swaps Play (E768) ↔ Stop
+                                 (E71A) on state change. The status dot uses
+                                 SystemFillColor* theme brushes so it follows
+                                 light/dark/contrast accent without manual
+                                 colour management. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Screen capture"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Pumps frames from the primary monitor through Windows.Graphics.Capture. Off by default ; click Start to begin."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="ScreenCaptureToggleButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="140"
+                                                Click="OnScreenCaptureToggleClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon x:Name="ScreenCaptureToggleIcon"
+                                                          Glyph="&#xE768;"
+                                                          FontSize="14" />
+                                                <TextBlock x:Name="ScreenCaptureToggleLabel"
+                                                           Text="Start" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="ScreenCaptureStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ScreenCaptureStatusText"
+                                                   Text="Stopped"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <!-- Metric pair. TitleTextBlockStyle on
+                                         the value so the numbers are the
+                                         visual anchor of the card. -->
+                                    <Grid ColumnSpacing="48">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" Spacing="2" MinWidth="160">
+                                            <TextBlock Text="Frames captured"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="ScreenCaptureFramesText"
+                                                       Text="0"
+                                                       Style="{ThemeResource TitleTextBlockStyle}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Spacing="2" MinWidth="160">
+                                            <TextBlock Text="FPS (1 s window)"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="ScreenCaptureFpsText"
+                                                       Text="—"
+                                                       Style="{ThemeResource TitleTextBlockStyle}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Visualisations placeholder. Reserves the
+                                 lower half of the page for J4+ surfaces
+                                 (downsampled grid preview, dominant colour
+                                 extraction, zone overlays). LayerFill so it
+                                 reads as a recessed slot rather than a
+                                 sibling card. -->
+                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="32"
+                                    MinHeight="240">
+                                <StackPanel HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Spacing="8">
+                                    <TextBlock Text="Visualisations land here later"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                               HorizontalAlignment="Center" />
+                                    <TextBlock Text="Downsampled grid preview, dominant colour extraction, zone overlays — planned for J4+."
+                                               Style="{ThemeResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                               HorizontalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               MaxWidth="440"
+                                               TextAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>

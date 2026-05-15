@@ -13,8 +13,10 @@ using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;
+using Deckle.Logging;
 using Deckle.Playground;
 using Deckle.Shell;
+using Deckle.Vision;
 
 namespace Deckle;
 
@@ -132,6 +134,20 @@ public sealed partial class PlaygroundWindow : Window
     // that was reported). See NakedPreview class comment in HudComposition.
     private HudComposition.NakedPreview? _nakedPreview;
 
+    // ── Ambient lighting — screen capture (J1) ─────────────────────────
+    //
+    // Created lazily on the first Start click ; disposed on Stop, on
+    // Closing→Hide (so a hidden Playground doesn't keep the capture
+    // pipeline running silently), and on the terminal Closed event.
+    // FrameArrived fires on the framepool worker thread ; the UI timer
+    // samples FrameCount on the UI thread once a second to compute FPS
+    // without per-frame DispatcherQueue marshaling.
+    private ScreenCaptureService? _screenCapture;
+    private readonly DispatcherTimer _screenCaptureFpsTimer = new()
+        { Interval = TimeSpan.FromMilliseconds(1000) };
+    private long _screenCaptureLastSampledFrames;
+    private long _screenCaptureLastSampleTimestamp;
+
     public PlaygroundWindow()
     {
         InitializeComponent();
@@ -150,29 +166,39 @@ public sealed partial class PlaygroundWindow : Window
         SystemBackdrop = new MicaBackdrop();
 
         Title = "Deckle Playground";
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1580, 880));
+        // Default 1800×900: NavView pane (320) + HUD page (1200 min) +
+        // breathing room for the tuning expanders to sit comfortably wide
+        // out of the box. Min 1520×600 is still a usable surface, just
+        // tight ; first-launch size aims for the comfortable end.
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1800, 900));
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min width 1200: preview column fixed at 720 + tuning column
-        // MinWidth 480. Preview sized to fit all seven SelectorBar tabs
-        // horizontally (Charging … Combined) without invoking the
-        // ScrollViewer's horizontal scroll. Below 1200 total the tuning
-        // slider/NumberBox composite loses readable space. No sash to
-        // drag — the fixed contract IS the responsive contract.
-        presenter.PreferredMinimumWidth  = 1200;
-        presenter.PreferredMinimumHeight = 480;
+        // Min width 1520: NavView pane in Left mode is ~320 dip (default
+        // OpenPaneLength), HUD page itself wants 1200 dip min (preview
+        // column 720 + tuning column 480). Below 1520 the tuning
+        // slider/NumberBox composite loses readable space or the pane
+        // collapses to LeftCompact unexpectedly. Min height bumped to 600
+        // so the AmbientPage placeholder + capture card fit without
+        // scrolling at the smallest size.
+        presenter.PreferredMinimumWidth  = 1520;
+        presenter.PreferredMinimumHeight = 600;
         AppWindow.SetPresenter(presenter);
 
         // Close → hide, never destroy. Same contract as SettingsWindow /
         // LogWindow — App owns the single instance for its lifetime.
+        // Side effect: stop the screen capture if it was running, so a
+        // hidden Playground doesn't keep pulling frames from the GPU.
         AppWindow.Closing += (_, args) =>
         {
             args.Cancel = true;
+            StopScreenCaptureIfRunning();
             AppWindow.Hide();
         };
+
+        _screenCaptureFpsTimer.Tick += OnScreenCaptureFpsTick;
 
         _rebuildDebounce.Tick += (_, _) =>
         {
@@ -211,6 +237,8 @@ public sealed partial class PlaygroundWindow : Window
             _rmsTimer.Stop();
             _rmsClock.Stop();
             _rebuildDebounce.Stop();
+            _screenCaptureFpsTimer.Stop();
+            StopScreenCaptureIfRunning();
             // Detach the composition child first so the compositor stops
             // referencing the bundle's visual tree, then dispose. In the
             // singleton-hidden pattern (Closing→Hide) Closed only fires at
@@ -291,6 +319,29 @@ public sealed partial class PlaygroundWindow : Window
         if (next == _currentTarget) return;
         _currentTarget = next;
         ApplyTarget();
+    }
+
+    // Top-level navigation between the HUD page and the Ambient lighting
+    // page. Pages are inline (Visibility toggle), not Frame-navigated —
+    // both surfaces are cheap to keep instantiated and the alternative
+    // (Frame + Page classes per surface) would force a refactor of every
+    // x:Name reference scattered across this file. The HUD preview keeps
+    // animating in the background when Ambient lighting is selected ;
+    // suspending it on hide-tab is a polish item for later.
+    //
+    // First SelectionChanged fires during InitializeComponent (NavView
+    // applies IsSelected="True" on NavItemHud) before HudPage is realised ;
+    // null-guard on the page references so the early fire is a no-op.
+    private void OnPlaygroundNavSelectionChanged(
+        NavigationView sender,
+        NavigationViewSelectionChangedEventArgs args)
+    {
+        if (HudPage is null || AmbientPage is null) return;
+        if (args.SelectedItem is not NavigationViewItem item) return;
+
+        bool ambient = (item.Tag as string) == "ambient";
+        HudPage.Visibility     = ambient ? Visibility.Collapsed : Visibility.Visible;
+        AmbientPage.Visibility = ambient ? Visibility.Visible   : Visibility.Collapsed;
     }
 
     private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1188,5 +1239,131 @@ public sealed partial class PlaygroundWindow : Window
         grid.Children.Add(slider);
         grid.Children.Add(numberBox);
         return grid;
+    }
+
+    // ── Ambient lighting — screen capture (J1) ─────────────────────────────
+    //
+    // Wires the Start / Stop button in the Ambient lighting card to a
+    // freshly-built ScreenCaptureService. The service is created on first
+    // Start so the capture pipeline stays inert until the user opts in.
+    // FrameArrived is left unhandled at J1 — we only count frames via
+    // ScreenCaptureService.FrameCount, no per-frame UI work. The FPS timer
+    // samples the counter once a second and computes an FPS estimate from
+    // the delta over the sample interval (low jitter, no per-frame
+    // DispatcherQueue marshaling).
+
+    // Segoe Fluent Icons glyphs swapped on the toggle button. E768 (Play)
+    // when stopped — the action triggered by clicking. E71A (Stop, the
+    // solid square) when running. Mirrors the Play/Pause RadioButton
+    // pattern used for the HUD preview row: the icon names what the next
+    // click does, not the current state.
+    private const string ScreenCaptureGlyphStart = "\uE768";
+    private const string ScreenCaptureGlyphStop  = "\uE71A";
+
+    private void OnScreenCaptureToggleClick(object sender, RoutedEventArgs e)
+    {
+        // Entry log so we can confirm the Click reaches the handler ;
+        // without it a non-firing event is indistinguishable from a
+        // silent failure inside Start(). Verbose only — once the J1
+        // pump is stable this can come out or move to a per-session
+        // counter.
+        LogService.Instance.Verbose(LogSource.Screen,
+            $"playground toggle | running={_screenCapture is { IsRunning: true }}");
+
+        if (_screenCapture is { IsRunning: true })
+        {
+            StopScreenCaptureIfRunning();
+            return;
+        }
+
+        try
+        {
+            _screenCapture ??= new ScreenCaptureService();
+            _screenCapture.Stopped += OnScreenCaptureStopped;
+            _screenCapture.Start();
+
+            _screenCaptureLastSampledFrames = 0;
+            _screenCaptureLastSampleTimestamp = Stopwatch.GetTimestamp();
+            ScreenCaptureToggleIcon.Glyph = ScreenCaptureGlyphStop;
+            ScreenCaptureToggleLabel.Text = "Stop";
+            ScreenCaptureStatusText.Text = "Running";
+            ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorSuccessBrush");
+            ScreenCaptureFramesText.Text = "0";
+            ScreenCaptureFpsText.Text = "—";
+            _screenCaptureFpsTimer.Start();
+        }
+        catch (Exception ex)
+        {
+            // Service already logged Error + Verbose with the HRESULT in
+            // its catch block — we only surface the recovered state to
+            // the UI here. The button stays on "Start" so the user can
+            // try again after fixing the underlying condition. Status dot
+            // turns critical so the failure is visible at a glance even
+            // without reading the message text.
+            LogService.Instance.Warning(LogSource.Screen,
+                $"Playground toggle aborted — {ex.GetType().Name}: {ex.Message}");
+            ScreenCaptureStatusText.Text = $"Failed: {ex.Message}";
+            ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+            StopScreenCaptureIfRunning();
+        }
+    }
+
+    private void StopScreenCaptureIfRunning()
+    {
+        _screenCaptureFpsTimer.Stop();
+
+        if (_screenCapture is null) return;
+
+        _screenCapture.Stopped -= OnScreenCaptureStopped;
+        _screenCapture.Dispose();
+        _screenCapture = null;
+
+        // Reset visuals to the stopped baseline. The status dot returns to
+        // neutral ; an error path that landed here right after raising the
+        // critical dot will see the status text rewritten too, so the dot
+        // and the text stay in sync. Null-guard for the early-Closed path
+        // where the XAML controls may already be torn down.
+        if (ScreenCaptureToggleButton is not null)
+        {
+            ScreenCaptureToggleIcon.Glyph = ScreenCaptureGlyphStart;
+            ScreenCaptureToggleLabel.Text = "Start";
+            ScreenCaptureStatusText.Text = "Stopped";
+            ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorNeutralBrush");
+        }
+    }
+
+    // Theme resource → Brush helper. Looking up a system fill colour brush
+    // from code-behind requires going through Application.Current.Resources
+    // (the ThemeResource markup extension only resolves in XAML). Returns
+    // the resolved Brush ; the cast is safe because the SystemFillColor*
+    // entries in the WinUI theme dictionary are SolidColorBrush.
+    private static Brush GetThemeBrush(string key)
+        => (Brush)Application.Current.Resources[key];
+
+    private void OnScreenCaptureStopped()
+    {
+        // Fires on the framepool worker thread when the captured item
+        // closes itself (display disconnected, signed-out, etc.). Marshal
+        // back to the UI thread to update the button + status, then run
+        // the same teardown as a user-driven Stop.
+        DispatcherQueue.TryEnqueue(() => StopScreenCaptureIfRunning());
+    }
+
+    private void OnScreenCaptureFpsTick(object? sender, object e)
+    {
+        if (_screenCapture is not { IsRunning: true }) return;
+
+        long currentFrames = _screenCapture.FrameCount;
+        long currentTimestamp = Stopwatch.GetTimestamp();
+        long deltaFrames = currentFrames - _screenCaptureLastSampledFrames;
+        long deltaMs = (currentTimestamp - _screenCaptureLastSampleTimestamp) * 1000 / Stopwatch.Frequency;
+
+        double fps = deltaMs > 0 ? deltaFrames * 1000.0 / deltaMs : 0.0;
+
+        ScreenCaptureFramesText.Text = currentFrames.ToString();
+        ScreenCaptureFpsText.Text = $"{fps:F1}";
+
+        _screenCaptureLastSampledFrames = currentFrames;
+        _screenCaptureLastSampleTimestamp = currentTimestamp;
     }
 }
