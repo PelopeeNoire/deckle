@@ -1571,7 +1571,7 @@ public sealed partial class PlaygroundWindow : Window
 
         if (HueGroupComboBox.SelectedItem is not ComboBoxItem { Tag: HueGroup group })
         {
-            HueColorButtonsPanel.IsEnabled = false;
+            SetHueColorButtonsEnabled(false);
             return;
         }
 
@@ -1579,13 +1579,13 @@ public sealed partial class PlaygroundWindow : Window
         try
         {
             await _hueLightOutput.ConnectAsync().ConfigureAwait(true);
-            HueColorButtonsPanel.IsEnabled = true;
+            SetHueColorButtonsEnabled(true);
         }
         catch (Exception ex)
         {
             LogService.Instance.Warning(LogSource.Hue,
                 $"Selecting group failed — {ex.GetType().Name}: {ex.Message}");
-            HueColorButtonsPanel.IsEnabled = false;
+            SetHueColorButtonsEnabled(false);
         }
     }
 
@@ -1670,6 +1670,19 @@ public sealed partial class PlaygroundWindow : Window
         _hueRotationCts = null;
     }
 
+    // StackPanel doesn't expose IsEnabled (it's a Panel, IsEnabled
+    // lives on Control), so we toggle each child Button individually.
+    // Iterating Children rather than naming each x:Name keeps the
+    // helper agnostic to button additions / removals — adding a new
+    // colour swatch in XAML is a XAML-only change.
+    private void SetHueColorButtonsEnabled(bool enabled)
+    {
+        foreach (var child in HueColorButtonsPanel.Children)
+        {
+            if (child is Control c) c.IsEnabled = enabled;
+        }
+    }
+
     private void TeardownHueIfActive()
     {
         // Cancel any pending pair loop first ; PairAsync will exit
@@ -1708,7 +1721,7 @@ public sealed partial class PlaygroundWindow : Window
             HueGroupComboBox.Items.Clear();
             HueGroupComboBox.IsEnabled = false;
             _hueGroupComboSuppress = false;
-            HueColorButtonsPanel.IsEnabled = false;
+            SetHueColorButtonsEnabled(false);
         }
     }
 }
