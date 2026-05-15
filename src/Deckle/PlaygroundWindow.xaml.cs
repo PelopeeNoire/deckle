@@ -284,6 +284,33 @@ public sealed partial class PlaygroundWindow : Window
             };
         }
 
+        // Tap on empty background → move focus to RootGrid, which dismisses
+        // the caret from a NumberBox the user just edited. Focused input
+        // controls in WinUI 3 keep focus on background clicks unless some
+        // other element claims it — same UX wart as Settings windows if
+        // left unhandled. Tapped bubbles up only when no child control
+        // marks it Handled, so clicks that land on a Slider / NumberBox /
+        // Expander header don't trigger dismissal.
+        RootGrid.Tapped += (_, _) => RootGrid.Focus(FocusState.Pointer);
+
+        this.Closed += (_, _) =>
+        {
+            _rmsTimer.Stop();
+            _rmsClock.Stop();
+            _rebuildDebounce.Stop();
+            _screenCaptureFpsTimer.Stop();
+            StopScreenCaptureIfRunning();
+            TeardownHueIfActive();
+            // Detach the composition child first so the compositor stops
+            // referencing the bundle's visual tree, then dispose. In the
+            // singleton-hidden pattern (Closing→Hide) Closed only fires at
+            // QuitApp so this is a belt-and-braces rather than a hot path.
+            ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
+            _nakedPreview?.Dispose();
+            _nakedPreview = null;
+        };
+    }
+
     // Restore the Hue bridge state from AmbientSettings. Populates the
     // IP textbox, reconstructs the HueBridgeClient with the saved
     // username, and visually shows the bridge as paired so the user
@@ -325,33 +352,6 @@ public sealed partial class PlaygroundWindow : Window
             LogService.Instance.Warning(LogSource.Hue,
                 $"Hue restore failed — {ex.GetType().Name}: {ex.Message} (user will need to re-pair)");
         }
-    }
-
-        // Tap on empty background → move focus to RootGrid, which dismisses
-        // the caret from a NumberBox the user just edited. Focused input
-        // controls in WinUI 3 keep focus on background clicks unless some
-        // other element claims it — same UX wart as Settings windows if
-        // left unhandled. Tapped bubbles up only when no child control
-        // marks it Handled, so clicks that land on a Slider / NumberBox /
-        // Expander header don't trigger dismissal.
-        RootGrid.Tapped += (_, _) => RootGrid.Focus(FocusState.Pointer);
-
-        this.Closed += (_, _) =>
-        {
-            _rmsTimer.Stop();
-            _rmsClock.Stop();
-            _rebuildDebounce.Stop();
-            _screenCaptureFpsTimer.Stop();
-            StopScreenCaptureIfRunning();
-            TeardownHueIfActive();
-            // Detach the composition child first so the compositor stops
-            // referencing the bundle's visual tree, then dispose. In the
-            // singleton-hidden pattern (Closing→Hide) Closed only fires at
-            // QuitApp so this is a belt-and-braces rather than a hot path.
-            ElementCompositionPreview.SetElementChildVisual(NakedPreviewHost, null);
-            _nakedPreview?.Dispose();
-            _nakedPreview = null;
-        };
     }
 
     // ── Lifecycle surface (called by App) ───────────────────────────────
