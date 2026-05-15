@@ -162,19 +162,47 @@ internal static class ScreenCaptureInterop
     private static readonly Guid IID_GraphicsCaptureItem = new("79C3F95B-31F7-4EC2-A464-632EF5D30760");
     private static readonly Guid IID_IGraphicsCaptureItemInterop = new("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356");
 
+    // RoGetActivationFactory takes a HSTRING for the class id. We can't use
+    // [MarshalAs(UnmanagedType.HString)] on the string parameter directly —
+    // built-in HSTRING marshalling was removed from the .NET runtime in
+    // .NET 5 (see learn.microsoft.com/dotnet/core/compatibility/interop/5.0/built-in-support-for-winrt-removed).
+    // Attempting to call this P/Invoke with that directive throws
+    // MarshalDirectiveException ("Invalid managed/unmanaged type combination").
+    // We allocate the HSTRING manually via WindowsCreateString and pass it
+    // as an opaque IntPtr ; WindowsDeleteString releases it in the finally
+    // clause regardless of the call outcome.
     [DllImport("combase.dll", PreserveSig = false, ExactSpelling = true)]
     private static extern void RoGetActivationFactory(
-        [MarshalAs(UnmanagedType.HString)] string activatableClassId,
+        IntPtr activatableClassId,
         [In] in Guid iid,
         [MarshalAs(UnmanagedType.Interface)] out IGraphicsCaptureItemInterop factory);
 
+    [DllImport("combase.dll", PreserveSig = false, ExactSpelling = true, CharSet = CharSet.Unicode)]
+    private static extern void WindowsCreateString(
+        [MarshalAs(UnmanagedType.LPWStr)] string sourceString,
+        uint length,
+        out IntPtr hstring);
+
+    [DllImport("combase.dll", PreserveSig = false, ExactSpelling = true)]
+    private static extern void WindowsDeleteString(IntPtr hstring);
+
     public static GraphicsCaptureItem CreateGraphicsCaptureItem(nint hmon)
     {
-        // 1. Get the activation factory and QI it as IGraphicsCaptureItemInterop.
-        RoGetActivationFactory(
-            "Windows.Graphics.Capture.GraphicsCaptureItem",
-            in IID_IGraphicsCaptureItemInterop,
-            out IGraphicsCaptureItemInterop factory);
+        const string className = "Windows.Graphics.Capture.GraphicsCaptureItem";
+
+        // 1. Allocate a HSTRING for the class id ; the activation factory
+        //    lookup keeps a reference for the duration of the call, so we
+        //    can free our copy right after RoGetActivationFactory returns.
+        WindowsCreateString(className, (uint)className.Length, out IntPtr hstringClassId);
+        IGraphicsCaptureItemInterop factory;
+        try
+        {
+            RoGetActivationFactory(hstringClassId, in IID_IGraphicsCaptureItemInterop, out factory);
+        }
+        finally
+        {
+            WindowsDeleteString(hstringClassId);
+        }
 
         // 2. Ask the factory for an item bound to our HMONITOR. The IID
         //    we pass is the GraphicsCaptureItem WinRT class IID — the
