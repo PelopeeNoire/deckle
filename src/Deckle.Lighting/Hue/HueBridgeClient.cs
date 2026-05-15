@@ -120,6 +120,109 @@ public sealed class HueBridgeClient : IDisposable
             "Hue bridge pairing timed out. Press the link button on the bridge and try again.");
     }
 
+    /// <summary>
+    /// Fetches the list of groups (rooms, zones, entertainment areas)
+    /// configured on the bridge. The CLIP v1 endpoint returns a flat
+    /// dictionary keyed by group id ; we project it to a list of
+    /// public <see cref="HueGroup"/> records so the caller doesn't see
+    /// the wire DTO. Pairing must have completed first ;
+    /// <see cref="InvalidOperationException"/> is thrown otherwise.
+    /// </summary>
+    public async Task<IReadOnlyList<HueGroup>> ListGroupsAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsurePaired();
+
+        _log.Info(LogSource.Hue, "Listing groups");
+
+        var dict = await _http.GetFromJsonAsync<Dictionary<string, HueGroupDto>>(
+            $"api/{_credentials!.Username}/groups", _jsonOptions, ct)
+            .ConfigureAwait(false);
+
+        if (dict is null)
+        {
+            _log.Warning(LogSource.Hue, "Bridge returned no groups payload");
+            return [];
+        }
+
+        var groups = new List<HueGroup>(dict.Count);
+        foreach (var (id, dto) in dict)
+        {
+            int lightsCount = dto.Lights?.Length ?? 0;
+            groups.Add(new HueGroup(id, dto.Name ?? "", dto.Type ?? "Unknown", lightsCount));
+        }
+
+        _log.Verbose(LogSource.Hue,
+            $"groups list | bridge_id={_bridge.Id} | count={groups.Count}");
+        foreach (var g in groups)
+        {
+            _log.Verbose(LogSource.Hue,
+                $"group | id={g.Id} | name={g.Name} | type={g.Type} | lights={g.LightsCount}");
+        }
+        return groups;
+    }
+
+    /// <summary>
+    /// Pushes a single sRGB colour to the given group. RGB is
+    /// converted to Hue's xy + brightness representation in-house
+    /// (see <see cref="HueColorMath"/>) ; pure black is mapped to
+    /// `on:false` so the lamp goes off instead of jumping to the
+    /// nearest in-gamut colour. Pairing must have completed.
+    /// </summary>
+    public async Task SetGroupColorAsync(string groupId, LightColor color, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsurePaired();
+
+        var (xy, bri) = HueColorMath.RgbToHueXyBri(color);
+        var body = new HueGroupActionRequest();
+
+        if (bri == 0)
+        {
+            // Black → turn the group off. Sending on:false alone
+            // is enough ; xy and bri are ignored by the bridge when
+            // on:false is present.
+            body.On = false;
+        }
+        else
+        {
+            body.On = true;
+            body.Brightness = bri;
+            body.Xy = new[] { xy.X, xy.Y };
+        }
+
+        var response = await _http.PutAsJsonAsync(
+            $"api/{_credentials!.Username}/groups/{groupId}/action",
+            body, _jsonOptions, ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _log.Warning(LogSource.Hue,
+                $"Set colour failed | group_id={groupId} | hr={(int)response.StatusCode}");
+            response.EnsureSuccessStatusCode();
+        }
+
+        if (bri == 0)
+        {
+            _log.Verbose(LogSource.Hue,
+                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | on=false");
+        }
+        else
+        {
+            _log.Verbose(LogSource.Hue,
+                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | xy={xy.X:F4},{xy.Y:F4} | bri={bri}");
+        }
+    }
+
+    private void EnsurePaired()
+    {
+        if (_credentials is null)
+        {
+            throw new InvalidOperationException(
+                "Bridge is not paired. Call PairAsync first.");
+        }
+    }
+
     private async Task<PairOutcome> PairAttemptAsync(string deviceType, CancellationToken ct)
     {
         // CLIP v1 pairing endpoint. The response is an array containing
@@ -260,6 +363,24 @@ public sealed class HueBridgeClient : IDisposable
     {
         [JsonPropertyName("type")]        public int    Type        { get; set; }
         [JsonPropertyName("description")] public string Description { get; set; } = "";
+    }
+
+    private sealed class HueGroupDto
+    {
+        [JsonPropertyName("name")]   public string?   Name   { get; set; }
+        [JsonPropertyName("lights")] public string[]? Lights { get; set; }
+        [JsonPropertyName("type")]   public string?   Type   { get; set; }
+    }
+
+    private sealed class HueGroupActionRequest
+    {
+        // Nullable on purpose — only the fields we set get serialised,
+        // thanks to JsonIgnoreCondition.WhenWritingNull in _jsonOptions.
+        // For black we send {"on":false} alone, for a colour we send
+        // {"on":true,"bri":...,"xy":[...]}.
+        [JsonPropertyName("on")]  public bool?     On         { get; set; }
+        [JsonPropertyName("bri")] public byte?     Brightness { get; set; }
+        [JsonPropertyName("xy")]  public double[]? Xy         { get; set; }
     }
 
     private abstract record PairOutcome

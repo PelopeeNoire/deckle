@@ -452,6 +452,100 @@
                                                    Style="{ThemeResource BodyStrongTextBlockStyle}"
                                                    VerticalAlignment="Center" />
                                     </StackPanel>
+
+                                    <!-- Group list + selector. Disabled
+                                         until pairing has succeeded ; the
+                                         pair handler enables them on
+                                         success. Combo shows the group
+                                         DisplayLabel (e.g. "Salon (Room,
+                                         3 lights)"). -->
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0"
+                                                x:Name="HueListGroupsButton"
+                                                IsEnabled="False"
+                                                VerticalAlignment="Bottom"
+                                                Click="OnHueListGroupsClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE71D;" FontSize="14" />
+                                                <TextBlock Text="List groups" />
+                                            </StackPanel>
+                                        </Button>
+                                        <ComboBox Grid.Column="1"
+                                                  x:Name="HueGroupComboBox"
+                                                  Header="Group"
+                                                  IsEnabled="False"
+                                                  PlaceholderText="No groups loaded yet"
+                                                  HorizontalAlignment="Stretch"
+                                                  SelectionChanged="OnHueGroupSelectionChanged" />
+                                    </Grid>
+
+                                    <!-- Colour test row. Each colour
+                                         button sends one PUT to the
+                                         selected group ; the rotation
+                                         button cycles R → G → B → W →
+                                         Off with a 1 s gap, useful for
+                                         sanity-checking the pipeline
+                                         and watching the lamps respond
+                                         in real time. -->
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="8"
+                                                x:Name="HueColorButtonsPanel"
+                                                IsEnabled="False">
+                                        <Button x:Name="HueTestRedButton"
+                                                Tag="red"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#FF3030" />
+                                                <TextBlock Text="Red" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestGreenButton"
+                                                Tag="green"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#30C030" />
+                                                <TextBlock Text="Green" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestBlueButton"
+                                                Tag="blue"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#3070F0" />
+                                                <TextBlock Text="Blue" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestWhiteButton"
+                                                Tag="white"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#F0F0F0" />
+                                                <TextBlock Text="White" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestOffButton"
+                                                Tag="off"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10"
+                                                         Stroke="{ThemeResource TextFillColorTertiaryBrush}"
+                                                         StrokeThickness="1"
+                                                         Fill="Transparent" />
+                                                <TextBlock Text="Off" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestRotationButton"
+                                                Click="OnHueTestRotationClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                                                <TextBlock Text="Rotation" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
 

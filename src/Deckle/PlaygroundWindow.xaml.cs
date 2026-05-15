@@ -13,6 +13,7 @@ using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;
+using Deckle.Lighting;
 using Deckle.Lighting.Hue;
 using Deckle.Logging;
 using Deckle.Playground;
@@ -160,6 +161,10 @@ public sealed partial class PlaygroundWindow : Window
     private HueBridgeClient? _hueBridge;
     private CancellationTokenSource? _huePairCts;
     private bool _hueIsPairing;
+    private IReadOnlyList<HueGroup> _hueGroups = [];
+    private HueRestLightOutput? _hueLightOutput;
+    private CancellationTokenSource? _hueRotationCts;
+    private bool _hueGroupComboSuppress;
 
     public PlaygroundWindow()
     {
@@ -1466,6 +1471,13 @@ public sealed partial class PlaygroundWindow : Window
             HuePairStatusText.Text = $"Paired ({creds.UsernameHead})";
             HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorSuccessBrush");
             HuePairLabel.Text      = "Re-pair";
+
+            // Pairing succeeded → unlock the next row. List groups is
+            // a separate explicit step (the user might want to inspect
+            // the LogWindow output before populating the combo) ; the
+            // group combo + colour buttons stay disabled until the
+            // list arrives and the user picks one.
+            HueListGroupsButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
         {
@@ -1495,6 +1507,169 @@ public sealed partial class PlaygroundWindow : Window
         }
     }
 
+    private async void OnHueListGroupsClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueBridge is not { IsPaired: true }) return;
+
+        HueListGroupsButton.IsEnabled = false;
+        try
+        {
+            _hueGroups = await _hueBridge.ListGroupsAsync().ConfigureAwait(true);
+
+            // Repopulate the combo. The suppress flag stops the
+            // SelectionChanged handler from firing while we're
+            // rebuilding the items collection ; without it we'd
+            // briefly construct a HueRestLightOutput on the wrong
+            // (auto-selected) group during the rebuild.
+            _hueGroupComboSuppress = true;
+            HueGroupComboBox.Items.Clear();
+            foreach (var g in _hueGroups)
+            {
+                HueGroupComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = g.DisplayLabel,
+                    Tag     = g,
+                });
+            }
+            _hueGroupComboSuppress = false;
+
+            HueGroupComboBox.IsEnabled = _hueGroups.Count > 0;
+            if (_hueGroups.Count > 0)
+            {
+                // Preselect first ; SelectionChanged fires once the
+                // suppress flag is off and wires the colour buttons
+                // to that group.
+                HueGroupComboBox.SelectedIndex = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Listing groups failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            HueListGroupsButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHueGroupSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_hueGroupComboSuppress) return;
+        if (_hueBridge is not { IsPaired: true }) return;
+
+        // Cancel any in-flight rotation against the previous group
+        // and dispose the previous HueRestLightOutput before pointing
+        // at the new one. The cancellation is best-effort — the
+        // rotation handler catches OperationCanceledException.
+        CancelHueRotationIfRunning();
+        if (_hueLightOutput is not null)
+        {
+            await _hueLightOutput.DisposeAsync().ConfigureAwait(true);
+            _hueLightOutput = null;
+        }
+
+        if (HueGroupComboBox.SelectedItem is not ComboBoxItem { Tag: HueGroup group })
+        {
+            HueColorButtonsPanel.IsEnabled = false;
+            return;
+        }
+
+        _hueLightOutput = new HueRestLightOutput(_hueBridge, group.Id);
+        try
+        {
+            await _hueLightOutput.ConnectAsync().ConfigureAwait(true);
+            HueColorButtonsPanel.IsEnabled = true;
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Selecting group failed — {ex.GetType().Name}: {ex.Message}");
+            HueColorButtonsPanel.IsEnabled = false;
+        }
+    }
+
+    private async void OnHueTestColorClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueLightOutput is null) return;
+        if (sender is not Button { Tag: string tag }) return;
+
+        var color = tag switch
+        {
+            "red"   => LightColor.Red,
+            "green" => LightColor.Green,
+            "blue"  => LightColor.Blue,
+            "white" => LightColor.White,
+            "off"   => LightColor.Black,
+            _       => LightColor.Black,
+        };
+
+        try
+        {
+            await _hueLightOutput.SetColorAsync(color).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Push colour failed — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private async void OnHueTestRotationClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueLightOutput is null) return;
+
+        // Cancel any prior rotation so a second click starts fresh
+        // instead of stacking two interleaved loops.
+        CancelHueRotationIfRunning();
+        _hueRotationCts = new CancellationTokenSource();
+        var ct = _hueRotationCts.Token;
+
+        HueTestRotationButton.IsEnabled = false;
+        try
+        {
+            // R → G → B → W → Off with a 1 s pause between pushes.
+            // 1 s is long enough to see the lamp settle but short
+            // enough that the sequence stays under 5 s — useful for
+            // a quick sanity check on the bridge link latency.
+            LightColor[] sequence =
+            [
+                LightColor.Red,
+                LightColor.Green,
+                LightColor.Blue,
+                LightColor.White,
+                LightColor.Black,
+            ];
+
+            foreach (var color in sequence)
+            {
+                await _hueLightOutput.SetColorAsync(color, ct).ConfigureAwait(true);
+                await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the user navigates away mid-sequence or
+            // re-clicks ; nothing to surface.
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Test rotation failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            HueTestRotationButton.IsEnabled = true;
+        }
+    }
+
+    private void CancelHueRotationIfRunning()
+    {
+        try { _hueRotationCts?.Cancel(); } catch { /* best effort */ }
+        _hueRotationCts?.Dispose();
+        _hueRotationCts = null;
+    }
+
     private void TeardownHueIfActive()
     {
         // Cancel any pending pair loop first ; PairAsync will exit
@@ -1504,7 +1679,36 @@ public sealed partial class PlaygroundWindow : Window
         _huePairCts?.Dispose();
         _huePairCts = null;
 
+        // Cancel any in-flight colour rotation as well — same
+        // best-effort pattern, the rotation handler catches the
+        // OperationCanceledException quietly.
+        CancelHueRotationIfRunning();
+
+        // The HueRestLightOutput is a thin wrapper around the bridge
+        // client ; disposing it doesn't close the HttpClient (the
+        // bridge client owns that). DisposeAsync is fire-and-forget
+        // here — we can't await in a synchronous teardown and the
+        // dispose work is non-blocking anyway.
+        _hueLightOutput?.DisposeAsync().AsTask();
+        _hueLightOutput = null;
+        _hueGroups = [];
+
         _hueBridge?.Dispose();
         _hueBridge = null;
+
+        // Reset the dependent UI so a follow-up pair attempt starts
+        // from a clean state. Pair-row controls are reset by
+        // OnHuePairClick itself — we only touch the rows that depend
+        // on a paired bridge. Combo suppress guard avoids triggering
+        // OnHueGroupSelectionChanged during the clear.
+        if (HueListGroupsButton is not null)
+        {
+            HueListGroupsButton.IsEnabled = false;
+            _hueGroupComboSuppress = true;
+            HueGroupComboBox.Items.Clear();
+            HueGroupComboBox.IsEnabled = false;
+            _hueGroupComboSuppress = false;
+            HueColorButtonsPanel.IsEnabled = false;
+        }
     }
 }
