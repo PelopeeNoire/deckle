@@ -78,6 +78,17 @@ public sealed class AmbientEngine : IAsyncDisposable
     // value in the Playground tuning panel.
     private const int ChangeThreshold = 3;
 
+    // Lights-out threshold — if every channel of the analysed average
+    // is at or below this, we clamp the colour to (0,0,0) before the
+    // push. HueColorMath maps pure black to bri=0 which the bridge
+    // client translates into on:false (lamp off) ; without the clamp,
+    // a near-black sample like (5,5,5) maps to bri≈2 and the lamp
+    // stays faintly on instead of going dark when the screen is dark.
+    // J5 will surface this in the Playground tuning panel ; for V0 we
+    // keep it conservative (8 / 255 ≈ 3 %) so it only triggers on
+    // unambiguously dark content (lock screen, off display).
+    private const int OffThreshold = 8;
+
     private readonly ScreenCaptureService _capture;
     private readonly ILightOutput _output;
     private readonly FrameSampler _sampler;
@@ -176,27 +187,37 @@ public sealed class AmbientEngine : IAsyncDisposable
                 }
 
                 var avg = sample.Average;
-                int delta = Math.Abs(avg.R - _lastR)
-                          + Math.Abs(avg.G - _lastG)
-                          + Math.Abs(avg.B - _lastB);
+
+                // Clamp near-black to true black so the lights turn off
+                // instead of glowing faintly. See OffThreshold rationale.
+                bool isDark = avg.R <= OffThreshold
+                           && avg.G <= OffThreshold
+                           && avg.B <= OffThreshold;
+                byte targetR = isDark ? (byte)0 : avg.R;
+                byte targetG = isDark ? (byte)0 : avg.G;
+                byte targetB = isDark ? (byte)0 : avg.B;
+
+                int delta = Math.Abs(targetR - _lastR)
+                          + Math.Abs(targetG - _lastG)
+                          + Math.Abs(targetB - _lastB);
                 bool dropped = _lastR >= 0 && delta < ChangeThreshold;
 
                 if (dropped)
                 {
                     _droppedCount++;
                     _log.Verbose(LogSource.Ambient,
-                        $"push | mode=analysis | rgb={avg.R},{avg.G},{avg.B} | dropped=true");
+                        $"push | mode=analysis | rgb={targetR},{targetG},{targetB} | off={isDark} | dropped=true");
                 }
                 else
                 {
-                    var color = new LightColor(avg.R, avg.G, avg.B);
+                    var color = new LightColor(targetR, targetG, targetB);
                     try
                     {
                         await _output.SetColorAsync(color, ct).ConfigureAwait(false);
-                        _lastR = avg.R; _lastG = avg.G; _lastB = avg.B;
+                        _lastR = targetR; _lastG = targetG; _lastB = targetB;
                         _pushedCount++;
                         _log.Verbose(LogSource.Ambient,
-                            $"push | mode=analysis | rgb={avg.R},{avg.G},{avg.B} | dropped=false");
+                            $"push | mode=analysis | rgb={targetR},{targetG},{targetB} | off={isDark} | dropped=false");
                     }
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)

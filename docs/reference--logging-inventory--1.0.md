@@ -757,7 +757,7 @@ Info      AMBIENT  Ambient pipeline started
 Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
 Info      AMBIENT  Ambient pipeline stopped
 Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1} | pushed={n} | dropped={n}
-Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | dropped={true|false}
+Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | off={true|false} | dropped={true|false}
 ```
 
 **Vocabulaire AmbientEngine**
@@ -767,6 +767,7 @@ Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | dropped={true|false}
 - `push_hz={N}` — cadence cible de la boucle push (15 par défaut, alignée avec MinUpdateInterval)
 - `sampler_grid={W}x{H}` — dimensions de la grille du FrameSampler au moment du start
 - `hdr={on|off}` — état HDR négocié par la capture (miroir du SCREEN log)
+- `off={true|false}` — true si l'average était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
 - `dropped={true|false}` — true si l'early-exit a évalué Δ < seuil et sauté le push
 - `pushed`/`dropped` au stop — compteurs cumulés sur la session
 
