@@ -611,7 +611,7 @@ Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active
 - `[logué]` format pixel utilisé (DirectXPixelFormat — BGRA8 en SDR, R16G16B16A16Float en HDR)
 - `[logué]` flag HDR détecté (on/off depuis `IDXGIOutput6::GetDesc1`)
 - `[logué]` peak luminance reporté par l'écran (nits)
-- `[logué]` cadence cible `min_update_ms` (66 ms = 15 Hz par défaut)
+- `[logué]` cadence cible `min_update_ms` (66 ms = 15 Hz par défaut, throttle côté session via `GraphicsCaptureSession.MinUpdateInterval`)
 - `[logué]` nombre de buffers dans le pool
 - `[logué]` HMONITOR ciblé (hex)
 - `[logué]` HRESULT D3D11CreateDevice (Verbose si succès, Error si échec)
@@ -646,7 +646,7 @@ Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
 | `MonitorFromPoint` retourne `IntPtr.Zero` | Error | ➕ Critical (vague Ambient) | Pas d'écran primaire détecté (cas pathologique) |
 | `CreateForMonitor` échoue (HRESULT) | Error | ➕ Critical (vague Ambient) | API capture refuse le moniteur |
 | `FrameArrived` callback exception | Warning | non (frame ignorée, session continue) | logged Verbose avec stack |
-| `MinUpdateInterval` setter exception | Verbose | non | OS pré-19041 ignore le setter — pipeline tourne juste plus vite que cible |
+| `MinUpdateInterval` setter exception | Verbose | non | pré-Win11 22H2 ignore le setter — pipeline tourne juste au native rate |
 | Resize en cours (`ContentSize` change) | Verbose | non | non-traité en J3 step 2, log seul |
 | `FrameSampler.Map` HRESULT non-zero | Warning | non (frame ignorée) | typique : driver flush en cours, frame suivante retry |
 | `FrameSampler.Process` exception générique | Warning | non (frame ignorée) | catch-all autour du chemin D3D11 |
@@ -658,7 +658,7 @@ Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
 - `hdr={on|off}` — état de la sortie HDR du moniteur primaire au moment du Start
 - `peak_lum={X:F0}` — peak luminance en nits (1 décimale arrondie ; 80 par défaut SDR)
 - `bufs={n}` — taille du pool de frames (2 par défaut)
-- `min_update_ms={n}` — cadence cible côté Windows (66 ms = 15 Hz)
+- `min_update_ms={n}` — cadence cible côté session (66 ms = 15 Hz, Windows throttle `FrameArrived` au niveau de `GraphicsCaptureSession.MinUpdateInterval`)
 
 **Vocabulaire FrameSampler**
 

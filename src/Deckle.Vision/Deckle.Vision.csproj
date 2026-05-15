@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>Deckle.Vision</RootNamespace>
     <Nullable>enable</Nullable>
@@ -22,5 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+    <!-- Deckle.Composition provides ColorSpace.ScRgbToSrgb (HDR
+         tone-mapping) consumed by FrameSampler. -->
+    <ProjectReference Include="..\Deckle.Composition\Deckle.Composition.csproj" />
   </ItemGroup>
 </Project>

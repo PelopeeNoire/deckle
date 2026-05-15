@@ -40,8 +40,8 @@ public sealed class ScreenCaptureService : IDisposable
     // Cadence cap on the capture pump. Windows throttles the FrameArrived
     // event to at most one fire per interval. 66 ms ≈ 15 Hz — matches
     // the AmbientEngine push cadence so we don't waste readbacks the
-    // engine never consumes. Available on Windows 10 19041+ ; older
-    // builds ignore the setter.
+    // engine never consumes. Available on Windows 11 22H2+ (SDK 22621) ;
+    // the solution targets SDK 26100 so the setter is always callable.
     private static readonly TimeSpan MinUpdateInterval = TimeSpan.FromMilliseconds(66);
 
     private readonly object _lock = new();
@@ -173,11 +173,12 @@ public sealed class ScreenCaptureService : IDisposable
 
                 _session = _pool.CreateCaptureSession(_item);
 
-                // Throttle the pump to ~15 Hz (66 ms). Available on Win10
-                // 19041+ ; older builds silently ignore the setter, so the
-                // try/catch is paranoia — failing here doesn't break the
-                // capture, the consumer just sees more frames than it
-                // needs.
+                // Throttle the pump to ~15 Hz — Windows itself stops
+                // raising FrameArrived more than once per interval. The
+                // try/catch is paranoia in case the property is somehow
+                // unavailable at runtime (very old Win 11 21H2 etc.) ;
+                // failing here doesn't break the capture, the consumer
+                // just sees frames at native rate.
                 try { _session.MinUpdateInterval = MinUpdateInterval; }
                 catch (Exception ex)
                 {

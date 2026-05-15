@@ -1905,6 +1905,8 @@ public sealed partial class PlaygroundWindow : Window
     // Runs on the FreeThreaded pool's worker thread ; FrameSampler.Process
     // is thread-safe internally. The frame is disposed by the capture
     // service after this delegate returns — we must not retain it.
+    // Cadence is throttled at the capture session level via
+    // MinUpdateInterval, so we don't gate per-frame work here.
     private void OnSamplerFrameArrived(Direct3D11CaptureFrame frame)
     {
         _frameSampler?.Process(frame);
