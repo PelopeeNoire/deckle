@@ -29,32 +29,71 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Main content: two panels, both responsive, no sash.
-               Col 0 (preview): Width="*" — grows with the window, absorbs
-                                all extra horizontal space. MinWidth=720
-                                so the 7-tab SelectorBar fits without
-                                horizontal scroll. Preview content is
-                                center-aligned so the HudChrono stays
-                                centered as the column widens.
-               Col 1 (tuning):  Width="Auto" — desired width reported by
-                                the inner ScrollViewer, which is capped
-                                at MaxWidth=840 (~900 is "too much
-                                whitespace", ~700 feels cramped). The
-                                column never exceeds that cap no matter
-                                how wide the window gets; Col 0 picks up
-                                the slack.
+        <!-- Top-level navigation. Same pattern as SettingsWindow — Auto
+             pane mode (Left ≥1008, LeftCompact 640-1008, Minimal <640),
+             back button + system Settings entry suppressed. Two sections:
+                 • HUD            — existing two-column layout (preview +
+                                    tuning) ; selected by default.
+                 • Ambient light  — full-width page for the screen capture
+                                    pipeline + Hue driver + visualisations.
+             Pages are inline (Visibility toggle), not Frame-navigated —
+             both surfaces are small enough that loading them lazily would
+             add complexity without payoff. -->
+        <NavigationView Grid.Row="1"
+                        x:Name="PlaygroundNav"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        SelectionChanged="OnPlaygroundNavSelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="NavItemHud"
+                                    Content="HUD"
+                                    Tag="hud"
+                                    IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE916;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="NavItemAmbient"
+                                    Content="Ambient lighting"
+                                    Tag="ambient">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE781;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
-             The earlier draggable sash was removed: a user-set PreviewCol
-             width survived window shrinks, leaving the tuning panel clipped
-             off-screen with no way back short of re-enlarging the window.
-             Fluid columns with a MaxWidth-capped tuning panel make the
-             responsive contract explicit and avoid the stuck-state
-             regression. -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="720" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+            <Grid x:Name="PageContent">
+
+                <!-- ── HUD page ──────────────────────────────────────────
+                     Existing two-column layout: preview (Col 0) + tuning
+                     panel (Col 1). Unchanged from the J0 Playground ; the
+                     SelectorBar inside Col 0 still picks the HUD target,
+                     and the tuning Expanders in Col 1 still drive the
+                     in-memory _tuning state.
+
+                     Col 0 (preview): Width="*" — grows with the window,
+                                      absorbs extra horizontal space.
+                                      MinWidth=720 so the 7-tab SelectorBar
+                                      fits without horizontal scroll.
+                                      Preview content centered so HudChrono
+                                      stays centered as the column widens.
+                     Col 1 (tuning):  Width="Auto" — desired width reported
+                                      by the inner ScrollViewer, capped at
+                                      MaxWidth=920 (≥900 wastes whitespace,
+                                      ≤700 cramps). Col 0 picks up the
+                                      slack past the cap. -->
+                <Grid x:Name="HudPage" Visibility="Visible">
+                    <!-- Col 0 has no MinWidth so the preview/cards stage
+                         shrinks aggressively when the window narrows ;
+                         Tunables (Col 1) keeps its 480-920 dip envelope.
+                         Result : the right column stays readable, the
+                         preview can collapse down to the HudChrono's
+                         272 dip footprint without pushing Tunables
+                         off-screen. -->
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="320" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
             <!-- ── Col 0 — preview (grows, content centered) ───────────── -->
             <Grid Grid.Column="0">
@@ -65,26 +104,47 @@
                 </Grid.RowDefinitions>
 
                 <!-- 7 targets: 4 HUD states + 3 naked diagnostic masks.
-                     Horizontal scroll when the column is narrowed below the
-                     natural SelectorBar width. -->
-                <ScrollViewer Grid.Row="0"
-                              HorizontalScrollMode="Auto"
-                              HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollMode="Disabled"
-                              VerticalScrollBarVisibility="Disabled"
-                              Padding="16,24,16,8">
-                    <SelectorBar x:Name="TargetSelector"
-                                 HorizontalAlignment="Center"
-                                 SelectionChanged="OnTargetSelectionChanged">
-                        <SelectorBarItem x:Name="TabCharging"     Text="Charging" />
-                        <SelectorBarItem x:Name="TabRecording"    Text="Recording" />
-                        <SelectorBarItem x:Name="TabTranscribing" Text="Transcribing" IsSelected="True" />
-                        <SelectorBarItem x:Name="TabRewriting"    Text="Rewriting" />
-                        <SelectorBarItem x:Name="TabConic"        Text="Conic" />
-                        <SelectorBarItem x:Name="TabArcMask"      Text="ArcMask" />
-                        <SelectorBarItem x:Name="TabCombined"     Text="Combined" />
-                    </SelectorBar>
-                </ScrollViewer>
+                     Grid of cards (replaces the prior SelectorBar tabs) so
+                     the cards reflow into multiple rows as the column
+                     narrows — preview area keeps breathing instead of being
+                     pushed off-screen by a horizontal tab strip. Uniform
+                     min-width based on the longest label ("Transcribing"),
+                     stretching to consume the remaining horizontal space.
+                     Mutual exclusion + Target dispatch lives in code-behind
+                     via OnTargetCardPrepared (one-time per cell) +
+                     OnTargetCardChecked / Unchecked. -->
+                <ItemsRepeater Grid.Row="0"
+                               x:Name="TargetCardsRepeater"
+                               HorizontalAlignment="Center"
+                               Margin="16,24,16,8"
+                               ElementPrepared="OnTargetCardPrepared">
+                    <!-- ItemsStretch="None" keeps every card at its
+                         MinItemWidth so the row visuals stay uniform
+                         even when the last row has fewer items.
+                         ItemsJustification="Center" centers the grid
+                         horizontally inside the column and, more
+                         importantly, centers the partial last row
+                         (3 cards under 4 → 3 cards centered). 160 dip
+                         min width covers the longest label
+                         ("Transcribing") with comfortable padding. -->
+                    <ItemsRepeater.Layout>
+                        <UniformGridLayout MinItemWidth="160"
+                                           MinItemHeight="44"
+                                           MinColumnSpacing="8"
+                                           MinRowSpacing="8"
+                                           ItemsStretch="None"
+                                           ItemsJustification="Center"
+                                           Orientation="Horizontal" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <ToggleButton Content="{x:Bind}"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Center"
+                                          MinHeight="44" />
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
 
                 <!-- Play / Pause = two mutually-exclusive RadioButton. Button
                      labels name the action triggered, not the current state —
@@ -227,6 +287,415 @@
                     </Grid>
                 </StackPanel>
             </ScrollViewer>
-        </Grid>
+                </Grid>
+
+                <!-- ── Ambient lighting page ─────────────────────────────
+                     Two-column layout mirroring the HUD page convention :
+                     preview on the left (the FrameSampler's grid of
+                     averaged pixels, mirrors the source screen aspect),
+                     controls on the right (Screen capture → Hue →
+                     Pipeline, top-down) in a scrollable column.
+
+                     Col 0 (preview) : Width="*" MinWidth=480 — grows
+                                       with the window, absorbs the slack
+                                       past the controls column cap.
+                     Col 1 (controls): Width="Auto" MaxWidth=480 — capped
+                                       so the cards stay readable without
+                                       dominating wide windows. -->
+                <Grid x:Name="AmbientPage" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="480" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Col 0 — preview stage. Houses the FrameSampler
+                         output : a grid of small rectangles laid out
+                         in source-screen aspect ratio, each filled
+                         with the colour averaged over the corresponding
+                         downsampled cell. LayerFill so it reads as a
+                         recessed stage. The empty-state StackPanel is
+                         shown until the pipeline runs ; AmbientPreview-
+                         Grid is built and populated in code-behind once
+                         the sampler reports its dimensions. -->
+                    <Border Grid.Column="0"
+                            x:Name="AmbientPreviewBorder"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                            Margin="32,24,16,32"
+                            Padding="24">
+                        <Grid HorizontalAlignment="Center"
+                              VerticalAlignment="Center">
+                            <StackPanel x:Name="AmbientPreviewEmptyState"
+                                        Spacing="8"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="Capture preview"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="Start the pipeline to see the sampled grid of pixels mirroring the screen."
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           HorizontalAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           MaxWidth="440"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                            <Grid x:Name="AmbientPreviewGrid"
+                                  Visibility="Collapsed"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Col 1 — controls. ScrollViewer keeps the cards
+                         reachable on short windows ; MaxWidth caps the
+                         column so the preview absorbs the slack at
+                         wide widths. Order is Screen capture → Hue →
+                         Pipeline, top-down. -->
+                    <ScrollViewer Grid.Column="1"
+                                  MinWidth="380"
+                                  MaxWidth="480"
+                                  Padding="0,24,32,32"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="20">
+
+                            <!-- Page title block. TitleLargeTextBlockStyle
+                                 matches the H1 in Settings pages. -->
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Ambient lighting"
+                                           Style="{ThemeResource TitleLargeTextBlockStyle}" />
+                                <TextBlock Text="Screen capture, Hue bridge, and the analysis pipeline that pushes the averaged screen colour to your lights."
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <!-- Screen capture controls card. AccentButtonStyle
+                                 on the toggle so the primary action reads at a
+                                 glance ; the icon swaps Play (E768) ↔ Stop
+                                 (E71A) on state change. The status dot uses
+                                 SystemFillColor* theme brushes so it follows
+                                 light/dark/contrast accent without manual
+                                 colour management. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Screen capture"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Pumps frames from the primary monitor through Windows.Graphics.Capture. Off by default ; click Start to begin."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="ScreenCaptureToggleButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="140"
+                                                Click="OnScreenCaptureToggleClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon x:Name="ScreenCaptureToggleIcon"
+                                                          Glyph="&#xE768;"
+                                                          FontSize="14" />
+                                                <TextBlock x:Name="ScreenCaptureToggleLabel"
+                                                           Text="Start" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="ScreenCaptureStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ScreenCaptureStatusText"
+                                                   Text="Stopped"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <!-- Metric pair. TitleTextBlockStyle on
+                                         the value so the numbers are the
+                                         visual anchor of the card. -->
+                                    <Grid ColumnSpacing="48">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" Spacing="2" MinWidth="160">
+                                            <TextBlock Text="Frames captured"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="ScreenCaptureFramesText"
+                                                       Text="0"
+                                                       Style="{ThemeResource TitleTextBlockStyle}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Spacing="2" MinWidth="160">
+                                            <TextBlock Text="FPS (1 s window)"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="ScreenCaptureFpsText"
+                                                       Text="—"
+                                                       Style="{ThemeResource TitleTextBlockStyle}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Hue (REST direct) card. J2 test surface for
+                                 the bridge driver — Discover + Pair to start,
+                                 List groups + Set colour land in follow-ups.
+                                 Talks CLIP v1 directly to the bridge ; HA
+                                 integration is deferred until Louis has a
+                                 Raspberry Pi running it. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Hue (REST direct)"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Talks straight to a Philips Hue bridge over its CLIP v1 REST API. No Home Assistant in the loop, no DTLS — capped at ~10-20 Hz but plenty for an ambient pipeline with smoothing on top."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <!-- Bridge address row. Discover queries
+                                         discovery.meethue.com and autofills
+                                         the textbox ; manual entry is the
+                                         fallback when the cloud lookup
+                                         returns nothing (firewall, offline,
+                                         etc.). -->
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 x:Name="HueBridgeIpTextBox"
+                                                 PlaceholderText="192.168.1.5"
+                                                 Header="Bridge IP" />
+                                        <Button Grid.Column="1"
+                                                x:Name="HueDiscoverButton"
+                                                VerticalAlignment="Bottom"
+                                                Click="OnHueDiscoverClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE721;" FontSize="14" />
+                                                <TextBlock Text="Discover" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <!-- Pair row. Pressing the button starts
+                                         a 30 s polling loop ; the user has
+                                         to walk over and press the physical
+                                         link button on top of the bridge.
+                                         Status dot follows the same colour
+                                         scheme as the Screen capture card. -->
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="HuePairButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="200"
+                                                Click="OnHuePairClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon Glyph="&#xE71B;" FontSize="14" />
+                                                <TextBlock x:Name="HuePairLabel" Text="Pair (press link button)" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="HuePairStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="HuePairStatusText"
+                                                   Text="Not paired"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <!-- Group list + selector. Disabled
+                                         until pairing has succeeded ; the
+                                         pair handler enables them on
+                                         success. Combo shows the group
+                                         DisplayLabel (e.g. "Salon (Room,
+                                         3 lights)"). -->
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0"
+                                                x:Name="HueListGroupsButton"
+                                                IsEnabled="False"
+                                                VerticalAlignment="Bottom"
+                                                Click="OnHueListGroupsClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE71D;" FontSize="14" />
+                                                <TextBlock Text="List groups" />
+                                            </StackPanel>
+                                        </Button>
+                                        <ComboBox Grid.Column="1"
+                                                  x:Name="HueGroupComboBox"
+                                                  Header="Group"
+                                                  IsEnabled="False"
+                                                  PlaceholderText="No groups loaded yet"
+                                                  HorizontalAlignment="Stretch"
+                                                  SelectionChanged="OnHueGroupSelectionChanged" />
+                                    </Grid>
+
+                                    <!-- Colour test row. Each colour
+                                         button sends one PUT to the
+                                         selected group ; the rotation
+                                         button cycles R → G → B → W →
+                                         Off with a 1 s gap, useful for
+                                         sanity-checking the pipeline
+                                         and watching the lamps respond
+                                         in real time. -->
+                                    <!-- StackPanel doesn't expose IsEnabled
+                                         (it's defined on Control, not on
+                                         Panel) ; the colour buttons are
+                                         enabled / disabled individually
+                                         from code via SetHueColorButtons-
+                                         Enabled which iterates Children.
+                                         Children start disabled (XAML
+                                         IsEnabled="False" on each Button)
+                                         until a group is picked. -->
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="8"
+                                                x:Name="HueColorButtonsPanel">
+                                        <Button x:Name="HueTestRedButton"
+                                                Tag="red"
+                                                IsEnabled="False"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#FF3030" />
+                                                <TextBlock Text="Red" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestGreenButton"
+                                                Tag="green"
+                                                IsEnabled="False"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#30C030" />
+                                                <TextBlock Text="Green" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestBlueButton"
+                                                Tag="blue"
+                                                IsEnabled="False"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#3070F0" />
+                                                <TextBlock Text="Blue" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestWhiteButton"
+                                                Tag="white"
+                                                IsEnabled="False"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10" Fill="#F0F0F0" />
+                                                <TextBlock Text="White" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestOffButton"
+                                                Tag="off"
+                                                IsEnabled="False"
+                                                Click="OnHueTestColorClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Ellipse Width="10" Height="10"
+                                                         Stroke="{ThemeResource TextFillColorTertiaryBrush}"
+                                                         StrokeThickness="1"
+                                                         Fill="Transparent" />
+                                                <TextBlock Text="Off" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="HueTestRotationButton"
+                                                IsEnabled="False"
+                                                Click="OnHueTestRotationClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                                                <TextBlock Text="Rotation" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Pipeline card (J3). End-to-end test of
+                                 the chain : Screen capture → AmbientEngine
+                                 → Hue driver. Start enabled only when both
+                                 ends are ready (a group is selected so
+                                 we have an ILightOutput to push to ; the
+                                 capture service is created on-demand by
+                                 the engine itself if not already running).
+                                 J3 step 1 pushes a mock HSV rotation at
+                                 5 Hz so the lamps rainbow-cycle, proving
+                                 the wiring works without any pixel
+                                 analysis yet. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Pipeline (capture → analysis → lights)"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="J3 step 1 — wires the screen capture to the selected Hue group via the AmbientEngine. The lamps cycle through the rainbow at 5 Hz to validate the chain without any pixel analysis yet. Real frame analysis lands in step 2."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="PipelineToggleButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="180"
+                                                IsEnabled="False"
+                                                Click="OnPipelineToggleClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon x:Name="PipelineToggleIcon"
+                                                          Glyph="&#xE768;"
+                                                          FontSize="14" />
+                                                <TextBlock x:Name="PipelineToggleLabel"
+                                                           Text="Start pipeline" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="PipelineStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="PipelineStatusText"
+                                                   Text="Pair a bridge and pick a group first"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>

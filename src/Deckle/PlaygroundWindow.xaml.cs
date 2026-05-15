@@ -4,17 +4,24 @@ using System.Numerics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Graphics.Capture;
 using WinRT.Interop;
 using Deckle.Audio;
 using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;
+using Deckle.Lighting;
+using Deckle.Lighting.Ambient;
+using Deckle.Lighting.Hue;
+using Deckle.Logging;
 using Deckle.Playground;
 using Deckle.Shell;
+using Deckle.Vision;
 
 namespace Deckle;
 
@@ -132,6 +139,66 @@ public sealed partial class PlaygroundWindow : Window
     // that was reported). See NakedPreview class comment in HudComposition.
     private HudComposition.NakedPreview? _nakedPreview;
 
+    // ── Ambient lighting — screen capture (J1) ─────────────────────────
+    //
+    // Created lazily on the first Start click ; disposed on Stop, on
+    // Closing→Hide (so a hidden Playground doesn't keep the capture
+    // pipeline running silently), and on the terminal Closed event.
+    // FrameArrived fires on the framepool worker thread ; the UI timer
+    // samples FrameCount on the UI thread once a second to compute FPS
+    // without per-frame DispatcherQueue marshaling.
+    private ScreenCaptureService? _screenCapture;
+    private readonly DispatcherTimer _screenCaptureFpsTimer = new()
+        { Interval = TimeSpan.FromMilliseconds(1000) };
+    private long _screenCaptureLastSampledFrames;
+    private long _screenCaptureLastSampleTimestamp;
+
+    // ── Ambient lighting — Hue REST driver (J2) ────────────────────────
+    //
+    // The bridge client is created on the first Pair attempt and lives
+    // for the duration of the Playground session ; no persistence
+    // across window close (Louis's explicit choice for the playground
+    // contract — tester librement, tout reset à la fermeture). On
+    // Closing→Hide we cancel any in-flight pairing and dispose the
+    // client ; the next Pair click starts a fresh client.
+    private HueBridgeClient? _hueBridge;
+    private CancellationTokenSource? _huePairCts;
+    private bool _hueIsPairing;
+    private IReadOnlyList<HueGroup> _hueGroups = [];
+    private HueRestLightOutput? _hueLightOutput;
+    private CancellationTokenSource? _hueRotationCts;
+    private bool _hueGroupComboSuppress;
+
+    // ── Ambient lighting — end-to-end pipeline (J3) ────────────────────
+    //
+    // The engine is instantiated lazily on the first Start pipeline
+    // click ; it borrows the existing _screenCapture and
+    // _hueLightOutput so capture cadence and bridge auth are shared
+    // with the standalone test cards. DisposeAsync is fire-and-forget
+    // on Closing (best-effort cleanup, the loop cancels via its CTS).
+    //
+    // FrameSampler is built on the first Start pipeline click after
+    // _screenCapture has been started — we need its Device and
+    // ContentSize. The sampler lives for one pipeline session ; it's
+    // disposed when the user clicks Stop or closes the window.
+    //
+    // _pipelineStartedCapture tracks who turned on the capture so we
+    // can mirror the symmetry on Stop : if the pipeline started it
+    // (Louis clicked Start pipeline while capture was idle), the
+    // pipeline stops it too. If Louis had started capture manually
+    // before, we leave it running.
+    //
+    // _previewTimer reads _frameSampler.LatestSample every 200 ms and
+    // updates the preview grid Rectangles' Fill brushes. 200 ms is
+    // a deliberate visual cadence — humans don't notice updates above
+    // 5 Hz on a low-frequency colour grid, and the timer doesn't fight
+    // the engine's 15 Hz push for the same data.
+    private AmbientEngine? _ambientEngine;
+    private FrameSampler? _frameSampler;
+    private bool _pipelineStartedCapture;
+    private DispatcherTimer? _previewTimer;
+    private Microsoft.UI.Xaml.Shapes.Rectangle[]? _previewCells;
+
     public PlaygroundWindow()
     {
         InitializeComponent();
@@ -150,29 +217,40 @@ public sealed partial class PlaygroundWindow : Window
         SystemBackdrop = new MicaBackdrop();
 
         Title = "Deckle Playground";
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1580, 880));
+        // Default 1800×900: NavView pane (320) + HUD page (1200 min) +
+        // breathing room for the tuning expanders to sit comfortably wide
+        // out of the box. Min 1520×600 is still a usable surface, just
+        // tight ; first-launch size aims for the comfortable end.
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1800, 900));
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min width 1200: preview column fixed at 720 + tuning column
-        // MinWidth 480. Preview sized to fit all seven SelectorBar tabs
-        // horizontally (Charging … Combined) without invoking the
-        // ScrollViewer's horizontal scroll. Below 1200 total the tuning
-        // slider/NumberBox composite loses readable space. No sash to
-        // drag — the fixed contract IS the responsive contract.
-        presenter.PreferredMinimumWidth  = 1200;
-        presenter.PreferredMinimumHeight = 480;
+        // Min width 1520: NavView pane in Left mode is ~320 dip (default
+        // OpenPaneLength), HUD page itself wants 1200 dip min (preview
+        // column 720 + tuning column 480). Below 1520 the tuning
+        // slider/NumberBox composite loses readable space or the pane
+        // collapses to LeftCompact unexpectedly. Min height bumped to 600
+        // so the AmbientPage placeholder + capture card fit without
+        // scrolling at the smallest size.
+        presenter.PreferredMinimumWidth  = 1520;
+        presenter.PreferredMinimumHeight = 600;
         AppWindow.SetPresenter(presenter);
 
         // Close → hide, never destroy. Same contract as SettingsWindow /
         // LogWindow — App owns the single instance for its lifetime.
+        // Side effect: stop the screen capture if it was running, so a
+        // hidden Playground doesn't keep pulling frames from the GPU.
         AppWindow.Closing += (_, args) =>
         {
             args.Cancel = true;
+            StopScreenCaptureIfRunning();
+            TeardownHueIfActive();
             AppWindow.Hide();
         };
+
+        _screenCaptureFpsTimer.Tick += OnScreenCaptureFpsTick;
 
         _rebuildDebounce.Tick += (_, _) =>
         {
@@ -193,7 +271,16 @@ public sealed partial class PlaygroundWindow : Window
                 // and writes nothing to disk; the next app launch returns
                 // to the built-in defaults.
                 BuildTuningPanel();
+                // Populate the target cards ItemsRepeater. Done in Loaded
+                // (not in the constructor) because ItemsRepeater isn't
+                // realised until the XAML tree finishes initialising —
+                // setting ItemsSource earlier silently no-ops.
+                TargetCardsRepeater.ItemsSource = _targetCardNames;
                 ApplyTarget();
+                // Restore the Hue bridge from persisted settings, if
+                // any. Skips the link-button dance when the user has
+                // already paired in a previous session.
+                RestoreHueFromSettings();
             };
         }
 
@@ -211,6 +298,9 @@ public sealed partial class PlaygroundWindow : Window
             _rmsTimer.Stop();
             _rmsClock.Stop();
             _rebuildDebounce.Stop();
+            _screenCaptureFpsTimer.Stop();
+            StopScreenCaptureIfRunning();
+            TeardownHueIfActive();
             // Detach the composition child first so the compositor stops
             // referencing the bundle's visual tree, then dispose. In the
             // singleton-hidden pattern (Closing→Hide) Closed only fires at
@@ -219,6 +309,49 @@ public sealed partial class PlaygroundWindow : Window
             _nakedPreview?.Dispose();
             _nakedPreview = null;
         };
+    }
+
+    // Restore the Hue bridge state from AmbientSettings. Populates the
+    // IP textbox, reconstructs the HueBridgeClient with the saved
+    // username, and visually shows the bridge as paired so the user
+    // can go straight to "List groups". No network call here — the
+    // first authenticated REST request happens when the user clicks
+    // List groups or selects a group. If the bridge is unreachable or
+    // the username got revoked, that's where the failure surfaces.
+    private void RestoreHueFromSettings()
+    {
+        var settings = AmbientSettingsService.Instance.Current;
+        if (string.IsNullOrWhiteSpace(settings.HueBridgeIp) ||
+            string.IsNullOrWhiteSpace(settings.HueUsername))
+        {
+            return; // Nothing persisted yet — first run / unpaired state.
+        }
+
+        try
+        {
+            var bridge = new HueBridge(
+                Id:                settings.HueBridgeId ?? "restored",
+                InternalIpAddress: settings.HueBridgeIp,
+                Port:              443);
+            // ClientKey is unused on the REST CLIP v1 path ; we never
+            // persisted it. Restored credentials carry an empty value.
+            var creds = new HueCredentials(settings.HueUsername, ClientKey: "");
+            _hueBridge = new HueBridgeClient(bridge, creds);
+
+            HueBridgeIpTextBox.Text = settings.HueBridgeIp;
+            HuePairLabel.Text       = "Re-pair";
+            HuePairStatusText.Text  = $"Paired ({creds.UsernameHead}, saved)";
+            HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
+            HueListGroupsButton.IsEnabled = true;
+
+            LogService.Instance.Verbose(LogSource.Hue,
+                $"restore | bridge_ip={settings.HueBridgeIp} | bridge_id={settings.HueBridgeId} | username={creds.UsernameHead} | last_group_id={settings.HueLastGroupId ?? "none"}");
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Hue restore failed — {ex.GetType().Name}: {ex.Message} (user will need to re-pair)");
+        }
     }
 
     // ── Lifecycle surface (called by App) ───────────────────────────────
@@ -273,24 +406,111 @@ public sealed partial class PlaygroundWindow : Window
             _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
     }
 
-    // ── Target selector + Play/Pause ────────────────────────────────────
-
-    private void OnTargetSelectionChanged(
-        SelectorBar sender,
-        SelectorBarSelectionChangedEventArgs args)
+    // ── Target selector cards + Play/Pause ──────────────────────────────
+    //
+    // The 7 target cards (Charging, Recording, Transcribing, Rewriting,
+    // Conic, ArcMask, Combined) live inside an ItemsRepeater +
+    // UniformGridLayout so they reflow into multiple rows as the column
+    // narrows. Mutual exclusion is enforced manually : exactly one card
+    // is checked at any time, clicking an unchecked card checks it +
+    // unchecks the previously-active, clicking the active card is a no-op
+    // (the Unchecked handler re-checks it). _suppressTargetCardChange
+    // guards against re-entrancy when we set IsChecked programmatically.
+    private static readonly string[] _targetCardNames =
     {
-        var selected = sender.SelectedItem;
-        if (selected is null) return;
-        var next = ReferenceEquals(selected, TabCharging)     ? Target.Charging
-                 : ReferenceEquals(selected, TabRecording)    ? Target.Recording
-                 : ReferenceEquals(selected, TabTranscribing) ? Target.Transcribing
-                 : ReferenceEquals(selected, TabRewriting)    ? Target.Rewriting
-                 : ReferenceEquals(selected, TabConic)        ? Target.Conic
-                 : ReferenceEquals(selected, TabArcMask)      ? Target.ArcMask
-                                                              : Target.Combined;
+        "Charging", "Recording", "Transcribing", "Rewriting", "Conic", "ArcMask", "Combined"
+    };
+    private readonly List<ToggleButton> _targetCards = new();
+    private bool _suppressTargetCardChange;
+
+    private void OnTargetCardPrepared(
+        Microsoft.UI.Xaml.Controls.ItemsRepeater sender,
+        Microsoft.UI.Xaml.Controls.ItemsRepeaterElementPreparedEventArgs args)
+    {
+        if (args.Element is not ToggleButton tb) return;
+
+        // ElementPrepared fires once per recycled element ; the same
+        // ToggleButton may be re-prepared if the layout virtualises rows.
+        // Subscribe only once.
+        if (!_targetCards.Contains(tb))
+        {
+            tb.Checked   += OnTargetCardChecked;
+            tb.Unchecked += OnTargetCardUnchecked;
+            _targetCards.Add(tb);
+        }
+
+        // Set initial IsChecked to match the current target, suppressing
+        // the event so the mutual-exclusion handler doesn't fire during
+        // initialisation.
+        bool isCurrent = ParseTargetCardName(tb.Content as string ?? "") == _currentTarget;
+        _suppressTargetCardChange = true;
+        try   { tb.IsChecked = isCurrent; }
+        finally { _suppressTargetCardChange = false; }
+    }
+
+    private void OnTargetCardChecked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressTargetCardChange) return;
+        if (sender is not ToggleButton clicked) return;
+
+        _suppressTargetCardChange = true;
+        try
+        {
+            foreach (var card in _targetCards)
+                if (!ReferenceEquals(card, clicked)) card.IsChecked = false;
+        }
+        finally { _suppressTargetCardChange = false; }
+
+        var next = ParseTargetCardName(clicked.Content as string ?? "");
         if (next == _currentTarget) return;
         _currentTarget = next;
         ApplyTarget();
+    }
+
+    private void OnTargetCardUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressTargetCardChange) return;
+        if (sender is not ToggleButton card) return;
+
+        // Clicking the already-checked card unchecks it ; we re-check
+        // immediately so at least one card stays selected at all times.
+        _suppressTargetCardChange = true;
+        try   { card.IsChecked = true; }
+        finally { _suppressTargetCardChange = false; }
+    }
+
+    private static Target ParseTargetCardName(string name) => name switch
+    {
+        "Charging"     => Target.Charging,
+        "Recording"    => Target.Recording,
+        "Transcribing" => Target.Transcribing,
+        "Rewriting"    => Target.Rewriting,
+        "Conic"        => Target.Conic,
+        "ArcMask"      => Target.ArcMask,
+        _              => Target.Combined,
+    };
+
+    // Top-level navigation between the HUD page and the Ambient lighting
+    // page. Pages are inline (Visibility toggle), not Frame-navigated —
+    // both surfaces are cheap to keep instantiated and the alternative
+    // (Frame + Page classes per surface) would force a refactor of every
+    // x:Name reference scattered across this file. The HUD preview keeps
+    // animating in the background when Ambient lighting is selected ;
+    // suspending it on hide-tab is a polish item for later.
+    //
+    // First SelectionChanged fires during InitializeComponent (NavView
+    // applies IsSelected="True" on NavItemHud) before HudPage is realised ;
+    // null-guard on the page references so the early fire is a no-op.
+    private void OnPlaygroundNavSelectionChanged(
+        NavigationView sender,
+        NavigationViewSelectionChangedEventArgs args)
+    {
+        if (HudPage is null || AmbientPage is null) return;
+        if (args.SelectedItem is not NavigationViewItem item) return;
+
+        bool ambient = (item.Tag as string) == "ambient";
+        HudPage.Visibility     = ambient ? Visibility.Collapsed : Visibility.Visible;
+        AmbientPage.Visibility = ambient ? Visibility.Visible   : Visibility.Collapsed;
     }
 
     private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1188,5 +1408,805 @@ public sealed partial class PlaygroundWindow : Window
         grid.Children.Add(slider);
         grid.Children.Add(numberBox);
         return grid;
+    }
+
+    // ── Ambient lighting — screen capture (J1) ─────────────────────────────
+    //
+    // Wires the Start / Stop button in the Ambient lighting card to a
+    // freshly-built ScreenCaptureService. The service is created on first
+    // Start so the capture pipeline stays inert until the user opts in.
+    // FrameArrived is left unhandled at J1 — we only count frames via
+    // ScreenCaptureService.FrameCount, no per-frame UI work. The FPS timer
+    // samples the counter once a second and computes an FPS estimate from
+    // the delta over the sample interval (low jitter, no per-frame
+    // DispatcherQueue marshaling).
+
+    // Segoe Fluent Icons glyphs swapped on the toggle button. E768 (Play)
+    // when stopped — the action triggered by clicking. E71A (Stop, the
+    // solid square) when running. Mirrors the Play/Pause RadioButton
+    // pattern used for the HUD preview row: the icon names what the next
+    // click does, not the current state.
+    private const string ScreenCaptureGlyphStart = "\uE768";
+    private const string ScreenCaptureGlyphStop  = "\uE71A";
+
+    private void OnScreenCaptureToggleClick(object sender, RoutedEventArgs e)
+    {
+        // Entry log so we can confirm the Click reaches the handler ;
+        // without it a non-firing event is indistinguishable from a
+        // silent failure inside Start(). Verbose only — once the J1
+        // pump is stable this can come out or move to a per-session
+        // counter.
+        LogService.Instance.Verbose(LogSource.Screen,
+            $"playground toggle | running={_screenCapture is { IsRunning: true }}");
+
+        if (_screenCapture is { IsRunning: true })
+        {
+            StopScreenCaptureIfRunning();
+            return;
+        }
+
+        StartScreenCaptureService();
+    }
+
+    // Shared start logic for the Screen capture card and the Pipeline
+    // card — both want the exact same setup (instantiate service if
+    // null, subscribe Stopped, Start, refresh visuals, kick the FPS
+    // timer). Returns true on success so the Pipeline path can decide
+    // whether to proceed with engine construction or abort.
+    private bool StartScreenCaptureService()
+    {
+        if (_screenCapture is { IsRunning: true }) return true;
+
+        try
+        {
+            _screenCapture ??= new ScreenCaptureService();
+            _screenCapture.Stopped += OnScreenCaptureStopped;
+            // Read the persisted monitor selection — null = primary. The
+            // settings field is populated by the J9 monitor selector in
+            // AmbientPage ; until then it stays null and capture follows
+            // the primary, matching the V0 behaviour.
+            var targetMonitor = AmbientSettingsService.Instance.Current.SelectedMonitorDeviceName;
+            _screenCapture.Start(targetMonitor);
+
+            _screenCaptureLastSampledFrames = 0;
+            _screenCaptureLastSampleTimestamp = Stopwatch.GetTimestamp();
+            ScreenCaptureToggleIcon.Glyph = ScreenCaptureGlyphStop;
+            ScreenCaptureToggleLabel.Text = "Stop";
+            ScreenCaptureStatusText.Text = "Running";
+            ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorSuccessBrush");
+            ScreenCaptureFramesText.Text = "0";
+            ScreenCaptureFpsText.Text = "—";
+            _screenCaptureFpsTimer.Start();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Service already logged Error + Verbose with the HRESULT in
+            // its catch block — we only surface the recovered state to
+            // the UI here. The button stays on "Start" so the user can
+            // try again after fixing the underlying condition. Status dot
+            // turns critical so the failure is visible at a glance even
+            // without reading the message text.
+            LogService.Instance.Warning(LogSource.Screen,
+                $"Playground toggle aborted — {ex.GetType().Name}: {ex.Message}");
+            ScreenCaptureStatusText.Text = $"Failed: {ex.Message}";
+            ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+            StopScreenCaptureIfRunning();
+            return false;
+        }
+    }
+
+    private void StopScreenCaptureIfRunning()
+    {
+        _screenCaptureFpsTimer.Stop();
+
+        if (_screenCapture is null) return;
+
+        _screenCapture.Stopped -= OnScreenCaptureStopped;
+        _screenCapture.Dispose();
+        _screenCapture = null;
+
+        // Reset visuals to the stopped baseline. The status dot returns to
+        // neutral ; an error path that landed here right after raising the
+        // critical dot will see the status text rewritten too, so the dot
+        // and the text stay in sync. Null-guard for the early-Closed path
+        // where the XAML controls may already be torn down.
+        if (ScreenCaptureToggleButton is not null)
+        {
+            ScreenCaptureToggleIcon.Glyph = ScreenCaptureGlyphStart;
+            ScreenCaptureToggleLabel.Text = "Start";
+            ScreenCaptureStatusText.Text = "Stopped";
+            ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorNeutralBrush");
+        }
+    }
+
+    // Theme resource → Brush helper. Looking up a system fill colour brush
+    // from code-behind requires going through Application.Current.Resources
+    // (the ThemeResource markup extension only resolves in XAML). Returns
+    // the resolved Brush ; the cast is safe because the SystemFillColor*
+    // entries in the WinUI theme dictionary are SolidColorBrush.
+    private static Brush GetThemeBrush(string key)
+        => (Brush)Application.Current.Resources[key];
+
+    private void OnScreenCaptureStopped()
+    {
+        // Fires on the framepool worker thread when the captured item
+        // closes itself (display disconnected, signed-out, etc.). Marshal
+        // back to the UI thread to update the button + status, then run
+        // the same teardown as a user-driven Stop.
+        DispatcherQueue.TryEnqueue(() => StopScreenCaptureIfRunning());
+    }
+
+    private void OnScreenCaptureFpsTick(object? sender, object e)
+    {
+        if (_screenCapture is not { IsRunning: true }) return;
+
+        long currentFrames = _screenCapture.FrameCount;
+        long currentTimestamp = Stopwatch.GetTimestamp();
+        long deltaFrames = currentFrames - _screenCaptureLastSampledFrames;
+        long deltaMs = (currentTimestamp - _screenCaptureLastSampleTimestamp) * 1000 / Stopwatch.Frequency;
+
+        double fps = deltaMs > 0 ? deltaFrames * 1000.0 / deltaMs : 0.0;
+
+        ScreenCaptureFramesText.Text = currentFrames.ToString();
+        ScreenCaptureFpsText.Text = $"{fps:F1}";
+
+        _screenCaptureLastSampledFrames = currentFrames;
+        _screenCaptureLastSampleTimestamp = currentTimestamp;
+    }
+
+    // ── Ambient lighting — Hue REST handlers (J2) ──────────────────────
+    //
+    // All three operations are async and run on the UI thread until
+    // the first await. The bridge client is created lazily on first
+    // Pair and torn down on window Close ; Discover doesn't need it
+    // (cloud lookup is a static method, no bridge state involved).
+    //
+    // Cancellation : the pair loop runs up to 30 s ; if the user
+    // closes the window mid-pair we cancel via _huePairCts so the
+    // HttpClient unblocks cleanly. The buttons disable themselves
+    // while an op is in flight (Discover is short enough that we
+    // don't bother, Pair has a visible 30 s deadline so the disabled
+    // state matters).
+
+    private async void OnHueDiscoverClick(object sender, RoutedEventArgs e)
+    {
+        // Disable the button during the lookup so the user can't
+        // queue multiple cloud calls — discovery is short (≤ 10 s
+        // timeout in HueDiscovery) so this stays unobtrusive.
+        HueDiscoverButton.IsEnabled = false;
+        try
+        {
+            var bridges = await HueDiscovery.DiscoverViaCloudAsync().ConfigureAwait(true);
+            if (bridges.Count == 0)
+            {
+                // Cloud returned empty — log + leave the textbox alone
+                // so the user can enter the IP manually. No status
+                // dot change ; the absence of autofill is the signal.
+                return;
+            }
+
+            // Autofill with the first bridge ; the user can still
+            // overwrite if they have several bridges and want a
+            // specific one. The remaining bridges are visible in
+            // LogWindow (HueDiscovery emits a Verbose line per
+            // bridge found).
+            HueBridgeIpTextBox.Text = bridges[0].InternalIpAddress;
+        }
+        finally
+        {
+            HueDiscoverButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHuePairClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueIsPairing) return;
+
+        var ip = HueBridgeIpTextBox.Text?.Trim();
+        if (string.IsNullOrEmpty(ip))
+        {
+            HuePairStatusText.Text = "Bridge IP required";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCautionBrush");
+            return;
+        }
+
+        // Replace any previous client (lets the user retry against a
+        // different IP without restarting the window) ; the old one
+        // owns an HttpClient that needs disposing.
+        TeardownHueIfActive();
+
+        _hueBridge = new HueBridgeClient(new HueBridge(
+            Id: "manual",
+            InternalIpAddress: ip,
+            Port: 443));
+        _huePairCts = new CancellationTokenSource();
+        _hueIsPairing = true;
+
+        HuePairButton.IsEnabled = false;
+        HuePairLabel.Text       = "Waiting for link button…";
+        HuePairStatusText.Text  = "Waiting (30 s)";
+        HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorCautionBrush");
+
+        try
+        {
+            var creds = await _hueBridge.PairAsync(
+                overallTimeout: TimeSpan.FromSeconds(30),
+                pollInterval:   TimeSpan.FromSeconds(2),
+                ct:             _huePairCts.Token)
+                .ConfigureAwait(true);
+
+            HuePairStatusText.Text = $"Paired ({creds.UsernameHead})";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorSuccessBrush");
+            HuePairLabel.Text      = "Re-pair";
+
+            // Pairing succeeded → persist the bridge state so the user
+            // doesn't have to press the link button again next session.
+            // We do NOT persist the ClientKey (Entertainment v2 PSK) —
+            // the REST path doesn't need it and storing a PSK in a JSON
+            // file is the wrong choice. HueLastGroupId stays whatever
+            // the previous pair set ; if the user picks a new group
+            // it gets overwritten by OnHueGroupSelectionChanged below.
+            var ambient = AmbientSettingsService.Instance.Current;
+            ambient.HueBridgeIp = _hueBridge.Bridge.InternalIpAddress;
+            ambient.HueBridgeId = _hueBridge.Bridge.Id;
+            ambient.HueUsername = creds.Username;
+            AmbientSettingsService.Instance.Save();
+
+            // Pairing succeeded → unlock the next row. List groups is
+            // a separate explicit step (the user might want to inspect
+            // the LogWindow output before populating the combo) ; the
+            // group combo + colour buttons stay disabled until the
+            // list arrives and the user picks one.
+            HueListGroupsButton.IsEnabled = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Window closed mid-pair, or user re-clicked. Don't
+            // surface anything — the visual state is whatever the
+            // teardown leaves behind.
+            HuePairStatusText.Text = "Cancelled";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorNeutralBrush");
+            HuePairLabel.Text      = "Pair (press link button)";
+        }
+        catch (TimeoutException)
+        {
+            HuePairStatusText.Text = "Timed out — try again";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCriticalBrush");
+            HuePairLabel.Text      = "Pair (press link button)";
+        }
+        catch (Exception ex)
+        {
+            HuePairStatusText.Text = $"Failed: {ex.Message}";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCriticalBrush");
+            HuePairLabel.Text      = "Pair (press link button)";
+        }
+        finally
+        {
+            _hueIsPairing = false;
+            HuePairButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHueListGroupsClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueBridge is not { IsPaired: true }) return;
+
+        HueListGroupsButton.IsEnabled = false;
+        try
+        {
+            _hueGroups = await _hueBridge.ListGroupsAsync().ConfigureAwait(true);
+
+            // Repopulate the combo. The suppress flag stops the
+            // SelectionChanged handler from firing while we're
+            // rebuilding the items collection ; without it we'd
+            // briefly construct a HueRestLightOutput on the wrong
+            // (auto-selected) group during the rebuild.
+            _hueGroupComboSuppress = true;
+            HueGroupComboBox.Items.Clear();
+            foreach (var g in _hueGroups)
+            {
+                HueGroupComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = g.DisplayLabel,
+                    Tag     = g,
+                });
+            }
+            _hueGroupComboSuppress = false;
+
+            HueGroupComboBox.IsEnabled = _hueGroups.Count > 0;
+            if (_hueGroups.Count > 0)
+            {
+                // Prefer the persisted last-group when the list contains
+                // it ; otherwise fall back to index 0. Either way,
+                // SelectionChanged fires once the suppress flag is off
+                // and wires the colour buttons + pipeline to the group.
+                string? lastId = AmbientSettingsService.Instance.Current.HueLastGroupId;
+                int preselectIndex = 0;
+                if (!string.IsNullOrEmpty(lastId))
+                {
+                    for (int i = 0; i < _hueGroups.Count; i++)
+                    {
+                        if (_hueGroups[i].Id == lastId)
+                        {
+                            preselectIndex = i;
+                            break;
+                        }
+                    }
+                }
+                HueGroupComboBox.SelectedIndex = preselectIndex;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Listing groups failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            HueListGroupsButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHueGroupSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_hueGroupComboSuppress) return;
+        if (_hueBridge is not { IsPaired: true }) return;
+
+        // Cancel any in-flight rotation against the previous group
+        // and dispose the previous HueRestLightOutput before pointing
+        // at the new one. The cancellation is best-effort — the
+        // rotation handler catches OperationCanceledException.
+        CancelHueRotationIfRunning();
+        if (_hueLightOutput is not null)
+        {
+            await _hueLightOutput.DisposeAsync().ConfigureAwait(true);
+            _hueLightOutput = null;
+        }
+
+        if (HueGroupComboBox.SelectedItem is not ComboBoxItem { Tag: HueGroup group })
+        {
+            SetHueColorButtonsEnabled(false);
+            return;
+        }
+
+        _hueLightOutput = new HueRestLightOutput(_hueBridge, group.Id);
+        try
+        {
+            await _hueLightOutput.ConnectAsync().ConfigureAwait(true);
+            SetHueColorButtonsEnabled(true);
+            SetPipelineReady();
+
+            // Persist the chosen group so the next session restores the
+            // same pre-selection — completes the "no link-button on
+            // restart" UX (pair credentials + group are both persisted
+            // and read back at Playground open).
+            AmbientSettingsService.Instance.Current.HueLastGroupId = group.Id;
+            AmbientSettingsService.Instance.Save();
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Selecting group failed — {ex.GetType().Name}: {ex.Message}");
+            SetHueColorButtonsEnabled(false);
+            SetPipelineNotReady();
+        }
+    }
+
+    // Pipeline UI state is a function of "do we have an ILightOutput
+    // wired ?" — that's the prerequisite. The capture is bootstrapped
+    // on demand by the Start handler. SetPipelineReady is called from
+    // the group-selected success path ; SetPipelineNotReady is the
+    // teardown / no-group state.
+    private void SetPipelineReady()
+    {
+        if (_ambientEngine is { IsRunning: true })
+        {
+            // The engine is already running against a previous group ;
+            // a group switch swapped the output behind it. Keep the
+            // "Stop" label, the engine continues pushing.
+            return;
+        }
+        PipelineToggleButton.IsEnabled = true;
+        PipelineToggleIcon.Glyph = ScreenCaptureGlyphStart;
+        PipelineToggleLabel.Text = "Start pipeline";
+        PipelineStatusText.Text = "Ready — click Start";
+        PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorAttentionBrush");
+    }
+
+    private void SetPipelineNotReady()
+    {
+        PipelineToggleButton.IsEnabled = false;
+        PipelineToggleIcon.Glyph = ScreenCaptureGlyphStart;
+        PipelineToggleLabel.Text = "Start pipeline";
+        PipelineStatusText.Text = "Pair a bridge and pick a group first";
+        PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorNeutralBrush");
+    }
+
+    private async void OnHueTestColorClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueLightOutput is null) return;
+        if (sender is not Button { Tag: string tag }) return;
+
+        var color = tag switch
+        {
+            "red"   => LightColor.Red,
+            "green" => LightColor.Green,
+            "blue"  => LightColor.Blue,
+            "white" => LightColor.White,
+            "off"   => LightColor.Black,
+            _       => LightColor.Black,
+        };
+
+        try
+        {
+            await _hueLightOutput.SetColorAsync(color).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Push colour failed — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private async void OnHueTestRotationClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueLightOutput is null) return;
+
+        // Cancel any prior rotation so a second click starts fresh
+        // instead of stacking two interleaved loops.
+        CancelHueRotationIfRunning();
+        _hueRotationCts = new CancellationTokenSource();
+        var ct = _hueRotationCts.Token;
+
+        HueTestRotationButton.IsEnabled = false;
+        try
+        {
+            // R → G → B → W → Off with a 1 s pause between pushes.
+            // 1 s is long enough to see the lamp settle but short
+            // enough that the sequence stays under 5 s — useful for
+            // a quick sanity check on the bridge link latency.
+            LightColor[] sequence =
+            [
+                LightColor.Red,
+                LightColor.Green,
+                LightColor.Blue,
+                LightColor.White,
+                LightColor.Black,
+            ];
+
+            foreach (var color in sequence)
+            {
+                await _hueLightOutput.SetColorAsync(color, ct).ConfigureAwait(true);
+                await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the user navigates away mid-sequence or
+            // re-clicks ; nothing to surface.
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Test rotation failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            HueTestRotationButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnPipelineToggleClick(object sender, RoutedEventArgs e)
+    {
+        // Stop path : engine running, the click means "stop". Dispose the
+        // engine first so its push loop stops cleanly, then the sampler,
+        // then the preview timer. If we started the capture ourselves on
+        // the matching Start (flag set), stop it now too — symmetric
+        // "the pipeline owns its capture" semantics.
+        if (_ambientEngine is { IsRunning: true })
+        {
+            _ambientEngine.Stop();
+            await _ambientEngine.DisposeAsync().ConfigureAwait(true);
+            _ambientEngine = null;
+
+            StopPreviewTimer();
+
+            if (_frameSampler is not null)
+            {
+                await _frameSampler.DisposeAsync().ConfigureAwait(true);
+                _frameSampler = null;
+            }
+
+            if (_screenCapture is not null)
+                _screenCapture.FrameArrived -= OnSamplerFrameArrived;
+
+            if (_pipelineStartedCapture)
+            {
+                try { StopScreenCaptureIfRunning(); }
+                catch (Exception ex)
+                {
+                    LogService.Instance.Warning(LogSource.Screen,
+                        $"Capture stop on pipeline teardown failed — {ex.GetType().Name}: {ex.Message}");
+                }
+                _pipelineStartedCapture = false;
+            }
+
+            SetPipelineReady();
+            return;
+        }
+
+        // Start path : need the screen capture running and an output
+        // ready. The capture is auto-started if not running ; the
+        // output existence is a prerequisite enforced by the button
+        // state machine (button only enabled after group selection).
+        if (_hueLightOutput is null)
+        {
+            PipelineStatusText.Text = "Pair a bridge and pick a group first";
+            return;
+        }
+
+        bool captureWasRunning = _screenCapture is { IsRunning: true };
+        if (!StartScreenCaptureService())
+        {
+            PipelineStatusText.Text = "Couldn't start screen capture";
+            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+            return;
+        }
+        _pipelineStartedCapture = !captureWasRunning;
+
+        PipelineToggleButton.IsEnabled = false;
+        try
+        {
+            // Build the FrameSampler from the live capture service. The
+            // device + content size are only valid after a successful
+            // Start, so this must come after StartScreenCaptureService.
+            _frameSampler = new FrameSampler(
+                _screenCapture!.Device!,
+                _screenCapture.ContentSize,
+                _screenCapture.ActiveFormat,
+                _screenCapture.PeakLuminance);
+
+            // Subscribe the sampler to the capture event so each frame
+            // gets processed (GPU downsample + readback).
+            _screenCapture.FrameArrived += OnSamplerFrameArrived;
+
+            BuildPreviewGrid(_frameSampler.GridCols, _frameSampler.GridRows);
+            StartPreviewTimer();
+
+            _ambientEngine = new AmbientEngine(_screenCapture, _hueLightOutput, _frameSampler);
+            await _ambientEngine.StartAsync().ConfigureAwait(true);
+
+            PipelineToggleIcon.Glyph = ScreenCaptureGlyphStop;
+            PipelineToggleLabel.Text = "Stop pipeline";
+            PipelineStatusText.Text  = $"Running (analysis, {_frameSampler.GridCols}×{_frameSampler.GridRows}{(_frameSampler.IsHdr ? ", HDR" : "")})";
+            PipelineStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Ambient,
+                $"Pipeline start failed — {ex.GetType().Name}: {ex.Message}");
+            PipelineStatusText.Text = $"Failed: {ex.Message}";
+            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+
+            if (_ambientEngine is not null)
+            {
+                await _ambientEngine.DisposeAsync().ConfigureAwait(true);
+                _ambientEngine = null;
+            }
+            StopPreviewTimer();
+            if (_screenCapture is not null)
+                _screenCapture.FrameArrived -= OnSamplerFrameArrived;
+            if (_frameSampler is not null)
+            {
+                await _frameSampler.DisposeAsync().ConfigureAwait(true);
+                _frameSampler = null;
+            }
+            if (_pipelineStartedCapture)
+            {
+                try { StopScreenCaptureIfRunning(); } catch { /* best effort */ }
+                _pipelineStartedCapture = false;
+            }
+        }
+        finally
+        {
+            PipelineToggleButton.IsEnabled = true;
+        }
+    }
+
+    // FrameArrived handler that hands the frame to the FrameSampler.
+    // Runs on the FreeThreaded pool's worker thread ; FrameSampler.Process
+    // is thread-safe internally. The frame is disposed by the capture
+    // service after this delegate returns — we must not retain it.
+    // Cadence is throttled at the capture session level via
+    // MinUpdateInterval, so we don't gate per-frame work here.
+    private void OnSamplerFrameArrived(Direct3D11CaptureFrame frame)
+    {
+        _frameSampler?.Process(frame);
+    }
+
+    // Build the preview Grid : N × M Rectangle children, sized so the
+    // whole grid fits comfortably inside the preview Border with the
+    // source aspect ratio preserved. Cells are 16×16 dip by default ;
+    // smaller if the grid is denser. Called from the UI thread on the
+    // start path, after the sampler has reported its dimensions.
+    private void BuildPreviewGrid(int cols, int rows)
+    {
+        AmbientPreviewGrid.RowDefinitions.Clear();
+        AmbientPreviewGrid.ColumnDefinitions.Clear();
+        AmbientPreviewGrid.Children.Clear();
+
+        const double CellSize = 16;
+        const double Gap = 1;
+
+        for (int c = 0; c < cols; c++)
+            AmbientPreviewGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(CellSize) });
+        for (int r = 0; r < rows; r++)
+            AmbientPreviewGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellSize) });
+
+        _previewCells = new Microsoft.UI.Xaml.Shapes.Rectangle[cols * rows];
+
+        // One SolidColorBrush per cell — MANDATORY. Sharing a single brush
+        // across cells and mutating its Color in the preview tick made every
+        // cell snap to the last pixel of the grid (typically the bottom-right
+        // taskbar — dark), which is what produced the "everything is dark
+        // while the screen is white" symptom even though the FrameSampler
+        // average (and the lamp push) were correct.
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
+                {
+                    Fill   = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    Margin = new Thickness(Gap),
+                };
+                Grid.SetRow(rect, r);
+                Grid.SetColumn(rect, c);
+                AmbientPreviewGrid.Children.Add(rect);
+                _previewCells[r * cols + c] = rect;
+            }
+        }
+
+        AmbientPreviewEmptyState.Visibility = Visibility.Collapsed;
+        AmbientPreviewGrid.Visibility       = Visibility.Visible;
+    }
+
+    private void StartPreviewTimer()
+    {
+        if (_previewTimer is null)
+        {
+            _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _previewTimer.Tick += OnPreviewTimerTick;
+        }
+        _previewTimer.Start();
+    }
+
+    private void StopPreviewTimer()
+    {
+        _previewTimer?.Stop();
+        if (_previewCells is not null && AmbientPreviewGrid is not null)
+        {
+            AmbientPreviewGrid.Children.Clear();
+            AmbientPreviewGrid.RowDefinitions.Clear();
+            AmbientPreviewGrid.ColumnDefinitions.Clear();
+            _previewCells = null;
+            AmbientPreviewGrid.Visibility       = Visibility.Collapsed;
+            AmbientPreviewEmptyState.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnPreviewTimerTick(object? sender, object e)
+    {
+        var sample = _frameSampler?.LatestSample;
+        if (sample is null || _previewCells is null) return;
+
+        int total = Math.Min(sample.Grid.Length, _previewCells.Length);
+        for (int i = 0; i < total; i++)
+        {
+            var c = sample.Grid[i];
+            var brush = _previewCells[i].Fill as SolidColorBrush;
+            if (brush is null)
+            {
+                _previewCells[i].Fill = new SolidColorBrush(c);
+            }
+            else
+            {
+                brush.Color = c;
+            }
+        }
+    }
+
+    private void CancelHueRotationIfRunning()
+    {
+        try { _hueRotationCts?.Cancel(); } catch { /* best effort */ }
+        _hueRotationCts?.Dispose();
+        _hueRotationCts = null;
+    }
+
+    // StackPanel doesn't expose IsEnabled (it's a Panel, IsEnabled
+    // lives on Control), so we toggle each child Button individually.
+    // Iterating Children rather than naming each x:Name keeps the
+    // helper agnostic to button additions / removals — adding a new
+    // colour swatch in XAML is a XAML-only change.
+    private void SetHueColorButtonsEnabled(bool enabled)
+    {
+        foreach (var child in HueColorButtonsPanel.Children)
+        {
+            if (child is Control c) c.IsEnabled = enabled;
+        }
+    }
+
+    private void TeardownHueIfActive()
+    {
+        // The pipeline depends on the bridge — if we're tearing the
+        // bridge down, the engine must go first. Fire-and-forget the
+        // async dispose ; the engine cancels its loop on Stop, the
+        // remaining awaitable work is just a Task.WhenAny completion.
+        if (_ambientEngine is not null)
+        {
+            _ambientEngine.Stop();
+            _ambientEngine.DisposeAsync().AsTask();
+            _ambientEngine = null;
+        }
+
+        // Sampler / preview teardown that mirrors the pipeline stop
+        // path (capture-stop-symmetry handled by the pipeline click
+        // handler ; here we only release the sampler + preview UI in
+        // case a Hue teardown happens while the pipeline is still up).
+        StopPreviewTimer();
+        if (_screenCapture is not null)
+            _screenCapture.FrameArrived -= OnSamplerFrameArrived;
+        if (_frameSampler is not null)
+        {
+            _frameSampler.DisposeAsync().AsTask();
+            _frameSampler = null;
+        }
+        if (_pipelineStartedCapture)
+        {
+            try { StopScreenCaptureIfRunning(); } catch { /* best effort */ }
+            _pipelineStartedCapture = false;
+        }
+
+        // Cancel any pending pair loop first ; PairAsync will exit
+        // with OperationCanceledException so the catch in
+        // OnHuePairClick can update the visuals.
+        try { _huePairCts?.Cancel(); } catch { /* best effort */ }
+        _huePairCts?.Dispose();
+        _huePairCts = null;
+
+        // Cancel any in-flight colour rotation as well — same
+        // best-effort pattern, the rotation handler catches the
+        // OperationCanceledException quietly.
+        CancelHueRotationIfRunning();
+
+        // The HueRestLightOutput is a thin wrapper around the bridge
+        // client ; disposing it doesn't close the HttpClient (the
+        // bridge client owns that). DisposeAsync is fire-and-forget
+        // here — we can't await in a synchronous teardown and the
+        // dispose work is non-blocking anyway.
+        _hueLightOutput?.DisposeAsync().AsTask();
+        _hueLightOutput = null;
+        _hueGroups = [];
+
+        _hueBridge?.Dispose();
+        _hueBridge = null;
+
+        // Reset the dependent UI so a follow-up pair attempt starts
+        // from a clean state. Pair-row controls are reset by
+        // OnHuePairClick itself — we only touch the rows that depend
+        // on a paired bridge. Combo suppress guard avoids triggering
+        // OnHueGroupSelectionChanged during the clear.
+        if (HueListGroupsButton is not null)
+        {
+            HueListGroupsButton.IsEnabled = false;
+            _hueGroupComboSuppress = true;
+            HueGroupComboBox.Items.Clear();
+            HueGroupComboBox.IsEnabled = false;
+            _hueGroupComboSuppress = false;
+            SetHueColorButtonsEnabled(false);
+        }
+
+        SetPipelineNotReady();
     }
 }

@@ -61,13 +61,39 @@ grep `rms=` trouve exactement la même chose partout.
 | Confiance | `[0, 1]` | 2 décimales | `p̄=0.87 min=0.42` |
 | Probabilité | `%` | entier | `nsp=12%` |
 
+### Image / capture vidéo
+
+| Mesure | Unité | Précision | Exemple | Notes |
+|---|---|---|---|---|
+| Frames par seconde | `fps` | 1 décimale | `fps=59.8` | mesuré sur fenêtre glissante 1 s |
+| Compte de frames | `frames` | entier | `frames=124` | depuis Start de la session |
+| Résolution écran | `WxH` | entier | `size=1920x1080` | `Direct3D11CaptureFrame.ContentSize` |
+| Format pixel | nom | — | `format=B8G8R8A8UIntNormalized` | enum DirectXPixelFormat |
+| Buffers pool | `bufs` | entier | `bufs=2` | typiquement 2 |
+| Handle moniteur | `hex` | — | `hmon=0x000100A3` | retour `MonitorFromPoint` |
+
 ### Retours d'appel
 
 | Mesure | Format | Exemple |
 |---|---|---|
 | Code natif | `name={int}` | `result=0`, `mmsys=4` |
+| HRESULT | `name=0x{hex}` | `hr=0x80004005` |
 | Outcome enum | `outcome={value}` | `outcome=Pasted` |
 | Pointeur natif | `hex` | `ctx=0x7ff8a3c01400` |
+
+### Réseau / drivers LED
+
+| Mesure | Unité | Précision | Exemple | Notes |
+|---|---|---|---|---|
+| Adresse IP | IPv4 | — | `bridge_ip=192.168.1.5` | LAN local |
+| Bridge identifier | hex16 | — | `bridge_id=001788FFFE3A2C18` | Hue serial number |
+| Application key | hex32+ | — | `username=eDOvxk-...` | tronqué à 8 chars + `...` dans les logs |
+| Pre-shared key | — | — | `clientkey=[redacted]` | jamais loggué en clair, valeur sensible (PSK DTLS) |
+| Group / room ID | string | — | `group_id=3` | CLIP v1 = entier, v2 = UUID |
+| HTTP status | `hr` | entier | `hr=200`, `hr=401` | code retour HTTP |
+| Couleur CIE xy | `xy` | 4 décimales | `xy=0.4521,0.3895` | espace colorimétrique Hue |
+| Luminance | `bri` | entier 0-254 | `bri=200` | CLIP v1 brightness |
+| Couleur RGB | `rgb` | 3 octets | `rgb=180,60,240` | input app, converti en xy avant push |
 
 ---
 
@@ -199,6 +225,9 @@ Ne pas en ajouter sans raison. Mapping étape → source :
 | Recap final | `DONE` |
 | App lifecycle | `APP`, `STATUS`, `CRASH` |
 | Settings | `SETTINGS`, `SET.*` |
+| Capture écran (ambient lighting) | `SCREEN` |
+| Driver Hue (discovery, pairing, REST control) | `HUE` |
+| AmbientEngine (capture → analyse → push) | `AMBIENT` |
 
 ---
 
@@ -568,6 +597,197 @@ HH:mm:ss.fff [LATENCY] audio={X.X}s hotkey={X}ms vad={X}ms whisper={X}ms llm={X}
 
 ---
 
+## Pipeline ambient lighting
+
+Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active la fonction depuis le panneau Playground (J1, période d'investigation) ou plus tard depuis le toggle Settings (J3+). Les étapes côté capture écran sont décrites ici ; les étapes analyse image et pilotage LED s'ajouteront au fil des jalons.
+
+### 11. Capture écran
+
+**Fichier** : `src/Deckle.Vision/ScreenCaptureService.cs` (lifecycle, FrameArrived dispatch, HDR detection, MinUpdateInterval), `src/Deckle.Vision/ScreenCaptureInterop.cs` (P/Invoke D3D11 + IGraphicsCaptureItemInterop COM, DXGI HDR factory walk), `src/Deckle.Vision/FrameSampler.cs` (GPU downsample via GenerateMips, CPU readback, tone-map).
+
+**Mesures disponibles**
+
+- `[logué]` taille frame initiale au Start (W×H)
+- `[logué]` format pixel utilisé (DirectXPixelFormat — BGRA8 en SDR, R16G16B16A16Float en HDR)
+- `[logué]` flag HDR détecté (on/off depuis `IDXGIOutput6::GetDesc1`)
+- `[logué]` peak luminance reporté par l'écran (nits)
+- `[logué]` cadence cible `min_update_ms` (66 ms = 15 Hz par défaut, throttle côté session via `GraphicsCaptureSession.MinUpdateInterval`)
+- `[logué]` nombre de buffers dans le pool
+- `[logué]` HMONITOR ciblé (hex)
+- `[logué]` HRESULT D3D11CreateDevice (Verbose si succès, Error si échec)
+- `[logué]` HRESULT CreateForMonitor (Verbose si succès, Error si échec)
+- `[logué]` compte total de frames au Stop
+- `[logué]` durée de session
+- `[logué]` FPS moyen sur la session (frames / durée)
+- `[logué]` FrameSampler init : taille grille (cols×rows), niveau de mip cible, mode tone-map (`none` ou `scrgb_to_srgb`)
+- `[logué]` FrameSampler map failure (HRESULT) — Warning si lecture staging texture échoue
+- `[à instrumenter]` taille frame courante au resize (resize en cours d'exécution si l'écran change)
+- `[à instrumenter]` FPS instantané (fenêtre glissante 1 s) — émis par le consumer Playground côté UI, pas dans le service
+- `[à instrumenter]` cadence push réelle vs cible (mesure à valider quand le pipeline tourne longtemps)
+
+**Gabarit standard**
+
+```
+Info      SCREEN  Screen capture starting
+Verbose   SCREEN  start | hmon=0x{X} | size={W}x{H} | format={pixelFormat} | hdr={on|off} | peak_lum={X:F0} | bufs={n} | min_update_ms={n}
+Success   SCREEN  Screen capture started
+Verbose   SCREEN  sampler init | grid={W}x{H} | mip={n} | tone_map={none|scrgb_to_srgb} | peak_lum={X:F0}
+Warning   SCREEN  sampler map fail | hr=0x{X}
+Info      SCREEN  Screen capture stopped ({frames} frames in {duration_sec:F1} s)
+Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
+```
+
+**Erreurs et sévérités**
+
+| Condition | Sévérité | UserFeedback | Notes |
+|---|---|---|---|
+| `GraphicsCaptureSession.IsSupported()` false | Error | ➕ Critical (vague Ambient) | OS trop ancien (< Windows 10 1809) |
+| D3D11CreateDevice échoue (HRESULT) | Error | ➕ Critical (vague Ambient) | Pas de GPU compatible / driver KO |
+| `MonitorFromPoint` retourne `IntPtr.Zero` | Error | ➕ Critical (vague Ambient) | Pas d'écran primaire détecté (cas pathologique) |
+| `CreateForMonitor` échoue (HRESULT) | Error | ➕ Critical (vague Ambient) | API capture refuse le moniteur |
+| `FrameArrived` callback exception | Warning | non (frame ignorée, session continue) | logged Verbose avec stack |
+| `MinUpdateInterval` setter exception | Verbose | non | pré-Win11 22H2 ignore le setter — pipeline tourne juste au native rate |
+| Resize en cours (`ContentSize` change) | Verbose | non | non-traité en J3 step 2, log seul |
+| `FrameSampler.Map` HRESULT non-zero | Warning | non (frame ignorée) | typique : driver flush en cours, frame suivante retry |
+| `FrameSampler.Process` exception générique | Warning | non (frame ignorée) | catch-all autour du chemin D3D11 |
+
+**Vocabulaire de l'entête start**
+
+- `size={W}x{H}` — résolution du moniteur source en pixels (entier)
+- `format={enum}` — `B8G8R8A8UIntNormalized` (SDR) ou `R16G16B16A16Float` (HDR)
+- `hdr={on|off}` — état de la sortie HDR du moniteur primaire au moment du Start
+- `peak_lum={X:F0}` — peak luminance en nits (1 décimale arrondie ; 80 par défaut SDR)
+- `bufs={n}` — taille du pool de frames (2 par défaut)
+- `min_update_ms={n}` — cadence cible côté session (66 ms = 15 Hz, Windows throttle `FrameArrived` au niveau de `GraphicsCaptureSession.MinUpdateInterval`)
+
+**Vocabulaire FrameSampler**
+
+- `grid={W}x{H}` — dimensions de la grille échantillonnée (≈ 30×17 par défaut, varie selon l'aspect ratio source)
+- `mip={n}` — niveau de mip choisi côté GPU pour atteindre la grille cible (typ. 6-7)
+- `tone_map={enum}` — `none` (SDR BGRA8 path) ou `scrgb_to_srgb` (HDR FP16 → 8-bit sRGB)
+
+**Threading**
+
+Le `FrameArrived` event est levé sur le worker thread interne du `Direct3D11CaptureFramePool` (parce qu'on utilise `CreateFreeThreaded`, pas `Create`). Le service relaye l'event vers ses consommateurs sur ce même thread — c'est au consommateur de marshaler vers son thread UI s'il en a besoin (cas typique : le panneau Playground utilise `DispatcherQueue.TryEnqueue` pour rafraîchir les labels).
+
+**Disposable**
+
+`ScreenCaptureService` est `IDisposable`. `Dispose()` est idempotent et appelle `Stop()` si la session est encore active. Le consommateur est responsable du `Dispose()` quand il n'a plus besoin du service — typiquement à la fermeture de la fenêtre Playground ou à l'arrêt explicite de l'utilisateur.
+
+### 12. Driver Hue (REST direct)
+
+**Fichier** : `src/Deckle.Lighting/Hue/HueDiscovery.cs` (cloud lookup `discovery.meethue.com`), `src/Deckle.Lighting/Hue/HueBridgeClient.cs` (HTTPS bypass cert + pairing CLIP v1 + control), `src/Deckle.Lighting/Hue/HueRestLightOutput.cs` (implémentation `ILightOutput`).
+
+J2 emprunte délibérément la voie REST CLIP v1 plafonnée à ~10-20 Hz, pas la voie Entertainment v2 DTLS-PSK (cf. `docs/research--hue-entertainment-v2--2026-05-15.md`). Le pipeline reste 100 % C#, zéro dépendance native, zéro NuGet tier — la cadence est suffisante pour un mode ambient avec smoothing au-dessus. La voie Entertainment v2 est archivée pour plus tard si la perception le justifie ; le swap se fera derrière l'abstraction `ILightOutput` sans toucher au reste du pipeline.
+
+**Mesures disponibles**
+
+- `[logué]` lookup discovery cloud start + N bridges retournés
+- `[logué]` bridge_id + bridge_ip pour chaque bridge découvert
+- `[logué]` pairing start + waiting tick (1 / sec pendant 30 s)
+- `[logué]` pairing success : bridge_id, username tronqué (8 chars + `...`), clientkey `[redacted]`
+- `[logué]` pairing failure : timeout (30 s écoulées sans pression) ou refus bridge
+- `[logué]` groups list start + N groups + leur id/name
+- `[logué]` set colour : group_id + rgb d'origine + xy + bri calculés
+- `[à instrumenter]` cadence réelle d'envoi (push/s) quand le driver tournera derrière le pipeline J3
+- `[à instrumenter]` round-trip latency (mesure ping-pong sur PUT) pour diagnostic bridge surchargé
+
+**Gabarit standard**
+
+```
+Info      HUE  Looking up Hue bridges
+Verbose   HUE  discover start | source=cloud | url=https://discovery.meethue.com/
+Success   HUE  Found {N} Hue bridge(s)
+Verbose   HUE  discover result | bridge_id={id} | bridge_ip={ip}
+Info      HUE  Pairing started — press the link button on the bridge
+Verbose   HUE  pair start | bridge_ip={ip} | timeout_sec=30
+Success   HUE  Bridge paired ({bridge_id})
+Verbose   HUE  pair result | bridge_id={id} | username={head8}... | clientkey=[redacted]
+Info      HUE  Listing groups
+Verbose   HUE  groups list | bridge_id={id} | count={N}
+Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri} | tt_ds={n}
+Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | on=false | tt_ds={n}
+```
+
+`tt_ds` is the Hue `transitiontime` parameter in deciseconds (1 = 100 ms). Forced to 1 by the ambient driver to override the bridge factory default of 4 (= 400 ms), which would lag the lamp behind the screen on every push.
+
+**Erreurs et sévérités**
+
+| Condition | Sévérité | UserFeedback | Notes |
+|---|---|---|---|
+| Cloud discovery timeout / DNS fail | Warning | non (fallback manual IP) | retry possible |
+| Cloud discovery retourne 0 bridge | Info | non (mais surface dans Playground) | utilisateur entre IP manuellement |
+| Bridge IP injoignable (TCP refused / timeout) | Error | ➕ Critical (vague Ambient) | bridge éteint ou IP fausse |
+| Bridge cert auto-signé refus (avant bypass) | n/a | n/a | bypass configuré en dur, ne devrait pas remonter |
+| Pair `error 101` (link not pressed) | Verbose | non (status text mis à jour) | normal pendant les 30 s d'attente |
+| Pair timeout 30 s | Warning | ➕ Warning (vague Ambient) | utilisateur a oublié de presser |
+| Pair bridge refus autre que 101 | Error | ➕ Critical (vague Ambient) | rare (bridge saturé d'apps connues) |
+| HTTP 401/403 sur control | Error | ➕ Critical (vague Ambient) | username révoqué côté bridge |
+| HTTP 5xx sur control | Warning | non (push dropped, session continue) | transient |
+| Group id sélectionné disparait | Warning | ➕ Warning (vague Ambient) | groupe supprimé côté Hue app |
+
+**Threading**
+
+`HueBridgeClient` expose des méthodes `async Task<...>`. Discovery + pairing + control sont async sur le pool d'I/O .NET — pas de marshalling UI nécessaire côté driver. Le consommateur (Playground ou plus tard l'`AmbientEngine`) appelle ces méthodes depuis n'importe quel thread, en attendant le résultat ; la couche UI marshale avec `DispatcherQueue.TryEnqueue` quand elle reflète l'état dans des controls XAML.
+
+**Secret**
+
+Le `clientkey` retourné par le bridge au pairing est une PSK qui servira au tunnel DTLS Entertainment v2 si jamais on l'active. Il est traité comme un secret : jamais affiché en clair dans la LogWindow (ni Verbose ni autre niveau), jamais persisté en JSON non chiffré sans avertissement. Le `username` (= application key REST) est moins sensible mais reste tronqué à 8 chars + `...` dans les logs pour minimiser l'exposition dans des screenshots de support.
+
+**Disposable**
+
+`HueRestLightOutput` est `IAsyncDisposable`. La fermeture libère l'`HttpClient` interne ; le `username` reste valide côté bridge tant que l'utilisateur ne le révoque pas manuellement via l'app Hue. La rétention du `username` entre sessions est une décision du consommateur (Playground = transient, AmbientSettings = persistant).
+
+### 13. AmbientEngine (pipeline orchestration)
+
+**Fichier** : `src/Deckle.Lighting.Ambient/AmbientEngine.cs`.
+
+L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenCaptureService` + analyse via `Deckle.Vision.FrameSampler`) à l'aval (driver LED via `Deckle.Lighting.ILightOutput`). Il ne sait pas avec quel matériel il parle — l'`ILightOutput` est agnostique — et il ne fait pas d'analyse pixel par lui-même : `FrameSampler` produit en permanence un `SampledFrame.Average` que la boucle de l'engine consomme. En J3 step 2 l'engine ne propose qu'un seul mode (`analysis`) ; le mock HSV de J3 step 1 est retiré, le test isolation bridge passe désormais par les boutons Red/Green/Blue/White/Off du Playground.
+
+**Mesures disponibles**
+
+- `[logué]` start / stop de la session (Info + Verbose miroir avec config)
+- `[logué]` config sampler au start (grille, état HDR)
+- `[logué]` couleur poussée à chaque tick (Verbose, mode + RGB + flag dropped)
+- `[logué]` total `pushed` / `dropped` à la fin de session (Verbose stop)
+- `[à instrumenter]` latence push (entre frame analysée et SetColorAsync renvoyé)
+- `[à instrumenter]` ΔRGB mesuré (utile pour calibrer le seuil early-exit en J5)
+
+**Gabarit standard**
+
+```
+Info      AMBIENT  Ambient pipeline started
+Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
+Info      AMBIENT  Ambient pipeline stopped
+Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1} | pushed={n} | dropped={n}
+Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | off={true|false} | dropped={true|false}
+```
+
+**Vocabulaire AmbientEngine**
+
+- `source={capture status}` — `running` ou `stopped` au moment du start (l'engine démarre la capture si stopped)
+- `output={driver type}` — nom de la classe ILightOutput (typ. `HueRestLightOutput`)
+- `push_hz={N}` — cadence cible de la boucle push (15 par défaut, alignée avec MinUpdateInterval)
+- `sampler_grid={W}x{H}` — dimensions de la grille du FrameSampler au moment du start
+- `hdr={on|off}` — état HDR négocié par la capture (miroir du SCREEN log)
+- `off={true|false}` — true si l'average était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
+- `dropped={true|false}` — true si l'early-exit a évalué Δ < seuil et sauté le push
+- `pushed`/`dropped` au stop — compteurs cumulés sur la session
+
+**Erreurs et sévérités**
+
+| Condition | Sévérité | UserFeedback | Notes |
+|---|---|---|---|
+| Output `ConnectAsync` échoue au start | Error | ➕ Critical (vague Ambient) | bridge déco / token KO |
+| `SetColorAsync` throw (transient HTTP) | Warning | non (push dropped) | retry au tick suivant |
+| Analysis loop crash | Error | ➕ Critical (vague Ambient) | engine s'arrête, statut UI mis à jour |
+
+**Threading**
+
+L'engine démarre une boucle async (`Task.Run`) qui lit `_sampler.LatestSample` (volatile read), évalue l'early-exit, et appelle `SetColorAsync` si pertinent. La capture (`FrameArrived` sur worker thread) alimente le sampler en parallèle ; la synchronisation est portée par `Volatile.Read/Write` côté `_latestSample` — pas de lock partagé entre la boucle push et la boucle capture.
+
+---
+
 ## Tableau synthétique des erreurs et surface UX
 
 Récap croisé : quelle erreur, où, quelle sévérité, quel message utilisateur
@@ -589,6 +809,9 @@ Récap croisé : quelle erreur, où, quelle sévérité, quel message utilisateu
 | 12 | Hotkey collision err 1409 | Hotkey register | Error | ➕ Critical (vague 3) |
 | 13 | Repetition loop | Transcribe | Warning | ✅ Narrative |
 | 14 | No speech detected | VAD | Info | ✅ Narrative |
+| 15 | OS too old (no `GraphicsCaptureSession`) | Screen capture | Error | ➕ Critical (vague Ambient) |
+| 16 | D3D11 device creation fails | Screen capture | Error | ➕ Critical (vague Ambient) |
+| 17 | `CreateForMonitor` fails (HRESULT) | Screen capture | Error | ➕ Critical (vague Ambient) |
 
 ---
 

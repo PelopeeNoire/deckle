@@ -58,6 +58,12 @@
                         <FontIcon Glyph="&#xF6C7;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Uid="SettingsNavAmbient"
+                                    Tag="Deckle.Lighting.Ambient.AmbientPage, Deckle.Lighting.Ambient">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE781;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavDiagnostics"
                                     Tag="Deckle.Settings.DiagnosticsPage">
                     <NavigationViewItem.Icon>
