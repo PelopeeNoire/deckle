@@ -74,4 +74,58 @@ public static class ColorSpace
             ? 12.92f * x
             : 1.055f * MathF.Pow(x, 1f / 2.4f) - 0.055f;
     }
+
+    // sRGB EOTF — the reciprocal of LinearToSrgb. Same piecewise toe
+    // around the 0.04045 seam. Used by the HDR tone-mapping path in
+    // FrameSampler to convert FP16 scRGB samples back to linear sRGB
+    // before averaging in linear light.
+    //
+    // Negative inputs are mirrored through the curve, matching the
+    // LinearToSrgb convention so that round-trips (LinearToSrgb →
+    // SrgbToLinear or the reverse) are numerically stable for the
+    // small-magnitude negatives that scRGB allows.
+    public static float SrgbToLinear(float x)
+    {
+        if (x < 0f) return -SrgbToLinear(-x);
+        return x <= 0.04045f
+            ? x / 12.92f
+            : MathF.Pow((x + 0.055f) / 1.055f, 2.4f);
+    }
+
+    // scRGB FP16 → sRGB 8-bit, with peak-luminance normalisation.
+    //
+    // scRGB (the colour space `Direct3D11CaptureFramePool` returns when
+    // the OS is in HDR mode) is a linear-light, floating-point space
+    // where (1, 1, 1) maps to the SDR reference white (≈ 80 nits) and
+    // values above 1 represent HDR highlights up to peakWhite nits.
+    // Out-of-gamut negatives (Rec.2020 / DCI-P3 primaries beyond sRGB)
+    // are allowed and are clipped below.
+    //
+    // The tone-map here is intentionally simple — clip + rescale + sRGB
+    // gamma. peakWhite is the display's reported MaxLuminance from
+    // IDXGIOutput6::GetDesc1, expressed in nits. Each channel is clipped
+    // to [0, peakWhite/80] (so SDR content reaches 255 at scRGB=1.0,
+    // HDR highlights at scRGB > 1.0 compress into the upper range), then
+    // sRGB-encoded with LinearToSrgb. A perceptual operator (Reinhard,
+    // ACES) will arrive at J7 if the simple clip proves too aggressive
+    // on bright highlights — V0 is "don't be delaved like Hue Sync",
+    // which the linear clip already achieves.
+    public static Color ScRgbToSrgb(float r, float g, float b, float peakWhite)
+    {
+        // peakWhite is in nits ; scRGB's reference is 80 nits. The scale
+        // factor converts the display's max nits into the scRGB-domain
+        // value that should map to 255.
+        float scale = MathF.Max(peakWhite, 80f) / 80f;
+        float invScale = 1f / scale;
+
+        float rN = Math.Clamp(r * invScale, 0f, 1f);
+        float gN = Math.Clamp(g * invScale, 0f, 1f);
+        float bN = Math.Clamp(b * invScale, 0f, 1f);
+
+        return Color.FromArgb(
+            0xFF,
+            (byte)MathF.Round(LinearToSrgb(rN) * 255f),
+            (byte)MathF.Round(LinearToSrgb(gN) * 255f),
+            (byte)MathF.Round(LinearToSrgb(bN) * 255f));
+    }
 }

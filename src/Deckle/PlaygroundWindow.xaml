@@ -16,6 +16,7 @@
           IsTabStop="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -29,46 +30,50 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Top-level navigation. Same pattern as SettingsWindow — Auto
-             pane mode (Left ≥1008, LeftCompact 640-1008, Minimal <640),
-             back button + system Settings entry suppressed. Two sections:
-                 • HUD            — existing two-column layout (preview +
-                                    tuning) ; selected by default.
-                 • Ambient light  — dedicated full-width page for the
-                                    screen capture pipeline (J1) and the
-                                    visualisations that land in J4+.
-             Pages are inline (Visibility toggle), not Frame-navigated —
-             both surfaces are small enough that loading them lazily would
-             add complexity without payoff. -->
-        <NavigationView Grid.Row="1"
-                        x:Name="PlaygroundNav"
-                        IsBackButtonVisible="Collapsed"
-                        IsSettingsVisible="False"
-                        SelectionChanged="OnPlaygroundNavSelectionChanged">
-            <NavigationView.MenuItems>
-                <!-- Glyph E916 (Stopwatch) — the HUD's anchor visual is the
-                     chrono stroke, so the timer icon reads naturally. -->
-                <NavigationViewItem x:Name="NavItemHud"
-                                    Content="HUD"
-                                    Tag="hud"
-                                    IsSelected="True">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE916;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <!-- Glyph E781 (Lightbulb) — matches the Ambient entry in
-                     SettingsWindow's NavView for visual consistency across
-                     the two windows. -->
-                <NavigationViewItem x:Name="NavItemAmbient"
-                                    Content="Ambient lighting"
-                                    Tag="ambient">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE781;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-            </NavigationView.MenuItems>
+        <!-- Top-level subsystem selector. Two cards (HUD + Ambient
+             lighting), mutually exclusive via code-behind. Replaces the
+             prior NavigationView : flatter, more visual, easier to scan
+             when the window is wide. Each card stretches inside its
+             column ; equal-width split (* / *) keeps them visually
+             symmetric whatever the window size. -->
+        <Grid Grid.Row="1"
+              Margin="32,16,32,8"
+              ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <ToggleButton Grid.Column="0"
+                          x:Name="HudSubsystemCard"
+                          IsChecked="True"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Center"
+                          MinHeight="56"
+                          Padding="16,12"
+                          Checked="OnSubsystemCardChecked"
+                          Unchecked="OnSubsystemCardUnchecked">
+                <TextBlock Text="HUD"
+                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            </ToggleButton>
+            <ToggleButton Grid.Column="1"
+                          x:Name="AmbientSubsystemCard"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Center"
+                          MinHeight="56"
+                          Padding="16,12"
+                          Checked="OnSubsystemCardChecked"
+                          Unchecked="OnSubsystemCardUnchecked">
+                <TextBlock Text="Ambient lighting"
+                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            </ToggleButton>
+        </Grid>
 
-            <Grid x:Name="PageContent">
+        <!-- Page content area. Houses HudPage and AmbientPage ; only
+             one is Visible at a time, gated by the subsystem cards
+             above. Visibility-toggled rather than Frame-navigated —
+             both pages are small enough that lazy load would add
+             complexity without payoff. -->
+        <Grid Grid.Row="2" x:Name="PageContent">
 
                 <!-- ── HUD page ──────────────────────────────────────────
                      Existing two-column layout: preview (Col 0) + tuning
@@ -268,35 +273,88 @@
                 </Grid>
 
                 <!-- ── Ambient lighting page ─────────────────────────────
-                     Dedicated full-width surface for the ambient lighting
-                     pipeline. J1 only ships the screen capture pump (Start
-                     / Stop + frames counter + FPS). Subsequent milestones
-                     (J4+) fill the lower area with downsample previews,
-                     extracted zone colours, and animation tunables ; this
-                     layout reserves the room without requiring re-org.
+                     Two-column layout mirroring the HUD page convention :
+                     preview on the left (the FrameSampler's grid of
+                     averaged pixels, mirrors the source screen aspect),
+                     controls on the right (Screen capture → Hue →
+                     Pipeline, top-down) in a scrollable column.
 
-                     ScrollViewer wraps the StackPanel so the controls
-                     remain reachable on a narrow Playground window ; the
-                     400 dip MaxWidth on the description matches the HUD
-                     page's typography contract. -->
+                     Col 0 (preview) : Width="*" MinWidth=480 — grows
+                                       with the window, absorbs the slack
+                                       past the controls column cap.
+                     Col 1 (controls): Width="Auto" MaxWidth=480 — capped
+                                       so the cards stay readable without
+                                       dominating wide windows. -->
                 <Grid x:Name="AmbientPage" Visibility="Collapsed">
-                    <ScrollViewer Padding="32"
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="480" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Col 0 — preview stage. Houses the FrameSampler
+                         output : a grid of small rectangles laid out
+                         in source-screen aspect ratio, each filled
+                         with the colour averaged over the corresponding
+                         downsampled cell. LayerFill so it reads as a
+                         recessed stage. The empty-state StackPanel is
+                         shown until the pipeline runs ; AmbientPreview-
+                         Grid is built and populated in code-behind once
+                         the sampler reports its dimensions. -->
+                    <Border Grid.Column="0"
+                            x:Name="AmbientPreviewBorder"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                            Margin="32,24,16,32"
+                            Padding="24">
+                        <Grid HorizontalAlignment="Center"
+                              VerticalAlignment="Center">
+                            <StackPanel x:Name="AmbientPreviewEmptyState"
+                                        Spacing="8"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="Capture preview"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="Start the pipeline to see the sampled grid of pixels mirroring the screen."
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           HorizontalAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           MaxWidth="440"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                            <Grid x:Name="AmbientPreviewGrid"
+                                  Visibility="Collapsed"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Col 1 — controls. ScrollViewer keeps the cards
+                         reachable on short windows ; MaxWidth caps the
+                         column so the preview absorbs the slack at
+                         wide widths. Order is Screen capture → Hue →
+                         Pipeline, top-down. -->
+                    <ScrollViewer Grid.Column="1"
+                                  MinWidth="380"
+                                  MaxWidth="480"
+                                  Padding="0,24,32,32"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel Spacing="24"
-                                    MaxWidth="980"
-                                    HorizontalAlignment="Left">
+                        <StackPanel Spacing="20">
 
                             <!-- Page title block. TitleLargeTextBlockStyle
                                  matches the H1 in Settings pages. -->
                             <StackPanel Spacing="4">
                                 <TextBlock Text="Ambient lighting"
                                            Style="{ThemeResource TitleLargeTextBlockStyle}" />
-                                <TextBlock Text="Screen capture and downstream colour pipeline. Used to validate the capture pump end-to-end before wiring up the Hue driver and the visualisations."
+                                <TextBlock Text="Screen capture, Hue bridge, and the analysis pipeline that pushes the averaged screen colour to your lights."
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextWrapping="Wrap"
-                                           MaxWidth="640" />
+                                           TextWrapping="Wrap" />
                             </StackPanel>
 
                             <!-- Screen capture controls card. AccentButtonStyle
@@ -617,39 +675,9 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
-
-                            <!-- Visualisations placeholder. Reserves the
-                                 lower half of the page for J4+ surfaces
-                                 (downsampled grid preview, dominant colour
-                                 extraction, zone overlays). LayerFill so it
-                                 reads as a recessed slot rather than a
-                                 sibling card. -->
-                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{ThemeResource ControlCornerRadius}"
-                                    Padding="32"
-                                    MinHeight="240">
-                                <StackPanel HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            Spacing="8">
-                                    <TextBlock Text="Visualisations land here later"
-                                               Style="{ThemeResource BodyStrongTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                               HorizontalAlignment="Center" />
-                                    <TextBlock Text="Downsampled grid preview, dominant colour extraction, zone overlays — planned for J4+."
-                                               Style="{ThemeResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                               HorizontalAlignment="Center"
-                                               TextWrapping="Wrap"
-                                               MaxWidth="440"
-                                               TextAlignment="Center" />
-                                </StackPanel>
-                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
             </Grid>
-        </NavigationView>
     </Grid>
 </Window>

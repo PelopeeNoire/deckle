@@ -603,12 +603,15 @@ Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active
 
 ### 11. Capture écran
 
-**Fichier** : `src/Deckle.Vision/ScreenCaptureService.cs` (lifecycle, FrameArrived dispatch), `src/Deckle.Vision/ScreenCaptureInterop.cs` (P/Invoke D3D11 + IGraphicsCaptureItemInterop COM).
+**Fichier** : `src/Deckle.Vision/ScreenCaptureService.cs` (lifecycle, FrameArrived dispatch, HDR detection, MinUpdateInterval), `src/Deckle.Vision/ScreenCaptureInterop.cs` (P/Invoke D3D11 + IGraphicsCaptureItemInterop COM, DXGI HDR factory walk), `src/Deckle.Vision/FrameSampler.cs` (GPU downsample via GenerateMips, CPU readback, tone-map).
 
 **Mesures disponibles**
 
 - `[logué]` taille frame initiale au Start (W×H)
-- `[logué]` format pixel utilisé (DirectXPixelFormat)
+- `[logué]` format pixel utilisé (DirectXPixelFormat — BGRA8 en SDR, R16G16B16A16Float en HDR)
+- `[logué]` flag HDR détecté (on/off depuis `IDXGIOutput6::GetDesc1`)
+- `[logué]` peak luminance reporté par l'écran (nits)
+- `[logué]` cadence cible `min_update_ms` (66 ms = 15 Hz par défaut)
 - `[logué]` nombre de buffers dans le pool
 - `[logué]` HMONITOR ciblé (hex)
 - `[logué]` HRESULT D3D11CreateDevice (Verbose si succès, Error si échec)
@@ -616,16 +619,20 @@ Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active
 - `[logué]` compte total de frames au Stop
 - `[logué]` durée de session
 - `[logué]` FPS moyen sur la session (frames / durée)
+- `[logué]` FrameSampler init : taille grille (cols×rows), niveau de mip cible, mode tone-map (`none` ou `scrgb_to_srgb`)
+- `[logué]` FrameSampler map failure (HRESULT) — Warning si lecture staging texture échoue
 - `[à instrumenter]` taille frame courante au resize (resize en cours d'exécution si l'écran change)
 - `[à instrumenter]` FPS instantané (fenêtre glissante 1 s) — émis par le consumer Playground côté UI, pas dans le service
-- `[à instrumenter]` flag HDR (présent sur Windows 11 24H2+, non utilisé tant qu'on reste en SDR B8G8R8A8 ; arrivera en J7)
+- `[à instrumenter]` cadence push réelle vs cible (mesure à valider quand le pipeline tourne longtemps)
 
 **Gabarit standard**
 
 ```
 Info      SCREEN  Screen capture starting
-Verbose   SCREEN  start | hmon=0x{X} | size={W}x{H} | format={pixelFormat} | bufs={n}
+Verbose   SCREEN  start | hmon=0x{X} | size={W}x{H} | format={pixelFormat} | hdr={on|off} | peak_lum={X:F0} | bufs={n} | min_update_ms={n}
 Success   SCREEN  Screen capture started
+Verbose   SCREEN  sampler init | grid={W}x{H} | mip={n} | tone_map={none|scrgb_to_srgb} | peak_lum={X:F0}
+Warning   SCREEN  sampler map fail | hr=0x{X}
 Info      SCREEN  Screen capture stopped ({frames} frames in {duration_sec:F1} s)
 Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
 ```
@@ -639,7 +646,25 @@ Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
 | `MonitorFromPoint` retourne `IntPtr.Zero` | Error | ➕ Critical (vague Ambient) | Pas d'écran primaire détecté (cas pathologique) |
 | `CreateForMonitor` échoue (HRESULT) | Error | ➕ Critical (vague Ambient) | API capture refuse le moniteur |
 | `FrameArrived` callback exception | Warning | non (frame ignorée, session continue) | logged Verbose avec stack |
-| Resize en cours (`ContentSize` change) | Verbose | non | non-traité en J1, log seul |
+| `MinUpdateInterval` setter exception | Verbose | non | OS pré-19041 ignore le setter — pipeline tourne juste plus vite que cible |
+| Resize en cours (`ContentSize` change) | Verbose | non | non-traité en J3 step 2, log seul |
+| `FrameSampler.Map` HRESULT non-zero | Warning | non (frame ignorée) | typique : driver flush en cours, frame suivante retry |
+| `FrameSampler.Process` exception générique | Warning | non (frame ignorée) | catch-all autour du chemin D3D11 |
+
+**Vocabulaire de l'entête start**
+
+- `size={W}x{H}` — résolution du moniteur source en pixels (entier)
+- `format={enum}` — `B8G8R8A8UIntNormalized` (SDR) ou `R16G16B16A16Float` (HDR)
+- `hdr={on|off}` — état de la sortie HDR du moniteur primaire au moment du Start
+- `peak_lum={X:F0}` — peak luminance en nits (1 décimale arrondie ; 80 par défaut SDR)
+- `bufs={n}` — taille du pool de frames (2 par défaut)
+- `min_update_ms={n}` — cadence cible côté Windows (66 ms = 15 Hz)
+
+**Vocabulaire FrameSampler**
+
+- `grid={W}x{H}` — dimensions de la grille échantillonnée (≈ 30×17 par défaut, varie selon l'aspect ratio source)
+- `mip={n}` — niveau de mip choisi côté GPU pour atteindre la grille cible (typ. 6-7)
+- `tone_map={enum}` — `none` (SDR BGRA8 path) ou `scrgb_to_srgb` (HDR FP16 → 8-bit sRGB)
 
 **Threading**
 
@@ -714,25 +739,36 @@ Le `clientkey` retourné par le bridge au pairing est une PSK qui servira au tun
 
 **Fichier** : `src/Deckle.Lighting.Ambient/AmbientEngine.cs`.
 
-L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenCaptureService`) à l'aval (driver LED via `Deckle.Lighting.ILightOutput`). Il ne sait pas avec quel matériel il parle — l'`ILightOutput` est agnostique — et il ne fait pas d'analyse pixel par lui-même : ce travail vit dans des helpers réutilisables (J3 step 2 introduit `FrameSampler` pour l'analyse Direct3D11 staging texture + subsample). En J3 step 1 l'engine pousse une couleur mock en rotation HSV à 5 Hz pour valider la chaîne et la cadence ; l'analyse réelle prend le relais en J3 step 2 sans toucher au câblage event ↔ driver.
+L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenCaptureService` + analyse via `Deckle.Vision.FrameSampler`) à l'aval (driver LED via `Deckle.Lighting.ILightOutput`). Il ne sait pas avec quel matériel il parle — l'`ILightOutput` est agnostique — et il ne fait pas d'analyse pixel par lui-même : `FrameSampler` produit en permanence un `SampledFrame.Average` que la boucle de l'engine consomme. En J3 step 2 l'engine ne propose qu'un seul mode (`analysis`) ; le mock HSV de J3 step 1 est retiré, le test isolation bridge passe désormais par les boutons Red/Green/Blue/White/Off du Playground.
 
 **Mesures disponibles**
 
 - `[logué]` start / stop de la session (Info + Verbose miroir avec config)
-- `[logué]` couleur poussée (Verbose, sous-échantillonné via le throttle)
-- `[à instrumenter J3 step 2]` durée de l'analyse couleur par frame
-- `[à instrumenter J3 step 2]` frames droppées par le throttle (skip si push précédent < intervalle min)
-- `[à instrumenter]` latence push (entre frame capturée et SetColorAsync renvoyé)
+- `[logué]` config sampler au start (grille, état HDR)
+- `[logué]` couleur poussée à chaque tick (Verbose, mode + RGB + flag dropped)
+- `[logué]` total `pushed` / `dropped` à la fin de session (Verbose stop)
+- `[à instrumenter]` latence push (entre frame analysée et SetColorAsync renvoyé)
+- `[à instrumenter]` ΔRGB mesuré (utile pour calibrer le seuil early-exit en J5)
 
 **Gabarit standard**
 
 ```
 Info      AMBIENT  Ambient pipeline started
-Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N}
+Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
 Info      AMBIENT  Ambient pipeline stopped
-Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1}
-Verbose   AMBIENT  push | mode={mock|analysis} | rgb={r},{g},{b}
+Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1} | pushed={n} | dropped={n}
+Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | dropped={true|false}
 ```
+
+**Vocabulaire AmbientEngine**
+
+- `source={capture status}` — `running` ou `stopped` au moment du start (l'engine démarre la capture si stopped)
+- `output={driver type}` — nom de la classe ILightOutput (typ. `HueRestLightOutput`)
+- `push_hz={N}` — cadence cible de la boucle push (15 par défaut, alignée avec MinUpdateInterval)
+- `sampler_grid={W}x{H}` — dimensions de la grille du FrameSampler au moment du start
+- `hdr={on|off}` — état HDR négocié par la capture (miroir du SCREEN log)
+- `dropped={true|false}` — true si l'early-exit a évalué Δ < seuil et sauté le push
+- `pushed`/`dropped` au stop — compteurs cumulés sur la session
 
 **Erreurs et sévérités**
 
@@ -740,11 +776,11 @@ Verbose   AMBIENT  push | mode={mock|analysis} | rgb={r},{g},{b}
 |---|---|---|---|
 | Output `ConnectAsync` échoue au start | Error | ➕ Critical (vague Ambient) | bridge déco / token KO |
 | `SetColorAsync` throw (transient HTTP) | Warning | non (push dropped) | retry au tick suivant |
-| Mock / analysis loop crash | Error | ➕ Critical (vague Ambient) | engine s'arrête, statut UI mis à jour |
+| Analysis loop crash | Error | ➕ Critical (vague Ambient) | engine s'arrête, statut UI mis à jour |
 
 **Threading**
 
-L'engine démarre une boucle async (`Task.Run` ou await direct) qui appelle `SetColorAsync` à cadence régulière. La capture (`FrameArrived` sur worker thread) reste sa propre histoire ; en J3 step 2 elle alimentera un slot atomique de "dernière frame disponible" lu par la boucle d'analyse, sans synchronisation lourde.
+L'engine démarre une boucle async (`Task.Run`) qui lit `_sampler.LatestSample` (volatile read), évalue l'early-exit, et appelle `SetColorAsync` si pertinent. La capture (`FrameArrived` sur worker thread) alimente le sampler en parallèle ; la synchronisation est portée par `Volatile.Read/Write` côté `_latestSample` — pas de lock partagé entre la boucle push et la boucle capture.
 
 ---
 

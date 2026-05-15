@@ -220,4 +220,359 @@ internal static class ScreenCaptureInterop
             if (itemPtr != 0) Marshal.Release(itemPtr);
         }
     }
+
+    // ── D3D11 staging support (J3 step 2 — FrameSampler) ─────────────────────
+    //
+    // FrameSampler runs the GPU downsample path : take the captured texture,
+    // GenerateMips on an intermediate that has mip levels enabled, then
+    // CopySubresourceRegion the target mip into a CPU-readable staging
+    // texture. The CPU only ever reads the small mip (~500 pixels), never
+    // the 4K source — that's where the perf comes from.
+    //
+    // We don't declare full ComImport interfaces for ID3D11Device /
+    // ID3D11DeviceContext (60+ methods each), only stub vtable indices for
+    // the calls we need and call them via function pointers. This is the
+    // modern .NET 7+ pattern : less code than ComImport stubs, no
+    // dependency on a third-party D3D11 wrapper. The vtable indices are
+    // stable across Windows versions (D3D11 interfaces never change once
+    // shipped, by COM convention).
+    //
+    // Every helper that returns an unmanaged COM pointer requires the
+    // caller to Release it. Helpers that return managed wrappers
+    // (IDirect3DDevice etc.) follow the existing release convention.
+
+    // IDirect3DDxgiInterfaceAccess — the bridge between WinRT IDirect3D*
+    // wrappers and native DXGI/D3D11 interfaces. Every IDirect3DDevice and
+    // IDirect3DSurface implements it ; GetInterface returns the underlying
+    // ID3D11Device / ID3D11Texture2D for a requested IID.
+    [ComImport]
+    [Guid("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IDirect3DDxgiInterfaceAccess
+    {
+        [PreserveSig]
+        int GetInterface([In] in Guid iid, out nint result);
+    }
+
+    // Native D3D11 + DXGI interface IIDs. Used as QI targets through
+    // IDirect3DDxgiInterfaceAccess.GetInterface (D3D11) or
+    // IDXGIAdapter / IDXGIOutput chains (DXGI).
+    private static readonly Guid IID_ID3D11Device         = new("db6f6ddb-ac77-4e88-8253-819df9bbf140");
+    private static readonly Guid IID_ID3D11Texture2D      = new("6f15aaf2-d208-4e89-9ab4-489535d34f9c");
+    private static readonly Guid IID_IDXGIAdapter         = new("2411e7e1-12ac-4ccf-bd14-9798e8534dc0");
+    private static readonly Guid IID_IDXGIFactory6        = new("c1b6694f-ff09-44a9-b03c-77900a0a1d17");
+    private static readonly Guid IID_IDXGIOutput6         = new("068346e8-aaec-4b84-add7-137f513f77a1");
+
+    // Extracts the native ID3D11Device behind a WinRT IDirect3DDevice. The
+    // returned pointer is AddRef'd ; caller must Marshal.Release it.
+    public static nint GetD3D11Device(IDirect3DDevice device)
+    {
+        nint iUnk = Marshal.GetIUnknownForObject(device);
+        try
+        {
+            Guid iidAccess = new("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1");
+            int hr = Marshal.QueryInterface(iUnk, in iidAccess, out nint accessPtr);
+            Marshal.ThrowExceptionForHR(hr);
+            try
+            {
+                var access = (IDirect3DDxgiInterfaceAccess)Marshal.GetObjectForIUnknown(accessPtr);
+                hr = access.GetInterface(in IID_ID3D11Device, out nint d3d11Ptr);
+                Marshal.ThrowExceptionForHR(hr);
+                return d3d11Ptr;
+            }
+            finally
+            {
+                Marshal.Release(accessPtr);
+            }
+        }
+        finally
+        {
+            Marshal.Release(iUnk);
+        }
+    }
+
+    // Extracts the native ID3D11Texture2D behind a Direct3D11CaptureFrame's
+    // Surface. The returned pointer is AddRef'd ; caller must Marshal.Release
+    // it (typically inside the FrameArrived handler, paired with the frame's
+    // own Dispose).
+    public static nint GetD3D11Texture(IDirect3DSurface surface)
+    {
+        nint iUnk = Marshal.GetIUnknownForObject(surface);
+        try
+        {
+            Guid iidAccess = new("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1");
+            int hr = Marshal.QueryInterface(iUnk, in iidAccess, out nint accessPtr);
+            Marshal.ThrowExceptionForHR(hr);
+            try
+            {
+                var access = (IDirect3DDxgiInterfaceAccess)Marshal.GetObjectForIUnknown(accessPtr);
+                hr = access.GetInterface(in IID_ID3D11Texture2D, out nint texPtr);
+                Marshal.ThrowExceptionForHR(hr);
+                return texPtr;
+            }
+            finally
+            {
+                Marshal.Release(accessPtr);
+            }
+        }
+        finally
+        {
+            Marshal.Release(iUnk);
+        }
+    }
+
+    // ── HDR detection (IDXGIOutput6::GetDesc1) ───────────────────────────────
+    //
+    // Reads the primary monitor's colour space + peak luminance to decide
+    // whether to allocate the frame pool in R16G16B16A16Float (HDR / scRGB
+    // linear) or B8G8R8A8UNorm (SDR). DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+    // is HDR10 (PQ transfer) ; DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709 is
+    // scRGB linear — both indicate the OS is in HDR mode. peakLuminance is
+    // the display's reported max nits (typ. 400-1000 for HDR monitors,
+    // 0 or 80 for SDR).
+    //
+    // Returns (false, 80.0, sRGB) when no HDR signalling is detected, so the
+    // SDR tone-map path can use 80 nits as the reference white.
+
+    private const int DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709     = 0;  // sRGB
+    private const int DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709     = 1;  // scRGB
+    private const int DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020  = 12; // HDR10
+
+    private const uint DXGI_CREATE_FACTORY_DEBUG = 0x00000001;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct DXGI_OUTPUT_DESC1
+    {
+        // WCHAR DeviceName[32] — 64 bytes of fixed-width name. We treat
+        // it as a flat byte array via two ulong pairs for layout safety ;
+        // we never read the name here.
+        public ulong DeviceName0;
+        public ulong DeviceName1;
+        public ulong DeviceName2;
+        public ulong DeviceName3;
+        public ulong DeviceName4;
+        public ulong DeviceName5;
+        public ulong DeviceName6;
+        public ulong DeviceName7;
+
+        public int  DesktopLeft;
+        public int  DesktopTop;
+        public int  DesktopRight;
+        public int  DesktopBottom;
+        public int  AttachedToDesktop;       // BOOL
+        public int  Rotation;                // DXGI_MODE_ROTATION enum
+        public nint Monitor;                 // HMONITOR
+        public uint BitsPerColor;
+        public int  ColorSpace;              // DXGI_COLOR_SPACE_TYPE enum
+
+        public float RedPrimary0;
+        public float RedPrimary1;
+        public float GreenPrimary0;
+        public float GreenPrimary1;
+        public float BluePrimary0;
+        public float BluePrimary1;
+        public float WhitePoint0;
+        public float WhitePoint1;
+
+        public float MinLuminance;
+        public float MaxLuminance;
+        public float MaxFullFrameLuminance;
+    }
+
+    // CreateDXGIFactory2 entry point. Exported by dxgi.dll, available on
+    // every Win10+. The Flags parameter is 0 for production (debug factory
+    // not requested).
+    [DllImport("dxgi.dll", PreserveSig = false, ExactSpelling = true)]
+    private static extern void CreateDXGIFactory2(uint flags, [In] in Guid iid, out nint factory);
+
+    // Snapshot of the relevant HDR state for the primary monitor.
+    public readonly record struct HdrState(bool IsHdr, float PeakLuminance, int ColorSpace);
+
+    public static HdrState DetectHdrState(nint hmon)
+    {
+        // Default fallback when something goes wrong (no HDR monitor, no
+        // adapter found, etc.) : SDR with 80 nits as reference white.
+        const float SdrReferenceNits = 80f;
+        var fallback = new HdrState(false, SdrReferenceNits, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+
+        nint factoryPtr = 0;
+        try
+        {
+            try
+            {
+                CreateDXGIFactory2(0, in IID_IDXGIFactory6, out factoryPtr);
+            }
+            catch
+            {
+                return fallback;
+            }
+
+            // Walk adapters / outputs to find the one matching hmon.
+            // IDXGIFactory6::EnumAdapters lives at vtable slot 7 (after
+            // IUnknown's 3 + IDXGIObject's 4 = 7). IDXGIAdapter::EnumOutputs
+            // lives at vtable slot 7 as well.
+            unsafe
+            {
+                var factoryVtbl = *(nint**)factoryPtr;
+                var enumAdapters = (delegate* unmanaged<nint, uint, nint*, int>)factoryVtbl[7];
+
+                for (uint adapterIdx = 0; adapterIdx < 32; adapterIdx++)
+                {
+                    nint adapterPtr;
+                    int hr = enumAdapters(factoryPtr, adapterIdx, &adapterPtr);
+                    if (hr != 0 || adapterPtr == 0) break;
+
+                    try
+                    {
+                        var adapterVtbl = *(nint**)adapterPtr;
+                        var enumOutputs = (delegate* unmanaged<nint, uint, nint*, int>)adapterVtbl[7];
+
+                        for (uint outputIdx = 0; outputIdx < 16; outputIdx++)
+                        {
+                            nint outputPtr;
+                            hr = enumOutputs(adapterPtr, outputIdx, &outputPtr);
+                            if (hr != 0 || outputPtr == 0) break;
+
+                            try
+                            {
+                                // QI to IDXGIOutput6 to get GetDesc1.
+                                Guid iidOutput6 = IID_IDXGIOutput6;
+                                hr = Marshal.QueryInterface(outputPtr, in iidOutput6, out nint output6Ptr);
+                                if (hr != 0) continue;
+
+                                try
+                                {
+                                    // IDXGIOutput6::GetDesc1 is at vtable
+                                    // slot 27 (3 IUnknown + 4 IDXGIObject
+                                    // + 12 IDXGIOutput + 4 IDXGIOutput1
+                                    // + 1 IDXGIOutput2 + 1 IDXGIOutput3
+                                    // + 1 IDXGIOutput4 + 1 IDXGIOutput5
+                                    // = 27, GetDesc1 is the first method
+                                    // declared in IDXGIOutput6).
+                                    var output6Vtbl = *(nint**)output6Ptr;
+                                    var getDesc1 = (delegate* unmanaged<nint, DXGI_OUTPUT_DESC1*, int>)output6Vtbl[27];
+                                    DXGI_OUTPUT_DESC1 desc;
+                                    hr = getDesc1(output6Ptr, &desc);
+                                    if (hr != 0) continue;
+
+                                    if (desc.Monitor == hmon)
+                                    {
+                                        bool isHdr =
+                                            desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ||
+                                            desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+                                        float peak = desc.MaxLuminance > 0 ? desc.MaxLuminance : SdrReferenceNits;
+                                        return new HdrState(isHdr, peak, desc.ColorSpace);
+                                    }
+                                }
+                                finally
+                                {
+                                    Marshal.Release(output6Ptr);
+                                }
+                            }
+                            finally
+                            {
+                                Marshal.Release(outputPtr);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.Release(adapterPtr);
+                    }
+                }
+            }
+
+            return fallback;
+        }
+        finally
+        {
+            if (factoryPtr != 0) Marshal.Release(factoryPtr);
+        }
+    }
+
+    // ── D3D11 vtable indices (counted from IUnknown::QueryInterface = 0) ─────
+    //
+    // Pulled from d3d11.h. Stable per COM contract (interfaces never change
+    // shape once published). Exposed as constants so call sites read clearly.
+
+    internal static class D3D11Vtbl
+    {
+        // ID3D11Device methods (after IUnknown's 3).
+        public const int Device_CreateTexture2D            = 5;
+        public const int Device_CreateShaderResourceView   = 7;
+        public const int Device_GetImmediateContext        = 40;
+
+        // ID3D11DeviceContext methods (after IUnknown's 3 + ID3D11DeviceChild's 4).
+        public const int Context_Map                       = 14;
+        public const int Context_Unmap                     = 15;
+        public const int Context_CopySubresourceRegion     = 46;
+        public const int Context_CopyResource              = 47;
+        // GenerateMips is at slot 54 — after the Map/Unmap/Copy*/Update*/
+        // Clear* family. Trust the d3d11.h declaration order ; the slot
+        // is stable per COM contract.
+        public const int Context_GenerateMips              = 54;
+
+        // ID3D11Texture2D method (after IUnknown's 3 + ID3D11DeviceChild's 4
+        // + ID3D11Resource's 2).
+        public const int Texture2D_GetDesc                 = 10;
+    }
+
+    // ── D3D11 structs + constants ────────────────────────────────────────────
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct D3D11_TEXTURE2D_DESC
+    {
+        public uint Width;
+        public uint Height;
+        public uint MipLevels;
+        public uint ArraySize;
+        public uint Format;          // DXGI_FORMAT
+        public uint SampleDescCount;
+        public uint SampleDescQuality;
+        public uint Usage;           // D3D11_USAGE
+        public uint BindFlags;       // D3D11_BIND_FLAG
+        public uint CPUAccessFlags;  // D3D11_CPU_ACCESS_FLAG
+        public uint MiscFlags;       // D3D11_RESOURCE_MISC_FLAG
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct D3D11_BOX
+    {
+        public uint Left;
+        public uint Top;
+        public uint Front;
+        public uint Right;
+        public uint Bottom;
+        public uint Back;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct D3D11_MAPPED_SUBRESOURCE
+    {
+        public nint pData;
+        public uint RowPitch;
+        public uint DepthPitch;
+    }
+
+    // D3D11_USAGE
+    public const uint D3D11_USAGE_DEFAULT         = 0;
+    public const uint D3D11_USAGE_STAGING         = 3;
+
+    // D3D11_BIND_FLAG
+    public const uint D3D11_BIND_SHADER_RESOURCE  = 0x8;
+    public const uint D3D11_BIND_RENDER_TARGET    = 0x20;
+
+    // D3D11_CPU_ACCESS_FLAG
+    public const uint D3D11_CPU_ACCESS_WRITE      = 0x10000;
+    public const uint D3D11_CPU_ACCESS_READ       = 0x20000;
+
+    // D3D11_RESOURCE_MISC_FLAG
+    public const uint D3D11_RESOURCE_MISC_GENERATE_MIPS = 0x1;
+
+    // D3D11_MAP
+    public const uint D3D11_MAP_READ              = 1;
+
+    // DXGI_FORMAT
+    public const uint DXGI_FORMAT_B8G8R8A8_UNORM       = 87;
+    public const uint DXGI_FORMAT_R16G16B16A16_FLOAT   = 10;
 }

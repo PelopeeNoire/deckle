@@ -4,9 +4,11 @@ using System.Numerics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Graphics.Capture;
 using WinRT.Interop;
 using Deckle.Audio;
 using Deckle.Chrono.Hud;
@@ -174,7 +176,28 @@ public sealed partial class PlaygroundWindow : Window
     // _hueLightOutput so capture cadence and bridge auth are shared
     // with the standalone test cards. DisposeAsync is fire-and-forget
     // on Closing (best-effort cleanup, the loop cancels via its CTS).
+    //
+    // FrameSampler is built on the first Start pipeline click after
+    // _screenCapture has been started — we need its Device and
+    // ContentSize. The sampler lives for one pipeline session ; it's
+    // disposed when the user clicks Stop or closes the window.
+    //
+    // _pipelineStartedCapture tracks who turned on the capture so we
+    // can mirror the symmetry on Stop : if the pipeline started it
+    // (Louis clicked Start pipeline while capture was idle), the
+    // pipeline stops it too. If Louis had started capture manually
+    // before, we leave it running.
+    //
+    // _previewTimer reads _frameSampler.LatestSample every 200 ms and
+    // updates the preview grid Rectangles' Fill brushes. 200 ms is
+    // a deliberate visual cadence — humans don't notice updates above
+    // 5 Hz on a low-frequency colour grid, and the timer doesn't fight
+    // the engine's 15 Hz push for the same data.
     private AmbientEngine? _ambientEngine;
+    private FrameSampler? _frameSampler;
+    private bool _pipelineStartedCapture;
+    private DispatcherTimer? _previewTimer;
+    private Microsoft.UI.Xaml.Shapes.Rectangle[]? _previewCells;
 
     public PlaygroundWindow()
     {
@@ -359,19 +382,61 @@ public sealed partial class PlaygroundWindow : Window
     // animating in the background when Ambient lighting is selected ;
     // suspending it on hide-tab is a polish item for later.
     //
-    // First SelectionChanged fires during InitializeComponent (NavView
-    // applies IsSelected="True" on NavItemHud) before HudPage is realised ;
-    // null-guard on the page references so the early fire is a no-op.
-    private void OnPlaygroundNavSelectionChanged(
-        NavigationView sender,
-        NavigationViewSelectionChangedEventArgs args)
-    {
-        if (HudPage is null || AmbientPage is null) return;
-        if (args.SelectedItem is not NavigationViewItem item) return;
+    // The two ToggleButton cards (HudSubsystemCard, AmbientSubsystemCard)
+    // are mutually exclusive ; we manage the exclusion in code rather
+    // than via a styled RadioButtons group so each card can use the
+    // standard ToggleButton visuals (selected = accent background).
+    // _suppressSubsystemCardChange guards against re-entrancy when we
+    // set IsChecked programmatically inside the handler.
+    private bool _suppressSubsystemCardChange;
 
-        bool ambient = (item.Tag as string) == "ambient";
-        HudPage.Visibility     = ambient ? Visibility.Collapsed : Visibility.Visible;
-        AmbientPage.Visibility = ambient ? Visibility.Visible   : Visibility.Collapsed;
+    private void OnSubsystemCardChecked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressSubsystemCardChange) return;
+        if (sender is not ToggleButton card) return;
+        if (HudPage is null || AmbientPage is null) return;
+
+        _suppressSubsystemCardChange = true;
+        try
+        {
+            if (ReferenceEquals(card, HudSubsystemCard))
+            {
+                AmbientSubsystemCard.IsChecked = false;
+                HudPage.Visibility     = Visibility.Visible;
+                AmbientPage.Visibility = Visibility.Collapsed;
+            }
+            else if (ReferenceEquals(card, AmbientSubsystemCard))
+            {
+                HudSubsystemCard.IsChecked = false;
+                HudPage.Visibility     = Visibility.Collapsed;
+                AmbientPage.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            _suppressSubsystemCardChange = false;
+        }
+    }
+
+    // Mutual-exclusion enforcement : the user can't uncheck the active
+    // card by clicking it twice, since one of the two must always be
+    // selected. If a programmatic uncheck happens (the sibling handler
+    // turned it off when the other card was clicked), the suppress flag
+    // is set and we let it through.
+    private void OnSubsystemCardUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressSubsystemCardChange) return;
+        if (sender is not ToggleButton card) return;
+
+        _suppressSubsystemCardChange = true;
+        try
+        {
+            card.IsChecked = true;
+        }
+        finally
+        {
+            _suppressSubsystemCardChange = false;
+        }
     }
 
     private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1721,12 +1786,39 @@ public sealed partial class PlaygroundWindow : Window
 
     private async void OnPipelineToggleClick(object sender, RoutedEventArgs e)
     {
-        // Stop path : engine running, the click means "stop".
+        // Stop path : engine running, the click means "stop". Dispose the
+        // engine first so its push loop stops cleanly, then the sampler,
+        // then the preview timer. If we started the capture ourselves on
+        // the matching Start (flag set), stop it now too — symmetric
+        // "the pipeline owns its capture" semantics.
         if (_ambientEngine is { IsRunning: true })
         {
             _ambientEngine.Stop();
             await _ambientEngine.DisposeAsync().ConfigureAwait(true);
             _ambientEngine = null;
+
+            StopPreviewTimer();
+
+            if (_frameSampler is not null)
+            {
+                await _frameSampler.DisposeAsync().ConfigureAwait(true);
+                _frameSampler = null;
+            }
+
+            if (_screenCapture is not null)
+                _screenCapture.FrameArrived -= OnSamplerFrameArrived;
+
+            if (_pipelineStartedCapture)
+            {
+                try { StopScreenCaptureIfRunning(); }
+                catch (Exception ex)
+                {
+                    LogService.Instance.Warning(LogSource.Screen,
+                        $"Capture stop on pipeline teardown failed — {ex.GetType().Name}: {ex.Message}");
+                }
+                _pipelineStartedCapture = false;
+            }
+
             SetPipelineReady();
             return;
         }
@@ -1737,29 +1829,45 @@ public sealed partial class PlaygroundWindow : Window
         // state machine (button only enabled after group selection).
         if (_hueLightOutput is null)
         {
-            // Should never reach here given the button gating, but
-            // guard anyway so a race doesn't crash the engine ctor.
             PipelineStatusText.Text = "Pair a bridge and pick a group first";
             return;
         }
 
+        bool captureWasRunning = _screenCapture is { IsRunning: true };
         if (!StartScreenCaptureService())
         {
             PipelineStatusText.Text = "Couldn't start screen capture";
             PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
             return;
         }
+        _pipelineStartedCapture = !captureWasRunning;
 
         PipelineToggleButton.IsEnabled = false;
         try
         {
-            _ambientEngine = new AmbientEngine(_screenCapture!, _hueLightOutput);
+            // Build the FrameSampler from the live capture service. The
+            // device + content size are only valid after a successful
+            // Start, so this must come after StartScreenCaptureService.
+            _frameSampler = new FrameSampler(
+                _screenCapture!.Device!,
+                _screenCapture.ContentSize,
+                _screenCapture.ActiveFormat,
+                _screenCapture.PeakLuminance);
+
+            // Subscribe the sampler to the capture event so each frame
+            // gets processed (GPU downsample + readback).
+            _screenCapture.FrameArrived += OnSamplerFrameArrived;
+
+            BuildPreviewGrid(_frameSampler.GridCols, _frameSampler.GridRows);
+            StartPreviewTimer();
+
+            _ambientEngine = new AmbientEngine(_screenCapture, _hueLightOutput, _frameSampler);
             await _ambientEngine.StartAsync().ConfigureAwait(true);
 
             PipelineToggleIcon.Glyph = ScreenCaptureGlyphStop;
             PipelineToggleLabel.Text = "Stop pipeline";
-            PipelineStatusText.Text = "Running (mock HSV rotation)";
-            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorSuccessBrush");
+            PipelineStatusText.Text  = $"Running (analysis, {_frameSampler.GridCols}×{_frameSampler.GridRows}{(_frameSampler.IsHdr ? ", HDR" : "")})";
+            PipelineStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
         }
         catch (Exception ex)
         {
@@ -1767,15 +1875,125 @@ public sealed partial class PlaygroundWindow : Window
                 $"Pipeline start failed — {ex.GetType().Name}: {ex.Message}");
             PipelineStatusText.Text = $"Failed: {ex.Message}";
             PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+
             if (_ambientEngine is not null)
             {
                 await _ambientEngine.DisposeAsync().ConfigureAwait(true);
                 _ambientEngine = null;
             }
+            StopPreviewTimer();
+            if (_screenCapture is not null)
+                _screenCapture.FrameArrived -= OnSamplerFrameArrived;
+            if (_frameSampler is not null)
+            {
+                await _frameSampler.DisposeAsync().ConfigureAwait(true);
+                _frameSampler = null;
+            }
+            if (_pipelineStartedCapture)
+            {
+                try { StopScreenCaptureIfRunning(); } catch { /* best effort */ }
+                _pipelineStartedCapture = false;
+            }
         }
         finally
         {
             PipelineToggleButton.IsEnabled = true;
+        }
+    }
+
+    // FrameArrived handler that hands the frame to the FrameSampler.
+    // Runs on the FreeThreaded pool's worker thread ; FrameSampler.Process
+    // is thread-safe internally. The frame is disposed by the capture
+    // service after this delegate returns — we must not retain it.
+    private void OnSamplerFrameArrived(Direct3D11CaptureFrame frame)
+    {
+        _frameSampler?.Process(frame);
+    }
+
+    // Build the preview Grid : N × M Rectangle children, sized so the
+    // whole grid fits comfortably inside the preview Border with the
+    // source aspect ratio preserved. Cells are 16×16 dip by default ;
+    // smaller if the grid is denser. Called from the UI thread on the
+    // start path, after the sampler has reported its dimensions.
+    private void BuildPreviewGrid(int cols, int rows)
+    {
+        AmbientPreviewGrid.RowDefinitions.Clear();
+        AmbientPreviewGrid.ColumnDefinitions.Clear();
+        AmbientPreviewGrid.Children.Clear();
+
+        const double CellSize = 16;
+        const double Gap = 1;
+
+        for (int c = 0; c < cols; c++)
+            AmbientPreviewGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(CellSize) });
+        for (int r = 0; r < rows; r++)
+            AmbientPreviewGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellSize) });
+
+        _previewCells = new Microsoft.UI.Xaml.Shapes.Rectangle[cols * rows];
+        var defaultBrush = (Brush)Application.Current.Resources["LayerOnAcrylicFillColorDefaultBrush"];
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
+                {
+                    Fill = defaultBrush,
+                    Margin = new Thickness(Gap),
+                };
+                Grid.SetRow(rect, r);
+                Grid.SetColumn(rect, c);
+                AmbientPreviewGrid.Children.Add(rect);
+                _previewCells[r * cols + c] = rect;
+            }
+        }
+
+        AmbientPreviewEmptyState.Visibility = Visibility.Collapsed;
+        AmbientPreviewGrid.Visibility       = Visibility.Visible;
+    }
+
+    private void StartPreviewTimer()
+    {
+        if (_previewTimer is null)
+        {
+            _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            _previewTimer.Tick += OnPreviewTimerTick;
+        }
+        _previewTimer.Start();
+    }
+
+    private void StopPreviewTimer()
+    {
+        _previewTimer?.Stop();
+        if (_previewCells is not null && AmbientPreviewGrid is not null)
+        {
+            AmbientPreviewGrid.Children.Clear();
+            AmbientPreviewGrid.RowDefinitions.Clear();
+            AmbientPreviewGrid.ColumnDefinitions.Clear();
+            _previewCells = null;
+            AmbientPreviewGrid.Visibility       = Visibility.Collapsed;
+            AmbientPreviewEmptyState.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnPreviewTimerTick(object? sender, object e)
+    {
+        var sample = _frameSampler?.LatestSample;
+        if (sample is null || _previewCells is null) return;
+
+        int total = Math.Min(sample.Grid.Length, _previewCells.Length);
+        for (int i = 0; i < total; i++)
+        {
+            var c = sample.Grid[i];
+            var brush = _previewCells[i].Fill as SolidColorBrush;
+            if (brush is null)
+            {
+                _previewCells[i].Fill = new SolidColorBrush(c);
+            }
+            else
+            {
+                brush.Color = c;
+            }
         }
     }
 
@@ -1810,6 +2028,24 @@ public sealed partial class PlaygroundWindow : Window
             _ambientEngine.Stop();
             _ambientEngine.DisposeAsync().AsTask();
             _ambientEngine = null;
+        }
+
+        // Sampler / preview teardown that mirrors the pipeline stop
+        // path (capture-stop-symmetry handled by the pipeline click
+        // handler ; here we only release the sampler + preview UI in
+        // case a Hue teardown happens while the pipeline is still up).
+        StopPreviewTimer();
+        if (_screenCapture is not null)
+            _screenCapture.FrameArrived -= OnSamplerFrameArrived;
+        if (_frameSampler is not null)
+        {
+            _frameSampler.DisposeAsync().AsTask();
+            _frameSampler = null;
+        }
+        if (_pipelineStartedCapture)
+        {
+            try { StopScreenCaptureIfRunning(); } catch { /* best effort */ }
+            _pipelineStartedCapture = false;
         }
 
         // Cancel any pending pair loop first ; PairAsync will exit

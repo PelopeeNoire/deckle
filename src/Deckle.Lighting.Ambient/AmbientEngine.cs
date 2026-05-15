@@ -7,9 +7,11 @@ namespace Deckle.Lighting.Ambient;
 
 // Orchestrator hub for the ambient-lighting pipeline. The engine
 // stitches an upstream ScreenCaptureService to a downstream
-// ILightOutput, then either (J3 step 1) pushes a deterministic mock
-// colour to validate the wiring + cadence, or (J3 step 2+) reads the
-// captured frame, computes a colour, and pushes that.
+// ILightOutput via a FrameSampler that runs the analysis on the GPU.
+// At each tick the engine reads the sampler's most recent
+// SampledFrame.Average and pushes that colour to the light output —
+// with an early-exit when the change is below the just-noticeable
+// threshold so we don't spam the bridge on a static screen.
 //
 // Why an engine at all (vs. wiring the events directly in the
 // Playground or in AmbientPage code-behind) : we want a single
@@ -28,6 +30,11 @@ namespace Deckle.Lighting.Ambient;
 //   - The ILightOutput is borrowed, not owned. ConnectAsync is
 //     called on Start ; DisposeAsync is NOT called on engine
 //     teardown.
+//   - The FrameSampler is borrowed, not owned. The caller (Playground
+//     or AmbientPage) instantiates it from the capture service's
+//     Device + ContentSize once the capture is running, and disposes
+//     it when the pipeline stops. The engine never disposes the
+//     sampler.
 //   - The engine owns its CancellationTokenSource and the push
 //     loop ; both are released on Stop / DisposeAsync.
 //
@@ -40,45 +47,58 @@ namespace Deckle.Lighting.Ambient;
 //     the cancellation token is enough.
 //   - DisposeAsync : Stop + dispose CTS. Idempotent.
 //
-// J3 step 1 (this file). The push loop sends a rotating HSV colour
-// (full hue cycle in 10 s) at 5 Hz. The lamp visibly cycles through
-// the rainbow, which makes the pipeline status immediately obvious
-// without any screen content needed. The screen capture is started
-// alongside the loop so the latency and CPU footprint of running it
-// in parallel are observable in LogWindow / Task Manager.
-//
-// J3 step 2 (next session). The mock loop is replaced by an analysis
-// loop that snapshots the most recent capture frame via a
-// Direct3D11 staging texture, computes a subsampled average colour,
-// and pushes that. The mock path is retained behind a flag for
-// regression tests of the bridge driver in isolation.
+// Per-tick flow (J3 step 2).
+//   1. Read FrameSampler.LatestSample (volatile read, may be null
+//      until the first frame lands).
+//   2. If null, skip and try again next tick.
+//   3. Compare LatestSample.Average to _lastPushedColor ; if Δ
+//      summed across R+G+B is below the early-exit threshold, skip
+//      the push.
+//   4. Push the colour via _output.SetColorAsync. Any exception is
+//      logged as a Warning and the loop continues — a transient
+//      bridge failure (Wi-Fi blip, group renamed mid-session) does
+//      not kill the pipeline.
+//   5. Wait PushIntervalMs (66 ms ≈ 15 Hz, aligned with the capture
+//      pump cadence).
 public sealed class AmbientEngine : IAsyncDisposable
 {
     private static readonly LogService _log = LogService.Instance;
 
-    // Push cadence — 5 Hz is well below the REST CLIP v1 sweet spot
-    // (10-20 Hz), keeps the bridge responsive, and is high enough
-    // that the rainbow rotation looks smooth visually.
-    private const int PushHz = 5;
+    // Push cadence — 15 Hz matches the screen capture cadence set on
+    // GraphicsCaptureSession.MinUpdateInterval. One frame in, one push
+    // out (modulo the early-exit). 15 Hz is well within the REST CLIP
+    // v1 sweet spot (10-20 Hz) for the Hue bridge.
+    private const int PushHz = 15;
     private const int PushIntervalMs = 1000 / PushHz;
 
-    // Mock colour rotation period — one full HSV cycle every 10 s.
-    // Slow enough that the user can verify each colour is reached,
-    // fast enough that a rebuild → see-rainbow loop stays brisk.
-    private const double MockHueCycleSeconds = 10.0;
+    // Early-exit threshold — if |ΔR| + |ΔG| + |ΔB| < this, the push
+    // is skipped. 3 (out of 0-765 max) is conservative — it catches
+    // FrameSampler quantisation noise on a static screen but lets
+    // through anything the eye would notice. J5 will surface this
+    // value in the Playground tuning panel.
+    private const int ChangeThreshold = 3;
 
     private readonly ScreenCaptureService _capture;
     private readonly ILightOutput _output;
+    private readonly FrameSampler _sampler;
 
     private CancellationTokenSource? _cts;
     private Task? _pushLoopTask;
     private long _startTimestamp;
     private bool _disposed;
 
-    public AmbientEngine(ScreenCaptureService capture, ILightOutput output)
+    // Last colour we actually pushed to the bridge. Compared with the
+    // sampler's most recent average to decide whether to push or
+    // suppress. Default to (-1, -1, -1) so the first tick always pushes.
+    private int _lastR = -1, _lastG = -1, _lastB = -1;
+    private long _pushedCount;
+    private long _droppedCount;
+
+    public AmbientEngine(ScreenCaptureService capture, ILightOutput output, FrameSampler sampler)
     {
         _capture = capture;
         _output  = output;
+        _sampler = sampler;
     }
 
     /// <summary>True between a successful <see cref="StartAsync"/>
@@ -99,7 +119,7 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         _log.Info(LogSource.Ambient, "Ambient pipeline started");
         _log.Verbose(LogSource.Ambient,
-            $"start | capture_running={_capture.IsRunning} | output={_output.GetType().Name} | push_hz={PushHz}");
+            $"start | source={(_capture.IsRunning ? "running" : "stopped")} | output={_output.GetType().Name} | push_hz={PushHz} | sampler_grid={_sampler.GridCols}x{_sampler.GridRows} | hdr={(_sampler.IsHdr ? "on" : "off")}");
 
         await _output.ConnectAsync(ct).ConfigureAwait(false);
 
@@ -107,7 +127,10 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         _cts = new CancellationTokenSource();
         _startTimestamp = Stopwatch.GetTimestamp();
-        _pushLoopTask = Task.Run(() => MockPushLoopAsync(_cts.Token), _cts.Token);
+        _pushedCount = 0;
+        _droppedCount = 0;
+        _lastR = _lastG = _lastB = -1;
+        _pushLoopTask = Task.Run(() => AnalysisPushLoopAsync(_cts.Token), _cts.Token);
 
         IsRunning = true;
     }
@@ -129,37 +152,58 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         _log.Info(LogSource.Ambient, "Ambient pipeline stopped");
         _log.Verbose(LogSource.Ambient,
-            $"stop | reason=user | duration_sec={durationSec:F1}");
+            $"stop | reason=user | duration_sec={durationSec:F1} | pushed={_pushedCount} | dropped={_droppedCount}");
     }
 
-    private async Task MockPushLoopAsync(CancellationToken ct)
+    private async Task AnalysisPushLoopAsync(CancellationToken ct)
     {
-        // The loop runs on the thread-pool ; SetColorAsync goes
-        // through HttpClient which is thread-safe. Any exception on
-        // a single push is swallowed as a Warning so a transient
-        // bridge failure (Wi-Fi blip, group renamed mid-session) does
-        // not kill the loop — the next tick retries.
-        var sw = Stopwatch.StartNew();
+        // The loop runs on the thread-pool ; SetColorAsync goes through
+        // HttpClient which is thread-safe. Any exception on a single
+        // push is swallowed as a Warning so a transient bridge failure
+        // (Wi-Fi blip, group renamed mid-session) does not kill the
+        // loop — the next tick retries.
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                double cyclePosition =
-                    (sw.Elapsed.TotalSeconds / MockHueCycleSeconds) % 1.0;
-                double hueDegrees = cyclePosition * 360.0;
-                var color = HsvToRgb(hueDegrees, 1.0, 1.0);
-
-                try
+                var sample = _sampler.LatestSample;
+                if (sample is null)
                 {
-                    await _output.SetColorAsync(color, ct).ConfigureAwait(false);
-                    _log.Verbose(LogSource.Ambient,
-                        $"push | mode=mock | hue={hueDegrees:F1} | rgb={color.R},{color.G},{color.B}");
+                    // Sampler hasn't produced a frame yet (first ~66 ms
+                    // after Start). Wait one cadence and retry.
+                    await Task.Delay(PushIntervalMs, ct).ConfigureAwait(false);
+                    continue;
                 }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
+
+                var avg = sample.Average;
+                int delta = Math.Abs(avg.R - _lastR)
+                          + Math.Abs(avg.G - _lastG)
+                          + Math.Abs(avg.B - _lastB);
+                bool dropped = _lastR >= 0 && delta < ChangeThreshold;
+
+                if (dropped)
                 {
-                    _log.Warning(LogSource.Ambient,
-                        $"Push failed — {ex.GetType().Name}: {ex.Message}");
+                    _droppedCount++;
+                    _log.Verbose(LogSource.Ambient,
+                        $"push | mode=analysis | rgb={avg.R},{avg.G},{avg.B} | dropped=true");
+                }
+                else
+                {
+                    var color = new LightColor(avg.R, avg.G, avg.B);
+                    try
+                    {
+                        await _output.SetColorAsync(color, ct).ConfigureAwait(false);
+                        _lastR = avg.R; _lastG = avg.G; _lastB = avg.B;
+                        _pushedCount++;
+                        _log.Verbose(LogSource.Ambient,
+                            $"push | mode=analysis | rgb={avg.R},{avg.G},{avg.B} | dropped=false");
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(LogSource.Ambient,
+                            $"Push failed — {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
 
                 await Task.Delay(PushIntervalMs, ct).ConfigureAwait(false);
@@ -172,39 +216,8 @@ public sealed class AmbientEngine : IAsyncDisposable
         catch (Exception ex)
         {
             _log.Error(LogSource.Ambient,
-                $"Mock push loop crashed — {ex.GetType().Name}: {ex.Message}");
+                $"Analysis push loop crashed — {ex.GetType().Name}: {ex.Message}");
         }
-    }
-
-    // ── HSV → RGB ─────────────────────────────────────────────────
-    //
-    // Classic HSV to sRGB conversion (the Wikipedia formula). Hue is
-    // in degrees [0, 360), Saturation and Value in [0, 1]. Used by
-    // the mock loop to walk the rainbow at full saturation and
-    // brightness — the user sees a continuously rotating colour on
-    // the lamps as long as the engine runs.
-    private static LightColor HsvToRgb(double h, double s, double v)
-    {
-        double c = v * s;
-        double hh = h / 60.0;
-        double x = c * (1 - Math.Abs((hh % 2) - 1));
-        double m = v - c;
-
-        double r1, g1, b1;
-        switch ((int)hh)
-        {
-            case 0:  (r1, g1, b1) = (c, x, 0); break;
-            case 1:  (r1, g1, b1) = (x, c, 0); break;
-            case 2:  (r1, g1, b1) = (0, c, x); break;
-            case 3:  (r1, g1, b1) = (0, x, c); break;
-            case 4:  (r1, g1, b1) = (x, 0, c); break;
-            default: (r1, g1, b1) = (c, 0, x); break;
-        }
-
-        byte R = (byte)Math.Clamp((int)Math.Round((r1 + m) * 255), 0, 255);
-        byte G = (byte)Math.Clamp((int)Math.Round((g1 + m) * 255), 0, 255);
-        byte B = (byte)Math.Clamp((int)Math.Round((b1 + m) * 255), 0, 255);
-        return new LightColor(R, G, B);
     }
 
     public async ValueTask DisposeAsync()
