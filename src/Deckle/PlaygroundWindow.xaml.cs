@@ -2041,21 +2041,19 @@ public sealed partial class PlaygroundWindow : Window
 
         _previewCells = new Microsoft.UI.Xaml.Shapes.Rectangle[cols * rows];
 
-        // Initial fill — a constant transparent-black so the cells read
-        // as the recessed surface they sit on until the first SampledFrame
-        // lands and the preview timer paints real colours. Resolving a
-        // ThemeResource brush from code (Application.Current.Resources[key])
-        // returns null when the key isn't registered at the app-level
-        // dictionary — safer to build a known SolidColorBrush directly.
-        var defaultBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-
+        // One SolidColorBrush per cell — MANDATORY. Sharing a single brush
+        // across cells and mutating its Color in the preview tick made every
+        // cell snap to the last pixel of the grid (typically the bottom-right
+        // taskbar — dark), which is what produced the "everything is dark
+        // while the screen is white" symptom even though the FrameSampler
+        // average (and the lamp push) were correct.
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
                 var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
                 {
-                    Fill = defaultBrush,
+                    Fill   = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                     Margin = new Thickness(Gap),
                 };
                 Grid.SetRow(rect, r);

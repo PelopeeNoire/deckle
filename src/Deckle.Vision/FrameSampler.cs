@@ -82,13 +82,6 @@ public sealed class FrameSampler : IAsyncDisposable
     private readonly object _lock = new();
     private bool _disposed;
 
-    // J3 step 2 diagnostic — captures stay black at runtime despite the
-    // pipeline being wired. Instrument the first frame fully (formats,
-    // device identity, copy chain output) and a heartbeat every 30 frames
-    // afterwards (~6 s at 5 Hz) so we can spot intermittent issues.
-    // Whole block goes away once the root cause is found.
-    private int _diagFrameCount;
-
     // Most recent snapshot — volatile read so consumers see the latest
     // value published by Process.
     public SampledFrame? LatestSample => Volatile.Read(ref _latestSample);
@@ -154,29 +147,6 @@ public sealed class FrameSampler : IAsyncDisposable
                 {
                     var ctxVtbl = *(nint**)_d3dContext;
 
-                    // J3 step 2 diag — dump captured texture's format + owning
-                    // device on the very first frame so we can rule out a
-                    // format mismatch or a cross-device CopyResource silent
-                    // failure. Removed once the root cause of the black grid
-                    // is identified.
-                    if (_diagFrameCount == 0)
-                    {
-                        var capVtbl  = *(nint**)capturedTex;
-                        var getDesc  = (delegate* unmanaged<nint, ScreenCaptureInterop.D3D11_TEXTURE2D_DESC*, void>)
-                            capVtbl[ScreenCaptureInterop.D3D11Vtbl.Texture2D_GetDesc];
-                        var getDeviceFn = (delegate* unmanaged<nint, nint*, void>)
-                            capVtbl[ScreenCaptureInterop.D3D11Vtbl.DeviceChild_GetDevice];
-
-                        ScreenCaptureInterop.D3D11_TEXTURE2D_DESC capDesc;
-                        getDesc(capturedTex, &capDesc);
-                        nint capDevicePtr;
-                        getDeviceFn(capturedTex, &capDevicePtr);
-                        bool sameDevice = capDevicePtr == _d3dDevice;
-                        _log.Verbose(LogSource.Screen,
-                            $"diag captured | w={capDesc.Width} | h={capDesc.Height} | format={capDesc.Format} | mips={capDesc.MipLevels} | usage={capDesc.Usage} | bind=0x{capDesc.BindFlags:X} | misc=0x{capDesc.MiscFlags:X} | device=0x{(long)capDevicePtr:X} | sampler_device=0x{(long)_d3dDevice:X} | same_device={sameDevice}");
-                        if (capDevicePtr != 0) Marshal.Release(capDevicePtr);
-                    }
-
                     // Copy the captured frame's mip 0 into the intermediate's
                     // mip 0. We can NOT use ID3D11DeviceContext::CopyResource
                     // here : it requires src and dst to have the same mip
@@ -213,22 +183,6 @@ public sealed class FrameSampler : IAsyncDisposable
 
                     try
                     {
-                        // J3 step 2 diag — dump first pixel bytes every 30
-                        // frames so we can confirm whether the staging is
-                        // receiving real GPU data or just zeros. The four
-                        // bytes are layout-as-stored : for BGRA8 they read
-                        // as B,G,R,A. Non-zero = the copy chain works and
-                        // the read code is wrong ; zero = the chain itself
-                        // is broken upstream of Map.
-                        _diagFrameCount++;
-                        if (_diagFrameCount == 1 || _diagFrameCount % 30 == 0)
-                        {
-                            byte* p0 = (byte*)mapped.pData;
-                            byte* pMid = p0 + (_gridRows / 2) * (int)mapped.RowPitch + (_gridCols / 2) * 4;
-                            _log.Verbose(LogSource.Screen,
-                                $"diag map #{_diagFrameCount} | pData=0x{(long)mapped.pData:X} | row_pitch={mapped.RowPitch} | px0=B{p0[0]},G{p0[1]},R{p0[2]},A{p0[3]} | px_mid=B{pMid[0]},G{pMid[1]},R{pMid[2]},A{pMid[3]}");
-                        }
-
                         var sample = ReadSampleFromMapped(in mapped);
                         Volatile.Write(ref _latestSample, sample);
                     }

@@ -501,10 +501,6 @@ internal static class ScreenCaptureInterop
 
     internal static class D3D11Vtbl
     {
-        // ID3D11DeviceChild methods (after IUnknown's 3) — inherited by
-        // every concrete D3D11 resource type.
-        public const int DeviceChild_GetDevice             = 3;
-
         // ID3D11Device methods (after IUnknown's 3).
         public const int Device_CreateTexture2D            = 5;
         public const int Device_CreateShaderResourceView   = 7;
@@ -519,10 +515,6 @@ internal static class ScreenCaptureInterop
         // Clear* family. Trust the d3d11.h declaration order ; the slot
         // is stable per COM contract.
         public const int Context_GenerateMips              = 54;
-
-        // ID3D11Texture2D method (after IUnknown's 3 + ID3D11DeviceChild's 4
-        // + ID3D11Resource's 2).
-        public const int Texture2D_GetDesc                 = 10;
     }
 
     // ── D3D11 structs + constants ────────────────────────────────────────────
