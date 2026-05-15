@@ -619,7 +619,7 @@ Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active
 - `[logué]` compte total de frames au Stop
 - `[logué]` durée de session
 - `[logué]` FPS moyen sur la session (frames / durée)
-- `[logué]` FrameSampler init : taille grille (cols×rows), stride X/Y de l'échantillonnage, mode tone-map (`none` ou `scrgb_to_srgb`)
+- `[logué]` FrameSampler init : taille grille (cols×rows), niveau de mip cible, mode tone-map (`none` ou `scrgb_to_srgb`)
 - `[logué]` FrameSampler map failure (HRESULT) — Warning si lecture staging texture échoue
 - `[à instrumenter]` taille frame courante au resize (resize en cours d'exécution si l'écran change)
 - `[à instrumenter]` FPS instantané (fenêtre glissante 1 s) — émis par le consumer Playground côté UI, pas dans le service
@@ -631,7 +631,7 @@ Pipeline distinct du pipeline transcription. Démarre quand l'utilisateur active
 Info      SCREEN  Screen capture starting
 Verbose   SCREEN  start | hmon=0x{X} | size={W}x{H} | format={pixelFormat} | hdr={on|off} | peak_lum={X:F0} | bufs={n} | min_update_ms={n}
 Success   SCREEN  Screen capture started
-Verbose   SCREEN  sampler init | grid={W}x{H} | stride={X}x{Y} | tone_map={none|scrgb_to_srgb} | peak_lum={X:F0}
+Verbose   SCREEN  sampler init | grid={W}x{H} | mip={n} | tone_map={none|scrgb_to_srgb} | peak_lum={X:F0}
 Warning   SCREEN  sampler map fail | hr=0x{X}
 Info      SCREEN  Screen capture stopped ({frames} frames in {duration_sec:F1} s)
 Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
@@ -663,7 +663,7 @@ Verbose   SCREEN  stop | frames={n} | duration_ms={X} | fps_avg={X:F1}
 **Vocabulaire FrameSampler**
 
 - `grid={W}x{H}` — dimensions de la grille échantillonnée (≈ 30×17 par défaut, varie selon l'aspect ratio source)
-- `stride={X}x{Y}` — pas d'échantillonnage en pixels source (W/cols, H/rows) — CPU stride sampling
+- `mip={n}` — niveau de mip choisi côté GPU pour atteindre la grille cible (typ. 6-7)
 - `tone_map={enum}` — `none` (SDR BGRA8 path) ou `scrgb_to_srgb` (HDR FP16 → 8-bit sRGB)
 
 **Threading**
