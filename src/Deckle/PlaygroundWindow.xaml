@@ -83,8 +83,15 @@
                                       ≤700 cramps). Col 0 picks up the
                                       slack past the cap. -->
                 <Grid x:Name="HudPage" Visibility="Visible">
+                    <!-- Col 0 has no MinWidth so the preview/cards stage
+                         shrinks aggressively when the window narrows ;
+                         Tunables (Col 1) keeps its 480-920 dip envelope.
+                         Result : the right column stays readable, the
+                         preview can collapse down to the HudChrono's
+                         272 dip footprint without pushing Tunables
+                         off-screen. -->
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" MinWidth="720" />
+                        <ColumnDefinition Width="*" MinWidth="320" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
@@ -108,15 +115,25 @@
                      OnTargetCardChecked / Unchecked. -->
                 <ItemsRepeater Grid.Row="0"
                                x:Name="TargetCardsRepeater"
-                               HorizontalAlignment="Stretch"
+                               HorizontalAlignment="Center"
                                Margin="16,24,16,8"
                                ElementPrepared="OnTargetCardPrepared">
+                    <!-- ItemsStretch="None" keeps every card at its
+                         MinItemWidth so the row visuals stay uniform
+                         even when the last row has fewer items.
+                         ItemsJustification="Center" centers the grid
+                         horizontally inside the column and, more
+                         importantly, centers the partial last row
+                         (3 cards under 4 → 3 cards centered). 160 dip
+                         min width covers the longest label
+                         ("Transcribing") with comfortable padding. -->
                     <ItemsRepeater.Layout>
-                        <UniformGridLayout MinItemWidth="140"
+                        <UniformGridLayout MinItemWidth="160"
                                            MinItemHeight="44"
                                            MinColumnSpacing="8"
                                            MinRowSpacing="8"
-                                           ItemsStretch="Fill"
+                                           ItemsStretch="None"
+                                           ItemsJustification="Center"
                                            Orientation="Horizontal" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>

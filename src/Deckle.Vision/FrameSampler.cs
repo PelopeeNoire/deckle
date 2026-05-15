@@ -147,19 +147,27 @@ public sealed class FrameSampler : IAsyncDisposable
                 {
                     var ctxVtbl = *(nint**)_d3dContext;
 
-                    // CopyResource(intermediate, captured).
-                    var copyResource = (delegate* unmanaged<nint, nint, nint, void>)
-                        ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_CopyResource];
-                    copyResource(_d3dContext, _intermediateTex, capturedTex);
+                    // Copy the captured frame's mip 0 into the intermediate's
+                    // mip 0. We can NOT use ID3D11DeviceContext::CopyResource
+                    // here : it requires src and dst to have the same mip
+                    // level count, and our intermediate has a full mip chain
+                    // while the captured frame is single-level. The silent
+                    // failure mode of CopyResource on mismatched MipLevels
+                    // leaves the intermediate uninitialised (zeros), which
+                    // is what gave every grid cell a black sample at first
+                    // run. CopySubresourceRegion copies a specific
+                    // (subresource, region) pair and is the right tool.
+                    var copySubresourceRegion = (delegate* unmanaged<nint, nint, uint, uint, uint, uint, nint, uint, void*, void>)
+                        ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_CopySubresourceRegion];
+                    copySubresourceRegion(_d3dContext, _intermediateTex, 0, 0, 0, 0, capturedTex, 0, null);
 
-                    // GenerateMips on the intermediate SRV.
+                    // GenerateMips on the intermediate SRV — fills mip 1+
+                    // by averaging mip 0 in hardware.
                     var generateMips = (delegate* unmanaged<nint, nint, void>)
                         ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_GenerateMips];
                     generateMips(_d3dContext, _intermediateSrv);
 
                     // CopySubresourceRegion(staging, 0, 0,0,0, intermediate, mip, null).
-                    var copySubresourceRegion = (delegate* unmanaged<nint, nint, uint, uint, uint, uint, nint, uint, void*, void>)
-                        ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_CopySubresourceRegion];
                     copySubresourceRegion(_d3dContext, _stagingTex, 0, 0, 0, 0, _intermediateTex, (uint)_targetMip, null);
 
                     // Map(staging, 0, READ, 0, &mapped).
