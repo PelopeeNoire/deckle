@@ -1461,7 +1461,12 @@ public sealed partial class PlaygroundWindow : Window
         {
             _screenCapture ??= new ScreenCaptureService();
             _screenCapture.Stopped += OnScreenCaptureStopped;
-            _screenCapture.Start();
+            // Read the persisted monitor selection — null = primary. The
+            // settings field is populated by the J9 monitor selector in
+            // AmbientPage ; until then it stays null and capture follows
+            // the primary, matching the V0 behaviour.
+            var targetMonitor = AmbientSettingsService.Instance.Current.SelectedMonitorDeviceName;
+            _screenCapture.Start(targetMonitor);
 
             _screenCaptureLastSampledFrames = 0;
             _screenCaptureLastSampleTimestamp = Stopwatch.GetTimestamp();

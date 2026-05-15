@@ -119,7 +119,16 @@ public sealed class ScreenCaptureService : IDisposable
     /// </summary>
     public static bool IsSupported() => GraphicsCaptureSession.IsSupported();
 
-    public void Start()
+    /// <summary>
+    /// Starts the capture session. When <paramref name="targetMonitorDeviceName"/>
+    /// is null (the default), the primary monitor is used — matches the
+    /// V0 behaviour. When non-null, the device name (e.g. "\\\\.\\DISPLAY2"
+    /// as returned by <see cref="ScreenCaptureInterop.EnumerateMonitors"/>)
+    /// is resolved to an HMONITOR ; a stale or invalid name falls back to
+    /// the primary monitor with a Warning rather than throwing — a user
+    /// who unplugs their secondary display shouldn't lose the pipeline.
+    /// </summary>
+    public void Start(string? targetMonitorDeviceName = null)
     {
         lock (_lock)
         {
@@ -139,7 +148,7 @@ public sealed class ScreenCaptureService : IDisposable
             {
                 _device = ScreenCaptureInterop.CreateDirect3DDevice();
 
-                _hmon = ScreenCaptureInterop.GetPrimaryMonitor();
+                _hmon = ResolveTargetMonitor(targetMonitorDeviceName);
                 if (_hmon == 0)
                 {
                     throw new InvalidOperationException(
@@ -208,6 +217,26 @@ public sealed class ScreenCaptureService : IDisposable
                 throw;
             }
         }
+    }
+
+    private nint ResolveTargetMonitor(string? targetMonitorDeviceName)
+    {
+        if (string.IsNullOrEmpty(targetMonitorDeviceName))
+        {
+            return ScreenCaptureInterop.GetPrimaryMonitor();
+        }
+
+        var resolved = ScreenCaptureInterop.FindMonitorByDeviceName(targetMonitorDeviceName);
+        if (resolved != 0)
+        {
+            _log.Verbose(LogSource.Screen,
+                $"target monitor resolved | device_name={targetMonitorDeviceName} | hmon=0x{(long)resolved:X}");
+            return resolved;
+        }
+
+        _log.Warning(LogSource.Screen,
+            $"Monitor not found — requested={targetMonitorDeviceName}, falling back to primary. Display may be disconnected or the device name has changed.");
+        return ScreenCaptureInterop.GetPrimaryMonitor();
     }
 
     public void Stop()
