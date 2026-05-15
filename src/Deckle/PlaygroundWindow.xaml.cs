@@ -271,6 +271,11 @@ public sealed partial class PlaygroundWindow : Window
                 // and writes nothing to disk; the next app launch returns
                 // to the built-in defaults.
                 BuildTuningPanel();
+                // Populate the target cards ItemsRepeater. Done in Loaded
+                // (not in the constructor) because ItemsRepeater isn't
+                // realised until the XAML tree finishes initialising —
+                // setting ItemsSource earlier silently no-ops.
+                TargetCardsRepeater.ItemsSource = _targetCardNames;
                 ApplyTarget();
             };
         }
@@ -354,25 +359,89 @@ public sealed partial class PlaygroundWindow : Window
             _iconRecording = new BitmapImage(new Uri(_iconRecordingPath));
     }
 
-    // ── Target selector + Play/Pause ────────────────────────────────────
-
-    private void OnTargetSelectionChanged(
-        SelectorBar sender,
-        SelectorBarSelectionChangedEventArgs args)
+    // ── Target selector cards + Play/Pause ──────────────────────────────
+    //
+    // The 7 target cards (Charging, Recording, Transcribing, Rewriting,
+    // Conic, ArcMask, Combined) live inside an ItemsRepeater +
+    // UniformGridLayout so they reflow into multiple rows as the column
+    // narrows. Mutual exclusion is enforced manually : exactly one card
+    // is checked at any time, clicking an unchecked card checks it +
+    // unchecks the previously-active, clicking the active card is a no-op
+    // (the Unchecked handler re-checks it). _suppressTargetCardChange
+    // guards against re-entrancy when we set IsChecked programmatically.
+    private static readonly string[] _targetCardNames =
     {
-        var selected = sender.SelectedItem;
-        if (selected is null) return;
-        var next = ReferenceEquals(selected, TabCharging)     ? Target.Charging
-                 : ReferenceEquals(selected, TabRecording)    ? Target.Recording
-                 : ReferenceEquals(selected, TabTranscribing) ? Target.Transcribing
-                 : ReferenceEquals(selected, TabRewriting)    ? Target.Rewriting
-                 : ReferenceEquals(selected, TabConic)        ? Target.Conic
-                 : ReferenceEquals(selected, TabArcMask)      ? Target.ArcMask
-                                                              : Target.Combined;
+        "Charging", "Recording", "Transcribing", "Rewriting", "Conic", "ArcMask", "Combined"
+    };
+    private readonly List<ToggleButton> _targetCards = new();
+    private bool _suppressTargetCardChange;
+
+    private void OnTargetCardPrepared(
+        Microsoft.UI.Xaml.Controls.ItemsRepeater sender,
+        Microsoft.UI.Xaml.Controls.ItemsRepeaterElementPreparedEventArgs args)
+    {
+        if (args.Element is not ToggleButton tb) return;
+
+        // ElementPrepared fires once per recycled element ; the same
+        // ToggleButton may be re-prepared if the layout virtualises rows.
+        // Subscribe only once.
+        if (!_targetCards.Contains(tb))
+        {
+            tb.Checked   += OnTargetCardChecked;
+            tb.Unchecked += OnTargetCardUnchecked;
+            _targetCards.Add(tb);
+        }
+
+        // Set initial IsChecked to match the current target, suppressing
+        // the event so the mutual-exclusion handler doesn't fire during
+        // initialisation.
+        bool isCurrent = ParseTargetCardName(tb.Content as string ?? "") == _currentTarget;
+        _suppressTargetCardChange = true;
+        try   { tb.IsChecked = isCurrent; }
+        finally { _suppressTargetCardChange = false; }
+    }
+
+    private void OnTargetCardChecked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressTargetCardChange) return;
+        if (sender is not ToggleButton clicked) return;
+
+        _suppressTargetCardChange = true;
+        try
+        {
+            foreach (var card in _targetCards)
+                if (!ReferenceEquals(card, clicked)) card.IsChecked = false;
+        }
+        finally { _suppressTargetCardChange = false; }
+
+        var next = ParseTargetCardName(clicked.Content as string ?? "");
         if (next == _currentTarget) return;
         _currentTarget = next;
         ApplyTarget();
     }
+
+    private void OnTargetCardUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressTargetCardChange) return;
+        if (sender is not ToggleButton card) return;
+
+        // Clicking the already-checked card unchecks it ; we re-check
+        // immediately so at least one card stays selected at all times.
+        _suppressTargetCardChange = true;
+        try   { card.IsChecked = true; }
+        finally { _suppressTargetCardChange = false; }
+    }
+
+    private static Target ParseTargetCardName(string name) => name switch
+    {
+        "Charging"     => Target.Charging,
+        "Recording"    => Target.Recording,
+        "Transcribing" => Target.Transcribing,
+        "Rewriting"    => Target.Rewriting,
+        "Conic"        => Target.Conic,
+        "ArcMask"      => Target.ArcMask,
+        _              => Target.Combined,
+    };
 
     // Top-level navigation between the HUD page and the Ambient lighting
     // page. Pages are inline (Visibility toggle), not Frame-navigated —
@@ -382,61 +451,19 @@ public sealed partial class PlaygroundWindow : Window
     // animating in the background when Ambient lighting is selected ;
     // suspending it on hide-tab is a polish item for later.
     //
-    // The two ToggleButton cards (HudSubsystemCard, AmbientSubsystemCard)
-    // are mutually exclusive ; we manage the exclusion in code rather
-    // than via a styled RadioButtons group so each card can use the
-    // standard ToggleButton visuals (selected = accent background).
-    // _suppressSubsystemCardChange guards against re-entrancy when we
-    // set IsChecked programmatically inside the handler.
-    private bool _suppressSubsystemCardChange;
-
-    private void OnSubsystemCardChecked(object sender, RoutedEventArgs e)
+    // First SelectionChanged fires during InitializeComponent (NavView
+    // applies IsSelected="True" on NavItemHud) before HudPage is realised ;
+    // null-guard on the page references so the early fire is a no-op.
+    private void OnPlaygroundNavSelectionChanged(
+        NavigationView sender,
+        NavigationViewSelectionChangedEventArgs args)
     {
-        if (_suppressSubsystemCardChange) return;
-        if (sender is not ToggleButton card) return;
         if (HudPage is null || AmbientPage is null) return;
+        if (args.SelectedItem is not NavigationViewItem item) return;
 
-        _suppressSubsystemCardChange = true;
-        try
-        {
-            if (ReferenceEquals(card, HudSubsystemCard))
-            {
-                AmbientSubsystemCard.IsChecked = false;
-                HudPage.Visibility     = Visibility.Visible;
-                AmbientPage.Visibility = Visibility.Collapsed;
-            }
-            else if (ReferenceEquals(card, AmbientSubsystemCard))
-            {
-                HudSubsystemCard.IsChecked = false;
-                HudPage.Visibility     = Visibility.Collapsed;
-                AmbientPage.Visibility = Visibility.Visible;
-            }
-        }
-        finally
-        {
-            _suppressSubsystemCardChange = false;
-        }
-    }
-
-    // Mutual-exclusion enforcement : the user can't uncheck the active
-    // card by clicking it twice, since one of the two must always be
-    // selected. If a programmatic uncheck happens (the sibling handler
-    // turned it off when the other card was clicked), the suppress flag
-    // is set and we let it through.
-    private void OnSubsystemCardUnchecked(object sender, RoutedEventArgs e)
-    {
-        if (_suppressSubsystemCardChange) return;
-        if (sender is not ToggleButton card) return;
-
-        _suppressSubsystemCardChange = true;
-        try
-        {
-            card.IsChecked = true;
-        }
-        finally
-        {
-            _suppressSubsystemCardChange = false;
-        }
+        bool ambient = (item.Tag as string) == "ambient";
+        HudPage.Visibility     = ambient ? Visibility.Collapsed : Visibility.Visible;
+        AmbientPage.Visibility = ambient ? Visibility.Visible   : Visibility.Collapsed;
     }
 
     private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1932,7 +1959,14 @@ public sealed partial class PlaygroundWindow : Window
             AmbientPreviewGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellSize) });
 
         _previewCells = new Microsoft.UI.Xaml.Shapes.Rectangle[cols * rows];
-        var defaultBrush = (Brush)Application.Current.Resources["LayerOnAcrylicFillColorDefaultBrush"];
+
+        // Initial fill — a constant transparent-black so the cells read
+        // as the recessed surface they sit on until the first SampledFrame
+        // lands and the preview timer paints real colours. Resolving a
+        // ThemeResource brush from code (Application.Current.Resources[key])
+        // returns null when the key isn't registered at the app-level
+        // dictionary — safer to build a known SolidColorBrush directly.
+        var defaultBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
         for (int r = 0; r < rows; r++)
         {

@@ -16,7 +16,6 @@
           IsTabStop="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -30,50 +29,40 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Top-level subsystem selector. Two cards (HUD + Ambient
-             lighting), mutually exclusive via code-behind. Replaces the
-             prior NavigationView : flatter, more visual, easier to scan
-             when the window is wide. Each card stretches inside its
-             column ; equal-width split (* / *) keeps them visually
-             symmetric whatever the window size. -->
-        <Grid Grid.Row="1"
-              Margin="32,16,32,8"
-              ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <ToggleButton Grid.Column="0"
-                          x:Name="HudSubsystemCard"
-                          IsChecked="True"
-                          HorizontalAlignment="Stretch"
-                          HorizontalContentAlignment="Center"
-                          MinHeight="56"
-                          Padding="16,12"
-                          Checked="OnSubsystemCardChecked"
-                          Unchecked="OnSubsystemCardUnchecked">
-                <TextBlock Text="HUD"
-                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
-            </ToggleButton>
-            <ToggleButton Grid.Column="1"
-                          x:Name="AmbientSubsystemCard"
-                          HorizontalAlignment="Stretch"
-                          HorizontalContentAlignment="Center"
-                          MinHeight="56"
-                          Padding="16,12"
-                          Checked="OnSubsystemCardChecked"
-                          Unchecked="OnSubsystemCardUnchecked">
-                <TextBlock Text="Ambient lighting"
-                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
-            </ToggleButton>
-        </Grid>
+        <!-- Top-level navigation. Same pattern as SettingsWindow — Auto
+             pane mode (Left ≥1008, LeftCompact 640-1008, Minimal <640),
+             back button + system Settings entry suppressed. Two sections:
+                 • HUD            — existing two-column layout (preview +
+                                    tuning) ; selected by default.
+                 • Ambient light  — full-width page for the screen capture
+                                    pipeline + Hue driver + visualisations.
+             Pages are inline (Visibility toggle), not Frame-navigated —
+             both surfaces are small enough that loading them lazily would
+             add complexity without payoff. -->
+        <NavigationView Grid.Row="1"
+                        x:Name="PlaygroundNav"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        SelectionChanged="OnPlaygroundNavSelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="NavItemHud"
+                                    Content="HUD"
+                                    Tag="hud"
+                                    IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE916;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="NavItemAmbient"
+                                    Content="Ambient lighting"
+                                    Tag="ambient">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE781;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
-        <!-- Page content area. Houses HudPage and AmbientPage ; only
-             one is Visible at a time, gated by the subsystem cards
-             above. Visibility-toggled rather than Frame-navigated —
-             both pages are small enough that lazy load would add
-             complexity without payoff. -->
-        <Grid Grid.Row="2" x:Name="PageContent">
+            <Grid x:Name="PageContent">
 
                 <!-- ── HUD page ──────────────────────────────────────────
                      Existing two-column layout: preview (Col 0) + tuning
@@ -108,26 +97,37 @@
                 </Grid.RowDefinitions>
 
                 <!-- 7 targets: 4 HUD states + 3 naked diagnostic masks.
-                     Horizontal scroll when the column is narrowed below the
-                     natural SelectorBar width. -->
-                <ScrollViewer Grid.Row="0"
-                              HorizontalScrollMode="Auto"
-                              HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollMode="Disabled"
-                              VerticalScrollBarVisibility="Disabled"
-                              Padding="16,24,16,8">
-                    <SelectorBar x:Name="TargetSelector"
-                                 HorizontalAlignment="Center"
-                                 SelectionChanged="OnTargetSelectionChanged">
-                        <SelectorBarItem x:Name="TabCharging"     Text="Charging" />
-                        <SelectorBarItem x:Name="TabRecording"    Text="Recording" />
-                        <SelectorBarItem x:Name="TabTranscribing" Text="Transcribing" IsSelected="True" />
-                        <SelectorBarItem x:Name="TabRewriting"    Text="Rewriting" />
-                        <SelectorBarItem x:Name="TabConic"        Text="Conic" />
-                        <SelectorBarItem x:Name="TabArcMask"      Text="ArcMask" />
-                        <SelectorBarItem x:Name="TabCombined"     Text="Combined" />
-                    </SelectorBar>
-                </ScrollViewer>
+                     Grid of cards (replaces the prior SelectorBar tabs) so
+                     the cards reflow into multiple rows as the column
+                     narrows — preview area keeps breathing instead of being
+                     pushed off-screen by a horizontal tab strip. Uniform
+                     min-width based on the longest label ("Transcribing"),
+                     stretching to consume the remaining horizontal space.
+                     Mutual exclusion + Target dispatch lives in code-behind
+                     via OnTargetCardPrepared (one-time per cell) +
+                     OnTargetCardChecked / Unchecked. -->
+                <ItemsRepeater Grid.Row="0"
+                               x:Name="TargetCardsRepeater"
+                               HorizontalAlignment="Stretch"
+                               Margin="16,24,16,8"
+                               ElementPrepared="OnTargetCardPrepared">
+                    <ItemsRepeater.Layout>
+                        <UniformGridLayout MinItemWidth="140"
+                                           MinItemHeight="44"
+                                           MinColumnSpacing="8"
+                                           MinRowSpacing="8"
+                                           ItemsStretch="Fill"
+                                           Orientation="Horizontal" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <ToggleButton Content="{x:Bind}"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Center"
+                                          MinHeight="44" />
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
 
                 <!-- Play / Pause = two mutually-exclusive RadioButton. Button
                      labels name the action triggered, not the current state —
@@ -679,5 +679,6 @@
                     </ScrollViewer>
                 </Grid>
             </Grid>
+        </NavigationView>
     </Grid>
 </Window>
