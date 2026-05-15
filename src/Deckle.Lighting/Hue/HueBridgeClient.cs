@@ -45,6 +45,21 @@ public sealed class HueBridgeClient : IDisposable
         _http = CreateBridgeHttpClient(bridge.InternalIpAddress, bridge.Port);
     }
 
+    /// <summary>
+    /// Restores a previously-paired client from persisted credentials.
+    /// Used at app start to skip the link-button dance when the user has
+    /// already paired in a previous session — the bridge keeps the
+    /// username valid until manually revoked from the Hue app. The
+    /// ClientKey field can be left empty when restoring from persisted
+    /// state : the REST CLIP v1 path only uses Username, the PSK is
+    /// reserved for Entertainment v2 DTLS (not in scope J3).
+    /// </summary>
+    public HueBridgeClient(HueBridge bridge, HueCredentials credentials)
+        : this(bridge)
+    {
+        _credentials = credentials;
+    }
+
     /// <summary>The bridge this client targets.</summary>
     public HueBridge Bridge => _bridge;
 

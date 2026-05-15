@@ -277,8 +277,55 @@ public sealed partial class PlaygroundWindow : Window
                 // setting ItemsSource earlier silently no-ops.
                 TargetCardsRepeater.ItemsSource = _targetCardNames;
                 ApplyTarget();
+                // Restore the Hue bridge from persisted settings, if
+                // any. Skips the link-button dance when the user has
+                // already paired in a previous session.
+                RestoreHueFromSettings();
             };
         }
+
+    // Restore the Hue bridge state from AmbientSettings. Populates the
+    // IP textbox, reconstructs the HueBridgeClient with the saved
+    // username, and visually shows the bridge as paired so the user
+    // can go straight to "List groups". No network call here — the
+    // first authenticated REST request happens when the user clicks
+    // List groups or selects a group. If the bridge is unreachable or
+    // the username got revoked, that's where the failure surfaces.
+    private void RestoreHueFromSettings()
+    {
+        var settings = AmbientSettingsService.Instance.Current;
+        if (string.IsNullOrWhiteSpace(settings.HueBridgeIp) ||
+            string.IsNullOrWhiteSpace(settings.HueUsername))
+        {
+            return; // Nothing persisted yet — first run / unpaired state.
+        }
+
+        try
+        {
+            var bridge = new HueBridge(
+                Id:                settings.HueBridgeId ?? "restored",
+                InternalIpAddress: settings.HueBridgeIp,
+                Port:              443);
+            // ClientKey is unused on the REST CLIP v1 path ; we never
+            // persisted it. Restored credentials carry an empty value.
+            var creds = new HueCredentials(settings.HueUsername, ClientKey: "");
+            _hueBridge = new HueBridgeClient(bridge, creds);
+
+            HueBridgeIpTextBox.Text = settings.HueBridgeIp;
+            HuePairLabel.Text       = "Re-pair";
+            HuePairStatusText.Text  = $"Paired ({creds.UsernameHead}, saved)";
+            HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
+            HueListGroupsButton.IsEnabled = true;
+
+            LogService.Instance.Verbose(LogSource.Hue,
+                $"restore | bridge_ip={settings.HueBridgeIp} | bridge_id={settings.HueBridgeId} | username={creds.UsernameHead} | last_group_id={settings.HueLastGroupId ?? "none"}");
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Hue restore failed — {ex.GetType().Name}: {ex.Message} (user will need to re-pair)");
+        }
+    }
 
         // Tap on empty background → move focus to RootGrid, which dismisses
         // the caret from a NumberBox the user just edited. Focused input
@@ -1588,6 +1635,19 @@ public sealed partial class PlaygroundWindow : Window
             HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorSuccessBrush");
             HuePairLabel.Text      = "Re-pair";
 
+            // Pairing succeeded → persist the bridge state so the user
+            // doesn't have to press the link button again next session.
+            // We do NOT persist the ClientKey (Entertainment v2 PSK) —
+            // the REST path doesn't need it and storing a PSK in a JSON
+            // file is the wrong choice. HueLastGroupId stays whatever
+            // the previous pair set ; if the user picks a new group
+            // it gets overwritten by OnHueGroupSelectionChanged below.
+            var ambient = AmbientSettingsService.Instance.Current;
+            ambient.HueBridgeIp = _hueBridge.Bridge.InternalIpAddress;
+            ambient.HueBridgeId = _hueBridge.Bridge.Id;
+            ambient.HueUsername = creds.Username;
+            AmbientSettingsService.Instance.Save();
+
             // Pairing succeeded → unlock the next row. List groups is
             // a separate explicit step (the user might want to inspect
             // the LogWindow output before populating the combo) ; the
@@ -1652,10 +1712,24 @@ public sealed partial class PlaygroundWindow : Window
             HueGroupComboBox.IsEnabled = _hueGroups.Count > 0;
             if (_hueGroups.Count > 0)
             {
-                // Preselect first ; SelectionChanged fires once the
-                // suppress flag is off and wires the colour buttons
-                // to that group.
-                HueGroupComboBox.SelectedIndex = 0;
+                // Prefer the persisted last-group when the list contains
+                // it ; otherwise fall back to index 0. Either way,
+                // SelectionChanged fires once the suppress flag is off
+                // and wires the colour buttons + pipeline to the group.
+                string? lastId = AmbientSettingsService.Instance.Current.HueLastGroupId;
+                int preselectIndex = 0;
+                if (!string.IsNullOrEmpty(lastId))
+                {
+                    for (int i = 0; i < _hueGroups.Count; i++)
+                    {
+                        if (_hueGroups[i].Id == lastId)
+                        {
+                            preselectIndex = i;
+                            break;
+                        }
+                    }
+                }
+                HueGroupComboBox.SelectedIndex = preselectIndex;
             }
         }
         catch (Exception ex)
@@ -1697,6 +1771,13 @@ public sealed partial class PlaygroundWindow : Window
             await _hueLightOutput.ConnectAsync().ConfigureAwait(true);
             SetHueColorButtonsEnabled(true);
             SetPipelineReady();
+
+            // Persist the chosen group so the next session restores the
+            // same pre-selection — completes the "no link-button on
+            // restart" UX (pair credentials + group are both persisted
+            // and read back at Playground open).
+            AmbientSettingsService.Instance.Current.HueLastGroupId = group.Id;
+            AmbientSettingsService.Instance.Save();
         }
         catch (Exception ex)
         {
