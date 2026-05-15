@@ -9,27 +9,35 @@ using Deckle.Logging;
 
 namespace Deckle.Vision;
 
-// FrameSampler — GPU downsample + CPU readback for the ambient-lighting
-// pixel analysis path (J3 step 2).
+// FrameSampler — capture frame → CPU stride sampling for ambient-lighting
+// pixel analysis (J3 step 2).
 //
-// Per-frame flow (runs on the FreeThreaded frame pool's worker thread,
-// serialised via _lock) :
-//   1. QI the Direct3D11CaptureFrame.Surface to ID3D11Texture2D.
-//   2. CopyResource into our intermediate texture (allocated at source
-//      resolution with mip levels enabled and MISC_GENERATE_MIPS).
-//   3. GenerateMips on the intermediate SRV — the GPU walks the
-//      pyramid in hardware, microseconds on modern adapters.
-//   4. CopySubresourceRegion the target mip into a small staging
-//      texture (CPU-readable, USAGE_STAGING + CPU_ACCESS_READ).
-//      Readback bus traffic ≈ 1 KB at 30×17×4 bytes (BGRA8) or
-//      ≈ 2 KB at 30×17×8 bytes (FP16). Sub-millisecond.
-//   5. Map the staging, iterate the ~510 pixels, compute the arithmetic
-//      RGB average + fill the per-cell Color[] grid.
-//   6. If the source format is FP16 (HDR), tone-map scRGB → 8-bit sRGB
-//      via ColorSpace.ScRgbToSrgb against the display's reported
-//      peak luminance.
-//   7. Unmap and atomically publish the new SampledFrame via
+// First attempt used a GPU mipmap pyramid (intermediate texture with
+// MISC_GENERATE_MIPS, GenerateMips, mip pick + CopySubresourceRegion to
+// a small staging). It didn't produce real colours on the test rig —
+// the staging always came back zeros, the entire grid rendered black.
+// CopySubresourceRegion semantics on cross-format / mip-mismatched paths
+// are fragile and debugging them blind was eating tonight.
+//
+// Per-frame flow now (runs on the FreeThreaded frame pool's worker
+// thread, serialised via _lock) :
+//   1. QI Direct3D11CaptureFrame.Surface to ID3D11Texture2D.
+//   2. CopyResource into our staging — both single-mip, same dimensions,
+//      so this is the simple case that always works.
+//   3. Map the staging, iterate the target grid with row/col strides
+//      computed from (sourceWidth / targetCols, sourceHeight / targetRows).
+//   4. Compute arithmetic RGB mean, fill the per-cell Color[] grid.
+//   5. If the source format is FP16 (HDR), tone-map scRGB → 8-bit sRGB
+//      via ColorSpace.ScRgbToSrgb against the display's reported peak
+//      luminance.
+//   6. Unmap and atomically publish the new SampledFrame via
 //      Volatile.Write on _latestSample.
+//
+// Perf reality check : a 1920×1080 BGRA8 staging map costs ~8 MB
+// transferred per frame ; at ~3-15 Hz that's 24-120 MB/s, well under
+// 1 % CPU. A 4K BGRA8 map is ~33 MB, also fine in practice. The GPU
+// mipmap optimisation we deferred can come back as a J5 polish if
+// profiling shows it matters.
 //
 // What we don't do (out of scope J3 step 2) :
 //   - Black-border detection (J4).
@@ -40,10 +48,10 @@ namespace Deckle.Vision;
 // Ownership :
 //   - The IDirect3DDevice is borrowed (passed in the constructor). We
 //     extract the native ID3D11Device + immediate context (AddRef'd
-//     pointers we Release in DisposeAsync) but never close the
-//     WinRT wrapper.
-//   - The intermediate texture, intermediate SRV, and staging texture
-//     are owned ; allocated at construction, released on dispose.
+//     pointers we Release in DisposeAsync) but never close the WinRT
+//     wrapper.
+//   - The staging texture is owned ; allocated at construction, released
+//     on dispose.
 //
 // Threading :
 //   - Process() may be called from any thread (typically the frame
@@ -58,12 +66,12 @@ public sealed class FrameSampler : IAsyncDisposable
     private readonly int _sourceWidth;
     private readonly int _sourceHeight;
 
-    // Mip level we sample. Chosen at construction so the resulting grid
-    // is as close as possible to the target shape (30 × 17 for 16:9
-    // sources, adjusted for other aspect ratios).
-    private readonly int _targetMip;
+    // Sampling stride. _gridCols × _gridRows cells, each sampled at
+    // (col * _strideX, row * _strideY) in the source frame.
     private readonly int _gridCols;
     private readonly int _gridRows;
+    private readonly int _strideX;
+    private readonly int _strideY;
 
     // DXGI format of the pool and our textures. Decides whether we read
     // BGRA8 bytes or FP16 floats, and whether to tone-map.
@@ -74,8 +82,6 @@ public sealed class FrameSampler : IAsyncDisposable
     // Native COM pointers. AddRef'd ; Released in DisposeAsync.
     private nint _d3dDevice;
     private nint _d3dContext;
-    private nint _intermediateTex;
-    private nint _intermediateSrv;
     private nint _stagingTex;
 
     private SampledFrame? _latestSample;
@@ -105,8 +111,8 @@ public sealed class FrameSampler : IAsyncDisposable
             ? ScreenCaptureInterop.DXGI_FORMAT_R16G16B16A16_FLOAT
             : ScreenCaptureInterop.DXGI_FORMAT_B8G8R8A8_UNORM;
 
-        (_targetMip, _gridCols, _gridRows) =
-            ComputeTargetMip(_sourceWidth, _sourceHeight, targetCols: 30, targetRows: 17);
+        (_gridCols, _gridRows, _strideX, _strideY) =
+            ComputeGrid(_sourceWidth, _sourceHeight, targetCols: 60, targetRows: 34);
 
         // Extract the native ID3D11Device (AddRef'd) and its immediate
         // context. Both are released in DisposeAsync.
@@ -122,12 +128,10 @@ public sealed class FrameSampler : IAsyncDisposable
             _d3dContext = ctxPtr;
         }
 
-        _intermediateTex = CreateIntermediateTexture();
-        _intermediateSrv = CreateIntermediateSrv();
-        _stagingTex      = CreateStagingTexture();
+        _stagingTex = CreateStagingTexture();
 
         _log.Verbose(LogSource.Screen,
-            $"sampler init | grid={_gridCols}x{_gridRows} | mip={_targetMip} | tone_map={(_isHdr ? "scrgb_to_srgb" : "none")} | peak_lum={_peakLuminance:F0}");
+            $"sampler init | grid={_gridCols}x{_gridRows} | stride={_strideX}x{_strideY} | tone_map={(_isHdr ? "scrgb_to_srgb" : "none")} | peak_lum={_peakLuminance:F0}");
     }
 
     public void Process(Direct3D11CaptureFrame frame)
@@ -147,28 +151,16 @@ public sealed class FrameSampler : IAsyncDisposable
                 {
                     var ctxVtbl = *(nint**)_d3dContext;
 
-                    // Copy the captured frame's mip 0 into the intermediate's
-                    // mip 0. We can NOT use ID3D11DeviceContext::CopyResource
-                    // here : it requires src and dst to have the same mip
-                    // level count, and our intermediate has a full mip chain
-                    // while the captured frame is single-level. The silent
-                    // failure mode of CopyResource on mismatched MipLevels
-                    // leaves the intermediate uninitialised (zeros), which
-                    // is what gave every grid cell a black sample at first
-                    // run. CopySubresourceRegion copies a specific
-                    // (subresource, region) pair and is the right tool.
-                    var copySubresourceRegion = (delegate* unmanaged<nint, nint, uint, uint, uint, uint, nint, uint, void*, void>)
-                        ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_CopySubresourceRegion];
-                    copySubresourceRegion(_d3dContext, _intermediateTex, 0, 0, 0, 0, capturedTex, 0, null);
-
-                    // GenerateMips on the intermediate SRV — fills mip 1+
-                    // by averaging mip 0 in hardware.
-                    var generateMips = (delegate* unmanaged<nint, nint, void>)
-                        ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_GenerateMips];
-                    generateMips(_d3dContext, _intermediateSrv);
-
-                    // CopySubresourceRegion(staging, 0, 0,0,0, intermediate, mip, null).
-                    copySubresourceRegion(_d3dContext, _stagingTex, 0, 0, 0, 0, _intermediateTex, (uint)_targetMip, null);
+                    // CopyResource(staging, captured). Both textures are
+                    // single-mip and same dimensions, so the canonical
+                    // CopyResource works without ambiguity. The cost is
+                    // a full-res GPU→CPU readback (~8 MB at 1080p, ~33 MB
+                    // at 4K) but at 5-15 Hz that's still well under 1 %
+                    // CPU on a modern adapter. Switch back to a GPU mip
+                    // pyramid path in J5 if profiling shows it matters.
+                    var copyResource = (delegate* unmanaged<nint, nint, nint, void>)
+                        ctxVtbl[ScreenCaptureInterop.D3D11Vtbl.Context_CopyResource];
+                    copyResource(_d3dContext, _stagingTex, capturedTex);
 
                     // Map(staging, 0, READ, 0, &mapped).
                     var map = (delegate* unmanaged<nint, nint, uint, uint, uint, ScreenCaptureInterop.D3D11_MAPPED_SUBRESOURCE*, int>)
@@ -244,10 +236,16 @@ public sealed class FrameSampler : IAsyncDisposable
 
             for (int row = 0; row < _gridRows; row++)
             {
-                byte* rowPtr = basePtr + row * rowPitch;
+                int srcY = row * _strideY;
+                if (srcY >= _sourceHeight) srcY = _sourceHeight - 1;
+                byte* rowPtr = basePtr + srcY * rowPitch;
+
                 for (int col = 0; col < _gridCols; col++)
                 {
-                    byte* p = rowPtr + col * 4;
+                    int srcX = col * _strideX;
+                    if (srcX >= _sourceWidth) srcX = _sourceWidth - 1;
+                    byte* p = rowPtr + srcX * 4;
+
                     byte b = p[0];
                     byte g = p[1];
                     byte r = p[2];
@@ -273,10 +271,16 @@ public sealed class FrameSampler : IAsyncDisposable
 
             for (int row = 0; row < _gridRows; row++)
             {
-                ushort* rowPtr = (ushort*)(basePtr + row * rowPitch);
+                int srcY = row * _strideY;
+                if (srcY >= _sourceHeight) srcY = _sourceHeight - 1;
+                ushort* rowPtr = (ushort*)(basePtr + srcY * rowPitch);
+
                 for (int col = 0; col < _gridCols; col++)
                 {
-                    ushort* p = rowPtr + col * 4;
+                    int srcX = col * _strideX;
+                    if (srcX >= _sourceWidth) srcX = _sourceWidth - 1;
+                    ushort* p = rowPtr + srcX * 4;
+
                     float r = (float)BitConverter.UInt16BitsToHalf(p[0]);
                     float g = (float)BitConverter.UInt16BitsToHalf(p[1]);
                     float b = (float)BitConverter.UInt16BitsToHalf(p[2]);
@@ -292,78 +296,31 @@ public sealed class FrameSampler : IAsyncDisposable
         }
     }
 
-    // Pick the mip level whose dimensions land closest to (targetCols,
-    // targetRows) without going below. Halves the source size at each
-    // step ; stops when the next halving would undershoot the target.
-    // 3840×2160 with target 30×17 → mip 7 (30×17). 1920×1080 → mip 6
-    // (30×17). 2560×1440 → mip 6 (40×22). Aspect ratio of the source
-    // is preserved in the resulting grid.
-    private static (int mip, int cols, int rows) ComputeTargetMip(
+    // Pick a grid shape that's as close as possible to the target without
+    // exceeding the source dimensions. The strides are integer divisions,
+    // so for a source that doesn't divide cleanly the last column / row
+    // hits the same source pixel as the previous one (bounded read in
+    // ReadGrid*).
+    private static (int cols, int rows, int strideX, int strideY) ComputeGrid(
         int width, int height, int targetCols, int targetRows)
     {
-        int mip = 0;
-        int w = width, h = height;
-        while (w / 2 >= targetCols && h / 2 >= targetRows)
-        {
-            w /= 2;
-            h /= 2;
-            mip++;
-        }
-        return (mip, w, h);
-    }
-
-    private nint CreateIntermediateTexture()
-    {
-        var desc = new ScreenCaptureInterop.D3D11_TEXTURE2D_DESC
-        {
-            Width             = (uint)_sourceWidth,
-            Height            = (uint)_sourceHeight,
-            MipLevels         = 0,           // 0 = full mip chain
-            ArraySize         = 1,
-            Format            = _dxgiFormat,
-            SampleDescCount   = 1,
-            SampleDescQuality = 0,
-            Usage             = ScreenCaptureInterop.D3D11_USAGE_DEFAULT,
-            BindFlags         = ScreenCaptureInterop.D3D11_BIND_SHADER_RESOURCE
-                              | ScreenCaptureInterop.D3D11_BIND_RENDER_TARGET,
-            CPUAccessFlags    = 0,
-            MiscFlags         = ScreenCaptureInterop.D3D11_RESOURCE_MISC_GENERATE_MIPS,
-        };
-
-        unsafe
-        {
-            var deviceVtbl = *(nint**)_d3dDevice;
-            var createTexture2D = (delegate* unmanaged<nint, ScreenCaptureInterop.D3D11_TEXTURE2D_DESC*, void*, nint*, int>)
-                deviceVtbl[ScreenCaptureInterop.D3D11Vtbl.Device_CreateTexture2D];
-            nint texPtr;
-            int hr = createTexture2D(_d3dDevice, &desc, null, &texPtr);
-            Marshal.ThrowExceptionForHR(hr);
-            return texPtr;
-        }
-    }
-
-    private nint CreateIntermediateSrv()
-    {
-        // null SRV desc → SRV inherits the texture's format and full
-        // mip chain. Sufficient for GenerateMips.
-        unsafe
-        {
-            var deviceVtbl = *(nint**)_d3dDevice;
-            var createSrv = (delegate* unmanaged<nint, nint, void*, nint*, int>)
-                deviceVtbl[ScreenCaptureInterop.D3D11Vtbl.Device_CreateShaderResourceView];
-            nint srvPtr;
-            int hr = createSrv(_d3dDevice, _intermediateTex, null, &srvPtr);
-            Marshal.ThrowExceptionForHR(hr);
-            return srvPtr;
-        }
+        int strideX = Math.Max(1, width  / targetCols);
+        int strideY = Math.Max(1, height / targetRows);
+        int cols = Math.Max(1, width  / strideX);
+        int rows = Math.Max(1, height / strideY);
+        return (cols, rows, strideX, strideY);
     }
 
     private nint CreateStagingTexture()
     {
+        // Staging at the source resolution — same shape as the captured
+        // frame, single mip, CPU-readable. The same-shape requirement is
+        // what lets us use ID3D11DeviceContext::CopyResource without the
+        // silent-no-op trap of mismatched MipLevels.
         var desc = new ScreenCaptureInterop.D3D11_TEXTURE2D_DESC
         {
-            Width             = (uint)_gridCols,
-            Height            = (uint)_gridRows,
+            Width             = (uint)_sourceWidth,
+            Height            = (uint)_sourceHeight,
             MipLevels         = 1,
             ArraySize         = 1,
             Format            = _dxgiFormat,
@@ -395,11 +352,9 @@ public sealed class FrameSampler : IAsyncDisposable
         {
             _disposed = true;
 
-            if (_intermediateSrv != 0) { Marshal.Release(_intermediateSrv); _intermediateSrv = 0; }
-            if (_intermediateTex != 0) { Marshal.Release(_intermediateTex); _intermediateTex = 0; }
-            if (_stagingTex != 0)      { Marshal.Release(_stagingTex);      _stagingTex = 0; }
-            if (_d3dContext != 0)      { Marshal.Release(_d3dContext);      _d3dContext = 0; }
-            if (_d3dDevice != 0)       { Marshal.Release(_d3dDevice);       _d3dDevice = 0; }
+            if (_stagingTex != 0) { Marshal.Release(_stagingTex); _stagingTex = 0; }
+            if (_d3dContext != 0) { Marshal.Release(_d3dContext); _d3dContext = 0; }
+            if (_d3dDevice != 0)  { Marshal.Release(_d3dDevice);  _d3dDevice = 0; }
         }
 
         return ValueTask.CompletedTask;
