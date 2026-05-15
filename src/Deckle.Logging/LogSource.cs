@@ -59,4 +59,12 @@ public static class LogSource
     // tag for the analysis pipeline if its events warrant separation from
     // SCREEN).
     public const string Screen = "SCREEN";
+
+    // Hue bridge driver (cloud discovery, link-button pairing, group list,
+    // REST CLIP v1 colour push) emitted from Deckle.Lighting.Hue. Covers
+    // the whole life of a Hue REST session ; the Entertainment v2 DTLS
+    // path (deferred) will reuse the same source tag since the bridge
+    // identity stays the same. Sibling driver tags (Wled, Dmx, HomeAssist)
+    // will sit alongside as those land.
+    public const string Hue = "HUE";
 }

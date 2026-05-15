@@ -377,6 +377,84 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- Hue (REST direct) card. J2 test surface for
+                                 the bridge driver — Discover + Pair to start,
+                                 List groups + Set colour land in follow-ups.
+                                 Talks CLIP v1 directly to the bridge ; HA
+                                 integration is deferred until Louis has a
+                                 Raspberry Pi running it. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Hue (REST direct)"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Talks straight to a Philips Hue bridge over its CLIP v1 REST API. No Home Assistant in the loop, no DTLS — capped at ~10-20 Hz but plenty for an ambient pipeline with smoothing on top."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <!-- Bridge address row. Discover queries
+                                         discovery.meethue.com and autofills
+                                         the textbox ; manual entry is the
+                                         fallback when the cloud lookup
+                                         returns nothing (firewall, offline,
+                                         etc.). -->
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0"
+                                                 x:Name="HueBridgeIpTextBox"
+                                                 PlaceholderText="192.168.1.5"
+                                                 Header="Bridge IP" />
+                                        <Button Grid.Column="1"
+                                                x:Name="HueDiscoverButton"
+                                                VerticalAlignment="Bottom"
+                                                Click="OnHueDiscoverClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <FontIcon Glyph="&#xE721;" FontSize="14" />
+                                                <TextBlock Text="Discover" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <!-- Pair row. Pressing the button starts
+                                         a 30 s polling loop ; the user has
+                                         to walk over and press the physical
+                                         link button on top of the bridge.
+                                         Status dot follows the same colour
+                                         scheme as the Screen capture card. -->
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="HuePairButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="200"
+                                                Click="OnHuePairClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon Glyph="&#xE71B;" FontSize="14" />
+                                                <TextBlock x:Name="HuePairLabel" Text="Pair (press link button)" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="HuePairStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="HuePairStatusText"
+                                                   Text="Not paired"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Visualisations placeholder. Reserves the
                                  lower half of the page for J4+ surfaces
                                  (downsampled grid preview, dominant colour

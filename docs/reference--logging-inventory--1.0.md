@@ -81,6 +81,20 @@ grep `rms=` trouve exactement la même chose partout.
 | Outcome enum | `outcome={value}` | `outcome=Pasted` |
 | Pointeur natif | `hex` | `ctx=0x7ff8a3c01400` |
 
+### Réseau / drivers LED
+
+| Mesure | Unité | Précision | Exemple | Notes |
+|---|---|---|---|---|
+| Adresse IP | IPv4 | — | `bridge_ip=192.168.1.5` | LAN local |
+| Bridge identifier | hex16 | — | `bridge_id=001788FFFE3A2C18` | Hue serial number |
+| Application key | hex32+ | — | `username=eDOvxk-...` | tronqué à 8 chars + `...` dans les logs |
+| Pre-shared key | — | — | `clientkey=[redacted]` | jamais loggué en clair, valeur sensible (PSK DTLS) |
+| Group / room ID | string | — | `group_id=3` | CLIP v1 = entier, v2 = UUID |
+| HTTP status | `hr` | entier | `hr=200`, `hr=401` | code retour HTTP |
+| Couleur CIE xy | `xy` | 4 décimales | `xy=0.4521,0.3895` | espace colorimétrique Hue |
+| Luminance | `bri` | entier 0-254 | `bri=200` | CLIP v1 brightness |
+| Couleur RGB | `rgb` | 3 octets | `rgb=180,60,240` | input app, converti en xy avant push |
+
 ---
 
 ## Conventions
@@ -212,6 +226,7 @@ Ne pas en ajouter sans raison. Mapping étape → source :
 | App lifecycle | `APP`, `STATUS`, `CRASH` |
 | Settings | `SETTINGS`, `SET.*` |
 | Capture écran (ambient lighting) | `SCREEN` |
+| Driver Hue (discovery, pairing, REST control) | `HUE` |
 
 ---
 
@@ -632,6 +647,67 @@ Le `FrameArrived` event est levé sur le worker thread interne du `Direct3D11Cap
 **Disposable**
 
 `ScreenCaptureService` est `IDisposable`. `Dispose()` est idempotent et appelle `Stop()` si la session est encore active. Le consommateur est responsable du `Dispose()` quand il n'a plus besoin du service — typiquement à la fermeture de la fenêtre Playground ou à l'arrêt explicite de l'utilisateur.
+
+### 12. Driver Hue (REST direct)
+
+**Fichier** : `src/Deckle.Lighting/Hue/HueDiscovery.cs` (cloud lookup `discovery.meethue.com`), `src/Deckle.Lighting/Hue/HueBridgeClient.cs` (HTTPS bypass cert + pairing CLIP v1 + control), `src/Deckle.Lighting/Hue/HueRestLightOutput.cs` (implémentation `ILightOutput`).
+
+J2 emprunte délibérément la voie REST CLIP v1 plafonnée à ~10-20 Hz, pas la voie Entertainment v2 DTLS-PSK (cf. `docs/research--hue-entertainment-v2--2026-05-15.md`). Le pipeline reste 100 % C#, zéro dépendance native, zéro NuGet tier — la cadence est suffisante pour un mode ambient avec smoothing au-dessus. La voie Entertainment v2 est archivée pour plus tard si la perception le justifie ; le swap se fera derrière l'abstraction `ILightOutput` sans toucher au reste du pipeline.
+
+**Mesures disponibles**
+
+- `[logué]` lookup discovery cloud start + N bridges retournés
+- `[logué]` bridge_id + bridge_ip pour chaque bridge découvert
+- `[logué]` pairing start + waiting tick (1 / sec pendant 30 s)
+- `[logué]` pairing success : bridge_id, username tronqué (8 chars + `...`), clientkey `[redacted]`
+- `[logué]` pairing failure : timeout (30 s écoulées sans pression) ou refus bridge
+- `[logué]` groups list start + N groups + leur id/name
+- `[logué]` set colour : group_id + rgb d'origine + xy + bri calculés
+- `[à instrumenter]` cadence réelle d'envoi (push/s) quand le driver tournera derrière le pipeline J3
+- `[à instrumenter]` round-trip latency (mesure ping-pong sur PUT) pour diagnostic bridge surchargé
+
+**Gabarit standard**
+
+```
+Info      HUE  Looking up Hue bridges
+Verbose   HUE  discover start | source=cloud | url=https://discovery.meethue.com/
+Success   HUE  Found {N} Hue bridge(s)
+Verbose   HUE  discover result | bridge_id={id} | bridge_ip={ip}
+Info      HUE  Pairing started — press the link button on the bridge
+Verbose   HUE  pair start | bridge_ip={ip} | timeout_sec=30
+Success   HUE  Bridge paired ({bridge_id})
+Verbose   HUE  pair result | bridge_id={id} | username={head8}... | clientkey=[redacted]
+Info      HUE  Listing groups
+Verbose   HUE  groups list | bridge_id={id} | count={N}
+Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri}
+```
+
+**Erreurs et sévérités**
+
+| Condition | Sévérité | UserFeedback | Notes |
+|---|---|---|---|
+| Cloud discovery timeout / DNS fail | Warning | non (fallback manual IP) | retry possible |
+| Cloud discovery retourne 0 bridge | Info | non (mais surface dans Playground) | utilisateur entre IP manuellement |
+| Bridge IP injoignable (TCP refused / timeout) | Error | ➕ Critical (vague Ambient) | bridge éteint ou IP fausse |
+| Bridge cert auto-signé refus (avant bypass) | n/a | n/a | bypass configuré en dur, ne devrait pas remonter |
+| Pair `error 101` (link not pressed) | Verbose | non (status text mis à jour) | normal pendant les 30 s d'attente |
+| Pair timeout 30 s | Warning | ➕ Warning (vague Ambient) | utilisateur a oublié de presser |
+| Pair bridge refus autre que 101 | Error | ➕ Critical (vague Ambient) | rare (bridge saturé d'apps connues) |
+| HTTP 401/403 sur control | Error | ➕ Critical (vague Ambient) | username révoqué côté bridge |
+| HTTP 5xx sur control | Warning | non (push dropped, session continue) | transient |
+| Group id sélectionné disparait | Warning | ➕ Warning (vague Ambient) | groupe supprimé côté Hue app |
+
+**Threading**
+
+`HueBridgeClient` expose des méthodes `async Task<...>`. Discovery + pairing + control sont async sur le pool d'I/O .NET — pas de marshalling UI nécessaire côté driver. Le consommateur (Playground ou plus tard l'`AmbientEngine`) appelle ces méthodes depuis n'importe quel thread, en attendant le résultat ; la couche UI marshale avec `DispatcherQueue.TryEnqueue` quand elle reflète l'état dans des controls XAML.
+
+**Secret**
+
+Le `clientkey` retourné par le bridge au pairing est une PSK qui servira au tunnel DTLS Entertainment v2 si jamais on l'active. Il est traité comme un secret : jamais affiché en clair dans la LogWindow (ni Verbose ni autre niveau), jamais persisté en JSON non chiffré sans avertissement. Le `username` (= application key REST) est moins sensible mais reste tronqué à 8 chars + `...` dans les logs pour minimiser l'exposition dans des screenshots de support.
+
+**Disposable**
+
+`HueRestLightOutput` est `IAsyncDisposable`. La fermeture libère l'`HttpClient` interne ; le `username` reste valide côté bridge tant que l'utilisateur ne le révoque pas manuellement via l'app Hue. La rétention du `username` entre sessions est une décision du consommateur (Playground = transient, AmbientSettings = persistant).
 
 ---
 

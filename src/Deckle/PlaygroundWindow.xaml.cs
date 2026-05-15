@@ -13,6 +13,7 @@ using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;
+using Deckle.Lighting.Hue;
 using Deckle.Logging;
 using Deckle.Playground;
 using Deckle.Shell;
@@ -148,6 +149,18 @@ public sealed partial class PlaygroundWindow : Window
     private long _screenCaptureLastSampledFrames;
     private long _screenCaptureLastSampleTimestamp;
 
+    // ── Ambient lighting — Hue REST driver (J2) ────────────────────────
+    //
+    // The bridge client is created on the first Pair attempt and lives
+    // for the duration of the Playground session ; no persistence
+    // across window close (Louis's explicit choice for the playground
+    // contract — tester librement, tout reset à la fermeture). On
+    // Closing→Hide we cancel any in-flight pairing and dispose the
+    // client ; the next Pair click starts a fresh client.
+    private HueBridgeClient? _hueBridge;
+    private CancellationTokenSource? _huePairCts;
+    private bool _hueIsPairing;
+
     public PlaygroundWindow()
     {
         InitializeComponent();
@@ -195,6 +208,7 @@ public sealed partial class PlaygroundWindow : Window
         {
             args.Cancel = true;
             StopScreenCaptureIfRunning();
+            TeardownHueIfActive();
             AppWindow.Hide();
         };
 
@@ -239,6 +253,7 @@ public sealed partial class PlaygroundWindow : Window
             _rebuildDebounce.Stop();
             _screenCaptureFpsTimer.Stop();
             StopScreenCaptureIfRunning();
+            TeardownHueIfActive();
             // Detach the composition child first so the compositor stops
             // referencing the bundle's visual tree, then dispose. In the
             // singleton-hidden pattern (Closing→Hide) Closed only fires at
@@ -1365,5 +1380,131 @@ public sealed partial class PlaygroundWindow : Window
 
         _screenCaptureLastSampledFrames = currentFrames;
         _screenCaptureLastSampleTimestamp = currentTimestamp;
+    }
+
+    // ── Ambient lighting — Hue REST handlers (J2) ──────────────────────
+    //
+    // All three operations are async and run on the UI thread until
+    // the first await. The bridge client is created lazily on first
+    // Pair and torn down on window Close ; Discover doesn't need it
+    // (cloud lookup is a static method, no bridge state involved).
+    //
+    // Cancellation : the pair loop runs up to 30 s ; if the user
+    // closes the window mid-pair we cancel via _huePairCts so the
+    // HttpClient unblocks cleanly. The buttons disable themselves
+    // while an op is in flight (Discover is short enough that we
+    // don't bother, Pair has a visible 30 s deadline so the disabled
+    // state matters).
+
+    private async void OnHueDiscoverClick(object sender, RoutedEventArgs e)
+    {
+        // Disable the button during the lookup so the user can't
+        // queue multiple cloud calls — discovery is short (≤ 10 s
+        // timeout in HueDiscovery) so this stays unobtrusive.
+        HueDiscoverButton.IsEnabled = false;
+        try
+        {
+            var bridges = await HueDiscovery.DiscoverViaCloudAsync().ConfigureAwait(true);
+            if (bridges.Count == 0)
+            {
+                // Cloud returned empty — log + leave the textbox alone
+                // so the user can enter the IP manually. No status
+                // dot change ; the absence of autofill is the signal.
+                return;
+            }
+
+            // Autofill with the first bridge ; the user can still
+            // overwrite if they have several bridges and want a
+            // specific one. The remaining bridges are visible in
+            // LogWindow (HueDiscovery emits a Verbose line per
+            // bridge found).
+            HueBridgeIpTextBox.Text = bridges[0].InternalIpAddress;
+        }
+        finally
+        {
+            HueDiscoverButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHuePairClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueIsPairing) return;
+
+        var ip = HueBridgeIpTextBox.Text?.Trim();
+        if (string.IsNullOrEmpty(ip))
+        {
+            HuePairStatusText.Text = "Bridge IP required";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCautionBrush");
+            return;
+        }
+
+        // Replace any previous client (lets the user retry against a
+        // different IP without restarting the window) ; the old one
+        // owns an HttpClient that needs disposing.
+        TeardownHueIfActive();
+
+        _hueBridge = new HueBridgeClient(new HueBridge(
+            Id: "manual",
+            InternalIpAddress: ip,
+            Port: 443));
+        _huePairCts = new CancellationTokenSource();
+        _hueIsPairing = true;
+
+        HuePairButton.IsEnabled = false;
+        HuePairLabel.Text       = "Waiting for link button…";
+        HuePairStatusText.Text  = "Waiting (30 s)";
+        HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorCautionBrush");
+
+        try
+        {
+            var creds = await _hueBridge.PairAsync(
+                overallTimeout: TimeSpan.FromSeconds(30),
+                pollInterval:   TimeSpan.FromSeconds(2),
+                ct:             _huePairCts.Token)
+                .ConfigureAwait(true);
+
+            HuePairStatusText.Text = $"Paired ({creds.UsernameHead})";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorSuccessBrush");
+            HuePairLabel.Text      = "Re-pair";
+        }
+        catch (OperationCanceledException)
+        {
+            // Window closed mid-pair, or user re-clicked. Don't
+            // surface anything — the visual state is whatever the
+            // teardown leaves behind.
+            HuePairStatusText.Text = "Cancelled";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorNeutralBrush");
+            HuePairLabel.Text      = "Pair (press link button)";
+        }
+        catch (TimeoutException)
+        {
+            HuePairStatusText.Text = "Timed out — try again";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCriticalBrush");
+            HuePairLabel.Text      = "Pair (press link button)";
+        }
+        catch (Exception ex)
+        {
+            HuePairStatusText.Text = $"Failed: {ex.Message}";
+            HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCriticalBrush");
+            HuePairLabel.Text      = "Pair (press link button)";
+        }
+        finally
+        {
+            _hueIsPairing = false;
+            HuePairButton.IsEnabled = true;
+        }
+    }
+
+    private void TeardownHueIfActive()
+    {
+        // Cancel any pending pair loop first ; PairAsync will exit
+        // with OperationCanceledException so the catch in
+        // OnHuePairClick can update the visuals.
+        try { _huePairCts?.Cancel(); } catch { /* best effort */ }
+        _huePairCts?.Dispose();
+        _huePairCts = null;
+
+        _hueBridge?.Dispose();
+        _hueBridge = null;
     }
 }
