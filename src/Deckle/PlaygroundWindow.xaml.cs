@@ -14,6 +14,7 @@ using Deckle.Composition;
 using Deckle.Controls;
 using Deckle.Interop;
 using Deckle.Lighting;
+using Deckle.Lighting.Ambient;
 using Deckle.Lighting.Hue;
 using Deckle.Logging;
 using Deckle.Playground;
@@ -165,6 +166,15 @@ public sealed partial class PlaygroundWindow : Window
     private HueRestLightOutput? _hueLightOutput;
     private CancellationTokenSource? _hueRotationCts;
     private bool _hueGroupComboSuppress;
+
+    // ── Ambient lighting — end-to-end pipeline (J3) ────────────────────
+    //
+    // The engine is instantiated lazily on the first Start pipeline
+    // click ; it borrows the existing _screenCapture and
+    // _hueLightOutput so capture cadence and bridge auth are shared
+    // with the standalone test cards. DisposeAsync is fire-and-forget
+    // on Closing (best-effort cleanup, the loop cancels via its CTS).
+    private AmbientEngine? _ambientEngine;
 
     public PlaygroundWindow()
     {
@@ -1296,6 +1306,18 @@ public sealed partial class PlaygroundWindow : Window
             return;
         }
 
+        StartScreenCaptureService();
+    }
+
+    // Shared start logic for the Screen capture card and the Pipeline
+    // card — both want the exact same setup (instantiate service if
+    // null, subscribe Stopped, Start, refresh visuals, kick the FPS
+    // timer). Returns true on success so the Pipeline path can decide
+    // whether to proceed with engine construction or abort.
+    private bool StartScreenCaptureService()
+    {
+        if (_screenCapture is { IsRunning: true }) return true;
+
         try
         {
             _screenCapture ??= new ScreenCaptureService();
@@ -1311,6 +1333,7 @@ public sealed partial class PlaygroundWindow : Window
             ScreenCaptureFramesText.Text = "0";
             ScreenCaptureFpsText.Text = "—";
             _screenCaptureFpsTimer.Start();
+            return true;
         }
         catch (Exception ex)
         {
@@ -1325,6 +1348,7 @@ public sealed partial class PlaygroundWindow : Window
             ScreenCaptureStatusText.Text = $"Failed: {ex.Message}";
             ScreenCaptureStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
             StopScreenCaptureIfRunning();
+            return false;
         }
     }
 
@@ -1580,13 +1604,45 @@ public sealed partial class PlaygroundWindow : Window
         {
             await _hueLightOutput.ConnectAsync().ConfigureAwait(true);
             SetHueColorButtonsEnabled(true);
+            SetPipelineReady();
         }
         catch (Exception ex)
         {
             LogService.Instance.Warning(LogSource.Hue,
                 $"Selecting group failed — {ex.GetType().Name}: {ex.Message}");
             SetHueColorButtonsEnabled(false);
+            SetPipelineNotReady();
         }
+    }
+
+    // Pipeline UI state is a function of "do we have an ILightOutput
+    // wired ?" — that's the prerequisite. The capture is bootstrapped
+    // on demand by the Start handler. SetPipelineReady is called from
+    // the group-selected success path ; SetPipelineNotReady is the
+    // teardown / no-group state.
+    private void SetPipelineReady()
+    {
+        if (_ambientEngine is { IsRunning: true })
+        {
+            // The engine is already running against a previous group ;
+            // a group switch swapped the output behind it. Keep the
+            // "Stop" label, the engine continues pushing.
+            return;
+        }
+        PipelineToggleButton.IsEnabled = true;
+        PipelineToggleIcon.Glyph = ScreenCaptureGlyphStart;
+        PipelineToggleLabel.Text = "Start pipeline";
+        PipelineStatusText.Text = "Ready — click Start";
+        PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorAttentionBrush");
+    }
+
+    private void SetPipelineNotReady()
+    {
+        PipelineToggleButton.IsEnabled = false;
+        PipelineToggleIcon.Glyph = ScreenCaptureGlyphStart;
+        PipelineToggleLabel.Text = "Start pipeline";
+        PipelineStatusText.Text = "Pair a bridge and pick a group first";
+        PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorNeutralBrush");
     }
 
     private async void OnHueTestColorClick(object sender, RoutedEventArgs e)
@@ -1663,6 +1719,66 @@ public sealed partial class PlaygroundWindow : Window
         }
     }
 
+    private async void OnPipelineToggleClick(object sender, RoutedEventArgs e)
+    {
+        // Stop path : engine running, the click means "stop".
+        if (_ambientEngine is { IsRunning: true })
+        {
+            _ambientEngine.Stop();
+            await _ambientEngine.DisposeAsync().ConfigureAwait(true);
+            _ambientEngine = null;
+            SetPipelineReady();
+            return;
+        }
+
+        // Start path : need the screen capture running and an output
+        // ready. The capture is auto-started if not running ; the
+        // output existence is a prerequisite enforced by the button
+        // state machine (button only enabled after group selection).
+        if (_hueLightOutput is null)
+        {
+            // Should never reach here given the button gating, but
+            // guard anyway so a race doesn't crash the engine ctor.
+            PipelineStatusText.Text = "Pair a bridge and pick a group first";
+            return;
+        }
+
+        if (!StartScreenCaptureService())
+        {
+            PipelineStatusText.Text = "Couldn't start screen capture";
+            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+            return;
+        }
+
+        PipelineToggleButton.IsEnabled = false;
+        try
+        {
+            _ambientEngine = new AmbientEngine(_screenCapture!, _hueLightOutput);
+            await _ambientEngine.StartAsync().ConfigureAwait(true);
+
+            PipelineToggleIcon.Glyph = ScreenCaptureGlyphStop;
+            PipelineToggleLabel.Text = "Stop pipeline";
+            PipelineStatusText.Text = "Running (mock HSV rotation)";
+            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorSuccessBrush");
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Ambient,
+                $"Pipeline start failed — {ex.GetType().Name}: {ex.Message}");
+            PipelineStatusText.Text = $"Failed: {ex.Message}";
+            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
+            if (_ambientEngine is not null)
+            {
+                await _ambientEngine.DisposeAsync().ConfigureAwait(true);
+                _ambientEngine = null;
+            }
+        }
+        finally
+        {
+            PipelineToggleButton.IsEnabled = true;
+        }
+    }
+
     private void CancelHueRotationIfRunning()
     {
         try { _hueRotationCts?.Cancel(); } catch { /* best effort */ }
@@ -1685,6 +1801,17 @@ public sealed partial class PlaygroundWindow : Window
 
     private void TeardownHueIfActive()
     {
+        // The pipeline depends on the bridge — if we're tearing the
+        // bridge down, the engine must go first. Fire-and-forget the
+        // async dispose ; the engine cancels its loop on Stop, the
+        // remaining awaitable work is just a Task.WhenAny completion.
+        if (_ambientEngine is not null)
+        {
+            _ambientEngine.Stop();
+            _ambientEngine.DisposeAsync().AsTask();
+            _ambientEngine = null;
+        }
+
         // Cancel any pending pair loop first ; PairAsync will exit
         // with OperationCanceledException so the catch in
         // OnHuePairClick can update the visuals.
@@ -1723,5 +1850,7 @@ public sealed partial class PlaygroundWindow : Window
             _hueGroupComboSuppress = false;
             SetHueColorButtonsEnabled(false);
         }
+
+        SetPipelineNotReady();
     }
 }

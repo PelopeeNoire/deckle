@@ -563,6 +563,61 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- Pipeline card (J3). End-to-end test of
+                                 the chain : Screen capture → AmbientEngine
+                                 → Hue driver. Start enabled only when both
+                                 ends are ready (a group is selected so
+                                 we have an ILightOutput to push to ; the
+                                 capture service is created on-demand by
+                                 the engine itself if not already running).
+                                 J3 step 1 pushes a mock HSV rotation at
+                                 5 Hz so the lamps rainbow-cycle, proving
+                                 the wiring works without any pixel
+                                 analysis yet. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Pipeline (capture → analysis → lights)"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="J3 step 1 — wires the screen capture to the selected Hue group via the AmbientEngine. The lamps cycle through the rainbow at 5 Hz to validate the chain without any pixel analysis yet. Real frame analysis lands in step 2."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="PipelineToggleButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="180"
+                                                IsEnabled="False"
+                                                Click="OnPipelineToggleClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon x:Name="PipelineToggleIcon"
+                                                          Glyph="&#xE768;"
+                                                          FontSize="14" />
+                                                <TextBlock x:Name="PipelineToggleLabel"
+                                                           Text="Start pipeline" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="PipelineStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="PipelineStatusText"
+                                                   Text="Pair a bridge and pick a group first"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Visualisations placeholder. Reserves the
                                  lower half of the page for J4+ surfaces
                                  (downsampled grid preview, dominant colour

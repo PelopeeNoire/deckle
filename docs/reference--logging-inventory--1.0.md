@@ -227,6 +227,7 @@ Ne pas en ajouter sans raison. Mapping étape → source :
 | Settings | `SETTINGS`, `SET.*` |
 | Capture écran (ambient lighting) | `SCREEN` |
 | Driver Hue (discovery, pairing, REST control) | `HUE` |
+| AmbientEngine (capture → analyse → push) | `AMBIENT` |
 
 ---
 
@@ -708,6 +709,42 @@ Le `clientkey` retourné par le bridge au pairing est une PSK qui servira au tun
 **Disposable**
 
 `HueRestLightOutput` est `IAsyncDisposable`. La fermeture libère l'`HttpClient` interne ; le `username` reste valide côté bridge tant que l'utilisateur ne le révoque pas manuellement via l'app Hue. La rétention du `username` entre sessions est une décision du consommateur (Playground = transient, AmbientSettings = persistant).
+
+### 13. AmbientEngine (pipeline orchestration)
+
+**Fichier** : `src/Deckle.Lighting.Ambient/AmbientEngine.cs`.
+
+L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenCaptureService`) à l'aval (driver LED via `Deckle.Lighting.ILightOutput`). Il ne sait pas avec quel matériel il parle — l'`ILightOutput` est agnostique — et il ne fait pas d'analyse pixel par lui-même : ce travail vit dans des helpers réutilisables (J3 step 2 introduit `FrameSampler` pour l'analyse Direct3D11 staging texture + subsample). En J3 step 1 l'engine pousse une couleur mock en rotation HSV à 5 Hz pour valider la chaîne et la cadence ; l'analyse réelle prend le relais en J3 step 2 sans toucher au câblage event ↔ driver.
+
+**Mesures disponibles**
+
+- `[logué]` start / stop de la session (Info + Verbose miroir avec config)
+- `[logué]` couleur poussée (Verbose, sous-échantillonné via le throttle)
+- `[à instrumenter J3 step 2]` durée de l'analyse couleur par frame
+- `[à instrumenter J3 step 2]` frames droppées par le throttle (skip si push précédent < intervalle min)
+- `[à instrumenter]` latence push (entre frame capturée et SetColorAsync renvoyé)
+
+**Gabarit standard**
+
+```
+Info      AMBIENT  Ambient pipeline started
+Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N}
+Info      AMBIENT  Ambient pipeline stopped
+Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1}
+Verbose   AMBIENT  push | mode={mock|analysis} | rgb={r},{g},{b}
+```
+
+**Erreurs et sévérités**
+
+| Condition | Sévérité | UserFeedback | Notes |
+|---|---|---|---|
+| Output `ConnectAsync` échoue au start | Error | ➕ Critical (vague Ambient) | bridge déco / token KO |
+| `SetColorAsync` throw (transient HTTP) | Warning | non (push dropped) | retry au tick suivant |
+| Mock / analysis loop crash | Error | ➕ Critical (vague Ambient) | engine s'arrête, statut UI mis à jour |
+
+**Threading**
+
+L'engine démarre une boucle async (`Task.Run` ou await direct) qui appelle `SetColorAsync` à cadence régulière. La capture (`FrameArrived` sur worker thread) reste sa propre histoire ; en J3 step 2 elle alimentera un slot atomique de "dernière frame disponible" lu par la boucle d'analyse, sans synchronisation lourde.
 
 ---
 

@@ -67,4 +67,12 @@ public static class LogSource
     // identity stays the same. Sibling driver tags (Wled, Dmx, HomeAssist)
     // will sit alongside as those land.
     public const string Hue = "HUE";
+
+    // AmbientEngine orchestration (capture frame → analysis → driver
+    // push) emitted from Deckle.Lighting.Ambient. The engine itself is
+    // protocol-agnostic — it sees an ILightOutput, not a Hue / Wled /
+    // HA-specific driver — so this tag tracks the pipeline lifecycle
+    // (start, stop, push cadence, frame drops) rather than the wire
+    // calls those drivers emit under SCREEN / HUE / future tags.
+    public const string Ambient = "AMBIENT";
 }
