@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Deckle.Lighting.Ambient</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WinUI XAML compilation : Lighting.Ambient ships AmbientPage.xaml
+         (Settings page) + AmbientViewModel.cs starting in J0c. Aligned on
+         Deckle.Whisp / Deckle.Llm pattern. -->
+    <UseWinUI>true</UseWinUI>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <!-- Generates the lib's own .pri so x:Uid lookups in AmbientPage
+         resolve against the Deckle.Lighting.Ambient/Resources subtree.
+         Same pattern as Deckle.Whisp and Deckle.Llm. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Versions aligned on Deckle.csproj. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Deckle.Composition\Deckle.Composition.csproj" />
+    <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+    <ProjectReference Include="..\Deckle.Lighting\Deckle.Lighting.csproj" />
+    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
+    <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+    <ProjectReference Include="..\Deckle.Settings\Deckle.Settings.csproj" />
+    <ProjectReference Include="..\Deckle.Vision\Deckle.Vision.csproj" />
+  </ItemGroup>
+</Project>
