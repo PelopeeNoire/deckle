@@ -1,4 +1,4 @@
-namespace Deckle.Capture;
+namespace Deckle.Audio;
 
 // Microphone capture settings. AudioInputDeviceId = waveIn device index;
 // -1 = WAVE_MAPPER (system default device).

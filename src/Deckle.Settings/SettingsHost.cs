@@ -1,5 +1,5 @@
 using Microsoft.UI.Xaml;
-using Deckle.Capture;
+using Deckle.Audio;
 
 namespace Deckle.Settings;
 
@@ -7,7 +7,7 @@ namespace Deckle.Settings;
 //
 // App-side hooks the Settings UI pages and ViewModels need to drive
 // concerns that only the App owns: theme broadcast across windows, the
-// canonical AudioLevelMapper statics in Deckle.Capture (touched by the
+// canonical AudioLevelMapper statics in Deckle.Audio (touched by the
 // level-window slider), process restart, and the lazy SettingsWindow
 // instance accessor used by dialogs to anchor their XamlRoot.
 //
@@ -32,7 +32,7 @@ public static class SettingsHost
     // OnLaunched; no-op until then.
     public static Action<string>? ApplyTheme;
 
-    // Push the new level-window curve into Capture.AudioLevelMapper
+    // Push the new level-window curve into Audio.AudioLevelMapper
     // so the HUD reflects it live (the mapper is consulted from the
     // capture loop on every audio frame). Wired by App in OnLaunched.
     public static Action<LevelWindowSettings>? ApplyLevelWindow;

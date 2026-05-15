@@ -1,8 +1,8 @@
-namespace Deckle.Capture;
+namespace Deckle.Audio;
 
 // ── AudioLevelMapper ──────────────────────────────────────────────────────────
 //
-// Pure mic-RMS-to-perceptual-level mapping. Lives in Deckle.Capture
+// Pure mic-RMS-to-perceptual-level mapping. Lives in Deckle.Audio
 // because it's signal processing of microphone data — sister concept to
 // MicrophoneCapture (the source) and CaptureSettings.LevelWindow (the
 // calibration). Any UI module that wants to react to live mic level

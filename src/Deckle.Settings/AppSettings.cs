@@ -17,7 +17,7 @@ namespace Deckle.Settings;
 //   • Paste       — auto-paste vs clipboard-only.
 //
 // What moved out (loaded via the matching XxxSettingsService.Instance):
-//   • CaptureSettings        → Deckle.Capture/CaptureSettingsService
+//   • CaptureSettings        → Deckle.Audio/CaptureSettingsService
 //   • WhispSettings          → Deckle.Whisp/WhispSettingsService
 //   • LlmSettings            → Deckle.Llm/LlmSettingsService
 //   • TelemetrySettings      → Deckle.Logging/TelemetrySettingsService

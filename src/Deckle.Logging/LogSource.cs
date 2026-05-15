@@ -17,7 +17,7 @@ public static class LogSource
     public const string Model      = "MODEL";
     public const string Init       = "INIT";
     // Capture (microphone polling, ring buffer, RMS) — emitted from
-    // Deckle.Capture. Replaces the legacy "RECORD" value: the module is
+    // Deckle.Audio. Replaces the legacy "RECORD" value: the module is
     // shared between Whisp and future modules (Ask-Ollama), so the source
     // tag now reflects the capability ("CAPTURE") rather than one
     // orchestrator's intent.

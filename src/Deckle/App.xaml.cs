@@ -192,7 +192,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Settings on every vsync to honour live edits to MaxRecordingDurationSeconds
         // (Capture page slider). Provider is invoked from UpdateClock at vsync.
         Deckle.Chrono.Hud.HudChrono.MaxRecordingDurationSecondsProvider =
-            () => Capture.CaptureSettingsService.Instance.Current.MaxRecordingDurationSeconds;
+            () => Audio.CaptureSettingsService.Instance.Current.MaxRecordingDurationSeconds;
 
         // SettingsHost — App-side hooks the Deckle.Settings UI surface
         // calls back into to drive theme broadcast, level-window
@@ -376,7 +376,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Apply persisted level window (MinDbfs / MaxDbfs / DbfsCurveExponent)
         // into HudChrono statics so the first Recording reflects the user's
         // calibration without a restart-from-defaults round-trip.
-        ApplyLevelWindow(Capture.CaptureSettingsService.Instance.Current.LevelWindow);
+        ApplyLevelWindow(Audio.CaptureSettingsService.Instance.Current.LevelWindow);
 
         // If launched with --settings (restart from Settings), automatically
         // reopen the Settings window on the right page.
@@ -407,12 +407,12 @@ public partial class App : Microsoft.UI.Xaml.Application
     // GeneralPage propagate without restart. Idempotent — safe to call
     // multiple times.
 
-    public static void ApplyLevelWindow(Capture.LevelWindowSettings cfg)
+    public static void ApplyLevelWindow(Audio.LevelWindowSettings cfg)
     {
         if (cfg is null) return;
-        Capture.AudioLevelMapper.MinDbfs           = cfg.MinDbfs;
-        Capture.AudioLevelMapper.MaxDbfs           = cfg.MaxDbfs;
-        Capture.AudioLevelMapper.DbfsCurveExponent = cfg.DbfsCurveExponent;
+        Audio.AudioLevelMapper.MinDbfs           = cfg.MinDbfs;
+        Audio.AudioLevelMapper.MaxDbfs           = cfg.MaxDbfs;
+        Audio.AudioLevelMapper.DbfsCurveExponent = cfg.DbfsCurveExponent;
     }
 
     // ── Theme ────────────────────────────────────────────────────────────────

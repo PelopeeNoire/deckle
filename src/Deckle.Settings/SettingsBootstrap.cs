@@ -49,6 +49,14 @@ public static class SettingsBootstrap
         if (_migrated) return;
         _migrated = true;
 
+        // Per-module folder rename: modules/capture/ → modules/audio/
+        // (2026-05-15 module rename from the false-generic Deckle.Capture
+        // to the honest Deckle.Audio). Runs first so that users who were
+        // already on the per-module layout get their settings file
+        // relocated without loss, regardless of whether the legacy
+        // combined file still exists.
+        MigrateModuleFolder("capture", "audio");
+
         string legacyPath = AppPaths.SettingsFilePath;
         if (!File.Exists(legacyPath))
         {
@@ -78,9 +86,13 @@ public static class SettingsBootstrap
                 mutated |= MigrateLlmLegacyKeys(llm);
 
             // Each module's legacy section dispatched to modules/<id>/settings.json.
+            // The JSON key "capture" dispatches to module id "audio" — the
+            // legacy combined file still carries the historic "capture" key
+            // name, but the module directory follows the post-2026-05-15
+            // rename (Deckle.Capture → Deckle.Audio).
             mutated |= DispatchSection(root, "whisp",     "whisp");
             mutated |= DispatchSection(root, "llm",       "llm");
-            mutated |= DispatchSection(root, "capture",   "capture");
+            mutated |= DispatchSection(root, "capture",   "audio");
             mutated |= DispatchSection(root, "telemetry", "telemetry");
 
             // ModelsDirectory: the legacy paths.modelsDirectory key migrated
@@ -188,9 +200,38 @@ public static class SettingsBootstrap
     private static string ModuleSettingsFilePath(string moduleId) =>
         System.IO.Path.Combine(AppPaths.UserDataRoot, "modules", moduleId, "settings.json");
 
+    // Move <UserDataRoot>/modules/<oldId>/ to <UserDataRoot>/modules/<newId>/
+    // for module renames that change the per-module directory id.
+    // No-op if the source doesn't exist (fresh install or already
+    // migrated) or if the target already exists (per-module file at the
+    // new location is canonical, old one is left orphaned and can be
+    // cleaned up manually if desired). Errors are logged as warnings,
+    // not thrown — settings loss is preferable to a boot failure.
+    private static void MigrateModuleFolder(string oldId, string newId)
+    {
+        string oldDir = System.IO.Path.Combine(AppPaths.UserDataRoot, "modules", oldId);
+        string newDir = System.IO.Path.Combine(AppPaths.UserDataRoot, "modules", newId);
+        if (!Directory.Exists(oldDir) || Directory.Exists(newDir)) return;
+        try
+        {
+            Directory.Move(oldDir, newDir);
+            LogService.Instance.Info(LogSource.Settings,
+                $"Module folder migrated ({oldId} → {newId})");
+            LogService.Instance.Verbose(LogSource.Settings,
+                $"module rename | old=modules/{oldId} | new=modules/{newId}");
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Settings,
+                $"Module folder rename failed — {oldId} could not be moved to {newId}.");
+            LogService.Instance.Verbose(LogSource.Settings,
+                $"module rename failed | old=modules/{oldId} | new=modules/{newId} | error={ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     // recording → capture (capture module extraction, 2026-05-02). The
     // settings shape stayed identical; only the JSON key changed when
-    // RecordingSettings moved from Deckle.Whisp to Deckle.Capture and was
+    // RecordingSettings moved from Deckle.Whisp to Deckle.Audio and was
     // renamed CaptureSettings to align with its owning module. Silently
     // rebind the legacy key so existing settings.json files keep their
     // custom AudioInputDeviceId / LevelWindow values.

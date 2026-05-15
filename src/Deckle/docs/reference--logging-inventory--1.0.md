@@ -303,9 +303,9 @@ Les flags sont stockés et consultés au premier hotkey :
 
 ### 4. Enregistrement audio
 
-**Fichier** : `src/Deckle.Capture/MicrophoneCapture.cs` (Record + Probe),
-`src/Deckle.Capture/Internal/WaveInLoop.cs` (polling loop + EmitSubWindows),
-`src/Deckle.Capture/Telemetry/MicrophoneTelemetryCalculator.cs` (tail RMS + percentiles)
+**Fichier** : `src/Deckle.Audio/MicrophoneCapture.cs` (Record + Probe),
+`src/Deckle.Audio/Internal/WaveInLoop.cs` (polling loop + EmitSubWindows),
+`src/Deckle.Audio/Telemetry/MicrophoneTelemetryCalculator.cs` (tail RMS + percentiles)
 
 **Mesures disponibles**
 
@@ -335,10 +335,10 @@ Narrative CAPTURE  Captured {X:F1} s of audio. Moving on to analysis and transcr
 ```
 
 > Source renommée le 2026-05-02 : `RECORD` → `CAPTURE` lors de l'extraction
-> du module `Deckle.Capture`. La capture micro est partagée entre Whisp et
+> du module `Deckle.Audio`. La capture micro est partagée entre Whisp et
 > les futurs modules (Ask-Ollama), donc le tag reflète la capability plutôt
 > que l'intention d'un orchestrateur. Voir
-> `src/Deckle.Capture/MicrophoneCapture.cs` pour l'émetteur unique.
+> `src/Deckle.Audio/MicrophoneCapture.cs` pour l'émetteur unique.
 
 **Supprimé** : `+Xs captured` toutes les 50 ms. Bruit pur, aucune valeur
 agrégée.

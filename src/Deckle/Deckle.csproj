@@ -69,7 +69,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
+    <ProjectReference Include="..\Deckle.Audio\Deckle.Audio.csproj" />
     <ProjectReference Include="..\Deckle.Chrono\Deckle.Chrono.csproj" />
     <ProjectReference Include="..\Deckle.Chrono.Hud\Deckle.Chrono.Hud.csproj" />
     <ProjectReference Include="..\Deckle.Composition\Deckle.Composition.csproj" />

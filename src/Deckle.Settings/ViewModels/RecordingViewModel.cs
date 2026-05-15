@@ -1,5 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using Deckle.Capture;
+using Deckle.Audio;
 using Deckle.Logging;
 
 namespace Deckle.Settings.ViewModels;
@@ -51,7 +51,7 @@ public partial class RecordingViewModel : ObservableObject
     // so we keep the per-edit log line at Verbose level. PushToSettings
     // is fine on every step (the file save is debounced one level deeper
     // inside SettingsService); SettingsHost.ApplyLevelWindow ultimately
-    // writes a few static fields in Capture.AudioLevelMapper, also free.
+    // writes a few static fields in Audio.AudioLevelMapper, also free.
     partial void OnLevelWindowMinDbfsChanged(double value)
     {
         if (_isSyncing) return;

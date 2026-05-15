@@ -1,6 +1,6 @@
 using Deckle.Logging;
 
-namespace Deckle.Capture;
+namespace Deckle.Audio;
 
 // Outcome of a Record() call — closed enum, no localized strings here.
 //   Completed  — normal user-driven Stop OR cancellation token fired.

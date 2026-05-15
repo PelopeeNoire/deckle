@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
-using Deckle.Capture;
+using Deckle.Audio;
 using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Controls;
@@ -799,7 +799,7 @@ public sealed partial class PlaygroundWindow : Window
     private void AddAudioMappingExpander()
     {
         var stack = NewExpander("Audio mapping (Recording)", ResetAudioMapping);
-        // Static mutables on AudioLevelMapper (Deckle.Capture) — no
+        // Static mutables on AudioLevelMapper (Deckle.Audio) — no
         // rebuild, read live each sample.
         AddFloatRow(stack, "EmaAlpha", 0, 1, 0.05, AudioLevelMapper.EmaAlpha,
             v => AudioLevelMapper.EmaAlpha = (float)v);
