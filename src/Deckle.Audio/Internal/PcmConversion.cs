@@ -1,4 +1,4 @@
-namespace Deckle.Capture.Internal;
+namespace Deckle.Audio.Internal;
 
 // PCM16 mono ↔ float helpers shared between the polling loop and the
 // telemetry calculator. All functions are pure; they never touch waveIn

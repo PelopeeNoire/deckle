@@ -46,7 +46,7 @@
   <ItemGroup>
     <!-- Capture: GeneralPage + GeneralViewModel still read CaptureSettings
          (microphone device, level window). Capture stays a direct ref. -->
-    <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
+    <ProjectReference Include="..\Deckle.Audio\Deckle.Audio.csproj" />
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
     <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />

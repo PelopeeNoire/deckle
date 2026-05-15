@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Deckle.Capture.Internal;
-using Deckle.Capture.Telemetry;
+using Deckle.Audio.Internal;
+using Deckle.Audio.Telemetry;
 using Deckle.Interop;
 using Deckle.Logging;
 
-namespace Deckle.Capture;
+namespace Deckle.Audio;
 
 // Microphone capture engine — owns the waveIn handle, the polling loop,
 // the per-recording RMS log, and the post-recording telemetry payload.
@@ -132,7 +132,7 @@ public sealed class MicrophoneCapture : System.IDisposable
     // all accumulated audio as float[] (PCM16 → float [-1, 1]). Whisper
     // handles its own internal windowing (30s + dynamic seek) and inter-
     // window context propagation via tokens — no chunking here.
-    public CaptureResult Record(IRecordingHost host, CancellationToken ct)
+    public CaptureResult Record(IAudioRecordingHost host, CancellationToken ct)
     {
         System.IntPtr hEvent = NativeMethods.CreateEvent(
             System.IntPtr.Zero, bManualReset: false, bInitialState: false, null);

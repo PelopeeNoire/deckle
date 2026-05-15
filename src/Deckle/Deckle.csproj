@@ -69,16 +69,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Deckle.Capture\Deckle.Capture.csproj" />
+    <ProjectReference Include="..\Deckle.Audio\Deckle.Audio.csproj" />
     <ProjectReference Include="..\Deckle.Chrono\Deckle.Chrono.csproj" />
     <ProjectReference Include="..\Deckle.Chrono.Hud\Deckle.Chrono.Hud.csproj" />
     <ProjectReference Include="..\Deckle.Composition\Deckle.Composition.csproj" />
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+    <ProjectReference Include="..\Deckle.Lighting\Deckle.Lighting.csproj" />
+    <ProjectReference Include="..\Deckle.Lighting.Ambient\Deckle.Lighting.Ambient.csproj" />
     <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
     <ProjectReference Include="..\Deckle.Settings\Deckle.Settings.csproj" />
     <ProjectReference Include="..\Deckle.Shell\Deckle.Shell.csproj" />
+    <ProjectReference Include="..\Deckle.Vision\Deckle.Vision.csproj" />
     <ProjectReference Include="..\Deckle.Whisp\Deckle.Whisp.csproj" />
   </ItemGroup>
 

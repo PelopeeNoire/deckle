@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using Deckle.Capture;
-using Deckle.Capture.Telemetry;
+using Deckle.Audio;
+using Deckle.Audio.Telemetry;
 using Deckle.Interop;
 using Deckle.Llm;
 using Deckle.Localization;
@@ -427,8 +427,8 @@ public sealed class WhispEngine : IDisposable
     // type without dragging Whisp's transcription dependencies along.
     private readonly MicrophoneCapture _capture;
 
-    // Adapter that exposes IWhispEngineHost as IRecordingHost — keeps
-    // IWhispEngineHost free of an IRecordingHost inheritance (Ask-Ollama
+    // Adapter that exposes IWhispEngineHost as IAudioRecordingHost — keeps
+    // IWhispEngineHost free of an IAudioRecordingHost inheritance (Ask-Ollama
     // would not have wanted that coupling).
     private readonly RecordingHostAdapter _recordingHost;
 
@@ -479,16 +479,16 @@ public sealed class WhispEngine : IDisposable
                 UserFeedbackRole.Overlay));
     }
 
-    // Adapter that maps IWhispEngineHost → IRecordingHost. Lives inside
+    // Adapter that maps IWhispEngineHost → IAudioRecordingHost. Lives inside
     // WhispEngine so the engine project owns the coupling rather than
-    // requiring IWhispEngineHost to inherit from IRecordingHost (which would
+    // requiring IWhispEngineHost to inherit from IAudioRecordingHost (which would
     // bleed Capture's contract into every host that wants to drive Whisp).
-    private sealed class RecordingHostAdapter : IRecordingHost
+    private sealed class RecordingHostAdapter : IAudioRecordingHost
     {
         private readonly IWhispEngineHost _h;
         public RecordingHostAdapter(IWhispEngineHost h) { _h = h; }
-        public int  AudioInputDeviceId         => _h.Capture.AudioInputDeviceId;
-        public int  MaxRecordingDurationSeconds => _h.Capture.MaxRecordingDurationSeconds;
+        public int  AudioInputDeviceId         => _h.Audio.AudioInputDeviceId;
+        public int  MaxRecordingDurationSeconds => _h.Audio.MaxRecordingDurationSeconds;
         public bool MicrophoneTelemetryEnabled  => _h.Telemetry.MicrophoneTelemetry;
     }
 
@@ -1025,7 +1025,7 @@ public sealed class WhispEngine : IDisposable
 
                 // 1) Mic probe — same code path StartRecording uses, just the
                 //    probe result is stored instead of blocking the recording.
-                _micWarmupOk = _capture.Probe(_host.Capture.AudioInputDeviceId).Ok ? 1 : 0;
+                _micWarmupOk = _capture.Probe(_host.Audio.AudioInputDeviceId).Ok ? 1 : 0;
 
                 if (ct.IsCancellationRequested)
                 {
@@ -1334,7 +1334,7 @@ public sealed class WhispEngine : IDisposable
             // Probe the audio device BEFORE firing StatusChanged("Recording").
             // If the mic is absent/busy, short-circuit the entire pipeline:
             // no HUD chrono, no worker thread, no Transcribe(empty).
-            var probe = _capture.Probe(_host.Capture.AudioInputDeviceId);
+            var probe = _capture.Probe(_host.Audio.AudioInputDeviceId);
             if (!probe.Ok)
             {
                 var (title, body) = LocalizeMicError(probe.Kind, probe.MmsysErr);
@@ -1457,7 +1457,7 @@ public sealed class WhispEngine : IDisposable
 
             if (capture.Outcome == CaptureOutcome.CapHit)
             {
-                int minutes = _host.Capture.MaxRecordingDurationSeconds / 60;
+                int minutes = _host.Audio.MaxRecordingDurationSeconds / 60;
                 RaiseNarrative(LogSource.Capture,
                     $"Recording hit the {minutes} min cap — stopping automatically. The audio captured so far will be transcribed.");
                 // CAS Recording → Stopping ourselves so the rest of the
@@ -1628,7 +1628,7 @@ public sealed class WhispEngine : IDisposable
     // last wins, which is the natural behaviour from the user's POV.
     private void TryAutoCalibrate(Logging.MicrophoneTelemetryPayload payload)
     {
-        var lw = _host.Capture.LevelWindow;
+        var lw = _host.Audio.LevelWindow;
         if (!lw.AutoCalibrationEnabled) return;
 
         int needed = Math.Max(1, lw.AutoCalibrationSamples);

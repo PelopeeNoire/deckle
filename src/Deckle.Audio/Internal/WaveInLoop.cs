@@ -4,7 +4,7 @@ using System.Threading;
 using Deckle.Interop;
 using Deckle.Logging;
 
-namespace Deckle.Capture.Internal;
+namespace Deckle.Audio.Internal;
 
 // Internal helper extracted from the legacy 331-line Record() body. Owns
 // only the inner polling loop + post-Stop drain — buffer allocation and
@@ -54,7 +54,7 @@ internal static class WaveInLoop
         IntPtr[]          hdrPtrs,
         int               nBuffers,
         uint              hdrSize,
-        IRecordingHost    host,
+        IAudioRecordingHost    host,
         LogService        log,
         List<float>       rmsLog,            // owned by MicrophoneCapture, cleared at start
         System.Action<float>? audioLevelCallback,

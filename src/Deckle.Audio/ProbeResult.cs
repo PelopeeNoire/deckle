@@ -1,4 +1,4 @@
-namespace Deckle.Capture;
+namespace Deckle.Audio;
 
 // Categorical decoding of MMSYSERR codes returned by waveInOpen during the
 // pre-flight probe. Capture stays free of any localization dependency:

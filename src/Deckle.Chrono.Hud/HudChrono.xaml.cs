@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
-using Deckle.Capture;
+using Deckle.Audio;
 using Deckle.Chrono;
 using Deckle.Composition;
 
@@ -31,7 +31,7 @@ public sealed partial class HudChrono : UserControl
 {
     // Cross-assembly hook for the recording cap used by UpdateClock to
     // freeze the chrono at the configured ceiling. The shipping App wires
-    // this to Capture.CaptureSettingsService.Instance.Current.MaxRecordingDurationSeconds
+    // this to Audio.CaptureSettingsService.Instance.Current.MaxRecordingDurationSeconds
     // at boot; until wired, the default `int.MaxValue` is a no-op (no cap),
     // which keeps the lib usable standalone (HudPlayground tests, future
     // host modules) without a Settings module dependency.
@@ -345,7 +345,7 @@ public sealed partial class HudChrono : UserControl
 
     // EMA-smoothed perceptual level. The mapping math + the four
     // tunables (EmaAlpha / MinDbfs / MaxDbfs / DbfsCurveExponent) live
-    // in Deckle.Capture.AudioLevelMapper — they're audio-domain, not
+    // in Deckle.Audio.AudioLevelMapper — they're audio-domain, not
     // HUD-domain. The smoother STATE is per-consumer though, so it
     // stays here.
     private float _smoothedLevel;

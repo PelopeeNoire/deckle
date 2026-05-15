@@ -1,190 +1,61 @@
-# CLAUDE.md — Projet transcription
+# CLAUDE.md — Deckle
 
-<identity>
-whisp-ui est un utilitaire de transcription vocale locale, déclenché par
-hotkey, résultat dans le clipboard. Pensé pour s'intégrer à un pipeline
-de travail local (LLM via Ollama optionnel pour la réécriture).
+## Identité et objectifs
 
-Objectifs fondamentaux :
+Deckle est un utilitaire Windows local. Le premier sous-système livré est la transcription vocale déclenchée par hotkey avec résultat dans le clipboard et réécriture optionnelle par LLM via Ollama. D'autres sous-systèmes s'ajoutent dans la même app — ambient lighting piloté par capture d'écran (chantier en cours), futurs modules d'assistance (AskHud, AskOllama). L'app est un point d'entrée unique qui rassemble plusieurs capacités complémentaires, pas un outil mono-fonction.
 
-1. Apprendre à développer — comprendre ce qu'on construit prime sur le
-   fait que ça fonctionne. Une solution qui marche sans être comprise
-   n'est pas un succès.
-2. Émancipation des services payants — système local, autonome, sans
-   dépendance cloud structurelle.
+Deux objectifs fondamentaux guident chaque décision. **Apprendre à développer** — comprendre ce qu'on construit prime sur le fait que ça fonctionne, une solution qui marche sans être comprise n'est pas un succès. **Émancipation des services payants** — système local, autonome, sans dépendance cloud structurelle. Toute proposition qui s'écarte de ces deux axes doit le justifier explicitement.
 
-Cible qualité : app Windows de niveau first-party Microsoft (Settings
-Win11, Explorer, PowerToys). Chaque choix UI ou plateforme passe le
-test : « est-ce que Microsoft ferait comme ça dans une app Windows Store
-officielle ? » Si la réponse est non, c'est le mauvais choix, recommencer.
-</identity>
+La cible qualité est une app Windows de niveau first-party Microsoft. La référence sensorielle quotidienne est l'app Settings de Windows 11, l'Explorer, et PowerToys. Chaque choix UI ou plateforme passe le test « est-ce que Microsoft ferait comme ça dans une app Windows Store officielle ? ». Si la réponse est non, c'est le mauvais choix, on recommence.
 
-<rules>
-Ne jamais lancer de build ni de publish Deckle — ni `build-run.ps1`, ni
-`MSBuild.exe`, aucune variante. Le maintainer s'en charge. S'arrêter au
-résumé des changements et laisser le maintainer builder puis valider
-runtime.
+## Règles non négociables
 
-Le commit sort sous la seule identité du maintainer. Les trailers
-`Co-Authored-By: Claude …` et lignes `🤖 Generated with [Claude Code]`
-sont exclus — ils inscrivent Claude comme contributeur GitHub, ce qui
-est faux.
-</rules>
+Ne jamais lancer de build ni de publish Deckle. Ni `build-run.ps1`, ni `MSBuild.exe`, aucune variante. Le maintainer s'en charge. S'arrêter au résumé des changements et laisser le maintainer builder puis valider runtime.
 
-<observability>
-Logging et télémétrie : **source unique** dans
-`src/Deckle/Logging/TelemetryService.Instance`. Tout passe par ce hub —
-fenêtre LogWindow et fichiers JSONL (`{app,latency,microphone,corpus}.jsonl`)
-sont des sinks de la même source. Jamais de `File.AppendAllText`,
-`Console.WriteLine`, `Debug.WriteLine`, ni de `*Logger.cs` parallèle dans
-le code métier. Avant d'écrire le moindre code de log ou de mesure, lire
-`src/Deckle/CLAUDE.md` § « Télémétrie — source unique » et l'inventaire
-canonique `src/Deckle/docs/reference--logging-inventory--1.0.md`.
-Exception unique et subordonnée : helper `DebugLog` file-based pour
-crash natif non rattrapable, instrumentation **temporaire** jamais
-commitée en l'état.
-</observability>
+Le commit sort sous la seule identité du maintainer. Les trailers `Co-Authored-By: Claude …` et lignes `🤖 Generated with [Claude Code]` sont exclus — ils inscrivent Claude comme contributeur GitHub, ce qui est faux.
 
-<doctrine>
-Avant d'écrire ou modifier du code non trivial, les questions suivantes
-sont verbalisées dans la réponse, pour celles pertinentes à la demande.
+## Doctrine cross-projet
 
-**Primitive native d'abord.** Quelle primitive Windows, quel contrôle,
-quelle theme resource, quel pattern canonique couvre le besoin — y
-compris pour les cas qui semblent simples.
+Avant d'écrire ou modifier du code non trivial, les questions suivantes sont verbalisées dans la réponse pour celles pertinentes à la demande. La doctrine n'est pas une checklist administrative — c'est une discipline de pensée qui force à considérer ce qui existe déjà avant d'écrire.
 
-**Signaux de re-invention à détecter.** Border manuel là où une theme
-resource Card existe, ombre dessinée à la place du DWM Shell, rayon
-numérique à la place de `OverlayCornerRadius` / `ControlCornerRadius`,
-`MicaBackdrop` sur une fenêtre transient à la place de
-`DesktopAcrylicBackdrop`, caption buttons customs à la place de
-`Microsoft.UI.Xaml.Controls.TitleBar` natif.
+**Primitive native d'abord.** Quelle primitive Windows, quel contrôle, quelle theme resource, quel pattern canonique couvre le besoin — y compris pour les cas qui semblent simples. Les signaux de re-invention à détecter sont des indicateurs concrets que la doctrine n'a pas été appliquée : border manuel là où une theme resource Card existe, ombre dessinée à la place du DWM Shell, rayon numérique à la place de `OverlayCornerRadius` ou `ControlCornerRadius`, `MicaBackdrop` sur une fenêtre transient à la place de `DesktopAcrylicBackdrop`, caption buttons customs à la place de `Microsoft.UI.Xaml.Controls.TitleBar` natif.
 
-**Casquette nommée.** Archi, UX, plateforme : ce n'est pas la même
-posture. Nommer la casquette au début de la réponse cadre le mode de
-pensée et invoque les bons skills.
+**Zéro valeur magique dans le XAML.** Pas de `#xxxxxx`, pas de `CornerRadius="7"` numérique, pas de `BorderThickness` arbitraire, pas de `BoxShadow` calculé à la main. Tout passe par des theme resources Windows natives qui suivent automatiquement light, dark, contrast et accent : `LayerFillColorDefaultBrush`, `CardBackgroundFillColorDefaultBrush`, `CardStrokeColorDefaultBrush`, `OverlayCornerRadius`, `ControlCornerRadius`, `SystemFillColor*`, `TextFillColor*`. Une valeur Figma sans theme resource équivalente signale la mauvaise primitive — c'est le moment de remonter à la spec et chercher le bon contrôle.
 
-**Zéro valeur magique dans le XAML.** Pas de `#xxxxxx`, pas de
-`CornerRadius="7"` numérique, pas de `BorderThickness` arbitraire, pas de
-`BoxShadow` calculé à la main. Tout passe par des theme resources Windows
-natives qui suivent automatiquement light / dark / contrast / accent :
-`LayerFillColorDefaultBrush`, `CardBackgroundFillColorDefaultBrush`,
-`CardStrokeColorDefaultBrush`, `OverlayCornerRadius`,
-`ControlCornerRadius`, `SystemFillColor*`, `TextFillColor*`. Une valeur
-Figma sans theme resource équivalente signale la mauvaise primitive.
+**Matériaux et ombres gérés par le système.** `MicaBackdrop` sur les fenêtres app longue vie, `DesktopAcrylicBackdrop` sur les transient (popups, menus, dialogs, HUD, notifications). DWM applique le rendu correspondant, incluant l'ombre Shell des transient. Ombres et coins arrondis sont du ressort de DWM, pas du XAML.
 
-**Matériaux et ombres gérés par le système.** `MicaBackdrop` sur les
-fenêtres app longue vie, `DesktopAcrylicBackdrop` sur les transient
-(popups, menus, dialogs, HUD, notifications). DWM applique le rendu
-correspondant, incluant l'ombre Shell des transient. Ombres et coins
-arrondis sont du ressort de DWM, pas du XAML.
+**Casquette nommée.** Archi, UX, plateforme : ce ne sont pas les mêmes postures. Nommer la casquette au début de la réponse cadre le mode de pensée et invoque les bons skills. Engineer pour les questions d'architecture, patterns, threading, performance, tests. WinUI 3 expert pour XAML, contrôles, backdrop, theme resources, lifetime, ombres DWM. Designer pour layout, hiérarchie, rendu, cohérence visuelle. Product manager pour le quoi, dans quel ordre, pour qui. Une demande peut requérir plusieurs casquettes simultanément — les nommer toutes et traiter le sujet sous chaque angle avant de converger.
 
-### Casquettes
+## Skills et MCP à invoquer
 
-- Engineer (archi, patterns, threading, perf, tests) → skills
-  `engineering:*` + Microsoft Learn pour les APIs.
-- WinUI 3 expert (XAML, contrôles, backdrop, theme resources, lifetime,
-  ombres DWM) → MCP Microsoft Learn + `winui3-migration-guide` +
-  comparaison avec WinUI 3 Gallery / PowerToys / Settings Win11.
-- Designer (layout, hiérarchie, rendu, cohérence visuelle) → skills
-  `design:*` + design system Windows 11 en référence.
-- Product manager (quoi, dans quel ordre, pour qui) → skills
-  `product-management:*`, tri proposé avant code.
+Avant de proposer du code dans un domaine couvert, invoquer la ressource correspondante pour grounder la réponse sur du matériau canonique. UI, XAML et APIs Windows passent par le MCP Microsoft Learn en premier (`microsoft_docs_search`, `microsoft_code_sample_search`, `microsoft_docs_fetch`) avant le code local, avec les skills complémentaires `microsoft-docs` et `winui3-migration-guide`. Décisions structurelles et ADR via `engineering:architecture` et `engineering:system-design`. Revue avant diff substantiel via `engineering:code-review`. Refacto et nettoyage via `refactor` et `simplify`. Debug structuré via `engineering:debug`. Surfaces, layout et design system via `design:design-system`, `design:design-critique`, et `design:accessibility-review` pour le contraste, focus et clavier. Cadrage flou et tri de priorités via `product-management:brainstorm` et `product-management:write-spec`. Documentation technique via `engineering:documentation`. Commit via `git-commit`, uniquement sur demande explicite.
 
-Une demande peut demander plusieurs casquettes simultanément — les
-nommer toutes et traiter le sujet sous chaque angle avant de converger.
+## Références visuelles de qualité
 
-### Skills et MCP
+En cas de doute sur un rendu ou un pattern, trois sources de vérité. La [WinUI 3 Gallery](https://github.com/microsoft/WinUI-Gallery) pour le comportement canonique des contrôles. [PowerToys](https://github.com/microsoft/PowerToys) pour les patterns HUD, tray et autostart admin. Windows 11 Settings et Explorer en référence live pour NavigationView adaptatif, `SettingsCard`, auto-save, TitleBar et NavView responsive.
 
-Avant de proposer du code dans un domaine couvert, invoquer la
-ressource correspondante pour grounder la réponse sur du matériau
-canonique.
+## Environnement de développement
 
-- UI, XAML, APIs Windows → MCP Microsoft Learn en premier, avant le
-  code local : `microsoft_docs_search`, `microsoft_code_sample_search`,
-  `microsoft_docs_fetch`. Skills complémentaires : `microsoft-docs`,
-  `winui3-migration-guide`.
-- Décision structurelle, ADR → `engineering:architecture`,
-  `engineering:system-design`.
-- Revue avant diff substantiel → `engineering:code-review`.
-- Refacto, nettoyage → `refactor`, `simplify`.
-- Debug structuré → `engineering:debug`.
-- Surfaces, layout, design system → `design:design-system`,
-  `design:design-critique`, `design:accessibility-review` pour
-  contraste / focus / clavier.
-- Cadrage flou, tri de priorités → `product-management:brainstorm`,
-  `product-management:write-spec`.
-- Documentation technique → `engineering:documentation`.
-- Commit → `git-commit`, uniquement sur demande explicite.
-
-### Références de qualité
-
-En cas de doute sur un rendu ou un pattern :
-
-- WinUI 3 Gallery — `github.com/microsoft/WinUI-Gallery`.
-- PowerToys — `github.com/microsoft/PowerToys` (référence HUD, tray,
-  autostart admin).
-- Windows 11 Settings et Explorer — référence live pour
-  NavigationView adaptatif, `SettingsCard`, auto-save, TitleBar,
-  NavView responsive.
-</doctrine>
-
-<environment>
-- OS : Windows 11
-- Shell : PowerShell
-- .NET : 10 uniquement (pas de .NET 9 installé)
-- Compilateur C++ : GCC 15.2.0 via MinGW (Scoop) — typiquement sous
-  `<scoop-root>\apps\mingw\current\bin\`
-- CMake 4.3.1 / Ninja 1.13.2 (Scoop)
-- IDE édition : VSCodium avec extension Claude Code
-- IDE build : Visual Studio 2026 Community (workload *WinUI application
-  development*) — chemin d'install variable selon la machine
-- Vulkan SDK : 1.4.341.1 (Scoop), variable `VULKAN_SDK` définie
-- `Microsoft.WindowsAppSDK` : `1.8.260317003` (stable officielle)
+L'environnement de développement actuel est Windows 11 sur PowerShell, .NET 10 uniquement (pas de .NET 9 installé), Visual Studio 2026 Community pour le build (workload *WinUI application development*), VSCodium avec extension Claude Code pour l'édition. Le compilateur C++ utilisé pour la recompilation occasionnelle des runtimes natifs est GCC 15.2.0 via MinGW (Scoop), avec CMake 4.3.1 et Ninja 1.13.2. Vulkan SDK 1.4.341.1 (Scoop) est requis pour les backends GPU des runtimes natifs (variable d'environnement `VULKAN_SDK` définie). La référence Windows App SDK alignée sur toute la solution est `1.8.260317003` (stable officielle).
 
 ### Bug connu — `XamlCompiler.exe` MSB3073 sur `dotnet build`
 
-`dotnet build` plante sans log avec
-`MSB3073 ... XamlCompiler.exe exited with code 1`.
+`dotnet build` plante sans log avec `MSB3073 ... XamlCompiler.exe exited with code 1`. La cause vit dans `Microsoft.UI.Xaml.Markup.Compiler.interop.targets` (sous-package `Microsoft.WindowsAppSDK.WinUI`) : une condition force `UseXamlCompilerExecutable=true` dès que `MSBuildRuntimeType=Core` (donc `dotnet build` CLI), sans vérifier si l'utilisateur l'a déjà défini. Cela appelle l'EXE `net472` cassé au lieu de la Task `net6.0` in-process qui fonctionne. Régression non revue côté Microsoft (voir [microsoft-ui-xaml#8871](https://github.com/microsoft/microsoft-ui-xaml/issues/8871)). Le contournement retenu est de builder via le `MSBuild.exe` de Visual Studio 2026 (MSBuild Framework, `MSBuildRuntimeType=Full`), qui désactive la condition fautive. Aucun patch csproj nécessaire. La commande exacte vit dans `src/Deckle/CLAUDE.md`. Pour le diagnostic futur de problèmes MSBuild, `MSBuild ... -bl:fresh.binlog` puis `binlogtool search fresh.binlog <pattern>` (installation via `dotnet tool install -g binlogtool`).
 
-**Cause** : dans `Microsoft.UI.Xaml.Markup.Compiler.interop.targets`
-(sous-package `Microsoft.WindowsAppSDK.WinUI`), une condition force
-`UseXamlCompilerExecutable=true` dès que `MSBuildRuntimeType=Core`
-(donc `dotnet build` CLI), sans vérifier si l'utilisateur l'a déjà
-défini. Cela appelle l'EXE `net472` cassé au lieu de la Task `net6.0`
-in-process qui fonctionne. Régression non revue. Cf.
-[microsoft-ui-xaml#8871](https://github.com/microsoft/microsoft-ui-xaml/issues/8871).
+## Structure du dépôt
 
-**Contournement retenu** : builder via le `MSBuild.exe` de Visual Studio
-2026 (MSBuild Framework, `MSBuildRuntimeType=Full`), qui désactive la
-condition fautive. Aucun patch csproj nécessaire. Commande exacte dans
-`src/Deckle/CLAUDE.md`.
+La racine du dépôt suit cette organisation. Tout le code applicatif vit sous `src/`, organisé en modules `Deckle.*` (un csproj par module, dépendances acycliques, sous-namespaces hiérarchiques quand la séparation interne le justifie). Les références canoniques de doctrine technique vivent sous `docs/` à la racine — toutes lues à la demande, pas chargées en contexte par défaut. Les scripts d'orchestration de build et de publish vivent sous `scripts/`. La suite de benchmark Python vit sous `benchmark/` (sera extraite dans son propre repo plus tard).
 
-**Diagnostic futur** : `MSBuild ... -bl:fresh.binlog` puis
-`binlogtool search fresh.binlog <pattern>`
-(`dotnet tool install -g binlogtool`).
-</environment>
+Les modules actuels, dans l'ordre du graphe de dépendances (feuilles d'abord). `Deckle.Core` héberge les fondations sans dépendance applicative (`AppPaths`, `JsonSettingsStore<T>`, interop Win32). `Deckle.Logging` est le hub télémétrie unique (`TelemetryService.Instance` + sinks). `Deckle.Localization` expose `Loc.cs` (façade ResourceLoader WinAppSDK pour les `x:Uid`). `Deckle.Chrono` est un timer pur sans UI. `Deckle.Audio` couvre la capture audio (microphone, calibration RMS, télémétrie micro) — ouvert à des capacités audio futures (TTS, monitoring loopback). `Deckle.Composition` héberge les primitives Direct2D et Composition partagées (`ColorSpace`, easing, animateurs). `Deckle.Vision` (en cours de scaffolding) couvre la capture écran (`Windows.Graphics.Capture`) et l'analyse image. `Deckle.Lighting` (en cours de scaffolding) héberge les drivers LED et l'abstraction `ILightOutput`. `Deckle.Chrono.Hud` est le UserControl WinUI qui affiche le chrono en temps réel. `Deckle.Shell` couvre le shell système (tray, hotkeys, autostart, message-only host). `Deckle.Settings` est le shell UI Settings et la persistance per-module. `Deckle.Llm` couvre la réécriture LLM via Ollama. `Deckle.Whisp` est le module de transcription Whisper. `Deckle.Lighting.Ambient` (en cours de scaffolding) est le consumer gaming de `Vision + Lighting`. L'app hôte `Deckle` rassemble tous ces modules et fournit le point d'entrée WinUI 3.
 
-<repository>
-```
-<repo-root>/
-├── src/
-│   └── Deckle\              — app WinUI 3, unique point d'entrée → voir son CLAUDE.md
-│       └── docs\             — fiches reference--*--1.0.md, lues à la demande
-├── scripts\                  — build-run, publish-unpackaged, setup-assets, publish-native-runtime
-├── benchmark/                — suite de benchmark Python (à extraire dans son repo plus tard)
-└── CLAUDE.md                 — ce fichier
-```
+Chaque module qui porte de la doctrine non-évidente expose son propre `CLAUDE.md` interne — à lire avant de toucher au module. Aujourd'hui ces fichiers existent pour `src/Deckle/` (app hôte), `src/Deckle.Whisp/` (pipeline transcription), `src/Deckle.Audio/` (capture micro), `src/Deckle.Logging/` (télémétrie source unique), `src/Deckle.Settings/` (architecture Settings).
 
-Pas de `whisper.cpp/` dans le repo : le source upstream est cloné à
-l'extérieur (workspace dev, ex.
-`<scoop-root>/persist/whisper.cpp/` ou `D:\workspace\whisper.cpp\`)
-quand on veut recompiler les DLLs natives. Voir
-[src/Deckle/docs/reference--native-runtime--1.0.md](src/Deckle/docs/reference--native-runtime--1.0.md)
-pour la recette de recompilation.
+Le repo ne contient pas `whisper.cpp/` : le source upstream est cloné à l'extérieur (workspace dev, typiquement `<scoop-root>/persist/whisper.cpp/` ou `D:\workspace\whisper.cpp\`) quand on veut recompiler les DLLs natives — la recette de recompilation vit dans [docs/reference--native-runtime--1.0.md](docs/reference--native-runtime--1.0.md). Le repo ne contient pas non plus `native/` ni `models/` : tout vit dans `%LOCALAPPDATA%\Deckle\` côté runtime. Le first-run wizard auto-télécharge le bundle natif depuis la release `native-vX.Y.Z` du repo Deckle, et les modèles Whisper depuis HuggingFace.
 
-Pas de `native/` ni `models/` dans le repo : tout vit dans
-`%LOCALAPPDATA%\Deckle\` côté runtime. Le first-run wizard auto-télécharge
-le bundle natif depuis la release `native-vX.Y.Z` du repo Deckle, et
-les modèles Whisper depuis HuggingFace.
-</repository>
+## Fiches référence sous `docs/`
+
+Les détails par sous-système vivent sous `docs/`. Fichiers lus à la demande uniquement quand on touche au sous-système concerné — pas chargés en contexte par défaut. Avant modification d'un sous-système, lire son fichier de référence.
+
+[architecture--setup-guide--1.0.md](docs/architecture--setup-guide--1.0.md) — wizard first-run, provisioning des natives et des modèles, chemins UserDataRoot. [reference--audit-robustesse--1.0.md](docs/reference--audit-robustesse--1.0.md) — audit transverse des points de fragilité. [reference--dependencies--1.0.md](docs/reference--dependencies--1.0.md) — inventaire des dépendances (NuGet, natives, scripts) avec leur version et leur raison d'être. [reference--hud--1.0.md](docs/reference--hud--1.0.md) — spec HudWindow (positioning, backdrop, coloration progressive, fade proximité, ombre layered). [reference--localization--1.0.md](docs/reference--localization--1.0.md) — pattern `.resw` + `Loc.cs` + `x:Uid`, surfaces migrées, backlog résiduel. [reference--logging-inventory--1.0.md](docs/reference--logging-inventory--1.0.md) — inventaire normatif des mesures par étape (vocabulaire d'unités, niveaux, gabarits, UserFeedback) — référence canonique avant tout ajout ou modification de log. [reference--logwindow--1.0.md](docs/reference--logwindow--1.0.md) — TitleBar natif, SearchBox, SelectorBar, CommandBar responsive, modèle de données (5 niveaux, cap 5000), templates. [reference--native-runtime--1.0.md](docs/reference--native-runtime--1.0.md) — recette de recompilation des DLLs natives (whisper.cpp + backends Vulkan), provisioning runtime. [reference--paste-behavior--1.0.md](docs/reference--paste-behavior--1.0.md) — re-capture cible au Stop, race `HideSync`, refus explicites de `PasteFromClipboard`, bug paste fantôme. [reference--pipeline-transcription--1.0.md](docs/reference--pipeline-transcription--1.0.md) — pipeline monobloc (`new_segment_callback`), instrumentation par segment, defaults whisper.cpp restaurés, hot-reload. [reference--settings-architecture--2.0.md](docs/reference--settings-architecture--2.0.md) — NavigationView Auto, 5 pages canoniques, `FolderPickerCard`, `SettingsExpander`, `SettingsHost`, persistance per-module. [security-review--pre-publication--0.1.md](docs/security-review--pre-publication--0.1.md) — revue sécurité pré-publication GitHub publique.
+
+Les fiches `research--*--2026-MM-DD.md` sont des notes de recherche datées archivées au moment où elles ont été produites (typiquement un sous-agent qui a creusé un sujet en amont d'un jalon). Trois fiches actuelles préparent le chantier ambient lighting : `research--hdr-graphics-capture--2026-05-15.md`, `research--hue-entertainment-v2--2026-05-15.md`, `research--hyperhdr-interpolators--2026-05-15.md`.

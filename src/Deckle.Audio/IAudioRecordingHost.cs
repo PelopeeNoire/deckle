@@ -1,4 +1,4 @@
-namespace Deckle.Capture;
+namespace Deckle.Audio;
 
 // Contract injected by the orchestrator (WhispEngine, future Ask-Ollama)
 // to expose its live capture-related settings to MicrophoneCapture without
@@ -8,7 +8,7 @@ namespace Deckle.Capture;
 // inside WhispEngine). Each property is read on every Record() entry —
 // the host is free to forward to a settings service that may have changed
 // since the previous call.
-public interface IRecordingHost
+public interface IAudioRecordingHost
 {
     // waveIn device index. -1 = WAVE_MAPPER (system default device).
     int AudioInputDeviceId { get; }
