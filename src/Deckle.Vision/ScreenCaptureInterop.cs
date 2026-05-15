@@ -247,14 +247,17 @@ internal static class ScreenCaptureInterop
     // underlying ID3D11Device / ID3D11Texture2D for a requested IID.
     //
     // We never declare a [ComImport] managed interface here. The mix of
-    // CsWinRT projection (which manages WinRT IDirect3DDevice) and
-    // classic COM RCW (which Marshal.GetObjectForIUnknown produces) was
-    // the source of an "InvalidCastException: element not found" at
-    // pipeline start — the runtime couldn't reconcile a managed cast on
-    // an RCW that CsWinRT had already wrapped. The fix is to skip the
-    // managed interface entirely : QI the IUnknown to the access IID,
-    // then call GetInterface (vtable slot 3 — after IUnknown's 3) via a
-    // direct unmanaged function pointer.
+    // CsWinRT projection (which owns the WinRT IDirect3DDevice) and
+    // classic COM RCW threw "InvalidCastException: element not found"
+    // at every pipeline start — the runtime couldn't reconcile a managed
+    // cast on an object that CsWinRT had already wrapped its own way.
+    //
+    // The fix takes the canonical CsWinRT path : MarshalInspectable<T>.
+    // FromManaged returns the raw AddRef'd ABI pointer of the WinRT
+    // object (the same pointer the CsWinRT runtime uses internally).
+    // We QI that to IDirect3DDxgiInterfaceAccess, then call GetInterface
+    // via the vtable directly (slot 3, after IUnknown's 3 methods).
+    // Zero managed cast in the path = no InvalidCastException.
 
     // IDirect3DDxgiInterfaceAccess IID. Held as a static field rather
     // than reconstructed each call so the GUID parsing cost is paid once.
@@ -270,17 +273,17 @@ internal static class ScreenCaptureInterop
     private static readonly Guid IID_IDXGIFactory6        = new("c1b6694f-ff09-44a9-b03c-77900a0a1d17");
     private static readonly Guid IID_IDXGIOutput6         = new("068346e8-aaec-4b84-add7-137f513f77a1");
 
-    // Internal helper. Given a WinRT object (projected via CsWinRT) and
-    // a target native COM IID, returns an AddRef'd native interface
-    // pointer by QI'ing to IDirect3DDxgiInterfaceAccess and calling
-    // GetInterface via vtable[3] directly. Caller must Marshal.Release
-    // the returned pointer.
-    private static nint GetNativeInterface(object winrtObject, Guid targetIid)
+    // Internal helper. Given a freshly AddRef'd ABI pointer (from
+    // MarshalInspectable.FromManaged) and a target native COM IID, returns
+    // an AddRef'd native interface pointer by QI'ing to IDirect3DDxgi-
+    // InterfaceAccess and calling GetInterface via vtable[3]. The input
+    // ABI pointer is Released in finally — caller doesn't own it
+    // afterwards. Caller does own the returned pointer.
+    private static nint GetNativeInterfaceFromAbi(nint abiPtr, Guid targetIid)
     {
-        nint iUnk = Marshal.GetIUnknownForObject(winrtObject);
         try
         {
-            int hr = Marshal.QueryInterface(iUnk, in IID_IDirect3DDxgiInterfaceAccess, out nint accessPtr);
+            int hr = Marshal.QueryInterface(abiPtr, in IID_IDirect3DDxgiInterfaceAccess, out nint accessPtr);
             Marshal.ThrowExceptionForHR(hr);
             try
             {
@@ -302,21 +305,25 @@ internal static class ScreenCaptureInterop
         }
         finally
         {
-            Marshal.Release(iUnk);
+            Marshal.Release(abiPtr);
         }
     }
 
     // Extracts the native ID3D11Device behind a WinRT IDirect3DDevice. The
     // returned pointer is AddRef'd ; caller must Marshal.Release it.
     public static nint GetD3D11Device(IDirect3DDevice device)
-        => GetNativeInterface(device, IID_ID3D11Device);
+        => GetNativeInterfaceFromAbi(
+            MarshalInspectable<IDirect3DDevice>.FromManaged(device),
+            IID_ID3D11Device);
 
     // Extracts the native ID3D11Texture2D behind a Direct3D11CaptureFrame's
     // Surface. The returned pointer is AddRef'd ; caller must Marshal.Release
     // it (typically inside the FrameArrived handler, paired with the frame's
     // own Dispose).
     public static nint GetD3D11Texture(IDirect3DSurface surface)
-        => GetNativeInterface(surface, IID_ID3D11Texture2D);
+        => GetNativeInterfaceFromAbi(
+            MarshalInspectable<IDirect3DSurface>.FromManaged(surface),
+            IID_ID3D11Texture2D);
 
     // ── HDR detection (IDXGIOutput6::GetDesc1) ───────────────────────────────
     //
