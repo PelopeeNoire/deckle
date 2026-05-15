@@ -705,8 +705,11 @@ Success   HUE  Bridge paired ({bridge_id})
 Verbose   HUE  pair result | bridge_id={id} | username={head8}... | clientkey=[redacted]
 Info      HUE  Listing groups
 Verbose   HUE  groups list | bridge_id={id} | count={N}
-Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri}
+Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri} | tt_ds={n}
+Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | on=false | tt_ds={n}
 ```
+
+`tt_ds` is the Hue `transitiontime` parameter in deciseconds (1 = 100 ms). Forced to 1 by the ambient driver to override the bridge factory default of 4 (= 400 ms), which would lag the lamp behind the screen on every push.
 
 **Erreurs et sévérités**
 

@@ -177,12 +177,25 @@ public sealed class HueBridgeClient : IDisposable
         return groups;
     }
 
+    // Hue's `transitiontime` is the fade duration the bridge interpolates
+    // toward the new state, expressed in deciseconds (1/10 s). The
+    // factory default is 4 (= 400 ms), which feels sluggish on a fast
+    // dark→light transition (the lamp lags visibly behind the screen).
+    // For an ambient-light driver we want near-instant push and let the
+    // smoothing happen client-side (J5). 1 (= 100 ms) is a sweet spot for
+    // V0 : fast enough to feel responsive, slow enough that the per-tick
+    // 15 Hz updates don't read as strobing on the lamp.
+    private const int AmbientTransitionDeciseconds = 1;
+
     /// <summary>
     /// Pushes a single sRGB colour to the given group. RGB is
     /// converted to Hue's xy + brightness representation in-house
     /// (see <see cref="HueColorMath"/>) ; pure black is mapped to
     /// `on:false` so the lamp goes off instead of jumping to the
-    /// nearest in-gamut colour. Pairing must have completed.
+    /// nearest in-gamut colour. The bridge `transitiontime` is forced
+    /// to <see cref="AmbientTransitionDeciseconds"/> so the lamp
+    /// doesn't lag the screen by the 400 ms factory default. Pairing
+    /// must have completed.
     /// </summary>
     public async Task SetGroupColorAsync(string groupId, LightColor color, CancellationToken ct = default)
     {
@@ -190,13 +203,17 @@ public sealed class HueBridgeClient : IDisposable
         EnsurePaired();
 
         var (xy, bri) = HueColorMath.RgbToHueXyBri(color);
-        var body = new HueGroupActionRequest();
+        var body = new HueGroupActionRequest
+        {
+            TransitionTime = AmbientTransitionDeciseconds,
+        };
 
         if (bri == 0)
         {
             // Black → turn the group off. Sending on:false alone
             // is enough ; xy and bri are ignored by the bridge when
-            // on:false is present.
+            // on:false is present. transitiontime still applies and
+            // gives a 100 ms fade-out instead of a hard cut.
             body.On = false;
         }
         else
@@ -220,12 +237,12 @@ public sealed class HueBridgeClient : IDisposable
         if (bri == 0)
         {
             _log.Verbose(LogSource.Hue,
-                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | on=false");
+                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | on=false | tt_ds={AmbientTransitionDeciseconds}");
         }
         else
         {
             _log.Verbose(LogSource.Hue,
-                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | xy={xy.X:F4},{xy.Y:F4} | bri={bri}");
+                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | xy={xy.X:F4},{xy.Y:F4} | bri={bri} | tt_ds={AmbientTransitionDeciseconds}");
         }
     }
 
@@ -391,11 +408,12 @@ public sealed class HueBridgeClient : IDisposable
     {
         // Nullable on purpose — only the fields we set get serialised,
         // thanks to JsonIgnoreCondition.WhenWritingNull in _jsonOptions.
-        // For black we send {"on":false} alone, for a colour we send
-        // {"on":true,"bri":...,"xy":[...]}.
-        [JsonPropertyName("on")]  public bool?     On         { get; set; }
-        [JsonPropertyName("bri")] public byte?     Brightness { get; set; }
-        [JsonPropertyName("xy")]  public double[]? Xy         { get; set; }
+        // For black we send {"on":false,"transitiontime":1}, for a
+        // colour {"on":true,"bri":...,"xy":[...],"transitiontime":1}.
+        [JsonPropertyName("on")]             public bool?     On             { get; set; }
+        [JsonPropertyName("bri")]            public byte?     Brightness     { get; set; }
+        [JsonPropertyName("xy")]             public double[]? Xy             { get; set; }
+        [JsonPropertyName("transitiontime")] public int?      TransitionTime { get; set; }
     }
 
     private abstract record PairOutcome
