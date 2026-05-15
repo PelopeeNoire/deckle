@@ -133,7 +133,7 @@ Ce que l'OS doit fournir lui-même pour que l'app tourne.
 
 | Dépendance | Quoi | Ship-able ? | Comment vérifier |
 |---|---|---|---|
-| **Windows 11** | Cible 22H2+ via `<TargetFramework>net10-windows10.0.19041.0</TargetFramework>` ; minimum `<TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>` | Non | `Environment.OSVersion` au boot |
+| **Windows 11** | Cible 24H2 SDK via `<TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>` (expose `GraphicsCaptureSession.MinUpdateInterval`, `IDXGIOutput6::GetDesc1`) ; minimum runtime `<TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>` | Non | `Environment.OSVersion` au boot |
 | **Vulkan runtime** | Driver GPU avec support Vulkan 1.x. Toute GPU AMD/Intel/NVIDIA récente. Pas de SDK requis sur la machine cible — uniquement le runtime, fourni avec le driver. | Non | Backend ggml-vulkan affiche `ggml_vulkan: ...` au load ; absence = bascule CPU silencieuse |
 | **MS Visual C++ Runtime** | Pas requis : on ship avec MinGW, pas avec MSVC. Aucun `vcredist` à installer. | n/a | n/a |
 | **.NET 10 runtime** | Bundled via `SelfContained=true` + `PublishSingleFile=true`. Aucune install runtime requise. | **Oui (bundled)** | Pas de check, partie du publish |

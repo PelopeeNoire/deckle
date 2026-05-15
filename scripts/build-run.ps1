@@ -46,9 +46,15 @@ Write-Host "Repo: $RepoRoot" -ForegroundColor DarkGray
 
 $ProjectDir = Join-Path $RepoRoot 'src\Deckle'
 $Csproj     = Join-Path $ProjectDir 'Deckle.csproj'
-$ExePath    = Join-Path $ProjectDir "bin\x64\$Configuration\net10.0-windows10.0.19041.0\Deckle.exe"
 
 if (-not (Test-Path $Csproj)) { throw "csproj not found at $Csproj — is '$RepoRoot' a Deckle repo?" }
+
+# Resolve the exe path lazily after the build (the TargetPlatformVersion
+# may change over time — historically 19041, now 26100 — and we don't
+# want a hardcoded TFM segment to silently launch a stale binary from a
+# previous TPV). We glob for the freshest net10.0-windows10.0.*\Deckle.exe
+# under the configured bin directory after MSBuild returns.
+$BinConfigDir = Join-Path $ProjectDir "bin\x64\$Configuration"
 
 # =============================================================================
 # MSBuild configuration
@@ -117,7 +123,18 @@ if ($LASTEXITCODE -ne 0) { throw "MSBuild failed (code $LASTEXITCODE)" }
 
 # 3. Run
 if ($NoRun) { return }
-if (-not (Test-Path $ExePath)) { throw "Exe not found: $ExePath" }
+
+# Resolve the freshest Deckle.exe under bin\x64\<Config>\net10.0-windows*\.
+# Globbing rather than hardcoding the TFM segment so TargetPlatformVersion
+# bumps (e.g. 19041 → 26100 when we needed access to MinUpdateInterval +
+# IDXGIOutput6) don't silently leave us launching the stale exe from the
+# old TPV folder. LastWriteTime sort picks the freshest if both old and
+# new TFM dirs coexist.
+$ExeCandidates = Get-ChildItem -Path $BinConfigDir -Recurse -Filter 'Deckle.exe' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Directory.Name -like 'net10.0-windows10.0.*' } |
+    Sort-Object LastWriteTime -Descending
+if (-not $ExeCandidates) { throw "Exe not found under $BinConfigDir (expected bin\x64\$Configuration\net10.0-windows10.0.*\Deckle.exe)" }
+$ExePath = $ExeCandidates[0].FullName
 Write-Host "Run $ExePath" -ForegroundColor Green
 
 # Launch via `cmd /c start` instead of `Start-Process -FilePath` so the

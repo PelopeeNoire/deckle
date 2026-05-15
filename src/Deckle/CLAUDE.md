@@ -15,7 +15,7 @@ Depuis `src/Deckle/`, PowerShell sans admin, remplacer `<msbuild-path>` par le c
     -t:Restore,Build -p:Configuration=Release -p:Platform=x64
 ```
 
-Sortie : `bin\x64\Release\net10.0-windows10.0.19041.0\Deckle.exe` (self-contained).
+Sortie : `bin\x64\Release\net10.0-windows10.0.26100.0\Deckle.exe` (self-contained).
 
 Points de vigilance côté csproj. `Microsoft.WindowsAppSDK` est épinglé à `1.8.260317003` (stable officielle). `global.json` épingle SDK `10.0.104` — à conserver. `<EnableMsixTooling>true</EnableMsixTooling>` force le pipeline Publish à générer `Deckle.pri` dans `PublishDir` ; sans ça, en WindowsAppSDK 1.8 unpackaged, les `.xbf` embarqués dans le `.pri` sont injoignables et l'app démarre sans fenêtre (voir [microsoft/WindowsAppSDK#3451](https://github.com/microsoft/WindowsAppSDK/issues/3451)).
 

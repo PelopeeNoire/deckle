@@ -97,7 +97,7 @@ resulting exe.
 scripts/build-run.ps1 -Configuration Release
 ```
 
-Output: `src/Deckle/bin/x64/Release/net10.0-windows10.0.19041.0/Deckle.exe`.
+Output: `src/Deckle/bin/x64/Release/net10.0-windows10.0.26100.0/Deckle.exe`.
 
 See [`scripts/README.md`](scripts/README.md) for an overview of every
 script and module under `scripts/`.
