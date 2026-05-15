@@ -501,6 +501,10 @@ internal static class ScreenCaptureInterop
 
     internal static class D3D11Vtbl
     {
+        // ID3D11DeviceChild methods (after IUnknown's 3) — inherited by
+        // every concrete D3D11 resource type.
+        public const int DeviceChild_GetDevice             = 3;
+
         // ID3D11Device methods (after IUnknown's 3).
         public const int Device_CreateTexture2D            = 5;
         public const int Device_CreateShaderResourceView   = 7;
