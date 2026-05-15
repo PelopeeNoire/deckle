@@ -580,6 +580,9 @@
   <data name="SettingsNavRewriting.Content" xml:space="preserve">
     <value>Rewriting</value>
   </data>
+  <data name="SettingsNavAmbient.Content" xml:space="preserve">
+    <value>Ambient Light</value>
+  </data>
   <data name="SettingsNavDiagnostics.Content" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
