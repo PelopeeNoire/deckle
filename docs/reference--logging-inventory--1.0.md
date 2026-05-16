@@ -828,7 +828,7 @@ L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenC
 - `[logué]` config sampler au start (grille, état HDR)
 - `[logué]` couleur poussée à chaque tick (Verbose, mode + RGB + flag dropped)
 - `[logué]` total `pushed` / `dropped` à la fin de session (Verbose stop)
-- `[à instrumenter]` latence push (entre frame analysée et SetColorAsync renvoyé)
+- `[logué]` latence HTTP du push (durée wall-clock de l'await sur `SetColorAsync` / `SetLightColorsAsync`) — exposée par tick sur la ligne `push` et agrégée (avg / p95 / max) sur la ligne `heartbeat`
 - `[à instrumenter]` ΔRGB mesuré (utile pour calibrer le seuil early-exit en J5)
 
 **Gabarit standard**
@@ -838,9 +838,9 @@ Info      AMBIENT  Ambient pipeline started
 Verbose   AMBIENT  start | source={capture status} | output={driver type} | shape={group|multi} | lights={N} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
 Info      AMBIENT  Ambient pipeline stopped
 Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | shape={group|multi} | duration_sec={X:F1} | pushed={n} | dropped={n}
-Verbose   AMBIENT  push | mode=group | rgb={r},{g},{b} | off={true|false}
-Verbose   AMBIENT  push | mode=multi | lights={K}/{N} | colors={lightId=R,G,B …}
-Verbose   AMBIENT  heartbeat | mode={group|multi} | period_sec={X:F1} | ticks={N} | pushed={N} | dropped={N} [| unmapped_lights={N}]
+Verbose   AMBIENT  push | mode=group | rgb={r},{g},{b} | off={true|false} | http_ms={X:F1}
+Verbose   AMBIENT  push | mode=multi | lights={K}/{N} | colors={lightId=R,G,B …} | http_ms={X:F1}
+Verbose   AMBIENT  heartbeat | mode={group|multi} | period_sec={X:F1} | ticks={N} | pushed={N} | dropped={N} [| unmapped_lights={N}] [| http_avg_ms={X:F1} | http_p95_ms={X:F1} | http_max_ms={X:F1}]
 Info      AMBIENT  Zone {None|Top|Bottom|Left|Right} assigned to {lightName}
 Info      AMBIENT  Zone cleared on {lightName}
 Verbose   AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
@@ -866,6 +866,8 @@ Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
 - `lights={K}/{N}` — sur une ligne `push mode=multi`, K = nombre de lights effectivement pushées au tick (i.e. ayant changé de couleur), N = total
 - `colors={id=R,G,B …}` — sur une ligne `push mode=multi`, la composition exacte du batch envoyé : par light id, le sRGB pushé. Les lights non listées sont soit unmapped, soit ont passé l'early-exit ; le détail s'agrège dans le heartbeat suivant
 - `off={true|false}` — true si la couleur de zone était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
+- `http_ms={X:F1}` — sur une ligne `push`, durée wall-clock de l'await sur `_output.SetColorAsync` (mode group) ou `IMultiLightOutput.SetLightColorsAsync` (mode multi). Mesure le round-trip bridge + back-pressure HttpClient en ms. Posé pour caractériser le lag d'accumulation CLIP v1 observé sur sessions longues — si la valeur dérive avec le temps, c'est la signature du bug
+- `http_avg_ms` / `http_p95_ms` / `http_max_ms` — sur une ligne `heartbeat`, stats agrégées sur la fenêtre de 5 s. Avg = moyenne arithmétique, p95 = 95e centile (tri local), max = pire push de la fenêtre. Skippé du heartbeat quand aucun push effectif n'a eu lieu (écran statique) pour ne pas afficher des `0.0` trompeurs
 - `pushed`/`dropped` au stop — compteurs cumulés sur la session
 
 **Cadence de log et heartbeat.** Avant le ramatonement des logs, la ligne `push` sortait à chaque tick (10-15 Hz). Sur un écran statique, 300 lignes identiques en 30 s pour rien. Le nouveau pattern :

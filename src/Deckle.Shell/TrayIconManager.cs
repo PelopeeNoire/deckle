@@ -19,11 +19,12 @@ namespace Deckle.Shell;
 public sealed class TrayIconManager : IDisposable
 {
     // IDs des commandes du menu contextuel
-    private const uint CMD_LOGS       = 1;
-    private const uint CMD_SETTINGS   = 3;
-    private const uint CMD_PLAYGROUND = 5;
-    private const uint CMD_RESTART    = 4;
-    private const uint CMD_QUIT       = 2;
+    private const uint CMD_LOGS            = 1;
+    private const uint CMD_SETTINGS        = 3;
+    private const uint CMD_PLAYGROUND      = 5;
+    private const uint CMD_AMBIENT_TOGGLE  = 6;
+    private const uint CMD_RESTART         = 4;
+    private const uint CMD_QUIT            = 2;
 
     private IntPtr _hwnd;
     private IntPtr _hIconIdle;
@@ -43,6 +44,16 @@ public sealed class TrayIconManager : IDisposable
     public Action? OnToggleRecording  { get; set; }
     public Action? OnRestart          { get; set; }
     public Action? OnQuit             { get; set; }
+
+    // Ambient Light entry — clic right-click → toggle Enabled in
+    // AmbientSettings via OnToggleAmbient. IsAmbientOn is read on
+    // each menu open so the checkmark reflects the latest state
+    // without TrayIconManager subscribing to settings events.
+    // Pattern reference : PowerToys Quick Access flyout — toggle
+    // a utility directly from the tray with a Win32 MF_CHECKED
+    // checkmark, no wizard.
+    public Func<bool>? IsAmbientOn    { get; set; }
+    public Action?     OnToggleAmbient { get; set; }
 
     // ── Initialisation ────────────────────────────────────────────────────────
 
@@ -129,12 +140,21 @@ public sealed class TrayIconManager : IDisposable
         IntPtr hMenu = NativeMethods.CreatePopupMenu();
         if (hMenu == IntPtr.Zero) return;
 
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_LOGS,       "Logs");
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_SETTINGS,   "Settings");
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_PLAYGROUND, "Playground");
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_SEPARATOR, 0,              null);
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_RESTART,    "Restart");
-        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_QUIT,       "Quit");
+        // Ambient flag read at menu-open time so the checkmark reflects
+        // the latest persisted state without any subscription on this
+        // class — single source of truth stays in AmbientSettings.
+        bool ambientOn = IsAmbientOn?.Invoke() ?? false;
+        uint ambientFlags = NativeMethods.MF_STRING
+                          | (ambientOn ? NativeMethods.MF_CHECKED : 0);
+
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_LOGS,            "Logs");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_SETTINGS,        "Settings");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_PLAYGROUND,      "Playground");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_SEPARATOR, 0,                   null);
+        NativeMethods.AppendMenu(hMenu, ambientFlags,               CMD_AMBIENT_TOGGLE,  "Ambient Light");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_SEPARATOR, 0,                   null);
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_RESTART,         "Restart");
+        NativeMethods.AppendMenu(hMenu, NativeMethods.MF_STRING,    CMD_QUIT,            "Quit");
 
         NativeMethods.GetCursorPos(out POINT pt);
 
@@ -151,11 +171,12 @@ public sealed class TrayIconManager : IDisposable
 
         switch (cmd)
         {
-            case CMD_LOGS:       OnShowLogs?.Invoke();       break;
-            case CMD_SETTINGS:   OnShowSettings?.Invoke();   break;
-            case CMD_PLAYGROUND: OnShowPlayground?.Invoke(); break;
-            case CMD_RESTART:    OnRestart?.Invoke();        break;
-            case CMD_QUIT:       OnQuit?.Invoke();           break;
+            case CMD_LOGS:            OnShowLogs?.Invoke();        break;
+            case CMD_SETTINGS:        OnShowSettings?.Invoke();    break;
+            case CMD_PLAYGROUND:      OnShowPlayground?.Invoke();  break;
+            case CMD_AMBIENT_TOGGLE:  OnToggleAmbient?.Invoke();   break;
+            case CMD_RESTART:         OnRestart?.Invoke();         break;
+            case CMD_QUIT:            OnQuit?.Invoke();            break;
         }
     }
 

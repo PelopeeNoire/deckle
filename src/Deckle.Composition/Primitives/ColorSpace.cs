@@ -92,40 +92,83 @@ public static class ColorSpace
             : MathF.Pow((x + 0.055f) / 1.055f, 2.4f);
     }
 
-    // scRGB FP16 → sRGB 8-bit, with peak-luminance normalisation.
+    // scRGB FP16 → sRGB 8-bit, content-relative Hable filmic tone-map.
     //
     // scRGB (the colour space `Direct3D11CaptureFramePool` returns when
     // the OS is in HDR mode) is a linear-light, floating-point space
     // where (1, 1, 1) maps to the SDR reference white (≈ 80 nits) and
-    // values above 1 represent HDR highlights up to peakWhite nits.
-    // Out-of-gamut negatives (Rec.2020 / DCI-P3 primaries beyond sRGB)
-    // are allowed and are clipped below.
+    // values above 1 represent HDR highlights up to the display's
+    // peakWhite nits. Out-of-gamut negatives (Rec.2020 / DCI-P3
+    // primaries beyond sRGB) are allowed ; they're clipped below.
     //
-    // The tone-map here is intentionally simple — clip + rescale + sRGB
-    // gamma. peakWhite is the display's reported MaxLuminance from
-    // IDXGIOutput6::GetDesc1, expressed in nits. Each channel is clipped
-    // to [0, peakWhite/80] (so SDR content reaches 255 at scRGB=1.0,
-    // HDR highlights at scRGB > 1.0 compress into the upper range), then
-    // sRGB-encoded with LinearToSrgb. A perceptual operator (Reinhard,
-    // ACES) will arrive at J7 if the simple clip proves too aggressive
-    // on bright highlights — V0 is "don't be delaved like Hue Sync",
-    // which the linear clip already achieves.
-    public static Color ScRgbToSrgb(float r, float g, float b, float peakWhite)
+    // The previous V0 implementation normalised on the display's peak
+    // (peakWhite / 80, e.g. 12.5 on HDR1000). That left a typical HDR
+    // scene — which peaks at 200–400 nits, i.e. scRGB 2.5–5 — squashed
+    // in the lower 20–40 % of the output, producing dim lamps even on
+    // a bright sky. The branch's tone-map normalises on an *observed*
+    // `contentPeak` instead, supplied by the caller via a rolling max
+    // over the recent frames. On the same HDR1000 display, a sky-
+    // bright scene now gets contentPeak ≈ 3–5 and the output uses the
+    // full [0, 1] range. The caller is responsible for capping the
+    // rolling max at the display's hard ceiling (peakWhite / 80) so a
+    // freak sun-glint pixel can't crush the whole scene below it.
+    //
+    // The curve itself is Hable's Uncharted-2 filmic operator —
+    // smoothly compresses highlights without crushing the mid-tones,
+    // unlike a simple clip. F(0) = 0 algebraically, F is monotonic ;
+    // the normalisation F(rgb) / F(W) maps scRGB=0 → 0 and scRGB=W →
+    // 1 with a gentle shoulder above mid-tones.
+    //
+    // exposureEv is a linear-light EV-stop bias applied before the
+    // tone-map. +1 doubles brightness, -1 halves it. 0 = neutral.
+    // Combined with the content-relative normalisation, the user can
+    // dial in "Hue Sync presence" with a single value when the
+    // automatic mapping leaves the lights too dim or too aggressive.
+    //
+    // Parameters :
+    //   r, g, b     — scRGB linear-light channels (can be negative or
+    //                 above 1 ; clipping happens after the tone-map).
+    //   contentPeak — caller-maintained rolling max of recent frames'
+    //                 max-channel values, in scRGB units. Floored at
+    //                 1.0 internally so a fully-dark frame still maps
+    //                 SDR white to ~1.0 instead of amplifying noise.
+    //   exposureEv  — additional EV bias (default 0 = no bias).
+    public static Color ScRgbToSrgb(float r, float g, float b, float contentPeak, double exposureEv = 0.0)
     {
-        // peakWhite is in nits ; scRGB's reference is 80 nits. The scale
-        // factor converts the display's max nits into the scRGB-domain
-        // value that should map to 255.
-        float scale = MathF.Max(peakWhite, 80f) / 80f;
-        float invScale = 1f / scale;
+        // Linear-light exposure compensation (one EV stop = ×2).
+        float gain = MathF.Pow(2f, (float)exposureEv);
+        float rE = r * gain;
+        float gE = g * gain;
+        float bE = b * gain;
 
-        float rN = Math.Clamp(r * invScale, 0f, 1f);
-        float gN = Math.Clamp(g * invScale, 0f, 1f);
-        float bN = Math.Clamp(b * invScale, 0f, 1f);
+        // SDR floor on the normalisation peak. On a fully-dark frame
+        // the caller's rolling max collapses toward 0 ; we never want
+        // to compress below scRGB=1.0 (SDR white) because that would
+        // amplify noise, and a near-zero contentPeak would zero-divide
+        // through Hable.
+        float W = MathF.Max(contentPeak, 1f);
+        float invHableW = 1f / Hable(W);
+
+        float rN = Hable(rE) * invHableW;
+        float gN = Hable(gE) * invHableW;
+        float bN = Hable(bE) * invHableW;
 
         return Color.FromArgb(
             0xFF,
-            (byte)MathF.Round(LinearToSrgb(rN) * 255f),
-            (byte)MathF.Round(LinearToSrgb(gN) * 255f),
-            (byte)MathF.Round(LinearToSrgb(bN) * 255f));
+            (byte)MathF.Round(LinearToSrgb(Math.Clamp(rN, 0f, 1f)) * 255f),
+            (byte)MathF.Round(LinearToSrgb(Math.Clamp(gN, 0f, 1f)) * 255f),
+            (byte)MathF.Round(LinearToSrgb(Math.Clamp(bN, 0f, 1f)) * 255f));
+    }
+
+    // Hable's Uncharted-2 filmic tone-mapper (presented at GDC 2010).
+    // The constants are the original publication's "shoulder strength"
+    // / "linear strength" / "linear angle" / "toe strength" / "toe
+    // numerator" / "toe denominator" — widely accepted defaults for
+    // HDR-to-LDR mapping. F(0) = 0 algebraically (the E/F bias cancels
+    // the toe at the origin).
+    public static float Hable(float x)
+    {
+        const float A = 0.15f, B = 0.50f, C = 0.10f, D = 0.20f, E = 0.02f, F = 0.30f;
+        return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
     }
 }

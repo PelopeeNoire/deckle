@@ -116,15 +116,84 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
 
-  <!-- ─── AmbientPage ────────────────────────────────────────────────
-       Strings consumed by the page Settings of Deckle.Lighting.Ambient
-       via x:Uid. Minimal at J0c — page is a placeholder until the
-       Ambient pipeline lands in subsequent milestones. -->
+  <!-- AmbientPage strings consumed via x:Uid. Master state +
+       Behaviour (Mode) + HDR tuning (Exposure / Saturation /
+       Min brightness sliders) + Configuration pointer. Pair flow,
+       Entertainment Area, Light zones and per-light brightness
+       still live in the Playground until phase I migrates them. -->
   <data name="AmbientPageTitleLabel.Text" xml:space="preserve">
     <value>Ambient Light</value>
   </data>
-  <data name="AmbientPagePlaceholderLabel.Text" xml:space="preserve">
-    <value>This page will host the Ambient Light settings as the feature lands. Nothing to configure yet.</value>
+  <data name="AmbientPageSubtitleLabel.Text" xml:space="preserve">
+    <value>Mirror what's on your screen to your Philips Hue lights. Best paired with HDR content for full presence.</value>
+  </data>
+
+  <!-- ── State ─────────────────────────────────────────────── -->
+  <data name="AmbientStateSectionHeader.Text" xml:space="preserve">
+    <value>State</value>
+  </data>
+  <data name="AmbientEnabledCard.Header" xml:space="preserve">
+    <value>Ambient Light</value>
+  </data>
+  <data name="AmbientEnabledCard.Description" xml:space="preserve">
+    <value>When on, your Hue lights follow what's on screen. Pair a bridge in the Playground first.</value>
+  </data>
+
+  <!-- ── Behaviour ─────────────────────────────────────────── -->
+  <data name="AmbientBehaviourSectionHeader.Text" xml:space="preserve">
+    <value>Behaviour</value>
+  </data>
+  <data name="AmbientModeCard.Header" xml:space="preserve">
+    <value>Mode</value>
+  </data>
+  <data name="AmbientModeCard.Description" xml:space="preserve">
+    <value>Game maps the screen palette to lights directly. Realistic biases toward the scene's diegetic light. Changing this requires restarting the pipeline.</value>
+  </data>
+  <data name="AmbientModeGame.Content" xml:space="preserve">
+    <value>Game</value>
+  </data>
+  <data name="AmbientModeRealistic.Content" xml:space="preserve">
+    <value>Realistic</value>
+  </data>
+
+  <!-- ── HDR tuning ────────────────────────────────────────── -->
+  <data name="AmbientTuningSectionHeader.Text" xml:space="preserve">
+    <value>HDR tuning</value>
+  </data>
+  <data name="AmbientTuningExpander.Header" xml:space="preserve">
+    <value>Tuning</value>
+  </data>
+  <data name="AmbientTuningExpander.Description" xml:space="preserve">
+    <value>Tweak how the screen is mapped to your lights. Changes apply live.</value>
+  </data>
+  <data name="AmbientExposureCard.Header" xml:space="preserve">
+    <value>Exposure</value>
+  </data>
+  <data name="AmbientExposureCard.Description" xml:space="preserve">
+    <value>Brightness bias in stops (EV). Increase if the lights look dim on HDR content, decrease if they wash out.</value>
+  </data>
+  <data name="AmbientSaturationCard.Header" xml:space="preserve">
+    <value>Saturation</value>
+  </data>
+  <data name="AmbientSaturationCard.Description" xml:space="preserve">
+    <value>Compensate for the de-saturation introduced by averaging. 100% is neutral, 150–180% restores Hue Sync-like vividness.</value>
+  </data>
+  <data name="AmbientMinBrightnessCard.Header" xml:space="preserve">
+    <value>Minimum brightness</value>
+  </data>
+  <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
+    <value>Floor on the bulb brightness when the lamp is on. Keeps mid-tone scenes readable through the diffuser.</value>
+  </data>
+
+  <!-- ── Configuration pointer (transient — phase I) ───────── -->
+  <data name="AmbientConfigSectionHeader.Text" xml:space="preserve">
+    <value>Configuration</value>
+  </data>
+  <data name="AmbientConfigPointerCard.Header" xml:space="preserve">
+    <value>Pair bridge and assign light zones</value>
+  </data>
+  <data name="AmbientConfigPointerCard.Description" xml:space="preserve">
+    <value>For this preview the Hue pair flow and per-light zone assignment live in the Playground window. They'll move here in the next pass.</value>
   </data>
 
 </root>
