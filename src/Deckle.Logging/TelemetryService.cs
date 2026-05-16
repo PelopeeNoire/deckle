@@ -84,19 +84,26 @@ public sealed class TelemetryService
     // copied onto the event (for UI filtering) AND serialized inside the
     // payload as its enum name — the JSONL stays self-describing.
     //
-    // Verbose-level events are filtered at the source against the
-    // LoggingSettings.VerboseLoggingEnabled toggle. When the toggle is
-    // off (the default), Verbose lines never enter the history buffer
-    // and never reach any sink — LogWindow stays quiet, app.jsonl stays
-    // small, and the rolling 5000-event history captures the actually-
-    // informative Info / Success / Warning / Error / Narrative events
-    // instead of being flooded with per-tick push lines. The read is
-    // wrapped in a try/catch returning false so a settings I/O glitch
-    // can never break logging — fail-safe matches the TelemetryGates
-    // closed-by-default posture.
+    // Per-module mute : log events whose source tag belongs to a Deckle
+    // module the user has silenced (via LoggingSettings, configured
+    // through DiagnosticsPage > Logging) are dropped at the source —
+    // neither the LogWindow nor any sink nor the rolling history buffer
+    // see them. Today the only module wired is the ambient-lighting
+    // family ({AMBIENT, SCREEN, HUE}) ; future toggles will extend the
+    // match set without touching the filter shape. Reads against the
+    // settings service are wrapped in a try/catch returning "enabled"
+    // (the safe-emit fallback) so a settings I/O glitch can never break
+    // logging or silently swallow events.
+    private static readonly HashSet<string> _ambientLogSources = new(StringComparer.Ordinal)
+    {
+        LogSource.Ambient,
+        LogSource.Screen,
+        LogSource.Hue,
+    };
+
     public void Log(string source, string message, LogLevel level, UserFeedback? feedback)
     {
-        if (level == LogLevel.Verbose && !IsVerboseLoggingEnabled())
+        if (_ambientLogSources.Contains(source) && !IsAmbientLoggingEnabled())
             return;
 
         var payload = new LogPayload(source, message, level.ToString());
@@ -106,18 +113,21 @@ public sealed class TelemetryService
         Emit(new TelemetryEvent(TelemetryKind.Log, SessionId, payload, level, feedback, text));
     }
 
-    private static bool IsVerboseLoggingEnabled()
+    private static bool IsAmbientLoggingEnabled()
     {
         try
         {
-            return LoggingSettingsService.Instance.Current.VerboseLoggingEnabled;
+            return LoggingSettingsService.Instance.Current.LogAmbientLighting;
         }
         catch
         {
-            // Fail safe : default OFF, matches the closed-by-default
-            // posture of TelemetryGates.ClosedGates. A settings read
-            // failure must never cascade into a logging failure.
-            return false;
+            // Fail safe : default to emitting (the user can still
+            // silence via the UI). A settings read failure must never
+            // silently swallow events — that's the opposite of the
+            // closed-by-default privacy posture used by TelemetryGates,
+            // because here "open" preserves observability, not data
+            // leakage.
+            return true;
         }
     }
 

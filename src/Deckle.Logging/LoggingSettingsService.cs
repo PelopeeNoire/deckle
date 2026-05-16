@@ -12,12 +12,12 @@ namespace Deckle.Logging;
 // alongside its sibling modules instead of buried under telemetry/.
 //
 // Consumer side : TelemetryService.Log() reads
-// Instance.Current.VerboseLoggingEnabled on every emission to filter
-// Verbose-level events at the source (so neither the LogWindow nor the
-// JSONL sink see them when the toggle is off). The read is wrapped in
-// a try/catch fallback to false so a settings I/O failure can never
-// take down the log pipeline — same fail-safe posture as
-// TelemetryGates.
+// Instance.Current.LogAmbientLighting on every emission tagged with an
+// ambient-pipeline source (AMBIENT / SCREEN / HUE) and drops the event
+// when it's off. The read is wrapped in a try/catch fallback to "true"
+// (the safe-emit default) so a settings I/O failure can't silently
+// swallow events — opposite polarity from TelemetryGates which falls
+// back to "closed" because there the failure mode is data leakage.
 //
 // Bootstrap note : LogService is in this same assembly. We still
 // inject the log callbacks via JsonSettingsStore lambdas so the

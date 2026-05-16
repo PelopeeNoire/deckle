@@ -68,9 +68,9 @@
                                      Click="ResetLogging_Click" />
                 </Grid>
 
-                <controls:SettingsCard x:Uid="LoggingVerboseCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE7BA;}">
-                    <ToggleSwitch IsOn="{x:Bind ViewModel.VerboseLoggingEnabled, Mode=TwoWay}" />
+                <controls:SettingsCard x:Uid="LoggingAmbientCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.LogAmbientLighting, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
                 <!-- ── Telemetry ───────────────────────────────────────────── -->

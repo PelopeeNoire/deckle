@@ -11,22 +11,26 @@ namespace Deckle.Logging;
 //                "what may land on the filesystem ?".
 //   Logging    → runtime emission filters that drop events at the
 //                TelemetryService source, before any sink (LogWindow,
-//                JSONL pipeline) sees them. Toggles answer "how noisy
-//                is the in-app log ?".
+//                JSONL pipeline) sees them. Toggles answer "which
+//                subsystem may emit in the log ?".
 //
-// Initial scope (J4 polish) is one toggle, VerboseLoggingEnabled. The
-// section is structured so future filters — per-source mute, minimum
-// level overrides, narrative-only quiet mode — sit alongside without
-// restructuring either the page or this POCO. Add a new bool, wire it
-// in DiagnosticsViewModel + DiagnosticsPage.xaml + Resources.resw,
-// done : the LoggingSettingsService twin auto-persists.
+// Initial scope (J4 polish) : one toggle per Deckle module, starting
+// with the ambient-lighting pipeline. The same pattern will host the
+// Whisp / Audio / LLM / Settings toggles as the user calls them out —
+// the user wanted one knob per family, not one global verbosity
+// switch. Add a new bool, wire it in DiagnosticsViewModel +
+// DiagnosticsPage.xaml + Resources.resw, extend
+// TelemetryService.Log()'s source-set match, done.
 public sealed class LoggingSettings
 {
-    /// <summary>When false (the default), <see cref="LogLevel.Verbose"/>
-    /// emissions are dropped at the source — neither the LogWindow nor
-    /// the app.jsonl sink see them, and the rolling history buffer
-    /// doesn't grow with them either. Keeps the log quiet during normal
-    /// use ; flip to true to inspect per-tick pipeline activity (ambient
-    /// push lines, screen capture heartbeats, settings store writes …).</summary>
-    public bool VerboseLoggingEnabled { get; set; } = false;
+    /// <summary>When false, log emissions tagged with one of the
+    /// ambient-pipeline sources (<c>AMBIENT</c>, <c>SCREEN</c>,
+    /// <c>HUE</c>) are dropped at the <see cref="TelemetryService"/>
+    /// source — neither the LogWindow nor the app.jsonl sink see them,
+    /// and the rolling history buffer doesn't grow with them either.
+    /// Default <c>true</c> : the existing behaviour is preserved out of
+    /// the box, the toggle exists so the user can silence the whole
+    /// family when they don't care about ambient activity (e.g. while
+    /// tuning Whisp).</summary>
+    public bool LogAmbientLighting { get; set; } = true;
 }

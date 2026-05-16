@@ -1235,11 +1235,11 @@
   <data name="DiagnosticsPageLoggingHeaderLabel.Text" xml:space="preserve">
     <value>Logging</value>
   </data>
-  <data name="LoggingVerboseCard.Header" xml:space="preserve">
-    <value>Verbose logging</value>
+  <data name="LoggingAmbientCard.Header" xml:space="preserve">
+    <value>Log ambient lighting</value>
   </data>
-  <data name="LoggingVerboseCard.Description" xml:space="preserve">
-    <value>Show detailed Verbose-level lines in the LogWindow (and on disk, when Application log is enabled). Off by default — keeps the log clean during normal use. Turn on when investigating a specific issue.</value>
+  <data name="LoggingAmbientCard.Description" xml:space="preserve">
+    <value>Emit log lines from the ambient lighting pipeline — screen capture, Hue bridge, and the engine that drives them. On by default. Turn off to silence the whole family from the LogWindow and the application log when you don't care about ambient activity.</value>
   </data>
   <data name="DiagnosticsPageTelemetryHeaderLabel.Text" xml:space="preserve">
     <value>Telemetry</value>
