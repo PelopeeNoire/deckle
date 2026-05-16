@@ -2485,46 +2485,38 @@ public sealed partial class PlaygroundWindow : Window
                 effectiveZone = LightZone.None;
             }
 
-            // Row layout for one lamp. Two stacked sub-rows :
-            //   - Header row  : "Lamp name" (BodyStrong) + Identify
-            //                   button on the right. Establishes the
-            //                   lamp identity as the primary anchor of
-            //                   the card.
-            //   - Controls row : Zone selector (ComboBox.Header="Zone")
-            //                    and Brightness stepper (NumberBox.Header
-            //                    ="Brightness") side by side. Each header
-            //                    sits above its value field so the user
-            //                    can scan the controls at a glance
-            //                    without re-reading the lamp name.
+            // Row layout : one horizontal StackPanel per lamp, side by
+            // side. The lamp name on the left anchors the row ; the
+            // Identify button gives the user a way to confirm the
+            // physical fixture ; the zone ComboBox on the right is the
+            // only thing the engine reads.
             //
-            // Previous design used a Slider in a third sub-row, which
-            // (a) made the row twice as tall and (b) interfered with
-            // the ComboBox dropdown — the Slider grabs pointer capture
-            // on track click, and the dropdown popup intersected its
-            // geometry which silently absorbed the first few clicks on
-            // the combo. Replacing the slider with a NumberBox stepper
-            // collapses the row, removes the focus-grab interference,
-            // and matches the user's intent of "click ±10 % at a time"
-            // better than dragging a slider.
+            // We deliberately don't label the ComboBox with a "Zone"
+            // header — the selected value reads unambiguously on its
+            // own ("Top" / "Bottom" / "Left" / "Right" / "None"), and
+            // the lamp name to its left is enough anchor to know what
+            // is being mapped.
+            //
+            // Brightness control omitted on purpose for V0 : "every
+            // lamp at 100 %, balance later." Per-light brightness
+            // still persists in AmbientSettings.LightBrightness and
+            // the engine still honours an existing entry, but no UI
+            // surfaces it yet — the control will return when its UX
+            // is rethought.
             var row = new StackPanel
             {
-                Orientation = Orientation.Vertical,
-                Spacing     = 10,
+                Orientation = Orientation.Horizontal,
+                Spacing     = 8,
+                VerticalAlignment = VerticalAlignment.Center,
             };
-
-            var headerRow = new Grid();
-            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var nameLabel = new TextBlock
             {
                 Text   = light.IsReachable ? light.Name : $"{light.Name} (offline)",
-                Style  = (Microsoft.UI.Xaml.Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
                 VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming      = TextTrimming.CharacterEllipsis,
+                MinWidth = 140,
+                TextTrimming = TextTrimming.CharacterEllipsis,
             };
-            Grid.SetColumn(nameLabel, 0);
-            headerRow.Children.Add(nameLabel);
 
             // Identify button — fires alert=lselect to flash the lamp
             // for ~3 s so the user can spot which physical fixture
@@ -2548,23 +2540,9 @@ public sealed partial class PlaygroundWindow : Window
                 IsEnabled = light.IsReachable,
             };
             identifyButton.Click += OnIdentifyLightClick;
-            Grid.SetColumn(identifyButton, 1);
-            headerRow.Children.Add(identifyButton);
-
-            // Controls row : Zone + Brightness, each labelled by its
-            // own Header so the user doesn't have to infer what either
-            // control does from its value. Side-by-side horizontal
-            // layout keeps the row visually compact ; the headers sit
-            // above their fields per WinUI 3 convention.
-            var controlsRow = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing     = 12,
-            };
 
             var combo = new ComboBox
             {
-                Header   = "Zone",
                 MinWidth = 130,
                 Tag      = light.Id,
             };
@@ -2575,44 +2553,9 @@ public sealed partial class PlaygroundWindow : Window
             combo.SelectedIndex = IndexOfZone(effectiveZone);
             combo.SelectionChanged += OnLightZoneSelectionChanged;
 
-            double persistedBrightness = settings.LightBrightness.TryGetValue(light.Id, out var br)
-                ? Math.Clamp(br, 0.0, 1.0)
-                : 1.0;
-
-            // NumberBox stepper instead of the previous Slider :
-            //   - SmallChange = 10 → spin button clicks adjust by 10 %
-            //     (the user explicitly asked for ±10 increments rather
-            //     than slider-drag granularity).
-            //   - SpinButtonPlacementMode = Inline → spinners always
-            //     visible, no focus-required affordance dance.
-            //   - Value range 0-100 mirrors the slider's % surface ;
-            //     the stored setting stays normalised to [0, 1].
-            //   - Header = "Brightness" provides the label inline above
-            //     the value, eliminating the previous "Brightness +
-            //     slider + percent" three-element row.
-            //   - JsonSettingsStore's internal debounce absorbs the
-            //     cadence of ValueChanged events fired by a held spin
-            //     button, so saving on every change does NOT spam the
-            //     disk.
-            var brightnessBox = new NumberBox
-            {
-                Header                  = "Brightness",
-                Minimum                 = 0,
-                Maximum                 = 100,
-                SmallChange             = 10,
-                LargeChange             = 10,
-                SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
-                Value                   = persistedBrightness * 100.0,
-                MinWidth                = 130,
-                Tag                     = light.Id,
-            };
-            brightnessBox.ValueChanged += OnLightBrightnessNumberBoxChanged;
-
-            controlsRow.Children.Add(combo);
-            controlsRow.Children.Add(brightnessBox);
-
-            row.Children.Add(headerRow);
-            row.Children.Add(controlsRow);
+            row.Children.Add(nameLabel);
+            row.Children.Add(identifyButton);
+            row.Children.Add(combo);
             LightZonesPanel.Children.Add(row);
 
             _zoneSelectorByLightId[light.Id] = combo;
@@ -2801,28 +2744,6 @@ public sealed partial class PlaygroundWindow : Window
             $"zone assign | id={lightId} | zone={zone}");
 
         UpdateZoneOverlayHighlight();
-    }
-
-    private void OnLightBrightnessNumberBoxChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
-    {
-        if (sender.Tag is not string lightId) return;
-
-        // NumberBox emits a transient NaN when the user types a partial
-        // value (e.g. clears the field). Treat NaN as "no change yet" —
-        // wait for a real numeric commit before touching settings.
-        if (double.IsNaN(args.NewValue)) return;
-
-        double value01 = Math.Clamp(args.NewValue / 100.0, 0.0, 1.0);
-        var settings = AmbientSettingsService.Instance.Current;
-
-        // Drop the entry when the user dials back to full intensity so
-        // the JSON file stays compact (1.0 is the implicit default).
-        // Any other value is persisted explicitly.
-        if (value01 >= 0.999)
-            settings.LightBrightness.Remove(lightId);
-        else
-            settings.LightBrightness[lightId] = value01;
-        AmbientSettingsService.Instance.Save();
     }
 
     private void OnPipelineModeSelectionChanged(object sender, SelectionChangedEventArgs e)

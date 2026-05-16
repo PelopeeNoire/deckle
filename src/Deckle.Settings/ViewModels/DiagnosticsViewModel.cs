@@ -23,16 +23,17 @@ public partial class DiagnosticsViewModel : ObservableObject
 
     // ── Logging — runtime emission filters ──────────────────────────────────
 
-    // Ambient-lighting module log switch. Defaults to true ; when
-    // flipped off, every log line tagged with one of the ambient-
-    // pipeline sources (AMBIENT, SCREEN, HUE) is dropped at the
-    // TelemetryService source — neither LogWindow nor app.jsonl nor
-    // the history buffer see it. The user wanted one toggle per Deckle
-    // module rather than a global verbosity switch, so this section
-    // will grow with sibling toggles (Whisp, Audio, Llm, Settings) as
-    // each becomes worth silencing on its own. Wired through
-    // LoggingSettingsService — separate store from TelemetrySettings so
-    // flipping it leaves the disk-persistence opt-ins untouched.
+    // Ambient-lighting module log switch. Off by default — the ambient
+    // pipeline emits a steady cadence of routine traffic (push lines,
+    // heartbeats, screen capture diagnostics, Hue REST calls) that
+    // drowns out the events worth reading. Flip on only when
+    // investigating an ambient-specific issue. The user wanted one
+    // toggle per Deckle module rather than a global verbosity switch,
+    // so this section will grow with sibling toggles (Whisp, Audio,
+    // Llm, Settings) as each becomes worth silencing on its own. Wired
+    // through LoggingSettingsService — separate store from
+    // TelemetrySettings so flipping it leaves the disk-persistence
+    // opt-ins untouched.
     [ObservableProperty]
     public partial bool LogAmbientLighting { get; set; }
 
@@ -128,11 +129,13 @@ public partial class DiagnosticsViewModel : ObservableObject
         // Guard BEFORE any property assignment — same reason as GeneralViewModel.
         _isSyncing = true;
 
-        // Logging defaults are "open" : we don't want a brief read
-        // failure during init to silently silence a module. Telemetry
-        // defaults are "closed" — the disk-persistence streams stay off
-        // until the user explicitly opts in.
-        LogAmbientLighting = true;
+        // Logging defaults are "off by family" : each module starts
+        // silenced because its routine cadence drowns the LogWindow ;
+        // the user flips a family on when investigating that family
+        // specifically. Telemetry defaults are also "closed" but for a
+        // different reason — disk-persistence streams stay off until
+        // the user explicitly opts in to where their data lands.
+        LogAmbientLighting = false;
         ApplicationLogToDisk = false;
         MicrophoneTelemetry = false;
         TelemetryLatencyEnabled = false;
@@ -191,7 +194,7 @@ public partial class DiagnosticsViewModel : ObservableObject
         _isSyncing = true;
         try
         {
-            LogAmbientLighting = true;
+            LogAmbientLighting = false;
         }
         finally { _isSyncing = false; }
         PushLoggingToSettings();

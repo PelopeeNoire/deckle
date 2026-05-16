@@ -121,13 +121,12 @@ public sealed class TelemetryService
         }
         catch
         {
-            // Fail safe : default to emitting (the user can still
-            // silence via the UI). A settings read failure must never
-            // silently swallow events — that's the opposite of the
-            // closed-by-default privacy posture used by TelemetryGates,
-            // because here "open" preserves observability, not data
-            // leakage.
-            return true;
+            // Fail safe : default to NOT emitting on a settings read
+            // failure, matching the POCO default. The user expects
+            // ambient logs to be silent unless they explicitly opt in,
+            // so a transient I/O glitch during boot must not flood the
+            // log with routine traffic the user didn't ask for.
+            return false;
         }
     }
 

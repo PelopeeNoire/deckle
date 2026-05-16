@@ -1239,7 +1239,7 @@
     <value>Log ambient lighting</value>
   </data>
   <data name="LoggingAmbientCard.Description" xml:space="preserve">
-    <value>Emit log lines from the ambient lighting pipeline — screen capture, Hue bridge, and the engine that drives them. On by default. Turn off to silence the whole family from the LogWindow and the application log when you don't care about ambient activity.</value>
+    <value>Emit log lines from the ambient lighting pipeline — screen capture, Hue bridge, and the engine that drives them. Off by default ; turn on only when investigating an ambient-specific issue. The routine traffic from this family otherwise drowns out the events worth reading.</value>
   </data>
   <data name="DiagnosticsPageTelemetryHeaderLabel.Text" xml:space="preserve">
     <value>Telemetry</value>

@@ -23,14 +23,14 @@ namespace Deckle.Logging;
 // TelemetryService.Log()'s source-set match, done.
 public sealed class LoggingSettings
 {
-    /// <summary>When false, log emissions tagged with one of the
-    /// ambient-pipeline sources (<c>AMBIENT</c>, <c>SCREEN</c>,
-    /// <c>HUE</c>) are dropped at the <see cref="TelemetryService"/>
-    /// source — neither the LogWindow nor the app.jsonl sink see them,
-    /// and the rolling history buffer doesn't grow with them either.
-    /// Default <c>true</c> : the existing behaviour is preserved out of
-    /// the box, the toggle exists so the user can silence the whole
-    /// family when they don't care about ambient activity (e.g. while
-    /// tuning Whisp).</summary>
-    public bool LogAmbientLighting { get; set; } = true;
+    /// <summary>When false (the default), log emissions tagged with
+    /// one of the ambient-pipeline sources (<c>AMBIENT</c>,
+    /// <c>SCREEN</c>, <c>HUE</c>) are dropped at the
+    /// <see cref="TelemetryService"/> source — neither the LogWindow
+    /// nor the app.jsonl sink see them, and the rolling history buffer
+    /// doesn't grow with them either. Off by default because the
+    /// ambient pipeline emits a steady cadence of routine traffic that
+    /// drowns out the events worth reading ; flip on only when
+    /// investigating an ambient-specific issue.</summary>
+    public bool LogAmbientLighting { get; set; } = false;
 }
