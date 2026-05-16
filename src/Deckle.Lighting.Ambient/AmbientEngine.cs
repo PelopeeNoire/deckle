@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using Deckle.Composition;
 using Deckle.Lighting;
 using Deckle.Lighting.Hue;
 using Deckle.Logging;
@@ -854,46 +855,34 @@ public sealed class AmbientEngine : IAsyncDisposable
         return ApplyMinBrightness(sR, sG, sB, _minBrightness);
     }
 
-    // HSV-S amplification : multiply saturation by `boost` while
-    // keeping hue and value stable. boost=1 is a no-op (early-out
-    // skips the conversion). boost=0 collapses to greyscale, boost
-    // around 1.3–1.8 lifts averaged scenes back toward the saturation
-    // the eye perceives in the raw frame.
+    // OKLCh chroma amplification : multiply C by `boost` at constant L,
+    // hue preserved. boost=1 is a no-op (early-out skips the
+    // conversion). boost=0 collapses to greyscale, boost around
+    // 1.3–1.8 lifts averaged scenes back toward the saturation the eye
+    // perceives in the raw frame.
+    //
+    // Why OKLCh, not HSV. HSV's V is not perceptually uniform — at
+    // V=0.5, yellow (H=60°) has perceived luminance ≈ 0.93 and blue
+    // (H=240°) ≈ 0.07. Multiplying S therefore drags yellows brighter
+    // and blues darker, visible on the lamp as bleach-out on warm
+    // scenes and dimming on cool scenes. OKLCh's L is perceptually
+    // uniform, so scaling C preserves perceived lightness across the
+    // hue wheel. Same reason the conic stroke in HudComposition uses
+    // OKLCh — see ColorSpace.cs header.
+    //
+    // OklchToRgb gamut-clips on the gamma output, so a too-high boost
+    // that pushes C beyond the sRGB cube gets a gentle flattening
+    // rather than a hard stop.
     private static (byte R, byte G, byte B) ApplySaturationBoost(byte r, byte g, byte b, double boost)
     {
         if (Math.Abs(boost - 1.0) < 0.001) return (r, g, b);
 
-        int max = Math.Max(r, Math.Max(g, b));
-        int min = Math.Min(r, Math.Min(g, b));
-        if (max == 0) return (r, g, b);
+        var (L, C, h) = ColorSpace.RgbToOklch(r, g, b);
+        if (C <= 0f) return (r, g, b);
 
-        double v = max / 255.0;
-        double s = (max - min) / (double)max;
-        int delta = max - min;
-        double h;
-        if (delta == 0)        h = 0;
-        else if (max == r)     h = ((g - b) / (double)delta % 6) * 60;
-        else if (max == g)     h = ((b - r) / (double)delta + 2) * 60;
-        else                   h = ((r - g) / (double)delta + 4) * 60;
-        if (h < 0) h += 360;
-
-        double newS = Math.Clamp(s * boost, 0.0, 1.0);
-
-        double c = v * newS;
-        double x = c * (1 - Math.Abs(h / 60.0 % 2 - 1));
-        double m = v - c;
-        double rN, gN, bN;
-        if      (h <  60) { rN = c; gN = x; bN = 0; }
-        else if (h < 120) { rN = x; gN = c; bN = 0; }
-        else if (h < 180) { rN = 0; gN = c; bN = x; }
-        else if (h < 240) { rN = 0; gN = x; bN = c; }
-        else if (h < 300) { rN = x; gN = 0; bN = c; }
-        else              { rN = c; gN = 0; bN = x; }
-
-        return (
-            (byte)Math.Clamp(Math.Round((rN + m) * 255), 0, 255),
-            (byte)Math.Clamp(Math.Round((gN + m) * 255), 0, 255),
-            (byte)Math.Clamp(Math.Round((bN + m) * 255), 0, 255));
+        float newC = (float)Math.Max(0.0, C * boost);
+        var result = ColorSpace.OklchToRgb(L, newC, h);
+        return (result.R, result.G, result.B);
     }
 
     // Min-brightness floor : raise the max channel to `minBri` while
@@ -964,9 +953,11 @@ public sealed class AmbientEngine : IAsyncDisposable
     // y ∈ [1-BorderDepth, 1] × x ∈ [0, 1] ; Left = x ∈ [0, BorderDepth]
     // × y ∈ [0, 1] ; Right = x ∈ [1-BorderDepth, 1] × y ∈ [0, 1]. The
     // cell-index bounds are rounded inward via Floor / Ceiling so we
-    // never read out-of-range. Returned colour is the arithmetic mean
-    // of the cells in the rectangle — no gamma linearisation yet (J5
-    // turf, behind a Playground toggle). None / unknown zones return
+    // never read out-of-range. Returned colour is the gamma-correct
+    // mean of the cells in the rectangle — sRGB bytes are linearised
+    // via ColorSpace.SrgbToLinear8Lut, averaged in linear light, then
+    // re-encoded via LinearToSrgb (matches the gamma-correct averaging
+    // applied upstream in FrameSampler). None / unknown zones return
     // black so a misconfigured callsite leaves the lamps dark rather
     // than tinting them arbitrarily.
     public static LightColor SampleZone(SampledFrame sample, LightZone zone)
@@ -1008,7 +999,7 @@ public sealed class AmbientEngine : IAsyncDisposable
                 return LightColor.Black;
         }
 
-        long sumR = 0, sumG = 0, sumB = 0;
+        double sumRLin = 0, sumGLin = 0, sumBLin = 0;
         int count = 0;
         for (int r = rMin; r <= rMax; r++)
         {
@@ -1016,17 +1007,21 @@ public sealed class AmbientEngine : IAsyncDisposable
             for (int c = cMin; c <= cMax; c++)
             {
                 var px = sample.Grid[rowBase + c];
-                sumR += px.R;
-                sumG += px.G;
-                sumB += px.B;
+                sumRLin += ColorSpace.SrgbToLinear8Lut[px.R];
+                sumGLin += ColorSpace.SrgbToLinear8Lut[px.G];
+                sumBLin += ColorSpace.SrgbToLinear8Lut[px.B];
                 count++;
             }
         }
         if (count == 0) return LightColor.Black;
+
+        float avgR = (float)(sumRLin / count);
+        float avgG = (float)(sumGLin / count);
+        float avgB = (float)(sumBLin / count);
         return new LightColor(
-            (byte)(sumR / count),
-            (byte)(sumG / count),
-            (byte)(sumB / count));
+            (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(avgR) * 255f), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(avgG) * 255f), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(avgB) * 255f), 0, 255));
     }
 
     public async ValueTask DisposeAsync()
