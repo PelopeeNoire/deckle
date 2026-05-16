@@ -2255,13 +2255,31 @@ public sealed partial class PlaygroundWindow : Window
     // module stays free of XAML strings (no x:Uid involvement yet —
     // the surface is dev-only Playground in V0, localisation lands in
     // a later milestone).
-    private static readonly (LightZone Zone, string Label)[] _zoneItems =
+    // Zone options exposed by every per-light ComboBox in the Light
+    // zones card. The set is static : five values, fixed shape, never
+    // changes at runtime. We surface them as a record array so each
+    // ComboBox can bind via ItemsSource = _zoneOptions (with
+    // DisplayMemberPath = "Label") instead of populating combo.Items
+    // via Items.Add at row-build time. The Items.Add path was the
+    // source of a "the dropdown needs 3-4 clicks before it picks up
+    // selections" bug — WinUI 3's ComboBox measures its popup against
+    // the Items collection at the first interaction, and items added
+    // dynamically right before the first click would mismeasure the
+    // popup until enough layout passes had cleared the queue. Binding
+    // the static array via ItemsSource lets the popup measure
+    // correctly on first open. The same array is shared across every
+    // ComboBox in the card ; each ComboBox materialises its own
+    // container instances around the shared underlying ZoneOption
+    // values.
+    private sealed record ZoneOption(LightZone Zone, string Label);
+
+    private static readonly ZoneOption[] _zoneOptions =
     [
-        (LightZone.None,   "None"),
-        (LightZone.Top,    "Top"),
-        (LightZone.Bottom, "Bottom"),
-        (LightZone.Left,   "Left"),
-        (LightZone.Right,  "Right"),
+        new ZoneOption(LightZone.None,   "None"),
+        new ZoneOption(LightZone.Top,    "Top"),
+        new ZoneOption(LightZone.Bottom, "Bottom"),
+        new ZoneOption(LightZone.Left,   "Left"),
+        new ZoneOption(LightZone.Right,  "Right"),
     ];
 
     private async Task ResolveLightsAndBuildPlacementAsync(HueGroup group)
@@ -2541,16 +2559,20 @@ public sealed partial class PlaygroundWindow : Window
             };
             identifyButton.Click += OnIdentifyLightClick;
 
+            // ItemsSource = static array (see _zoneOptions header) so
+            // the popup measures correctly on first interaction.
+            // SelectedIndex is set BEFORE the SelectionChanged handler
+            // wires up so the initial assignment doesn't round-trip
+            // through OnLightZoneSelectionChanged (which would
+            // immediately re-save the same value).
             var combo = new ComboBox
             {
-                MinWidth = 130,
-                Tag      = light.Id,
+                MinWidth          = 130,
+                Tag               = light.Id,
+                ItemsSource       = _zoneOptions,
+                DisplayMemberPath = nameof(ZoneOption.Label),
+                SelectedIndex     = IndexOfZone(effectiveZone),
             };
-            foreach (var (zone, label) in _zoneItems)
-            {
-                combo.Items.Add(new ComboBoxItem { Content = label, Tag = zone });
-            }
-            combo.SelectedIndex = IndexOfZone(effectiveZone);
             combo.SelectionChanged += OnLightZoneSelectionChanged;
 
             row.Children.Add(nameLabel);
@@ -2715,8 +2737,8 @@ public sealed partial class PlaygroundWindow : Window
 
     private static int IndexOfZone(LightZone zone)
     {
-        for (int i = 0; i < _zoneItems.Length; i++)
-            if (_zoneItems[i].Zone == zone) return i;
+        for (int i = 0; i < _zoneOptions.Length; i++)
+            if (_zoneOptions[i].Zone == zone) return i;
         return 0; // Falls back to None for unknown values.
     }
 
@@ -2724,7 +2746,7 @@ public sealed partial class PlaygroundWindow : Window
     {
         if (sender is not ComboBox combo) return;
         if (combo.Tag is not string lightId) return;
-        if (combo.SelectedItem is not ComboBoxItem { Tag: LightZone zone }) return;
+        if (combo.SelectedItem is not ZoneOption { Zone: var zone }) return;
 
         var settings = AmbientSettingsService.Instance.Current;
         if (zone == LightZone.None)
