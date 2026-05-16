@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using Deckle.Lighting;
 using Deckle.Lighting.Hue;
 using Deckle.Logging;
@@ -210,6 +212,19 @@ public sealed class AmbientEngine : IAsyncDisposable
     private double _saturationBoost = 1.0;
     private int    _minBrightness   = 0;
 
+    // Last-constructed engine, exposed for the AmbientPage that lives
+    // in Deckle.Lighting.Ambient and cannot reference App (circular).
+    // V0 assumes a single engine for the whole process ; multi-instance
+    // scenarios (tests) get the most recent. Set by the ctor below.
+    public static AmbientEngine? Current { get; private set; }
+
+    // Bridged action invoked by the AmbientPage's "Open Playground"
+    // button (rendered inside the NotPaired InfoBar). The App wires
+    // this at boot to its lazy ShowPlaygroundLazy() — same approach as
+    // TrayIconManager.OnShowPlayground. Lighting.Ambient cannot
+    // reference App directly, so the App side fills the slot.
+    public static Action? OpenPlaygroundRequested { get; set; }
+
     // ctor : the engine is glued to a host that exposes the live
     // AmbientSettings snapshot. The capture, the Hue bridge client,
     // the light output and the frame sampler are all owned — created
@@ -219,6 +234,7 @@ public sealed class AmbientEngine : IAsyncDisposable
     public AmbientEngine(IAmbientEngineHost host)
     {
         _host = host;
+        Current = this;
     }
 
     /// <summary>True between a successful <see cref="StartAsync"/>
@@ -244,27 +260,73 @@ public sealed class AmbientEngine : IAsyncDisposable
     public bool  IsHdr        => _sampler?.IsHdr ?? false;
     public float ContentPeak  => _sampler?.ContentPeak ?? 1f;
 
-    // Raised on the thread that calls StartAsync / Stop / DisposeAsync.
-    // Consumers (App tray status, Playground Play/Stop button) marshal
-    // to the UI thread themselves. Distinct from the IsRunning property
-    // so a subscriber can react to the *transition* rather than poll
-    // the state.
-    public event Action? Started;
-    public event Action? Stopped;
+    // State machine fired on every transition. Consumers (App tray
+    // tooltip + log, AmbientPage ProgressRing / InfoBar / ModeCombo
+    // gating, Playground Pipeline UI) subscribe to surface the live
+    // status and distinguish a transient "Starting" / "Stopping" from
+    // a settled "Off" / "Running". Error is a transient blip — the
+    // engine immediately collapses to Off after raising it, so the
+    // subscriber gets two consecutive callbacks (Error then Off) and
+    // is expected to flash a brief error indicator before returning
+    // to the Off rendering.
+    private AmbientEngineState _state = AmbientEngineState.Off;
+    public  AmbientEngineState State => _state;
+    public event Action<AmbientEngineState>? StateChanged;
+
+    private void SetState(AmbientEngineState newState)
+    {
+        _state = newState;
+        try { StateChanged?.Invoke(newState); }
+        catch (Exception ex)
+        {
+            // A subscriber threw — don't let it kill the engine flow.
+            _log.Warning(LogSource.Ambient,
+                $"StateChanged subscriber threw — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // RFC1918 + APIPA validation for the Hue bridge address persisted
+    // in AmbientSettings.HueBridgeIp. The bridge is a LAN-only device ;
+    // accepting an arbitrary IP would let a corrupted (or tampered)
+    // settings.json point the engine at an attacker-controlled server
+    // on the internet (SSRF / data exfil through the SetColorAsync
+    // payload). V0 accepts only IPv4 in the canonical private ranges
+    // and 169.254/16 link-local. IPv6 + hostnames are out of scope for
+    // V0 ; revisit when a user requests it with a justified setup.
+    private static bool IsAcceptableBridgeIp(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        if (!IPAddress.TryParse(s, out var ip)) return false;
+        if (ip.AddressFamily != AddressFamily.InterNetwork) return false;
+
+        var b = ip.GetAddressBytes();
+        return
+            b[0] == 10                                          // 10.0.0.0/8     class A private
+         || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)           // 172.16.0.0/12  class B private
+         || (b[0] == 192 && b[1] == 168)                        // 192.168.0.0/16 class C private
+         || (b[0] == 169 && b[1] == 254);                       // 169.254.0.0/16 APIPA link-local
+    }
 
     /// <summary>
     /// Builds the owned deps (capture, bridge client, output, sampler)
     /// from the host's AmbientSettings, connects the output, picks the
     /// pipeline shape (group vs multi-light), and launches the push
     /// loop. Idempotent — calling on a running engine is a no-op.
-    /// Returns silently (with a Warning) when the bridge isn't paired
-    /// or no group is selected ; throws for unexpected I/O failures
-    /// (the caller catches and reverts Enabled in the user's face).
+    /// Throws <see cref="InvalidOperationException"/> when the bridge
+    /// isn't paired, when the persisted IP is not a LAN address, or
+    /// when no group is selected ; throws other exceptions for
+    /// unexpected I/O failures (network down, bridge unreachable).
+    /// In every failure path the engine transitions Off → Starting →
+    /// Error → Off so subscribers can react to the transient blip,
+    /// and the caller (App observer) catches + reverts Enabled to
+    /// false so the UI stays honest.
     /// </summary>
     public async Task StartAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (IsRunning) return;
+
+        SetState(AmbientEngineState.Starting);
 
         // Clean up any deps left over from a previous Stop (Stop only
         // cancels the loop ; the deps stay around so an in-flight
@@ -287,18 +349,32 @@ public sealed class AmbientEngine : IAsyncDisposable
         var ambient = _host.Ambient;
 
         // Validate pair state. Without an IP, a username, and a group
-        // id, the engine has nothing to talk to. Log a Warning and
-        // refuse gracefully — the caller (App observer) can revert
-        // Enabled in the user's face without a hard crash.
-        if (string.IsNullOrEmpty(ambient.HueBridgeIp)
-         || string.IsNullOrEmpty(ambient.HueBridgeId)
-         || string.IsNullOrEmpty(ambient.HueUsername)
-         || string.IsNullOrEmpty(ambient.HueLastGroupId))
+        // id, the engine has nothing to talk to. Throw rather than
+        // return silently so the App observer's catch fires and
+        // reverts Enabled to false — keeps the tray checkmark and the
+        // AmbientPage toggle in sync with the actual pipeline state.
+        try
         {
-            _log.Warning(LogSource.Ambient,
-                "Ambient pipeline cannot start — Hue bridge not paired or no group selected. " +
-                "Open the Playground and complete the Hue pair + group selection first.");
-            return;
+            if (string.IsNullOrEmpty(ambient.HueBridgeIp)
+             || string.IsNullOrEmpty(ambient.HueBridgeId)
+             || string.IsNullOrEmpty(ambient.HueUsername)
+             || string.IsNullOrEmpty(ambient.HueLastGroupId))
+            {
+                throw new InvalidOperationException(
+                    "Hue bridge not paired or no group selected — open the Playground and complete the Hue pair + group selection first.");
+            }
+
+            if (!IsAcceptableBridgeIp(ambient.HueBridgeIp))
+            {
+                throw new InvalidOperationException(
+                    $"Hue bridge IP '{ambient.HueBridgeIp}' is not on a private LAN range (RFC1918 or 169.254/16) — the bridge is a local device and any other address is rejected to avoid SSRF.");
+            }
+        }
+        catch
+        {
+            SetState(AmbientEngineState.Error);
+            SetState(AmbientEngineState.Off);
+            throw;
         }
 
         // Snapshot the multi-light flag for this run. Live changes
@@ -398,13 +474,15 @@ public sealed class AmbientEngine : IAsyncDisposable
             _pushLoopTask = Task.Run(() => PushLoopAsync(_cts.Token), _cts.Token);
 
             IsRunning = true;
-            Started?.Invoke();
+            SetState(AmbientEngineState.Running);
         }
         catch (Exception ex)
         {
             _log.Error(LogSource.Ambient,
                 $"Ambient pipeline failed to start — {ex.GetType().Name}: {ex.Message}");
             await DisposeOwnedDepsAsync().ConfigureAwait(false);
+            SetState(AmbientEngineState.Error);
+            SetState(AmbientEngineState.Off);
             throw;
         }
     }
@@ -446,14 +524,19 @@ public sealed class AmbientEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// Stops the push loop AND disposes the owned deps (capture,
-    /// sampler, light output, bridge client). Idempotent — calls on
-    /// an idle engine return silently. Fires the Stopped event after
-    /// the teardown so subscribers see IsRunning=false.
+    /// Cancels the push loop. Idempotent — calls on an idle engine
+    /// return silently. Transitions Running → Stopping → Off, firing
+    /// StateChanged on each step so subscribers can render a brief
+    /// "stopping" indicator before the final Off rendering. The full
+    /// dep teardown (sampler / output / bridge client / capture) is
+    /// deferred to the next StartAsync (re-create) or to DisposeAsync
+    /// to keep Stop non-blocking for the caller.
     /// </summary>
     public void Stop()
     {
         if (!IsRunning) return;
+
+        SetState(AmbientEngineState.Stopping);
 
         // Close the capture-active window FIRST so the stopped
         // milestones (Info + Verbose mirror below) pass the central
@@ -485,7 +568,7 @@ public sealed class AmbientEngine : IAsyncDisposable
             try { _capture.FrameArrived -= OnFrameArrived; } catch { }
         }
 
-        Stopped?.Invoke();
+        SetState(AmbientEngineState.Off);
     }
 
     private async Task PushLoopAsync(CancellationToken ct)

@@ -277,3 +277,44 @@ considered ready to merge when :
    complete record→transcribe→clipboard→paste cycle works, plus an
    autostart toggle round-trip and an Ollama rewrite if a profile is
    configured.
+
+---
+
+## Addendum — Ambient lighting (post-J4 / commit f4f77c0)
+
+The ambient lighting subsystem (`Deckle.Vision` + `Deckle.Lighting` + `Deckle.Lighting.Ambient`) was added after this audit and merits its own threat-model section. The findings below were produced by a follow-up audit pass on the remediation branch and are documented here as the canonical reference for the publication go/no-go.
+
+### A1 — Hue bridge TLS certificate validation disabled (Medium, accepted)
+
+- **Location** — `src/Deckle.Lighting/Hue/HueBridgeClient.cs` (`CreateBridgeHttpClient` callback returning `true` unconditionally).
+- **Behaviour** — The Hue bridge presents a self-signed certificate rooted on its own private CA. The client accepts any certificate from the IP the user explicitly paired against, avoiding the certificate-pinning machinery that would be required for proper validation.
+- **Threat model** — A man-in-the-middle on the local network (ARP spoof, rogue DHCP, compromised router) can intercept and replay the REST exchange. The leaked surface is the bridge ID, the application username (CLIP API key), and the light state commands. The attacker can also forge color commands but cannot extract anything more sensitive (the bridge is the limit of the trust boundary).
+- **Decision** — Accepted. Deckle is a local-first desktop app ; certificate validation on a LAN device with self-signed PKI is not a standard tractable problem. Users on untrusted networks (open Wi-Fi, shared coworking) are advised against pairing Hue bridges via Deckle.
+- **Status** — `documented` (no code change, this addendum is the user-facing disclosure).
+
+### A2 — Hue username persisted plaintext (Medium, mitigated by Windows ACL)
+
+- **Location** — `<UserDataRoot>/modules/ambient/settings.json`, key `HueUsername`. Written by `AmbientSettingsService.Save()`.
+- **Behaviour** — The Hue API key (bearer-equivalent for CLIP v1 — appended to the URL path on every request) is persisted in plaintext JSON. No encryption-at-rest layer (DPAPI, CNG-protected blob, etc.) is applied.
+- **Threat model** — An attacker with read access to `%LOCALAPPDATA%\Deckle\` on the user's machine recovers the key and gains full control of the lights connected to the paired bridge from any network position. Mitigation : Windows NTFS ACLs grant read access only to the local user account and `SYSTEM`. A process running as another user (including an unprivileged remote SMB share) cannot read the file.
+- **Decision** — Accepted, same risk class as `~/.ssh/id_rsa` on macOS/Linux. Users who suspect compromise should revoke the application username from the Philips Hue mobile app (Settings → Apps & devices → Deckle → Remove) ; a fresh pair recreates a new key. A DPAPI wrap is a future-pass option if the user community asks for it.
+- **Status** — `documented` (no code change, mitigation already in place via Windows ACL).
+
+### A3 — Hue bridge IP validated against RFC1918 / link-local (High → Fixed)
+
+- **Location** — `src/Deckle.Lighting.Ambient/AmbientEngine.cs` (`IsAcceptableBridgeIp` private helper, called in `StartAsync`).
+- **Threat** — Before the fix, the persisted `HueBridgeIp` was constructed into an HTTP request URL without validation. A corrupted or maliciously edited `settings.json` (e.g., attacker with local write access who has not yet revoked the bridge username) could rewrite the IP to a public address and turn the engine into an HTTP exfiltration channel — every `PUT /api/{username}/groups/{id}/action` would carry the current color state to the attacker.
+- **Mitigation** — `StartAsync` now rejects (with `InvalidOperationException`) any IP not in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, or `169.254.0.0/16` (APIPA link-local). Non-IPv4 (hostnames, IPv6) is also rejected pending an explicit user need. The App-side observer catches the exception and reverts `AmbientSettings.Enabled` to `false`, keeping the tray + AmbientPage UI honest.
+- **Status** — `fixed` in the remediation pass.
+
+### A4 — Screen capture and DRM-protected content (Info)
+
+- **Location** — `src/Deckle.Vision/ScreenCaptureService.cs` (uses `Windows.Graphics.Capture` against the primary monitor).
+- **Behaviour** — Windows.Graphics.Capture honours DWM output protection. Frames covering protected regions (Netflix/Disney+ in browser DRM, the secure desktop UAC prompt, etc.) are returned as black or blanked. The protection is a platform guarantee — Deckle cannot bypass it even if it tried.
+- **Disclosure** — The AmbientPage master state card description tells the user "Capture runs locally on your primary monitor — nothing leaves your machine" so the data-flow is named explicitly at the point of consent (the master toggle).
+- **Status** — `documented` (no code change required).
+
+### A5 — Hue settings file not gitignored (verified clean)
+
+- **Location** — `<UserDataRoot>/modules/ambient/settings.json` lives in the user's `%LOCALAPPDATA%`, not in the repo. The repo's `.gitignore` excludes any file ending in `.env`, `mcp.json`, `.claude/settings.local.json`, and the `publish/` output ; runtime settings never end up tracked.
+- **Status** — `verified` (no tracked credentials).

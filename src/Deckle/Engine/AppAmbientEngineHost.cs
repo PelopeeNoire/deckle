@@ -15,6 +15,4 @@ namespace Deckle;
 internal sealed class AppAmbientEngineHost : IAmbientEngineHost
 {
     public AmbientSettings Ambient => AmbientSettingsService.Instance.Current;
-
-    public void SaveSettings() => AmbientSettingsService.Instance.Save();
 }

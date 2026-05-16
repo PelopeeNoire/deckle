@@ -136,7 +136,16 @@
     <value>Ambient Light</value>
   </data>
   <data name="AmbientEnabledCard.Description" xml:space="preserve">
-    <value>When on, your Hue lights follow what's on screen. Pair a bridge in the Playground first.</value>
+    <value>When on, your Hue lights follow what's on screen. Capture runs locally on your primary monitor — nothing leaves your machine.</value>
+  </data>
+  <data name="AmbientNotPairedInfoBar.Title" xml:space="preserve">
+    <value>Hue bridge not configured</value>
+  </data>
+  <data name="AmbientNotPairedInfoBar.Message" xml:space="preserve">
+    <value>Pair a Philips Hue bridge and pick a light group before turning Ambient Light on. The setup wizard lives in the Playground for now.</value>
+  </data>
+  <data name="AmbientNotPairedActionButton.Content" xml:space="preserve">
+    <value>Open Playground</value>
   </data>
 
   <!-- ── Behaviour ─────────────────────────────────────────── -->
