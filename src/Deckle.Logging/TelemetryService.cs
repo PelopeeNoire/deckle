@@ -83,13 +83,42 @@ public sealed class TelemetryService
     // Used by the LogService façade for the 6 log levels. The level is
     // copied onto the event (for UI filtering) AND serialized inside the
     // payload as its enum name — the JSONL stays self-describing.
+    //
+    // Verbose-level events are filtered at the source against the
+    // LoggingSettings.VerboseLoggingEnabled toggle. When the toggle is
+    // off (the default), Verbose lines never enter the history buffer
+    // and never reach any sink — LogWindow stays quiet, app.jsonl stays
+    // small, and the rolling 5000-event history captures the actually-
+    // informative Info / Success / Warning / Error / Narrative events
+    // instead of being flooded with per-tick push lines. The read is
+    // wrapped in a try/catch returning false so a settings I/O glitch
+    // can never break logging — fail-safe matches the TelemetryGates
+    // closed-by-default posture.
     public void Log(string source, string message, LogLevel level, UserFeedback? feedback)
     {
+        if (level == LogLevel.Verbose && !IsVerboseLoggingEnabled())
+            return;
+
         var payload = new LogPayload(source, message, level.ToString());
         string text = source.Length > 0
             ? $"{DateTime.Now:HH:mm:ss.fff} [{source}] {message}"
             : $"{DateTime.Now:HH:mm:ss.fff} {message}";
         Emit(new TelemetryEvent(TelemetryKind.Log, SessionId, payload, level, feedback, text));
+    }
+
+    private static bool IsVerboseLoggingEnabled()
+    {
+        try
+        {
+            return LoggingSettingsService.Instance.Current.VerboseLoggingEnabled;
+        }
+        catch
+        {
+            // Fail safe : default OFF, matches the closed-by-default
+            // posture of TelemetryGates.ClosedGates. A settings read
+            // failure must never cascade into a logging failure.
+            return false;
+        }
     }
 
     // ── Latency ────────────────────────────────────────────────────────────

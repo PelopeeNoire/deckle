@@ -126,4 +126,9 @@ public sealed partial class DiagnosticsPage : Page
     {
         ViewModel.ResetTelemetryDefaults();
     }
+
+    private void ResetLogging_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetLoggingDefaults();
+    }
 }

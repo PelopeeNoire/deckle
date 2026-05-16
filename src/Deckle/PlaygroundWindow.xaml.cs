@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Numerics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
@@ -321,6 +322,17 @@ public sealed partial class PlaygroundWindow : Window
                 // loops by comparing settings before writing back.
                 PipelineModeRadios.SelectedIndex =
                     AmbientSettingsService.Instance.Current.UseMultiLight ? 1 : 0;
+
+                // Override the NavigationView pane-toggle tooltip. WinUI 3
+                // sources that string from the OS locale (e.g. "Ouvrir
+                // navigation" on a French Windows install), which clashes
+                // with Deckle's English UI. The toggle button lives under
+                // the NavView template part name "TogglePaneButton" ;
+                // walking the visual tree is the canonical fix — there's
+                // no public property exposing the tooltip directly. Same
+                // override applied for AutomationProperties.Name so screen
+                // readers also report the English label.
+                OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
             };
         }
 
@@ -2473,37 +2485,49 @@ public sealed partial class PlaygroundWindow : Window
                 effectiveZone = LightZone.None;
             }
 
-            // Row layout : a vertical StackPanel containing two
-            // horizontal sub-rows. Top hosts the lamp identity controls
-            // (Name + Identify + Zone) ; bottom hosts the brightness
-            // slider with its current percentage. The brightness
-            // control is per-light because the user's physical
-            // fixtures can have wildly different output, and they
-            // need to balance the rendering independently of the
-            // sampled colour.
+            // Row layout for one lamp. Two stacked sub-rows :
+            //   - Header row  : "Lamp name" (BodyStrong) + Identify
+            //                   button on the right. Establishes the
+            //                   lamp identity as the primary anchor of
+            //                   the card.
+            //   - Controls row : Zone selector (ComboBox.Header="Zone")
+            //                    and Brightness stepper (NumberBox.Header
+            //                    ="Brightness") side by side. Each header
+            //                    sits above its value field so the user
+            //                    can scan the controls at a glance
+            //                    without re-reading the lamp name.
+            //
+            // Previous design used a Slider in a third sub-row, which
+            // (a) made the row twice as tall and (b) interfered with
+            // the ComboBox dropdown — the Slider grabs pointer capture
+            // on track click, and the dropdown popup intersected its
+            // geometry which silently absorbed the first few clicks on
+            // the combo. Replacing the slider with a NumberBox stepper
+            // collapses the row, removes the focus-grab interference,
+            // and matches the user's intent of "click ±10 % at a time"
+            // better than dragging a slider.
             var row = new StackPanel
             {
                 Orientation = Orientation.Vertical,
-                Spacing     = 4,
+                Spacing     = 10,
             };
 
-            var identityRow = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing     = 8,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var headerRow = new Grid();
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var nameLabel = new TextBlock
             {
                 Text   = light.IsReachable ? light.Name : $"{light.Name} (offline)",
+                Style  = (Microsoft.UI.Xaml.Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
                 VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 140,
-                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextTrimming      = TextTrimming.CharacterEllipsis,
             };
+            Grid.SetColumn(nameLabel, 0);
+            headerRow.Children.Add(nameLabel);
 
             // Identify button — fires alert=lselect to flash the lamp
-            // for ~15 s so the user can spot which physical fixture
+            // for ~3 s so the user can spot which physical fixture
             // this row controls. Disabled for the flash duration so a
             // second click can't queue an overlapping flash.
             var identifyButton = new Button
@@ -2524,9 +2548,23 @@ public sealed partial class PlaygroundWindow : Window
                 IsEnabled = light.IsReachable,
             };
             identifyButton.Click += OnIdentifyLightClick;
+            Grid.SetColumn(identifyButton, 1);
+            headerRow.Children.Add(identifyButton);
+
+            // Controls row : Zone + Brightness, each labelled by its
+            // own Header so the user doesn't have to infer what either
+            // control does from its value. Side-by-side horizontal
+            // layout keeps the row visually compact ; the headers sit
+            // above their fields per WinUI 3 convention.
+            var controlsRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing     = 12,
+            };
 
             var combo = new ComboBox
             {
+                Header   = "Zone",
                 MinWidth = 130,
                 Tag      = light.Id,
             };
@@ -2537,65 +2575,44 @@ public sealed partial class PlaygroundWindow : Window
             combo.SelectedIndex = IndexOfZone(effectiveZone);
             combo.SelectionChanged += OnLightZoneSelectionChanged;
 
-            identityRow.Children.Add(nameLabel);
-            identityRow.Children.Add(identifyButton);
-            identityRow.Children.Add(combo);
-
-            // Brightness sub-row : label + slider + percentage. The
-            // slider is bound to AmbientSettings.LightBrightness[id]
-            // through the slider's Tag. JsonSettingsStore's internal
-            // debounce absorbs the cadence of ValueChanged events
-            // fired during a drag, so saving on every change does NOT
-            // spam the disk.
             double persistedBrightness = settings.LightBrightness.TryGetValue(light.Id, out var br)
                 ? Math.Clamp(br, 0.0, 1.0)
                 : 1.0;
 
-            var brightnessRow = new StackPanel
+            // NumberBox stepper instead of the previous Slider :
+            //   - SmallChange = 10 → spin button clicks adjust by 10 %
+            //     (the user explicitly asked for ±10 increments rather
+            //     than slider-drag granularity).
+            //   - SpinButtonPlacementMode = Inline → spinners always
+            //     visible, no focus-required affordance dance.
+            //   - Value range 0-100 mirrors the slider's % surface ;
+            //     the stored setting stays normalised to [0, 1].
+            //   - Header = "Brightness" provides the label inline above
+            //     the value, eliminating the previous "Brightness +
+            //     slider + percent" three-element row.
+            //   - JsonSettingsStore's internal debounce absorbs the
+            //     cadence of ValueChanged events fired by a held spin
+            //     button, so saving on every change does NOT spam the
+            //     disk.
+            var brightnessBox = new NumberBox
             {
-                Orientation = Orientation.Horizontal,
-                Spacing     = 8,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin      = new Thickness(0, 2, 0, 0),
+                Header                  = "Brightness",
+                Minimum                 = 0,
+                Maximum                 = 100,
+                SmallChange             = 10,
+                LargeChange             = 10,
+                SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+                Value                   = persistedBrightness * 100.0,
+                MinWidth                = 130,
+                Tag                     = light.Id,
             };
+            brightnessBox.ValueChanged += OnLightBrightnessNumberBoxChanged;
 
-            var brightnessLabel = new TextBlock
-            {
-                Text     = "Brightness",
-                VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 80,
-                Foreground = GetThemeBrush("TextFillColorSecondaryBrush"),
-            };
+            controlsRow.Children.Add(combo);
+            controlsRow.Children.Add(brightnessBox);
 
-            var brightnessSlider = new Slider
-            {
-                Minimum  = 0,
-                Maximum  = 100,
-                Value    = persistedBrightness * 100.0,
-                Width    = 200,
-                Tag      = light.Id,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            var brightnessPercent = new TextBlock
-            {
-                Text     = $"{(int)Math.Round(persistedBrightness * 100)}%",
-                VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 40,
-                Foreground = GetThemeBrush("TextFillColorSecondaryBrush"),
-            };
-
-            // The slider's handler reads the percentage TextBlock via
-            // the parent row's Tag so we don't need a dedicated dict.
-            brightnessRow.Tag = brightnessPercent;
-            brightnessSlider.ValueChanged += OnLightBrightnessChanged;
-
-            brightnessRow.Children.Add(brightnessLabel);
-            brightnessRow.Children.Add(brightnessSlider);
-            brightnessRow.Children.Add(brightnessPercent);
-
-            row.Children.Add(identityRow);
-            row.Children.Add(brightnessRow);
+            row.Children.Add(headerRow);
+            row.Children.Add(controlsRow);
             LightZonesPanel.Children.Add(row);
 
             _zoneSelectorByLightId[light.Id] = combo;
@@ -2786,28 +2803,26 @@ public sealed partial class PlaygroundWindow : Window
         UpdateZoneOverlayHighlight();
     }
 
-    private void OnLightBrightnessChanged(object sender, RangeBaseValueChangedEventArgs e)
+    private void OnLightBrightnessNumberBoxChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
-        if (sender is not Slider slider) return;
-        if (slider.Tag is not string lightId) return;
+        if (sender.Tag is not string lightId) return;
 
-        double value01 = Math.Clamp(slider.Value / 100.0, 0.0, 1.0);
+        // NumberBox emits a transient NaN when the user types a partial
+        // value (e.g. clears the field). Treat NaN as "no change yet" —
+        // wait for a real numeric commit before touching settings.
+        if (double.IsNaN(args.NewValue)) return;
+
+        double value01 = Math.Clamp(args.NewValue / 100.0, 0.0, 1.0);
         var settings = AmbientSettingsService.Instance.Current;
 
-        // Drop the entry when the user dials it back to full intensity
-        // so the JSON file stays compact (1.0 is the implicit default).
+        // Drop the entry when the user dials back to full intensity so
+        // the JSON file stays compact (1.0 is the implicit default).
         // Any other value is persisted explicitly.
         if (value01 >= 0.999)
             settings.LightBrightness.Remove(lightId);
         else
             settings.LightBrightness[lightId] = value01;
         AmbientSettingsService.Instance.Save();
-
-        // Update the percentage label sibling carried by the parent row.
-        if (slider.Parent is StackPanel { Tag: TextBlock percent })
-        {
-            percent.Text = $"{(int)Math.Round(slider.Value)}%";
-        }
     }
 
     private void OnPipelineModeSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2921,5 +2936,41 @@ public sealed partial class PlaygroundWindow : Window
         }
 
         SetPipelineNotReady();
+    }
+
+    // ── NavigationView tooltip i18n override ────────────────────────────────
+    //
+    // The NavigationView pane-toggle button (hamburger / "≡") inherits a
+    // tooltip from the OS resource bundle — "Open navigation" on EN,
+    // "Ouvrir navigation" on FR, etc. Deckle's UI is locked to English so
+    // we override that string explicitly. The toggle button is a template
+    // part named "TogglePaneButton" ; we walk the visual tree after the
+    // NavigationView has applied its template (i.e. once it's loaded) and
+    // set ToolTipService.ToolTip + AutomationProperties.Name on the
+    // resolved button so both sighted and assistive surfaces match.
+    //
+    // No-op if the part can't be resolved (e.g. WinUI changes the
+    // template part name in a future update) — better silently mismatched
+    // than crashing on a cosmetic concern.
+    private static void OverrideNavPaneToggleTooltip(NavigationView nav, string tooltip)
+    {
+        var toggle = FindVisualDescendantByName<Button>(nav, "TogglePaneButton");
+        if (toggle is null) return;
+        ToolTipService.SetToolTip(toggle, tooltip);
+        AutomationProperties.SetName(toggle, tooltip);
+    }
+
+    private static T? FindVisualDescendantByName<T>(DependencyObject root, string name)
+        where T : FrameworkElement
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T t && t.Name == name) return t;
+            var found = FindVisualDescendantByName<T>(child, name);
+            if (found is not null) return found;
+        }
+        return null;
     }
 }
