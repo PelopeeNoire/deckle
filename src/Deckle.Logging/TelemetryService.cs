@@ -84,58 +84,25 @@ public sealed class TelemetryService
     // copied onto the event (for UI filtering) AND serialized inside the
     // payload as its enum name — the JSONL stays self-describing.
     //
-    // Per-module Verbose mute : log events at LogLevel.Verbose whose
-    // source tag belongs to a Deckle module the user has silenced
-    // (via LoggingSettings, configured through DiagnosticsPage >
-    // Logging) are dropped at the source. Info / Success / Warning /
-    // Error / Narrative from those same sources pass through — the
-    // milestones (pipeline started, group selected, bridge
-    // unreachable…) always reach the LogWindow. Today the only
-    // module wired is the ambient-lighting family ({AMBIENT, SCREEN,
-    // HUE}) ; future toggles will extend the match shape without
-    // touching the filter logic. Reads against the settings service
-    // are wrapped in a try/catch returning "Verbose off" (matching
-    // the POCO default) so a settings I/O glitch can't surface a
-    // burst of routine traffic the user didn't ask for.
-    private static readonly HashSet<string> _ambientLogSources = new(StringComparer.Ordinal)
-    {
-        LogSource.Ambient,
-        LogSource.Screen,
-        LogSource.Hue,
-    };
-
+    // No central filter on (level, source) here. Earlier attempts to
+    // gate the ambient pipeline traffic by intersecting level == Verbose
+    // with source ∈ {AMBIENT, SCREEN, HUE} suffered from a doctrinal
+    // problem : a Verbose mirror of a user action (e.g. a zone assign
+    // triggered from the Playground while the engine is running) is
+    // structurally identical to a Verbose push line emitted by the
+    // capture loop. Both carry the same source and level, both ought
+    // to land in the LogWindow when the user wants to "see what they
+    // did" or "see what the loop is doing". The filter cannot
+    // distinguish them. So we moved the filter to the call site — see
+    // <see cref="LoggingSettings.LogAmbientCaptureActivity"/> — and let
+    // the runtime loop self-suppress its per-tick noise.
     public void Log(string source, string message, LogLevel level, UserFeedback? feedback)
     {
-        if (level == LogLevel.Verbose
-            && _ambientLogSources.Contains(source)
-            && !IsVerboseAmbientLightingEnabled())
-            return;
-
         var payload = new LogPayload(source, message, level.ToString());
         string text = source.Length > 0
             ? $"{DateTime.Now:HH:mm:ss.fff} [{source}] {message}"
             : $"{DateTime.Now:HH:mm:ss.fff} {message}";
         Emit(new TelemetryEvent(TelemetryKind.Log, SessionId, payload, level, feedback, text));
-    }
-
-    private static bool IsVerboseAmbientLightingEnabled()
-    {
-        try
-        {
-            return LoggingSettingsService.Instance.Current.VerboseAmbientLighting;
-        }
-        catch
-        {
-            // Fail safe : default to Verbose-off on a settings read
-            // failure, matching the POCO default. The user expects
-            // ambient verbose to stay silent unless they opt in, so a
-            // transient I/O glitch during boot must not surface a
-            // burst of routine traffic the user didn't ask for. The
-            // non-Verbose levels (Info / Warning / Error / …) pass
-            // through unconditionally — the milestone signal is
-            // preserved either way.
-            return false;
-        }
     }
 
     // ── Latency ────────────────────────────────────────────────────────────

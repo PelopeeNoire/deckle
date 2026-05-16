@@ -10,31 +10,43 @@ namespace Deckle.Logging;
 //                dialogs, gated paths in JsonlFileSink). Toggles answer
 //                "what may land on the filesystem ?".
 //   Logging    → runtime emission filters that drop events at the
-//                TelemetryService source, before any sink (LogWindow,
-//                JSONL pipeline) sees them. Toggles answer "which
-//                subsystem may emit in the log ?".
+//                emitting module (gated at the call site, not in
+//                TelemetryService). Toggles answer "which slice of
+//                runtime activity should land in the LogWindow ?".
 //
-// Initial scope (J4 polish) : one toggle per Deckle module for the
-// Verbose-level traffic of that module. Starting with the ambient
-// lighting family (AMBIENT / SCREEN / HUE), the same pattern will host
-// Verbose toggles for Whisp / Audio / LLM / Settings as each becomes
-// worth silencing on its own. The intent is "show me the milestones
-// and warnings of every module, but hide the per-tick chatter of the
-// ones I'm not actively investigating". Add a new bool, wire it in
-// DiagnosticsViewModel + DiagnosticsPage.xaml + Resources.resw, extend
-// TelemetryService.Log()'s source-set match for that module, done.
+// Distinction from a hypothetical "Verbose × source" filter : the
+// dimension is **temporal scope**, not log level. The user wants to
+// silence the routine traffic of a runtime LOOP (push-per-tick,
+// heartbeat, frame stats) while keeping milestones and user actions
+// fully visible — even at Verbose level. A level-based filter cannot
+// distinguish "Verbose mirror of a user action" from "Verbose noise
+// of the push loop" because both share source + level. The toggle is
+// therefore consumed AT THE CALL SITE inside the runtime loop, not in
+// a central filter.
+//
+// Initial scope (J4 polish) : one toggle for the ambient capture
+// loop. The same shape will host Whisp transcription loop, Audio
+// capture loop, etc. as each becomes worth silencing on its own.
 public sealed class LoggingSettings
 {
-    /// <summary>When false (the default), <see cref="LogLevel.Verbose"/>
-    /// emissions tagged with one of the ambient-pipeline sources
-    /// (<c>AMBIENT</c>, <c>SCREEN</c>, <c>HUE</c>) are dropped at the
-    /// <see cref="TelemetryService"/> source. Info / Success / Warning /
-    /// Error / Narrative events from those same sources pass through
-    /// untouched — the workflow milestones (pipeline started, group
-    /// selected, bridge unreachable…) remain visible in the LogWindow.
-    /// The toggle exists to silence the high-frequency per-tick noise
-    /// (push lines, heartbeats, sampler diagnostics) that drown out
-    /// everything else while a game is running, without losing the
-    /// useful events that bracket the activity.</summary>
-    public bool VerboseAmbientLighting { get; set; } = false;
+    /// <summary>When false, the high-frequency log lines emitted by
+    /// the <see cref="Deckle.Lighting.Ambient.AmbientEngine"/> push
+    /// loop (per-tick <c>push</c> lines, periodic <c>heartbeat</c>)
+    /// are suppressed AT THE CALL SITE — the engine reads this flag
+    /// before each emission and skips when off. The pipeline
+    /// milestones (<c>Ambient pipeline started/stopped</c>, their
+    /// Verbose <c>start | …</c> / <c>stop | …</c> diagnostic mirrors)
+    /// and every user action triggered from the Playground or
+    /// AmbientPage (zone assign, mode change, group selection) stay
+    /// visible regardless — those don't fire from the runtime loop.
+    /// Warnings and errors from the loop also pass through, since
+    /// they're emitted via <see cref="LogLevel.Warning"/> / Error
+    /// and are unconditional.
+    ///
+    /// Default <c>true</c> : the user explicitly called these logs
+    /// "very important" — they describe what the engine is actually
+    /// doing tick by tick and are the first thing to consult when
+    /// the rendered output looks wrong. Flip to false only while
+    /// playing, to keep the LogWindow readable.</summary>
+    public bool LogAmbientCaptureActivity { get; set; } = true;
 }

@@ -2619,7 +2619,7 @@ public sealed partial class PlaygroundWindow : Window
                 var menuItem = new MenuFlyoutItem
                 {
                     Text = opt.Label,
-                    Tag  = new ZoneMenuTag(light.Id, opt.Zone, zoneButton),
+                    Tag  = new ZoneMenuTag(light.Id, light.Name, opt.Zone, zoneButton),
                 };
                 menuItem.Click += OnZoneMenuItemClick;
                 zoneFlyout.Items.Add(menuItem);
@@ -2781,11 +2781,12 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     // Carrier for everything OnZoneMenuItemClick needs : the lamp id
-    // (to route the assignment), the zone the menu item represents,
-    // and the DropDownButton that should be re-labelled on selection.
-    // Sits on the RadioMenuFlyoutItem.Tag so the handler is a plain
-    // delegate without per-row closure capture.
-    private sealed record ZoneMenuTag(string LightId, LightZone Zone, DropDownButton Button);
+    // (to route the assignment), the lamp display name (for the Info
+    // Capital log line), the zone the menu item represents, and the
+    // DropDownButton that should be re-labelled on selection. Sits on
+    // the MenuFlyoutItem.Tag so the handler is a plain delegate
+    // without per-row closure capture.
+    private sealed record ZoneMenuTag(string LightId, string LightName, LightZone Zone, DropDownButton Button);
 
     private static string LabelForZone(LightZone zone)
     {
@@ -2818,13 +2819,19 @@ public sealed partial class PlaygroundWindow : Window
         }
         AmbientSettingsService.Instance.Save();
 
-        // Info-level (not Verbose) : this is a discrete user action in
-        // the Playground, not high-frequency noise. The Verbose ambient
-        // toggle in Diagnostics drops the per-tick push spam ; user
-        // intent like a zone reassignment should always make it to the
-        // LogWindow so the Playground stays a useful "see what you
-        // did" surface.
-        LogService.Instance.Info(LogSource.Ambient,
+        // Pair Info Capital + Verbose mirror, per logging doctrine
+        // (cf. reference--logging-inventory--1.0.md §"Filtre runtime")
+        // — Info is a semantic sentence for human readers in Activity
+        // (no opaque IDs), Verbose carries the technical k=v with the
+        // light id for grep / diag. The Verbose mirror is NOT gated by
+        // LogAmbientCaptureActivity : that toggle only silences the
+        // engine's per-tick chatter inside the push loop, never user
+        // actions, even when they happen while the pipeline runs.
+        string zoneSummary = tag.Zone == LightZone.None
+            ? $"Zone cleared on {tag.LightName}"
+            : $"Zone {tag.Zone} assigned to {tag.LightName}";
+        LogService.Instance.Info(LogSource.Ambient, zoneSummary);
+        LogService.Instance.Verbose(LogSource.Ambient,
             $"zone assign | id={tag.LightId} | zone={tag.Zone}");
 
         UpdateZoneOverlayHighlight();
@@ -2846,10 +2853,13 @@ public sealed partial class PlaygroundWindow : Window
         settings.UseMultiLight = useMulti;
         AmbientSettingsService.Instance.Save();
 
-        // Info-level : discrete user action in the Playground, not
-        // per-tick noise. Stays visible regardless of the verbose
-        // ambient toggle.
+        // Pair Info Capital + Verbose mirror, same doctrine as zone
+        // assign above. Info reads as a human sentence in Activity ;
+        // Verbose carries the property name / value for grep.
+        string modeLabel = useMulti ? "per-zone" : "group";
         LogService.Instance.Info(LogSource.Ambient,
+            $"Pipeline mode set to {modeLabel}");
+        LogService.Instance.Verbose(LogSource.Ambient,
             $"settings update | key=UseMultiLight | value={useMulti}");
     }
 

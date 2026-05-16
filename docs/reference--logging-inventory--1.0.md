@@ -12,12 +12,15 @@ Référence unique pour décider **quoi logger, à quel niveau, avec quel format
 
 Document vivant. Version `1.0` : inventaire normatif appliqué au code,
 les sources et payloads décrits ci-dessous reflètent le runtime courant.
-Patch en cours (filename à bumper à `1.1` quand on factorise) : ajout
-de la section *Filtre runtime : mute Verbose par module* qui documente
-le toggle « Verbose ambient lighting » exposé par Diagnostics, et
-réajustement de deux gabarits AmbientEngine (`zone assign`, `settings
-update`) en `Info` au lieu de `Verbose` — actions utilisateur discrètes,
-doivent rester visibles dans Activity même quand le toggle est OFF.
+Patch en cours (filename à bumper à `1.1` quand on consolide) :
+renforce la doctrine de séparation Verbose ↔ Info (les IDs et le
+format `k=v` sont Verbose-only, jamais dans Info / Success / Warning /
+Error) avec une table d'exemples ❌/✅, et documente le toggle **Log
+ambient capture activity** ajouté dans Diagnostics — gating au site
+d'émission dans la boucle `AmbientEngine.PushLoopAsync` plutôt qu'un
+filtre central, parce qu'un filtre `(level, source)` ne sait pas
+distinguer un Verbose miroir d'action utilisateur d'un Verbose
+per-tick de la boucle.
 Les décisions prises ici cadrent toute future étape mesurée — étendre un
 payload existant ou en ajouter un suit la procédure section "Quand on
 ajoute une étape mesurée" ci-dessous.
@@ -137,13 +140,34 @@ du pipeline, ce sont des exports.
 - Est-ce que c'est du bruit pour diagnostic expert ? → `Verbose`
 - Est-ce que c'est l'app qui raconte son histoire à l'utilisateur ? → `Narrative`
 
-### Filtre runtime : mute Verbose par module
+### Doctrine de séparation Verbose ↔ Info — règle dure
 
-Depuis le polish J4, la page Diagnostics expose une section **Logging** sœur de **Telemetry**, qui héberge un toggle par famille pour drop le bruit Verbose de cette famille à la source (`TelemetryService.Log` regarde le tuple `(level, source)`). Premier (et seul aujourd'hui) toggle : **Verbose ambient lighting**, OFF par défaut, qui filtre `LogLevel.Verbose` quand `source ∈ {AMBIENT, SCREEN, HUE}`. Les autres niveaux (`Info` / `Success` / `Warning` / `Error` / `Narrative`) de ces mêmes sources passent toujours — les jalons (pipeline start/stop, group selected, bridge unreachable) et les actions utilisateur du Playground (`zone assign`, `settings update`) restent visibles dans Activity quel que soit l'état du toggle. La sémantique est « cache-moi le rythme cardiaque de l'ambient pendant que je joue, garde les milestones et les actions discrètes ».
+**Les identifiants opaques et le format `k=v` sont Verbose-only.** Une ligne `Info`, `Success`, `Warning` ou `Error` est une phrase Capital courte, lisible par un humain qui n'a aucune connaissance de l'implémentation. Si la ligne contient un ID (light id Hue, group id, file path, hash, line index, opaque token quelconque) ou un format à séparateurs `|`, alors par définition c'est une ligne Verbose, pas une ligne sémantique. Un Info qui contient un ID est une erreur de niveau, pas une variante stylistique.
 
-Conséquence sur les gabarits : une ligne **destinée à l'utilisateur** (action discrète, jalon) doit sortir en `Info` ou supérieur. Une ligne **destinée au diag expert** (per-tick, plomberie, métriques continues) sort en `Verbose`. Les deux familles cohabitent dans le même module, c'est le niveau qui décide qui survit au filtre.
+Lorsqu'une action mérite à la fois une signalisation sémantique pour l'utilisateur ET un détail technique pour le diag, on émet **deux lignes** : une Info Capital sans IDs, et son miroir Verbose en k=v avec les IDs. Aucun chevauchement.
 
-Ce pattern grandira avec les modules suivants (Whisp, Audio, Llm, Settings) : un toggle par famille dans la même section Logging, même semantic, même hashset par module dans `TelemetryService`.
+| ❌ Mauvais (mélange) | ✅ Bon (séparation) |
+|---|---|
+| `Info AMBIENT zone assign \| id=42 \| zone=Top` | `Info AMBIENT Zone Top assigned to Falcon` |
+| | `Verbose AMBIENT zone assign \| id=42 \| zone=Top` |
+| `Info AMBIENT settings update \| key=UseMultiLight \| value=true` | `Info AMBIENT Pipeline mode set to per-zone` |
+| | `Verbose AMBIENT settings update \| key=UseMultiLight \| value=true` |
+
+Le miroir Verbose **suit toujours** l'Info Capital quand il y a un détail technique à acter. Ce n'est pas optionnel — c'est le contrat qui rend les logs greppables.
+
+### Filtre runtime : capture activity (per-loop)
+
+Depuis le polish J4, la page Diagnostics expose une section **Logging** sœur de **Telemetry**, qui héberge un toggle par boucle runtime pour suspendre l'émission des lignes per-tick de cette boucle. Premier (et seul aujourd'hui) toggle : **Log ambient capture activity**, ON par défaut, qui gate les Verbose émis par `AmbientEngine.PushLoopAsync` (lignes `push | mode=… | rgb=…` et `heartbeat | …`). La lecture se fait **au site d'émission**, pas dans un filtre central : la boucle interroge `LoggingSettingsService.Instance.Current.LogAmbientCaptureActivity` à chaque tick et skip son `_log.Verbose` quand le flag est OFF.
+
+Ce qui reste visible quel que soit l'état du toggle :
+
+- Les milestones `Info AMBIENT Ambient pipeline started/stopped` et leurs miroirs Verbose `start | …` / `stop | …` (émis hors boucle).
+- Les actions utilisateur depuis le Playground ou AmbientPage (`zone assign`, `settings update`, `pipeline mode set to …`) et leurs miroirs Verbose — ces lignes ne sortent pas de la boucle.
+- Les `Warning` / `Error` de la boucle (push échec, loop crash) — ils sont inconditionnels par doctrine.
+
+**Pourquoi pas un filtre `(level, source)` centralisé.** Une première itération a tenté de filtrer `level == Verbose && source ∈ {AMBIENT, SCREEN, HUE}` dans `TelemetryService.Log`. Le problème doctrinal : un `Verbose` miroir d'une action utilisateur (e.g. zone assign déclenché pendant que la capture tourne) est structurellement identique à un `Verbose` push line émis par la boucle de capture — même source, même level, le filtre central ne peut pas les distinguer. La séparation propre est temporelle (« cette ligne sort-elle de la boucle qui tourne ? »), donc le filtre vit dans la boucle, pas dans le hub.
+
+Ce pattern grandira avec les boucles suivantes (transcription Whisp, capture micro Audio…) : un toggle par boucle dans la même section Logging, même architecture self-gated au call site.
 
 ### Format par niveau — deux registres distincts
 
@@ -795,10 +819,13 @@ Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | shape={group|multi}
 Verbose   AMBIENT  push | mode=group | rgb={r},{g},{b} | off={true|false}
 Verbose   AMBIENT  push | mode=multi | lights={K}/{N} | colors={lightId=R,G,B …}
 Verbose   AMBIENT  heartbeat | mode={group|multi} | period_sec={X:F1} | ticks={N} | pushed={N} | dropped={N} [| unmapped_lights={N}]
-Info      AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
+Info      AMBIENT  Zone {None|Top|Bottom|Left|Right} assigned to {lightName}
+Info      AMBIENT  Zone cleared on {lightName}
+Verbose   AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
 Verbose   AMBIENT  zone suggest | id={lightId} | zone={…} | from=ent_config | ent_name={n} | xyz={X:F2},{Y:F2},{Z:F2}
 Verbose   AMBIENT  zone suggest skipped | reason={no_entertainment_areas|no_matching_entertainment_area}
-Info      AMBIENT  settings update | key={name} | value={v}
+Info      AMBIENT  Pipeline mode set to {group|per-zone}
+Verbose   AMBIENT  settings update | key={name} | value={v}
 Warning   AMBIENT  Multi-light requested but driver doesn't expose IMultiLightOutput ({type}) — falling back to group push
 Warning   AMBIENT  Multi-light requested but driver returned no lights — falling back to group push
 Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
@@ -826,10 +853,12 @@ Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
 3. **Cumulés au stop** (déjà documentés plus bas) restent la vérité de session.
 
 Ce pattern suit la doctrine VAD : on ne loge pas chaque cycle, on loge quand le sujet change + résumé périodique. Les compteurs internes de l'engine (`_hbTicks`, `_hbPushed`, `_hbDropped`, `_hbUnmappedLights`) sont remis à zéro à chaque heartbeat émis, donc chaque ligne `heartbeat` lit "depuis le dernier heartbeat" et pas "depuis le start".
-- `zone assign` — émis par la card Light zones du Playground quand l'utilisateur sélectionne une zone pour une lampe. `id` = light id opaque (CLIP v1 pour Hue), `zone` = valeur de l'enum `LightZone`. `zone=None` correspond à un retrait de mapping (l'entrée est supprimée du dict). Émis en **Info** (action utilisateur discrète, pas du bruit per-tick), donc visible dans Activity et toujours présent même quand le toggle Verbose ambient lighting est OFF — le Playground reste utile comme surface « voir ce qu'on vient de faire »
+- `Zone {…} assigned to {lightName}` / `Zone cleared on {lightName}` — pair Info Capital sémantique pour l'action utilisateur dans la card Light zones. Ne porte aucun ID, lisible dans Activity. Toujours visible quel que soit l'état de Log ambient capture activity (sort hors boucle de capture)
+- `zone assign | id={lightId} | zone={…}` — miroir Verbose technique de l'Info ci-dessus. `id` = light id opaque (CLIP v1 pour Hue), `zone` = valeur de l'enum `LightZone`. `zone=None` correspond à un retrait de mapping (l'entrée est supprimée du dict). Verbose car porte l'ID — la doctrine impose les IDs en Verbose uniquement
 - `zone suggest` — émis au moment où la card Light zones se construit, **une ligne par lampe** dont la position dans l'entertainment area Hue a permis de dériver une zone via `LightZoneSuggester`. `from=ent_config` indique la source de la suggestion (anticipation : `from=room` ou `from=ha_area` plus tard). `xyz` reproduit la position Hue normalisée [-1, 1] qui a été classée. La suggestion est ensuite persistée dans `AmbientSettings.LightZones` (et `zone assign` ne sera PAS émis pour cette même opération — c'est une init silencieuse, pas un acte utilisateur)
 - `zone suggest skipped` — émis quand la card Light zones s'est construite sans suggestion possible. `reason=no_entertainment_areas` = le bridge n'expose aucune entertainment area ; `reason=no_matching_entertainment_area` = au moins une area existe mais aucune ne contient les lights du group sélectionné
-- `settings update | key={name} | value={v}` — gabarit générique pour toute modification d'une property d'`AmbientSettings` depuis l'UI (RadioButtons UseMultiLight pour V0, d'autres champs à venir en J5/J9). Émis en **Info** pour la même raison que `zone assign` : action utilisateur discrète, doit rester visible dans Activity même Verbose ambient OFF
+- `Pipeline mode set to {group|per-zone}` — Info Capital sémantique émis par le RadioButtons UseMultiLight du Playground. Phrase user-facing, pas d'ID, pas de k=v. Sort hors boucle de capture donc toujours visible
+- `settings update | key={name} | value={v}` — miroir Verbose technique. Gabarit générique pour toute modification d'une property d'`AmbientSettings` depuis l'UI (UseMultiLight pour V0, d'autres champs à venir en J5/J9). Verbose car le format `k=v` + identifiants techniques (nom de property) relèvent du diag expert
 
 **Erreurs et sévérités**
 

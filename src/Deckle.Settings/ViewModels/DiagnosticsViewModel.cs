@@ -23,21 +23,21 @@ public partial class DiagnosticsViewModel : ObservableObject
 
     // ── Logging — runtime emission filters ──────────────────────────────────
 
-    // Per-module Verbose mute for the ambient-lighting pipeline. Off
-    // by default — the Verbose-level traffic (push lines, heartbeats,
-    // screen capture diagnostics, Hue REST calls) drowns out the
-    // events worth reading. The non-Verbose levels (Info / Success /
-    // Warning / Error / Narrative) from the same sources are NEVER
-    // filtered : pipeline start/stop, group selection, bridge errors,
-    // and Playground user actions stay visible regardless. Flip on
-    // only when investigating an ambient-specific issue. The section
-    // will grow with sibling Verbose toggles (Whisp, Audio, Llm,
-    // Settings) as each becomes worth silencing on its own. Wired
-    // through LoggingSettingsService — separate store from
-    // TelemetrySettings so flipping it leaves the disk-persistence
-    // opt-ins untouched.
+    // Per-loop logging toggle for the ambient capture activity. The
+    // flag gates the high-frequency Verbose lines emitted from inside
+    // AmbientEngine.PushLoopAsync (per-tick push, periodic heartbeat).
+    // Pipeline milestones (started / stopped), user actions from the
+    // Playground (zone assign, mode change), and bridge errors are
+    // emitted outside the loop and therefore not affected by this
+    // toggle. Default true — the user explicitly called these logs
+    // "very important" ; flip to false only while playing to keep the
+    // LogWindow readable. The section will grow with sibling per-loop
+    // toggles for Whisp / Audio / Llm as each captures a runtime loop
+    // worth silencing. Wired through LoggingSettingsService —
+    // separate store from TelemetrySettings so flipping it leaves the
+    // disk-persistence opt-ins untouched.
     [ObservableProperty]
-    public partial bool VerboseAmbientLighting { get; set; }
+    public partial bool LogAmbientCaptureActivity { get; set; }
 
     // ── Telemetry — opt-in disk persistence ─────────────────────────────────
 
@@ -75,10 +75,10 @@ public partial class DiagnosticsViewModel : ObservableObject
     [ObservableProperty]
     public partial string TelemetryStorageDirectory { get; set; }
 
-    partial void OnVerboseAmbientLightingChanged(bool value)
+    partial void OnLogAmbientCaptureActivityChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Logging.VerboseAmbientLighting ← {value}");
+        _log.Info(LogSource.SetGeneral, $"Logging.LogAmbientCaptureActivity ← {value}");
         PushLoggingToSettings();
     }
 
@@ -131,14 +131,15 @@ public partial class DiagnosticsViewModel : ObservableObject
         // Guard BEFORE any property assignment — same reason as GeneralViewModel.
         _isSyncing = true;
 
-        // Logging defaults : each per-module Verbose mute starts in
-        // the "Verbose off" position because its routine cadence
-        // drowns the LogWindow ; non-Verbose levels still flow so the
-        // milestones / warnings / errors remain visible. Telemetry
-        // defaults are also "closed" but for a different reason —
-        // disk-persistence streams stay off until the user explicitly
-        // opts in to where their data lands.
-        VerboseAmbientLighting = false;
+        // Logging defaults are "open" by family : every per-loop
+        // toggle starts ON because the user explicitly considers
+        // those logs important — they tell you what each runtime
+        // loop is actually doing. Flipping a family OFF is a focused
+        // act ("I'm playing right now and the ambient cadence is too
+        // chatty"). Telemetry defaults are "closed" for the opposite
+        // reason — disk-persistence streams stay off until the user
+        // explicitly opts in to where their data lands.
+        LogAmbientCaptureActivity = true;
         ApplicationLogToDisk = false;
         MicrophoneTelemetry = false;
         TelemetryLatencyEnabled = false;
@@ -155,7 +156,7 @@ public partial class DiagnosticsViewModel : ObservableObject
         try
         {
             var l = LoggingSettingsService.Instance.Current;
-            VerboseAmbientLighting = l.VerboseAmbientLighting;
+            LogAmbientCaptureActivity = l.LogAmbientCaptureActivity;
 
             var t = TelemetrySettingsService.Instance.Current;
             ApplicationLogToDisk = t.ApplicationLogToDisk;
@@ -174,7 +175,7 @@ public partial class DiagnosticsViewModel : ObservableObject
     private void PushLoggingToSettings()
     {
         var l = LoggingSettingsService.Instance.Current;
-        l.VerboseAmbientLighting = VerboseAmbientLighting;
+        l.LogAmbientCaptureActivity = LogAmbientCaptureActivity;
         LoggingSettingsService.Instance.Save();
     }
 
@@ -197,7 +198,7 @@ public partial class DiagnosticsViewModel : ObservableObject
         _isSyncing = true;
         try
         {
-            VerboseAmbientLighting = false;
+            LogAmbientCaptureActivity = true;
         }
         finally { _isSyncing = false; }
         PushLoggingToSettings();

@@ -11,17 +11,16 @@ namespace Deckle.Logging;
 // <UserDataRoot>/modules/logging/settings.json so it's discoverable
 // alongside its sibling modules instead of buried under telemetry/.
 //
-// Consumer side : TelemetryService.Log() reads
-// Instance.Current.VerboseAmbientLighting on every Verbose-level
-// emission tagged with an ambient-pipeline source (AMBIENT / SCREEN /
-// HUE) and drops the event when it's off. Info / Success / Warning /
-// Error / Narrative emissions from those sources are unaffected — the
-// filter only ever touches Verbose. The read is wrapped in a try/catch
-// fallback to false (matching the POCO default) so a settings I/O
-// failure during boot doesn't surface a burst of routine ambient
-// verbose traffic the user didn't ask for. Same closed-on-failure
-// direction as TelemetryGates, but for a different reason — here the
-// failure mode is unwanted noise, not data leakage.
+// Consumer side : the per-loop emitters (AmbientEngine.PushLoopAsync
+// at minimum, future Whisp / Audio loops as they land) read this
+// service's Current state directly, at the call site, and short-
+// circuit their _log.Verbose call when the matching flag is off.
+// Reads are deliberately uncached — flipping the toggle in the UI
+// takes effect on the next tick of the loop. Each emitter is
+// expected to wrap the read in try/catch with a safe fallback if
+// the loop runs hot enough that a settings I/O glitch would matter,
+// though the JsonSettingsStore in-memory snapshot makes that an
+// edge case in practice.
 //
 // Bootstrap note : LogService is in this same assembly. We still
 // inject the log callbacks via JsonSettingsStore lambdas so the
