@@ -1,23 +1,169 @@
 <Page
     x:Class="Deckle.Lighting.Ambient.AmbientPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <!-- Pattern canonique Microsoft Learn (SettingsExpander sample
+         "Settings page example") : StackPanel max 1000 dans un Grid,
+         Spacing=4 entre cards, Margin="1,30,0,6" sur les headers de
+         section. Calque exact de GeneralPage. -->
+    <Page.Resources>
+        <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+        <Style x:Key="SettingsSectionHeaderTextBlockStyle"
+               BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+               TargetType="TextBlock">
+            <Style.Setters>
+                <Setter Property="Margin" Value="1,30,0,6" />
+            </Style.Setters>
+        </Style>
+    </Page.Resources>
 
     <ScrollViewer Padding="32,24,32,24"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="1000"
-                    HorizontalAlignment="Stretch"
-                    Spacing="8">
+        <Grid>
+            <StackPanel MaxWidth="1000"
+                        HorizontalAlignment="Stretch"
+                        Spacing="{StaticResource SettingsCardSpacing}">
 
-            <TextBlock x:Uid="AmbientPageTitleLabel"
-                       Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock x:Uid="AmbientPageTitleLabel"
+                           Style="{StaticResource TitleTextBlockStyle}"
+                           Margin="0,0,0,8" />
 
-            <TextBlock x:Uid="AmbientPagePlaceholderLabel"
-                       Style="{StaticResource BodyTextBlockStyle}"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       TextWrapping="Wrap"
-                       Margin="0,8,0,0" />
-        </StackPanel>
+                <TextBlock x:Uid="AmbientPageSubtitleLabel"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,12" />
+
+                <!-- ── State ──────────────────────────────────────────────── -->
+                <TextBlock x:Uid="AmbientStateSectionHeader"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="AmbientEnabledCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
+                    <ToggleSwitch x:Name="EnabledToggle"
+                                  Toggled="EnabledToggle_Toggled" />
+                </controls:SettingsCard>
+
+                <!-- ── Behaviour ──────────────────────────────────────────── -->
+                <TextBlock x:Uid="AmbientBehaviourSectionHeader"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="AmbientModeCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
+                    <ComboBox x:Name="ModeCombo"
+                              MinWidth="160"
+                              SelectionChanged="ModeCombo_SelectionChanged">
+                        <ComboBoxItem x:Uid="AmbientModeGame" Tag="Game" />
+                        <ComboBoxItem x:Uid="AmbientModeRealistic" Tag="Realistic" />
+                    </ComboBox>
+                </controls:SettingsCard>
+
+                <!-- ── HDR tuning ─────────────────────────────────────────── -->
+                <!--
+                    Three user-tunable sliders applied live on the next push
+                    tick (no engine restart). Defaults aim at a "Hue Sync
+                    presence" out of the box on HDR displays ; the user dials
+                    back if it's too aggressive. See AmbientSettings for the
+                    underlying field semantics.
+                -->
+                <TextBlock x:Uid="AmbientTuningSectionHeader"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsExpander x:Uid="AmbientTuningExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE793;}">
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard x:Uid="AmbientExposureCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="ExposureSlider"
+                                        Grid.Column="0"
+                                        Minimum="-2.0" Maximum="2.0"
+                                        StepFrequency="0.1"
+                                        SmallChange="0.1" LargeChange="0.5"
+                                        TickFrequency="0.5"
+                                        TickPlacement="Outside"
+                                        ValueChanged="ExposureSlider_ValueChanged" />
+                                <TextBlock x:Name="ExposureValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="48"
+                                           TextAlignment="End" />
+                            </Grid>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Uid="AmbientSaturationCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="SaturationSlider"
+                                        Grid.Column="0"
+                                        Minimum="0" Maximum="200"
+                                        StepFrequency="5"
+                                        SmallChange="5" LargeChange="25"
+                                        TickFrequency="25"
+                                        TickPlacement="Outside"
+                                        ValueChanged="SaturationSlider_ValueChanged" />
+                                <TextBlock x:Name="SaturationValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="48"
+                                           TextAlignment="End" />
+                            </Grid>
+                        </controls:SettingsCard>
+
+                        <controls:SettingsCard x:Uid="AmbientMinBrightnessCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="MinBrightnessSlider"
+                                        Grid.Column="0"
+                                        Minimum="0" Maximum="254"
+                                        StepFrequency="2"
+                                        SmallChange="2" LargeChange="20"
+                                        TickFrequency="50"
+                                        TickPlacement="Outside"
+                                        ValueChanged="MinBrightnessSlider_ValueChanged" />
+                                <TextBlock x:Name="MinBrightnessValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="48"
+                                           TextAlignment="End" />
+                            </Grid>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- ── Configuration ──────────────────────────────────────── -->
+                <!--
+                    Pair + Entertainment Area + Light zones + per-light
+                    brightness still live in the Playground for V0. The
+                    pointer below tells the user where to go ; phase I will
+                    migrate that pair flow into this page.
+                -->
+                <TextBlock x:Uid="AmbientConfigSectionHeader"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="AmbientConfigPointerCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE713;}" />
+
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
 </Page>

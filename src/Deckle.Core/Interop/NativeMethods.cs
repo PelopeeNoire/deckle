@@ -279,8 +279,9 @@ public static class NativeMethods
     // ── Menu contextuel (user32) ──────────────────────────────────────────────
 
     public const uint MF_STRING    = 0x00000000;
+    public const uint MF_CHECKED   = 0x00000008;
     public const uint MF_SEPARATOR = 0x00000800;
-    public const uint MF_GRAYED   = 0x00000001;
+    public const uint MF_GRAYED    = 0x00000001;
 
     public const uint TPM_LEFTBUTTON = 0x0000;
     public const uint TPM_RETURNCMD  = 0x0100;

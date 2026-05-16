@@ -123,6 +123,53 @@ public sealed class AmbientSettings
     /// Stored separately from <see cref="LightZones"/> so the user can
     /// dim a single lamp without losing its zone assignment.</summary>
     public Dictionary<string, double> LightBrightness { get; set; } = new();
+
+    // ── HDR tuning (this branch) ───────────────────────────────────
+    //
+    // Three user-tunable sliders exposed in AmbientPage. Analogous to
+    // the basic colour-grading panel of a video editor (exposure /
+    // saturation / lift). Defaults aim at a "Hue Sync-like" presence
+    // out of the box on HDR displays — bright and saturated. Each
+    // setting is read on every tick by AmbientEngine via the host so
+    // changes apply live without restarting the pipeline.
+    //
+    // Why these three :
+    //   - Exposure compensates for scRGB content peaking well below
+    //     the display's reported MaxLuminance on a typical scene,
+    //     which leaves the post-tone-map output dim. +1 EV roughly
+    //     doubles brightness, restoring "Hue Sync" presence.
+    //   - Saturation boost compensates for the de-saturation that
+    //     happens when spatially averaging bright + dark pixels (the
+    //     average drifts toward grey). Applied in HSV-S so hue stays
+    //     stable.
+    //   - Min brightness compensates for HueColorMath deriving bri
+    //     from max(R,G,B) — a mid-tone scene like (60, 40, 80) gives
+    //     bri ≈ 31 %, dim enough that the lamp's diffuser swallows
+    //     the colour. A floor of ~180 keeps the chromaticity
+    //     readable on the lamp without manual scene-by-scene
+    //     adjustment.
+
+    /// <summary>Exposure compensation in EV (stops of light) applied
+    /// in linear-light before the tone-map. 0 = no change (default),
+    /// +1 doubles brightness, -1 halves it. Range of practical
+    /// interest [-2, +2]. Tuned in AmbientPage.</summary>
+    public double ExposureEv { get; set; } = 0.0;
+
+    /// <summary>Chroma multiplier applied to each sampled colour
+    /// before push. 1.0 = no change (default), 2.0 = double
+    /// saturation, 0.0 = greyscale. Range of practical interest
+    /// [0, 2]. Applied in HSV-S to keep hue stable.</summary>
+    public double SaturationBoost { get; set; } = 1.0;
+
+    /// <summary>Floor for the bri value pushed to Hue, in the bridge's
+    /// 0–254 range. The derived bri (max-channel based) is raised to
+    /// this floor when the lamp is on (i.e. above OffThreshold), so
+    /// mid-tone scenes don't dim the lamp below readability. 0
+    /// disables the floor, 254 forces full brightness for any non-
+    /// dark scene. Default 180 ≈ 70 % — bright enough to colour the
+    /// room, dim enough to follow the screen's intent. Tuned in
+    /// AmbientPage.</summary>
+    public int MinBrightness { get; set; } = 180;
 }
 
 /// <summary>How <see cref="AmbientEngine"/> derives the colour pushed

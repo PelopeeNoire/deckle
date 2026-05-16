@@ -71,6 +71,28 @@ public sealed class FrameSampler : IAsyncDisposable
     private readonly bool _isHdr;
     private readonly float _peakLuminance;
 
+    // Hard ceiling on the rolling content peak, in scRGB units (=
+    // display peak nits / 80). Caps the rolling max so a transient
+    // sun-glint pixel cannot crush the rest of the scene below it.
+    // Floored at 1.0 even in non-HDR sessions where the field is
+    // unused.
+    private readonly float _displayPeakScRgb;
+
+    // Rolling max of the recent frames' max-channel scRGB values,
+    // consumed by ColorSpace.ScRgbToSrgb as the normalisation peak.
+    // Updated at the end of each ReadGridFP16 ; consumed at the start
+    // of the next frame's tone-map (one-frame lag is harmless at
+    // 15 Hz). Asymmetric attack / release :
+    //   - attack instant (rises with the first bright frame)
+    //   - release exponential — ContentPeakReleaseDecay per frame
+    private float _contentPeak = 1.0f;
+    private const float ContentPeakReleaseDecay = 0.97f;
+
+    // Live-reloaded by the engine before each tick when the user
+    // moves the AmbientPage Exposure slider. Applied as a linear-
+    // light EV bias inside ColorSpace.ScRgbToSrgb.
+    private double _exposureEv = 0.0;
+
     // Native COM pointers. AddRef'd ; Released in DisposeAsync.
     private nint _d3dDevice;
     private nint _d3dContext;
@@ -90,6 +112,18 @@ public sealed class FrameSampler : IAsyncDisposable
     public int GridRows => _gridRows;
     public bool IsHdr   => _isHdr;
 
+    /// <summary>Rolling content-peak in scRGB units that the tone-map
+    /// is currently normalising against. Exposed for the Playground
+    /// preview and the AmbientPage tuning panel (shows whether the
+    /// auto-exposure is biting). Always ≥ 1.0 (SDR floor). On a non-
+    /// HDR session the value is pinned at 1.0.</summary>
+    public float ContentPeak => _contentPeak;
+
+    /// <summary>Live-reload entry point for the AmbientPage Exposure
+    /// slider. Applied on the next frame ; no restart required. EV is
+    /// linear-light (one stop = ×2 of brightness).</summary>
+    public void SetExposureEv(double exposureEv) => _exposureEv = exposureEv;
+
     public FrameSampler(
         IDirect3DDevice device,
         SizeInt32 sourceSize,
@@ -104,6 +138,12 @@ public sealed class FrameSampler : IAsyncDisposable
         _dxgiFormat = _isHdr
             ? ScreenCaptureInterop.DXGI_FORMAT_R16G16B16A16_FLOAT
             : ScreenCaptureInterop.DXGI_FORMAT_B8G8R8A8_UNORM;
+
+        // Display peak in scRGB units (80 nits = 1.0 by scRGB
+        // convention). Floored at 1.0 so non-HDR sessions and
+        // pathological 0-nit reports still produce a sensible
+        // ceiling.
+        _displayPeakScRgb = _isHdr ? MathF.Max(_peakLuminance / 80f, 1f) : 1f;
 
         (_targetMip, _gridCols, _gridRows) =
             ComputeTargetMip(_sourceWidth, _sourceHeight, targetCols: 30, targetRows: 17);
@@ -266,6 +306,14 @@ public sealed class FrameSampler : IAsyncDisposable
         Color[] grid,
         ref long sumR, ref long sumG, ref long sumB, ref int count)
     {
+        // Tone-map runs against the rolling content peak captured by
+        // the *previous* frame ; this frame's max feeds the rolling
+        // update at the end of the loop. One-frame lag at 15 Hz is
+        // imperceptible and avoids a two-pass read.
+        float framePeak = 1f; // SDR floor — never normalise below 1.0
+        float toneMapPeak = _contentPeak;
+        double exposureEv = _exposureEv;
+
         unsafe
         {
             byte* basePtr = (byte*)mapped.pData;
@@ -281,7 +329,11 @@ public sealed class FrameSampler : IAsyncDisposable
                     float g = (float)BitConverter.UInt16BitsToHalf(p[1]);
                     float b = (float)BitConverter.UInt16BitsToHalf(p[2]);
 
-                    Color c = ColorSpace.ScRgbToSrgb(r, g, b, _peakLuminance);
+                    if (r > framePeak) framePeak = r;
+                    if (g > framePeak) framePeak = g;
+                    if (b > framePeak) framePeak = b;
+
+                    Color c = ColorSpace.ScRgbToSrgb(r, g, b, toneMapPeak, exposureEv);
                     grid[row * _gridCols + col] = c;
                     sumR += c.R;
                     sumG += c.G;
@@ -290,6 +342,25 @@ public sealed class FrameSampler : IAsyncDisposable
                 }
             }
         }
+
+        // Rolling content peak update. Attack is instant (peak rises
+        // with the first bright frame) ; release decays toward the
+        // current frame's max so a quick scene change brightens fast
+        // but doesn't crash when a dark frame slips in. Capped at the
+        // display's hard ceiling — a freak sun-glint pixel reading
+        // above peakWhite (rare but possible in scRGB) cannot crush
+        // the rest of the scene below it.
+        if (framePeak > _contentPeak)
+        {
+            _contentPeak = framePeak;
+        }
+        else
+        {
+            _contentPeak = _contentPeak * ContentPeakReleaseDecay
+                         + framePeak * (1f - ContentPeakReleaseDecay);
+        }
+        if (_contentPeak > _displayPeakScRgb) _contentPeak = _displayPeakScRgb;
+        if (_contentPeak < 1f) _contentPeak = 1f; // SDR floor
     }
 
     // Pick the mip level whose dimensions land closest to (targetCols,

@@ -1,17 +1,25 @@
 namespace Deckle.Lighting.Ambient;
 
-// Bridge that will let the future AmbientEngine read its dependencies
-// without touching the host App's SettingsService. Same pattern as
-// IWhispEngineHost: a typed interface implemented by the host project,
-// instantiated and passed to the engine constructor so the engine stays
-// free of any reference to the App project or the root settings shape.
+// Bridge that lets AmbientEngine read its settings without touching
+// the App's SettingsService. Same posture as IWhispEngineHost — the
+// App-side implementation forwards each access to
+// AmbientSettingsService.Instance.Current so live edits made in the
+// AmbientPage (or in any other surface) take effect on the next read
+// without any event subscription.
 //
-// Empty at J0c — the engine doesn't exist yet (lands in J3 as the
-// minimal end-to-end pipeline). Once it does, this interface will
-// expose the AmbientSettings snapshot, possibly the screen-capture
-// monitor selection if it gets globalised, and any cross-module hook
-// the engine needs (e.g. a SaveSettings callback if auto-calibration
-// of bridge state is added).
+// The engine reads its settings on every tick : the HDR tuning
+// sliders (ExposureEv, SaturationBoost, MinBrightness), the zone
+// assignments and the per-light brightness, the multi-light master
+// flag, and the Hue bridge credentials. Writes are rarer — only the
+// LightZoneSuggester pre-populates LightZones at first connection,
+// and the host owns the Save() call.
 public interface IAmbientEngineHost
 {
+    AmbientSettings Ambient { get; }
+
+    // Persist the current AmbientSettings to disk. Called by the
+    // engine after auto-populating LightZones from the entertainment
+    // area at first connection — the user shouldn't lose those
+    // suggestions on the next start.
+    void SaveSettings();
 }

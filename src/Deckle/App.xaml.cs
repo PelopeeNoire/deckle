@@ -1,4 +1,5 @@
 using Deckle.Interop;
+using Deckle.Lighting.Ambient;
 using Deckle.Logging;
 using Deckle.Logging.Sinks;
 using Deckle.Shell;
@@ -22,6 +23,14 @@ public partial class App : Microsoft.UI.Xaml.Application
     private HudOverlayManager? _overlayManager;
     private TrayIconManager? _tray;
     private WhispEngine? _engine;
+    private AmbientEngine? _ambientEngine;
+
+    // Canonical engine accessor for surfaces that observe the running
+    // pipeline (Playground preview, future AmbientPage live readouts).
+    // Returns null when the engine hasn't been built yet (e.g. before
+    // OnLaunched completes) ; consumers should null-check and render an
+    // empty state when missing.
+    internal static AmbientEngine? AmbientEngine => (Current as App)?._ambientEngine;
 
     // Last engine recording state, captured on every StatusChanged. Used
     // to seed PlaygroundWindow's beacon on lazy creation: when the user
@@ -168,6 +177,16 @@ public partial class App : Microsoft.UI.Xaml.Application
         _engine = new WhispEngine(new AppWhispEngineHost());
         Milestone("engine");
 
+        // Canonical Ambient engine — owns its own ScreenCaptureService,
+        // FrameSampler, HueBridgeClient and HueRestLightOutput at
+        // StartAsync time. Construct is cheap, no I/O. Started / Stopped
+        // by the AmbientSettings.Changed observer wired below. If the
+        // user persisted Enabled=true from a previous session, the
+        // pipeline boots automatically when the engine starts (fire-and-
+        // forget Task so OnLaunched stays non-blocking).
+        _ambientEngine = new AmbientEngine(new AppAmbientEngineHost());
+        Milestone("ambient_engine");
+
         // LogWindow lazy : instanciée à la première ouverture via
         // ShowLogWindowLazy(). Le sink est inscrit à ce moment-là, et
         // TelemetryService.Replay() rejoue l'historique du buffer
@@ -252,6 +271,17 @@ public partial class App : Microsoft.UI.Xaml.Application
             // Left-click tray = toggle transcription via the same path as the
             // standard hotkey. Allows starting with the mouse one-handed.
             OnToggleRecording = () => OnHotkey(NativeMethods.HOTKEY_ID_TRANSCRIBE),
+            // Ambient Light tray entry — checkmark mirrors the persisted
+            // AmbientSettings.Enabled, click flips it. The actual engine
+            // start/stop reacts via the AmbientSettingsService.Changed
+            // observer wired in phase I.
+            IsAmbientOn       = () => AmbientSettingsService.Instance.Current.Enabled,
+            OnToggleAmbient   = () =>
+            {
+                var s = AmbientSettingsService.Instance.Current;
+                s.Enabled = !s.Enabled;
+                AmbientSettingsService.Instance.Save();
+            },
             OnRestart         = () => RestartAppFromTray(),
             OnQuit            = () => QuitApp(),
         };
@@ -326,6 +356,25 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Initial status — model loads on-demand at first hotkey, not at startup.
         _tray.UpdateStatus("Ready");
         _log.Info(LogSource.Status, "Ready");
+
+        // Ambient Light master toggle observer. Drives Start / Stop on
+        // the canonical engine instantiated above. The engine owns its
+        // own capture / sampler / Hue dependencies so the pipeline runs
+        // without any window needing to be open.
+        AmbientSettingsService.Instance.Changed += OnAmbientSettingsChanged;
+
+        // Boot-time auto-start : if the previous session left Enabled=
+        // true and the bridge is paired, kick the pipeline now. The
+        // Changed event only fires on subsequent flips, so without this
+        // kick the engine would sit idle until the user re-toggles. We
+        // intentionally don't await — the start path does I/O (capture
+        // init, bridge connect, list lights) and shouldn't block the
+        // launch sequence ; failures are logged and Enabled is
+        // reverted by ApplyAmbientEnabledAsync.
+        if (AmbientSettingsService.Instance.Current.Enabled)
+        {
+            _ = ApplyAmbientEnabledAsync(true);
+        }
 
         // Message-only Win32 host — invisible by construction (HWND_MESSAGE
         // parent). Hosts the tray callback and global hotkeys without any
@@ -548,6 +597,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         try { _messageHost?.Dispose();     } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
         try { _overlayManager?.Dispose();  } catch (Exception ex) { _log.Warning(LogSource.App, "overlay manager dispose: " + ex.Message); }
         try { _engine?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
+        try { _ambientEngine?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
+        catch (Exception ex) { _log.Warning(LogSource.App, "ambient engine dispose: " + ex.Message); }
         Environment.Exit(0);
     }
 
@@ -588,6 +639,61 @@ public partial class App : Microsoft.UI.Xaml.Application
     //
     // Launches a new bare Deckle process (no --settings) then clean
     // shutdown of the current process.
+    // Serialises start / stop transitions on the canonical Ambient
+    // engine so a fast user toggle (tray + AmbientPage + Playground
+    // racing) doesn't run two StartAsync paths in parallel. Each
+    // Changed event kicks a Task that takes the lock, compares the
+    // desired state to IsRunning, and acts. Async-friendly so the
+    // observer can fire from any thread.
+    private readonly SemaphoreSlim _ambientLock = new(1, 1);
+
+    // Observer for the master Ambient toggle. Drives Start / Stop on
+    // the canonical engine ; the engine owns its own capture, sampler
+    // and Hue dependencies so no window needs to be open for the
+    // pipeline to run. If the engine's StartAsync refuses (bridge
+    // not paired), Enabled is reverted to false so the tray
+    // checkmark + AmbientPage toggle stay honest.
+    private void OnAmbientSettingsChanged()
+    {
+        bool enabled = AmbientSettingsService.Instance.Current.Enabled;
+        _log.Info(LogSource.Ambient,
+            $"Ambient master toggle {(enabled ? "ON" : "OFF")}");
+        _ = ApplyAmbientEnabledAsync(enabled);
+    }
+
+    private async Task ApplyAmbientEnabledAsync(bool enabled)
+    {
+        if (_ambientEngine is null) return;
+
+        await _ambientLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (enabled && !_ambientEngine.IsRunning)
+            {
+                try
+                {
+                    await _ambientEngine.StartAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(LogSource.Ambient,
+                        $"Ambient pipeline start failed — {ex.GetType().Name}: {ex.Message} ; reverting Enabled to false");
+                    var s = AmbientSettingsService.Instance.Current;
+                    s.Enabled = false;
+                    AmbientSettingsService.Instance.Save();
+                }
+            }
+            else if (!enabled && _ambientEngine.IsRunning)
+            {
+                _ambientEngine.Stop();
+            }
+        }
+        finally
+        {
+            _ambientLock.Release();
+        }
+    }
+
     private void RestartAppFromTray()
     {
         _log.Info(LogSource.App, "Restart from tray requested");

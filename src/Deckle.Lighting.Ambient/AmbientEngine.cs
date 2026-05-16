@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Deckle.Lighting;
+using Deckle.Lighting.Hue;
 using Deckle.Logging;
 using Deckle.Vision;
 
@@ -129,12 +130,24 @@ public sealed class AmbientEngine : IAsyncDisposable
     // for a 30-second session.
     private const int HeartbeatIntervalMs = 5000;
 
-    private readonly ScreenCaptureService _capture;
-    private readonly ILightOutput _output;
-    private readonly FrameSampler _sampler;
-    private readonly IReadOnlyDictionary<string, LightZone>? _zoneAssignments;
-    private readonly IReadOnlyDictionary<string, double>? _lightBrightness;
-    private readonly bool _useMultiLightRequested;
+    private readonly IAmbientEngineHost _host;
+
+    // All four deps are owned by the engine — instantiated in
+    // StartAsync, disposed in Stop. Null when the engine is idle. The
+    // ScreenCaptureService is created fresh on every start so the
+    // monitor selection + HDR negotiation are picked up from the
+    // current Windows state rather than a stale snapshot.
+    private ScreenCaptureService? _capture;
+    private HueBridgeClient? _bridgeClient;
+    private ILightOutput? _output;
+    private FrameSampler? _sampler;
+
+    // Resolved at StartAsync from _host.Ambient.UseMultiLight. The
+    // multi-light pipeline shape is locked for the session : changing
+    // UseMultiLight live mid-run would force a Stop + Start to reshape
+    // the loop and the per-light state, so we snapshot at start and
+    // ignore later host mutations until the next start.
+    private bool _useMultiLightRequested;
 
     private CancellationTokenSource? _cts;
     private Task? _pushLoopTask;
@@ -173,20 +186,39 @@ public sealed class AmbientEngine : IAsyncDisposable
     private int  _hbDropped;
     private int  _hbUnmappedLights;
 
-    public AmbientEngine(
-        ScreenCaptureService capture,
-        ILightOutput output,
-        FrameSampler sampler,
-        IReadOnlyDictionary<string, LightZone>? zoneAssignments = null,
-        IReadOnlyDictionary<string, double>? lightBrightness = null,
-        bool useMultiLight = false)
+    // Per-push HTTP duration buffer for the heartbeat. Reset every
+    // HeartbeatIntervalMs. Captures the wall-clock cost of the
+    // await on _output.SetColorAsync / IMultiLightOutput.SetLight-
+    // ColorsAsync — i.e. the bridge round-trip + any back-pressure
+    // from the HttpClient itself. Useful to diagnose the lag
+    // accumulation observed in the Hue REST CLIP v1 pipeline (one
+    // pushed value per tick — drops are not counted).
+    private readonly List<double> _hbHttpDurationsMs = new(128);
+
+    // HDR tuning snapshot, refreshed at the top of each tick from
+    // _host.Ambient. Live-reload — the AmbientPage sliders apply on
+    // the next tick without restarting the pipeline. See
+    // AmbientSettings.ExposureEv / SaturationBoost / MinBrightness
+    // for the user-facing semantics. The snapshot avoids re-reading
+    // the host four times per pixel inside the helpers.
+    //   - Exposure is forwarded to FrameSampler (applied in linear
+    //     light before the tone-map, mathematically correct).
+    //   - Saturation boost is applied here on the sRGB output (a
+    //     simple HSV-S amplification to keep hue stable).
+    //   - Min brightness is applied here on the sRGB output (raises
+    //     the max channel to the floor while preserving chromaticity).
+    private double _saturationBoost = 1.0;
+    private int    _minBrightness   = 0;
+
+    // ctor : the engine is glued to a host that exposes the live
+    // AmbientSettings snapshot. The capture, the Hue bridge client,
+    // the light output and the frame sampler are all owned — created
+    // in StartAsync from the host's settings and disposed in Stop.
+    // Construct is cheap (no I/O, no allocations beyond the empty
+    // accumulator buffers above).
+    public AmbientEngine(IAmbientEngineHost host)
     {
-        _capture                = capture;
-        _output                 = output;
-        _sampler                = sampler;
-        _zoneAssignments        = zoneAssignments;
-        _lightBrightness        = lightBrightness;
-        _useMultiLightRequested = useMultiLight;
+        _host = host;
     }
 
     /// <summary>True between a successful <see cref="StartAsync"/>
@@ -202,85 +234,222 @@ public sealed class AmbientEngine : IAsyncDisposable
     /// active.</summary>
     public IReadOnlyList<LightDescriptor>? MultiLights => _multiLights;
 
+    // Preview accessors — forwarded from the owned FrameSampler. Null /
+    // zero / 1.0 when the engine is idle ; consumers (Playground
+    // preview grid, AmbientPage tuning panel) should treat the absence
+    // of a sample as "engine not running" and render an empty state.
+    public SampledFrame? LatestSample => _sampler?.LatestSample;
+    public int   GridCols     => _sampler?.GridCols ?? 0;
+    public int   GridRows     => _sampler?.GridRows ?? 0;
+    public bool  IsHdr        => _sampler?.IsHdr ?? false;
+    public float ContentPeak  => _sampler?.ContentPeak ?? 1f;
+
+    // Raised on the thread that calls StartAsync / Stop / DisposeAsync.
+    // Consumers (App tray status, Playground Play/Stop button) marshal
+    // to the UI thread themselves. Distinct from the IsRunning property
+    // so a subscriber can react to the *transition* rather than poll
+    // the state.
+    public event Action? Started;
+    public event Action? Stopped;
+
     /// <summary>
-    /// Connects the output, picks the pipeline shape (group vs multi-
-    /// light), ensures the capture service is running, and launches the
-    /// push loop. Idempotent — calling on a running engine is a no-op.
-    /// Throws if the output fails to connect ; the capture failure
-    /// (much rarer) propagates from <see cref="ScreenCaptureService.Start"/>
-    /// too.
+    /// Builds the owned deps (capture, bridge client, output, sampler)
+    /// from the host's AmbientSettings, connects the output, picks the
+    /// pipeline shape (group vs multi-light), and launches the push
+    /// loop. Idempotent — calling on a running engine is a no-op.
+    /// Returns silently (with a Warning) when the bridge isn't paired
+    /// or no group is selected ; throws for unexpected I/O failures
+    /// (the caller catches and reverts Enabled in the user's face).
     /// </summary>
     public async Task StartAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (IsRunning) return;
 
-        await _output.ConnectAsync(ct).ConfigureAwait(false);
+        // Clean up any deps left over from a previous Stop (Stop only
+        // cancels the loop ; the deps stay around so an in-flight
+        // tick's await doesn't NRE). Idempotent if nothing to release.
+        await DisposeOwnedDepsAsync().ConfigureAwait(false);
 
-        // Resolve pipeline shape after Connect (ListLightsAsync needs
-        // IsConnected). Multi-light requires : caller said yes, driver
-        // exposes the capability, and the driver reports at least one
-        // addressable light.
-        if (_useMultiLightRequested && _output is IMultiLightOutput multi)
+        // Wait for the previous push loop's tail to exit before we
+        // spin up a new one. The cancel inside Stop already triggered
+        // the OperationCanceledException at Task.Delay ; awaiting here
+        // guarantees no two loops run in parallel against the same
+        // _output / _sampler reference set.
+        if (_pushLoopTask is not null)
         {
-            _multiLights = await multi.ListLightsAsync(ct).ConfigureAwait(false);
-            _multiLightActive = _multiLights.Count > 0;
+            try { await _pushLoopTask.ConfigureAwait(false); } catch { }
+            _pushLoopTask = null;
+        }
+        _cts?.Dispose();
+        _cts = null;
 
-            if (_multiLightActive)
+        var ambient = _host.Ambient;
+
+        // Validate pair state. Without an IP, a username, and a group
+        // id, the engine has nothing to talk to. Log a Warning and
+        // refuse gracefully — the caller (App observer) can revert
+        // Enabled in the user's face without a hard crash.
+        if (string.IsNullOrEmpty(ambient.HueBridgeIp)
+         || string.IsNullOrEmpty(ambient.HueBridgeId)
+         || string.IsNullOrEmpty(ambient.HueUsername)
+         || string.IsNullOrEmpty(ambient.HueLastGroupId))
+        {
+            _log.Warning(LogSource.Ambient,
+                "Ambient pipeline cannot start — Hue bridge not paired or no group selected. " +
+                "Open the Playground and complete the Hue pair + group selection first.");
+            return;
+        }
+
+        // Snapshot the multi-light flag for this run. Live changes
+        // via the AmbientPage (or anywhere else) only take effect at
+        // the next Start because the loop shape and per-light state
+        // dict are baked in here.
+        _useMultiLightRequested = ambient.UseMultiLight;
+
+        try
+        {
+            // ── Build owned deps ──────────────────────────────────
+            // Hue bridge serves HTTPS on port 443 (the discovery
+            // response confirms this on every consumer firmware). The
+            // ClientKey field is unused on the REST CLIP v1 path —
+            // pass empty to satisfy the record's non-nullable string.
+            var bridge = new HueBridge(
+                Id: ambient.HueBridgeId,
+                InternalIpAddress: ambient.HueBridgeIp,
+                Port: 443);
+            var creds = new HueCredentials(ambient.HueUsername, "");
+
+            _bridgeClient = new HueBridgeClient(bridge, creds);
+            _output = new HueRestLightOutput(_bridgeClient, ambient.HueLastGroupId);
+
+            _capture = new ScreenCaptureService();
+            _capture.Start(ambient.SelectedMonitorDeviceName);
+
+            _sampler = new FrameSampler(
+                _capture.Device!,
+                _capture.ContentSize,
+                _capture.ActiveFormat,
+                _capture.PeakLuminance);
+
+            // Subscribe sampler to the capture pump. FrameArrived fires
+            // on the FreeThreaded pool's worker thread ; FrameSampler
+            // .Process is thread-safe internally (lock + Volatile.Write
+            // on _latestSample).
+            _capture.FrameArrived += OnFrameArrived;
+
+            await _output!.ConnectAsync(ct).ConfigureAwait(false);
+
+            // Resolve pipeline shape after Connect (ListLightsAsync
+            // needs IsConnected). Multi-light requires : caller said
+            // yes, driver exposes the capability, and the driver
+            // reports at least one addressable light.
+            if (_useMultiLightRequested && _output is IMultiLightOutput multi)
             {
-                _pushIntervalMs = 1000 / MultiPushHz;
-                _multiLastPushed = new Dictionary<string, (int, int, int)>(_multiLights.Count);
+                _multiLights = await multi.ListLightsAsync(ct).ConfigureAwait(false);
+                _multiLightActive = _multiLights.Count > 0;
+
+                if (_multiLightActive)
+                {
+                    _pushIntervalMs = 1000 / MultiPushHz;
+                    _multiLastPushed = new Dictionary<string, (int, int, int)>(_multiLights.Count);
+                }
+                else
+                {
+                    _log.Warning(LogSource.Ambient,
+                        "Multi-light requested but driver returned no lights — falling back to group push");
+                    _pushIntervalMs = 1000 / GroupPushHz;
+                }
             }
             else
             {
-                _log.Warning(LogSource.Ambient,
-                    "Multi-light requested but driver returned no lights — falling back to group push");
+                if (_useMultiLightRequested)
+                {
+                    _log.Warning(LogSource.Ambient,
+                        $"Multi-light requested but driver doesn't expose IMultiLightOutput ({_output!.GetType().Name}) — falling back to group push");
+                }
+                _multiLightActive = false;
                 _pushIntervalMs = 1000 / GroupPushHz;
             }
+
+            _log.Info(LogSource.Ambient, "Ambient pipeline started");
+            _log.Verbose(LogSource.Ambient,
+                $"start | source={(_capture!.IsRunning ? "running" : "stopped")} | output={_output!.GetType().Name} | shape={(_multiLightActive ? "multi" : "group")} | lights={(_multiLights?.Count ?? 0)} | push_hz={(_multiLightActive ? MultiPushHz : GroupPushHz)} | sampler_grid={_sampler!.GridCols}x{_sampler.GridRows} | hdr={(_sampler.IsHdr ? "on" : "off")}");
+
+            _cts = new CancellationTokenSource();
+            _startTimestamp = Stopwatch.GetTimestamp();
+            _hbTimestamp    = _startTimestamp;
+            _pushedCount = 0;
+            _droppedCount = 0;
+            _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
+            _hbHttpDurationsMs.Clear();
+            _lastR = _lastG = _lastB = -1;
+
+            // Open the capture-active window AFTER the started
+            // milestones (Info + Verbose mirror above) have flushed,
+            // so they pass the central filter even with
+            // LogAmbientCaptureActivity off. From here on, Verbose
+            // AMBIENT / SCREEN / HUE inside the loop are candidates
+            // for filtering — see TelemetryService.Log. The window
+            // closes at the very top of Stop() so the matching stop
+            // milestones also pass.
+            TelemetryService.Instance.SetCaptureActive(true);
+
+            _pushLoopTask = Task.Run(() => PushLoopAsync(_cts.Token), _cts.Token);
+
+            IsRunning = true;
+            Started?.Invoke();
         }
-        else
+        catch (Exception ex)
         {
-            if (_useMultiLightRequested)
-            {
-                _log.Warning(LogSource.Ambient,
-                    $"Multi-light requested but driver doesn't expose IMultiLightOutput ({_output.GetType().Name}) — falling back to group push");
-            }
-            _multiLightActive = false;
-            _pushIntervalMs = 1000 / GroupPushHz;
+            _log.Error(LogSource.Ambient,
+                $"Ambient pipeline failed to start — {ex.GetType().Name}: {ex.Message}");
+            await DisposeOwnedDepsAsync().ConfigureAwait(false);
+            throw;
         }
+    }
 
-        _log.Info(LogSource.Ambient, "Ambient pipeline started");
-        _log.Verbose(LogSource.Ambient,
-            $"start | source={(_capture.IsRunning ? "running" : "stopped")} | output={_output.GetType().Name} | shape={(_multiLightActive ? "multi" : "group")} | lights={(_multiLights?.Count ?? 0)} | push_hz={(_multiLightActive ? MultiPushHz : GroupPushHz)} | sampler_grid={_sampler.GridCols}x{_sampler.GridRows} | hdr={(_sampler.IsHdr ? "on" : "off")}");
+    private void OnFrameArrived(global::Windows.Graphics.Capture.Direct3D11CaptureFrame frame)
+    {
+        _sampler?.Process(frame);
+    }
 
-        if (!_capture.IsRunning) _capture.Start();
-
-        _cts = new CancellationTokenSource();
-        _startTimestamp = Stopwatch.GetTimestamp();
-        _hbTimestamp    = _startTimestamp;
-        _pushedCount = 0;
-        _droppedCount = 0;
-        _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
-        _lastR = _lastG = _lastB = -1;
-
-        // Open the capture-active window AFTER the started milestones
-        // (Info + Verbose mirror above) have flushed, so they pass the
-        // central filter even with LogAmbientCaptureActivity off. From
-        // here on, Verbose AMBIENT / SCREEN / HUE inside the loop are
-        // candidates for filtering — see TelemetryService.Log. The
-        // window closes at the very top of Stop() so the matching stop
-        // milestones also pass.
-        TelemetryService.Instance.SetCaptureActive(true);
-
-        _pushLoopTask = Task.Run(() => PushLoopAsync(_cts.Token), _cts.Token);
-
-        IsRunning = true;
+    private async Task DisposeOwnedDepsAsync()
+    {
+        if (_capture is not null)
+        {
+            try { _capture.FrameArrived -= OnFrameArrived; } catch { }
+            try { _capture.Dispose(); } catch { }
+            _capture = null;
+        }
+        if (_sampler is not null)
+        {
+            try { await _sampler.DisposeAsync().ConfigureAwait(false); } catch { }
+            _sampler = null;
+        }
+        if (_output is IAsyncDisposable adisp)
+        {
+            try { await adisp.DisposeAsync().ConfigureAwait(false); } catch { }
+        }
+        else if (_output is IDisposable disp)
+        {
+            try { disp.Dispose(); } catch { }
+        }
+        _output = null;
+        if (_bridgeClient is not null)
+        {
+            try { _bridgeClient.Dispose(); } catch { }
+            _bridgeClient = null;
+        }
+        _multiLights = null;
+        _multiLastPushed = null;
     }
 
     /// <summary>
-    /// Stops the push loop. Doesn't stop the capture service or
-    /// disconnect the output — both are borrowed (see class header).
-    /// Idempotent.
+    /// Stops the push loop AND disposes the owned deps (capture,
+    /// sampler, light output, bridge client). Idempotent — calls on
+    /// an idle engine return silently. Fires the Stopped event after
+    /// the teardown so subscribers see IsRunning=false.
     /// </summary>
     public void Stop()
     {
@@ -303,6 +472,20 @@ public sealed class AmbientEngine : IAsyncDisposable
         _log.Info(LogSource.Ambient, "Ambient pipeline stopped");
         _log.Verbose(LogSource.Ambient,
             $"stop | reason=user | shape={(_multiLightActive ? "multi" : "group")} | duration_sec={durationSec:F1} | pushed={_pushedCount} | dropped={_droppedCount}");
+
+        // Disconnect the FrameArrived subscription synchronously so
+        // no further frames queue against the still-mapped sampler.
+        // The full dep teardown (sampler / output / bridge client /
+        // capture) is deferred to the next StartAsync (re-create) or
+        // to DisposeAsync — keeps Stop non-blocking for the caller
+        // (tray click handler, AmbientSettings.Changed observer)
+        // while avoiding a race with the in-flight push tick's await.
+        if (_capture is not null)
+        {
+            try { _capture.FrameArrived -= OnFrameArrived; } catch { }
+        }
+
+        Stopped?.Invoke();
     }
 
     private async Task PushLoopAsync(CancellationToken ct)
@@ -316,7 +499,16 @@ public sealed class AmbientEngine : IAsyncDisposable
         {
             while (!ct.IsCancellationRequested)
             {
-                var sample = _sampler.LatestSample;
+                // Refresh the HDR tuning snapshot from the host. Cheap
+                // (three property reads on the singleton settings) and
+                // gives the AmbientPage sliders a one-tick reaction
+                // window without a restart.
+                var ambient = _host.Ambient;
+                _sampler!.SetExposureEv(ambient.ExposureEv);
+                _saturationBoost = ambient.SaturationBoost;
+                _minBrightness   = ambient.MinBrightness;
+
+                var sample = _sampler!.LatestSample;
                 if (sample is null)
                 {
                     // Sampler hasn't produced a frame yet (first ~66 ms
@@ -360,9 +552,18 @@ public sealed class AmbientEngine : IAsyncDisposable
         bool isDark = avg.R <= OffThreshold
                    && avg.G <= OffThreshold
                    && avg.B <= OffThreshold;
-        byte targetR = isDark ? (byte)0 : avg.R;
-        byte targetG = isDark ? (byte)0 : avg.G;
-        byte targetB = isDark ? (byte)0 : avg.B;
+        byte rawR = isDark ? (byte)0 : avg.R;
+        byte rawG = isDark ? (byte)0 : avg.G;
+        byte rawB = isDark ? (byte)0 : avg.B;
+
+        // Apply HDR tuning (saturation boost + min brightness floor)
+        // BEFORE the early-exit so a user moving the AmbientPage
+        // slider on a static screen still gets the new look pushed —
+        // comparing on the raw values would suppress the change.
+        var tuned = ApplyTuning(rawR, rawG, rawB, isDark);
+        byte targetR = tuned.R;
+        byte targetG = tuned.G;
+        byte targetB = tuned.B;
 
         int delta = Math.Abs(targetR - _lastR)
                   + Math.Abs(targetG - _lastG)
@@ -379,7 +580,11 @@ public sealed class AmbientEngine : IAsyncDisposable
         var color = new LightColor(targetR, targetG, targetB);
         try
         {
-            await _output.SetColorAsync(color, ct).ConfigureAwait(false);
+            long httpStart = Stopwatch.GetTimestamp();
+            await _output!.SetColorAsync(color, ct).ConfigureAwait(false);
+            double httpMs = (Stopwatch.GetTimestamp() - httpStart) * 1000.0 / Stopwatch.Frequency;
+            _hbHttpDurationsMs.Add(httpMs);
+
             _lastR = targetR; _lastG = targetG; _lastB = targetB;
             _pushedCount++;
             _hbPushed++;
@@ -388,7 +593,7 @@ public sealed class AmbientEngine : IAsyncDisposable
             // source=AMBIENT, this line is dropped automatically when
             // the user toggle is off. No call-site check needed.
             _log.Verbose(LogSource.Ambient,
-                $"push | mode=group | rgb={targetR},{targetG},{targetB} | off={isDark}");
+                $"push | mode=group | rgb={targetR},{targetG},{targetB} | off={isDark} | http_ms={httpMs:F1}");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -405,6 +610,12 @@ public sealed class AmbientEngine : IAsyncDisposable
     {
         if (_multiLights is null || _multiLights.Count == 0 || _multiLastPushed is null)
             return;
+
+        // Snapshot the per-light state from the host once per tick so
+        // we re-read the live dictionary at most once even if a slider
+        // mutation lands between fan-out steps.
+        var zoneAssignments = _host.Ambient.LightZones;
+        var lightBrightness = _host.Ambient.LightBrightness;
 
         // Sample the four border zones once per tick — cheap (each
         // averages ~50-100 cells of a 30×17 grid) and one set of
@@ -428,7 +639,7 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         foreach (var light in _multiLights)
         {
-            LightZone zone = (_zoneAssignments is not null && _zoneAssignments.TryGetValue(light.Id, out var z))
+            LightZone zone = (zoneAssignments is not null && zoneAssignments.TryGetValue(light.Id, out var z))
                 ? z
                 : LightZone.None;
 
@@ -454,7 +665,7 @@ public sealed class AmbientEngine : IAsyncDisposable
             // multiplier defaults to 1.0 when the user hasn't touched
             // the slider yet.
             double bri = 1.0;
-            if (_lightBrightness is not null && _lightBrightness.TryGetValue(light.Id, out var b))
+            if (lightBrightness is not null && lightBrightness.TryGetValue(light.Id, out var b))
                 bri = Math.Clamp(b, 0.0, 1.0);
             byte scaledR = (byte)Math.Round(zoneColor.R * bri);
             byte scaledG = (byte)Math.Round(zoneColor.G * bri);
@@ -468,9 +679,17 @@ public sealed class AmbientEngine : IAsyncDisposable
             bool isDark = scaledR <= OffThreshold
                        && scaledG <= OffThreshold
                        && scaledB <= OffThreshold;
-            byte targetR = isDark ? (byte)0 : scaledR;
-            byte targetG = isDark ? (byte)0 : scaledG;
-            byte targetB = isDark ? (byte)0 : scaledB;
+            byte rawR = isDark ? (byte)0 : scaledR;
+            byte rawG = isDark ? (byte)0 : scaledG;
+            byte rawB = isDark ? (byte)0 : scaledB;
+
+            // Apply HDR tuning (saturation boost + min brightness)
+            // per light, same rationale as GroupTick : the early-exit
+            // compares on tuned values so a slider move always pushes.
+            var tuned = ApplyTuning(rawR, rawG, rawB, isDark);
+            byte targetR = tuned.R;
+            byte targetG = tuned.G;
+            byte targetB = tuned.B;
 
             var prev = _multiLastPushed.TryGetValue(light.Id, out var last) ? last : (-1, -1, -1);
             int delta = Math.Abs(targetR - prev.Item1)
@@ -502,13 +721,17 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         try
         {
-            var multi = (IMultiLightOutput)_output;
+            var multi = (IMultiLightOutput)_output!;
+            long httpStart = Stopwatch.GetTimestamp();
             await multi.SetLightColorsAsync(toPush, ct).ConfigureAwait(false);
+            double httpMs = (Stopwatch.GetTimestamp() - httpStart) * 1000.0 / Stopwatch.Frequency;
+            _hbHttpDurationsMs.Add(httpMs);
+
             _pushedCount++;
             _hbPushed++;
             // Verbose gating is centralised in TelemetryService.
             _log.Verbose(LogSource.Ambient,
-                $"push | mode=multi | lights={toPush.Count}/{_multiLights.Count} | colors={FormatPushedColors(toPush)}");
+                $"push | mode=multi | lights={toPush.Count}/{_multiLights.Count} | colors={FormatPushedColors(toPush)} | http_ms={httpMs:F1}");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -534,11 +757,110 @@ public sealed class AmbientEngine : IAsyncDisposable
         return sb.ToString();
     }
 
+    // Apply the user-tuned HDR transforms to a candidate sRGB colour.
+    // Order : saturation boost first (in HSV-S, hue stable), min
+    // brightness floor last (raises chromaticity-preserving). Bypassed
+    // when the off-threshold has fired — a dark scene must stay dark
+    // even if the user set a high min-brightness floor (otherwise the
+    // floor would re-light the lamp during a movie's black frame).
+    private (byte R, byte G, byte B) ApplyTuning(byte r, byte g, byte b, bool isDark)
+    {
+        if (isDark) return (0, 0, 0);
+
+        (byte sR, byte sG, byte sB) = ApplySaturationBoost(r, g, b, _saturationBoost);
+        return ApplyMinBrightness(sR, sG, sB, _minBrightness);
+    }
+
+    // HSV-S amplification : multiply saturation by `boost` while
+    // keeping hue and value stable. boost=1 is a no-op (early-out
+    // skips the conversion). boost=0 collapses to greyscale, boost
+    // around 1.3–1.8 lifts averaged scenes back toward the saturation
+    // the eye perceives in the raw frame.
+    private static (byte R, byte G, byte B) ApplySaturationBoost(byte r, byte g, byte b, double boost)
+    {
+        if (Math.Abs(boost - 1.0) < 0.001) return (r, g, b);
+
+        int max = Math.Max(r, Math.Max(g, b));
+        int min = Math.Min(r, Math.Min(g, b));
+        if (max == 0) return (r, g, b);
+
+        double v = max / 255.0;
+        double s = (max - min) / (double)max;
+        int delta = max - min;
+        double h;
+        if (delta == 0)        h = 0;
+        else if (max == r)     h = ((g - b) / (double)delta % 6) * 60;
+        else if (max == g)     h = ((b - r) / (double)delta + 2) * 60;
+        else                   h = ((r - g) / (double)delta + 4) * 60;
+        if (h < 0) h += 360;
+
+        double newS = Math.Clamp(s * boost, 0.0, 1.0);
+
+        double c = v * newS;
+        double x = c * (1 - Math.Abs(h / 60.0 % 2 - 1));
+        double m = v - c;
+        double rN, gN, bN;
+        if      (h <  60) { rN = c; gN = x; bN = 0; }
+        else if (h < 120) { rN = x; gN = c; bN = 0; }
+        else if (h < 180) { rN = 0; gN = c; bN = x; }
+        else if (h < 240) { rN = 0; gN = x; bN = c; }
+        else if (h < 300) { rN = x; gN = 0; bN = c; }
+        else              { rN = c; gN = 0; bN = x; }
+
+        return (
+            (byte)Math.Clamp(Math.Round((rN + m) * 255), 0, 255),
+            (byte)Math.Clamp(Math.Round((gN + m) * 255), 0, 255),
+            (byte)Math.Clamp(Math.Round((bN + m) * 255), 0, 255));
+    }
+
+    // Min-brightness floor : raise the max channel to `minBri` while
+    // preserving chromaticity (the R:G:B ratio). HueColorMath derives
+    // bri from max(R,G,B), so a mid-tone scene like (60, 40, 80) sends
+    // bri ≈ 80, dim enough that the lamp's diffuser swallows the
+    // colour. A floor at 180 keeps the chromaticity readable on the
+    // lamp ; 0 disables the floor, 255 forces full brightness for any
+    // non-zero scene.
+    private static (byte R, byte G, byte B) ApplyMinBrightness(byte r, byte g, byte b, int minBri)
+    {
+        if (minBri <= 0) return (r, g, b);
+
+        int max = Math.Max(r, Math.Max(g, b));
+        if (max == 0 || max >= minBri) return (r, g, b);
+
+        double scale = minBri / (double)max;
+        return (
+            (byte)Math.Min(255, Math.Round(r * scale)),
+            (byte)Math.Min(255, Math.Round(g * scale)),
+            (byte)Math.Min(255, Math.Round(b * scale)));
+    }
+
     private void MaybeEmitHeartbeat()
     {
         long now = Stopwatch.GetTimestamp();
         double elapsedMs = (now - _hbTimestamp) * 1000.0 / Stopwatch.Frequency;
         if (elapsedMs < HeartbeatIntervalMs) return;
+
+        // HTTP stats over the elapsed window. Skipped from the line
+        // when no push happened in the window (static screen) — the
+        // ticks=N pushed=0 prefix already says "loop alive, nothing
+        // to push", a "http_avg_ms=0.0" suffix would be misleading.
+        string httpStats = "";
+        if (_hbHttpDurationsMs.Count > 0)
+        {
+            double min = double.MaxValue, max = 0, sum = 0;
+            foreach (var v in _hbHttpDurationsMs)
+            {
+                if (v < min) min = v;
+                if (v > max) max = v;
+                sum += v;
+            }
+            double avg = sum / _hbHttpDurationsMs.Count;
+            var sorted = _hbHttpDurationsMs.ToArray();
+            Array.Sort(sorted);
+            int p95Idx = Math.Max(0, Math.Min(sorted.Length - 1, (int)Math.Ceiling(sorted.Length * 0.95) - 1));
+            double p95 = sorted[p95Idx];
+            httpStats = $" | http_avg_ms={avg:F1} | http_p95_ms={p95:F1} | http_max_ms={max:F1}";
+        }
 
         // Per-tick Verbose : centrally gated by the capture-active
         // window + user toggle in TelemetryService. Counters are
@@ -546,10 +868,11 @@ public sealed class AmbientEngine : IAsyncDisposable
         // heartbeat window starts from zero — the metric stays
         // correct when the toggle flips mid-session.
         _log.Verbose(LogSource.Ambient,
-            $"heartbeat | mode={(_multiLightActive ? "multi" : "group")} | period_sec={elapsedMs / 1000.0:F1} | ticks={_hbTicks} | pushed={_hbPushed} | dropped={_hbDropped}{(_multiLightActive ? $" | unmapped_lights={_hbUnmappedLights}" : "")}");
+            $"heartbeat | mode={(_multiLightActive ? "multi" : "group")} | period_sec={elapsedMs / 1000.0:F1} | ticks={_hbTicks} | pushed={_hbPushed} | dropped={_hbDropped}{(_multiLightActive ? $" | unmapped_lights={_hbUnmappedLights}" : "")}{httpStats}");
 
         _hbTimestamp = now;
         _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
+        _hbHttpDurationsMs.Clear();
     }
 
     // Averages all cells whose centre falls inside the matching border
@@ -636,6 +959,11 @@ public sealed class AmbientEngine : IAsyncDisposable
             catch { /* logged in the loop already */ }
             _pushLoopTask = null;
         }
+
+        // Sync await the owned-deps teardown that Stop kicked off
+        // fire-and-forget — DisposeAsync callers expect the engine
+        // to be fully torn down on return.
+        await DisposeOwnedDepsAsync().ConfigureAwait(false);
 
         _cts?.Dispose();
         _cts = null;

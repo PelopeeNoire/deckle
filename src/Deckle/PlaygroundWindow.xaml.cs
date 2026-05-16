@@ -194,7 +194,9 @@ public sealed partial class PlaygroundWindow : Window
     // a deliberate visual cadence — humans don't notice updates above
     // 5 Hz on a low-frequency colour grid, and the timer doesn't fight
     // the engine's 15 Hz push for the same data.
-    private AmbientEngine? _ambientEngine;
+    // The canonical AmbientEngine instance lives in App.AmbientEngine ;
+    // the Playground is an observer for status and never instantiates
+    // its own engine.
     private FrameSampler? _frameSampler;
     private bool _pipelineStartedCapture;
     private DispatcherTimer? _previewTimer;
@@ -328,6 +330,12 @@ public sealed partial class PlaygroundWindow : Window
                 // loops by comparing settings before writing back.
                 PipelineModeRadios.SelectedIndex =
                     AmbientSettingsService.Instance.Current.UseMultiLight ? 1 : 0;
+
+                // Reflect the master Enabled state on the Pipeline
+                // toggle, and stay in sync with subsequent flips made
+                // from the tray menu or the AmbientPage.
+                SyncPipelineUiFromSettings();
+                AmbientSettingsService.Instance.Changed += OnAmbientSettingsChangedFromPlayground;
             };
         }
 
@@ -1892,24 +1900,13 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     // Pipeline UI state is a function of "do we have an ILightOutput
-    // wired ?" — that's the prerequisite. The capture is bootstrapped
-    // on demand by the Start handler. SetPipelineReady is called from
-    // the group-selected success path ; SetPipelineNotReady is the
-    // teardown / no-group state.
+    // wired ?" — that's the prerequisite. The capture is owned by the
+    // canonical App-side engine ; the Playground only mirrors its
+    // state via AmbientSettings.Enabled.
     private void SetPipelineReady()
     {
-        if (_ambientEngine is { IsRunning: true })
-        {
-            // The engine is already running against a previous group ;
-            // a group switch swapped the output behind it. Keep the
-            // "Stop" label, the engine continues pushing.
-            return;
-        }
         PipelineToggleButton.IsEnabled = true;
-        PipelineToggleIcon.Glyph = ScreenCaptureGlyphStart;
-        PipelineToggleLabel.Text = "Start pipeline";
-        PipelineStatusText.Text = "Ready — click Start";
-        PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorAttentionBrush");
+        SyncPipelineUiFromSettings();
     }
 
     private void SetPipelineNotReady()
@@ -1995,146 +1992,43 @@ public sealed partial class PlaygroundWindow : Window
         }
     }
 
-    private async void OnPipelineToggleClick(object sender, RoutedEventArgs e)
+    private void OnPipelineToggleClick(object sender, RoutedEventArgs e)
     {
-        // Stop path : engine running, the click means "stop". Dispose the
-        // engine first so its push loop stops cleanly, then the sampler,
-        // then the preview timer. If we started the capture ourselves on
-        // the matching Start (flag set), stop it now too — symmetric
-        // "the pipeline owns its capture" semantics.
-        if (_ambientEngine is { IsRunning: true })
-        {
-            _ambientEngine.Stop();
-            await _ambientEngine.DisposeAsync().ConfigureAwait(true);
-            _ambientEngine = null;
+        // The canonical Ambient engine lives in App now and owns its
+        // own capture, sampler, bridge client and light output. The
+        // Playground Pipeline button is just a shortcut that flips
+        // AmbientSettings.Enabled — App's observer takes it from
+        // there. The same flip is exposed by the tray menu and by
+        // the AmbientPage master toggle ; all three surfaces drive
+        // the same state. UI feedback (button glyph, status text)
+        // syncs through the AmbientSettingsService.Changed event in
+        // SyncPipelineUiFromSettings.
+        var s = AmbientSettingsService.Instance.Current;
+        s.Enabled = !s.Enabled;
+        AmbientSettingsService.Instance.Save();
+    }
 
-            StopPreviewTimer();
+    // Reflects the master Enabled state on the Pipeline card. Called
+    // on the UI thread at load and from the AmbientSettings.Changed
+    // observer (marshalled via DispatcherQueue). Doesn't touch the
+    // local _screenCapture / _frameSampler path — that remains driven
+    // by the dedicated Screen capture toggle for isolated sampler
+    // testing.
+    private void SyncPipelineUiFromSettings()
+    {
+        bool enabled = AmbientSettingsService.Instance.Current.Enabled;
+        if (PipelineToggleButton is null) return;
+        PipelineToggleIcon.Glyph  = enabled ? ScreenCaptureGlyphStop : ScreenCaptureGlyphStart;
+        PipelineToggleLabel.Text  = enabled ? "Stop pipeline" : "Start pipeline";
+        PipelineStatusText.Text   = enabled ? "Running (driven by App)" : "Stopped";
+        PipelineStatusDot.Fill    = GetThemeBrush(enabled
+            ? "SystemFillColorSuccessBrush"
+            : "SystemFillColorNeutralBrush");
+    }
 
-            if (_frameSampler is not null)
-            {
-                await _frameSampler.DisposeAsync().ConfigureAwait(true);
-                _frameSampler = null;
-            }
-
-            if (_screenCapture is not null)
-                _screenCapture.FrameArrived -= OnSamplerFrameArrived;
-
-            if (_pipelineStartedCapture)
-            {
-                try { StopScreenCaptureIfRunning(); }
-                catch (Exception ex)
-                {
-                    LogService.Instance.Warning(LogSource.Screen,
-                        $"Capture stop on pipeline teardown failed — {ex.GetType().Name}: {ex.Message}");
-                }
-                _pipelineStartedCapture = false;
-            }
-
-            // Re-enable the Pipeline mode selector now that the engine
-            // is down — the user can switch shape and the next Start
-            // will pick up the new value.
-            PipelineModeRadios.IsEnabled = true;
-
-            SetPipelineReady();
-            return;
-        }
-
-        // Start path : need the screen capture running and an output
-        // ready. The capture is auto-started if not running ; the
-        // output existence is a prerequisite enforced by the button
-        // state machine (button only enabled after group selection).
-        if (_hueLightOutput is null)
-        {
-            PipelineStatusText.Text = "Pair a bridge and pick a group first";
-            return;
-        }
-
-        bool captureWasRunning = _screenCapture is { IsRunning: true };
-        if (!StartScreenCaptureService())
-        {
-            PipelineStatusText.Text = "Couldn't start screen capture";
-            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
-            return;
-        }
-        _pipelineStartedCapture = !captureWasRunning;
-
-        PipelineToggleButton.IsEnabled = false;
-        try
-        {
-            // Build the FrameSampler from the live capture service. The
-            // device + content size are only valid after a successful
-            // Start, so this must come after StartScreenCaptureService.
-            _frameSampler = new FrameSampler(
-                _screenCapture!.Device!,
-                _screenCapture.ContentSize,
-                _screenCapture.ActiveFormat,
-                _screenCapture.PeakLuminance);
-
-            // Subscribe the sampler to the capture event so each frame
-            // gets processed (GPU downsample + readback).
-            _screenCapture.FrameArrived += OnSamplerFrameArrived;
-
-            BuildPreviewGrid(_frameSampler.GridCols, _frameSampler.GridRows);
-            StartPreviewTimer();
-
-            // Lock the Pipeline mode selector while the engine is up :
-            // the engine reads UseMultiLight at StartAsync and doesn't
-            // hot-reload, so changing it mid-run would silently desync
-            // the radios from the actual pipeline shape.
-            PipelineModeRadios.IsEnabled = false;
-
-            // Pass the live AmbientSettings dictionaries by reference
-            // (cast to IReadOnlyDictionary) — the engine observes UI-
-            // driven changes (zone combo, brightness slider) without
-            // a restart.
-            var ambient = AmbientSettingsService.Instance.Current;
-            _ambientEngine = new AmbientEngine(
-                _screenCapture, _hueLightOutput, _frameSampler,
-                zoneAssignments: ambient.LightZones,
-                lightBrightness: ambient.LightBrightness,
-                useMultiLight: ambient.UseMultiLight);
-            await _ambientEngine.StartAsync().ConfigureAwait(true);
-
-            PipelineToggleIcon.Glyph = ScreenCaptureGlyphStop;
-            PipelineToggleLabel.Text = "Stop pipeline";
-            string shapeLabel = _ambientEngine.IsMultiLightActive
-                ? $"multi-light ×{_ambientEngine.MultiLights?.Count ?? 0}"
-                : "group";
-            PipelineStatusText.Text = $"Running ({shapeLabel}, {_frameSampler.GridCols}×{_frameSampler.GridRows}{(_frameSampler.IsHdr ? ", HDR" : "")})";
-            PipelineStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
-        }
-        catch (Exception ex)
-        {
-            LogService.Instance.Warning(LogSource.Ambient,
-                $"Pipeline start failed — {ex.GetType().Name}: {ex.Message}");
-            PipelineStatusText.Text = $"Failed: {ex.Message}";
-            PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorCriticalBrush");
-
-            if (_ambientEngine is not null)
-            {
-                await _ambientEngine.DisposeAsync().ConfigureAwait(true);
-                _ambientEngine = null;
-            }
-            StopPreviewTimer();
-            if (_screenCapture is not null)
-                _screenCapture.FrameArrived -= OnSamplerFrameArrived;
-            if (_frameSampler is not null)
-            {
-                await _frameSampler.DisposeAsync().ConfigureAwait(true);
-                _frameSampler = null;
-            }
-            if (_pipelineStartedCapture)
-            {
-                try { StopScreenCaptureIfRunning(); } catch { /* best effort */ }
-                _pipelineStartedCapture = false;
-            }
-            // Re-enable the selector so the user can switch and retry.
-            PipelineModeRadios.IsEnabled = true;
-        }
-        finally
-        {
-            PipelineToggleButton.IsEnabled = true;
-        }
+    private void OnAmbientSettingsChangedFromPlayground()
+    {
+        DispatcherQueue.TryEnqueue(SyncPipelineUiFromSettings);
     }
 
     // FrameArrived handler that hands the frame to the FrameSampler.
@@ -2885,15 +2779,16 @@ public sealed partial class PlaygroundWindow : Window
 
     private void TeardownHueIfActive()
     {
-        // The pipeline depends on the bridge — if we're tearing the
-        // bridge down, the engine must go first. Fire-and-forget the
-        // async dispose ; the engine cancels its loop on Stop, the
-        // remaining awaitable work is just a Task.WhenAny completion.
-        if (_ambientEngine is not null)
+        // The canonical engine lives in App and owns its own bridge
+        // client ; tearing down the local Playground "Hue test" bits
+        // doesn't require touching it. Flip Enabled off so the App
+        // observer stops the pipeline cleanly before we invalidate
+        // the credentials the user is about to re-pair.
+        var ambient = AmbientSettingsService.Instance.Current;
+        if (ambient.Enabled)
         {
-            _ambientEngine.Stop();
-            _ambientEngine.DisposeAsync().AsTask();
-            _ambientEngine = null;
+            ambient.Enabled = false;
+            AmbientSettingsService.Instance.Save();
         }
 
         // Sampler / preview teardown that mirrors the pipeline stop
