@@ -23,19 +23,21 @@ public partial class DiagnosticsViewModel : ObservableObject
 
     // ── Logging — runtime emission filters ──────────────────────────────────
 
-    // Ambient-lighting module log switch. Off by default — the ambient
-    // pipeline emits a steady cadence of routine traffic (push lines,
-    // heartbeats, screen capture diagnostics, Hue REST calls) that
-    // drowns out the events worth reading. Flip on only when
-    // investigating an ambient-specific issue. The user wanted one
-    // toggle per Deckle module rather than a global verbosity switch,
-    // so this section will grow with sibling toggles (Whisp, Audio,
-    // Llm, Settings) as each becomes worth silencing on its own. Wired
+    // Per-module Verbose mute for the ambient-lighting pipeline. Off
+    // by default — the Verbose-level traffic (push lines, heartbeats,
+    // screen capture diagnostics, Hue REST calls) drowns out the
+    // events worth reading. The non-Verbose levels (Info / Success /
+    // Warning / Error / Narrative) from the same sources are NEVER
+    // filtered : pipeline start/stop, group selection, bridge errors,
+    // and Playground user actions stay visible regardless. Flip on
+    // only when investigating an ambient-specific issue. The section
+    // will grow with sibling Verbose toggles (Whisp, Audio, Llm,
+    // Settings) as each becomes worth silencing on its own. Wired
     // through LoggingSettingsService — separate store from
     // TelemetrySettings so flipping it leaves the disk-persistence
     // opt-ins untouched.
     [ObservableProperty]
-    public partial bool LogAmbientLighting { get; set; }
+    public partial bool VerboseAmbientLighting { get; set; }
 
     // ── Telemetry — opt-in disk persistence ─────────────────────────────────
 
@@ -73,10 +75,10 @@ public partial class DiagnosticsViewModel : ObservableObject
     [ObservableProperty]
     public partial string TelemetryStorageDirectory { get; set; }
 
-    partial void OnLogAmbientLightingChanged(bool value)
+    partial void OnVerboseAmbientLightingChanged(bool value)
     {
         if (_isSyncing) return;
-        _log.Info(LogSource.SetGeneral, $"Logging.LogAmbientLighting ← {value}");
+        _log.Info(LogSource.SetGeneral, $"Logging.VerboseAmbientLighting ← {value}");
         PushLoggingToSettings();
     }
 
@@ -129,13 +131,14 @@ public partial class DiagnosticsViewModel : ObservableObject
         // Guard BEFORE any property assignment — same reason as GeneralViewModel.
         _isSyncing = true;
 
-        // Logging defaults are "off by family" : each module starts
-        // silenced because its routine cadence drowns the LogWindow ;
-        // the user flips a family on when investigating that family
-        // specifically. Telemetry defaults are also "closed" but for a
-        // different reason — disk-persistence streams stay off until
-        // the user explicitly opts in to where their data lands.
-        LogAmbientLighting = false;
+        // Logging defaults : each per-module Verbose mute starts in
+        // the "Verbose off" position because its routine cadence
+        // drowns the LogWindow ; non-Verbose levels still flow so the
+        // milestones / warnings / errors remain visible. Telemetry
+        // defaults are also "closed" but for a different reason —
+        // disk-persistence streams stay off until the user explicitly
+        // opts in to where their data lands.
+        VerboseAmbientLighting = false;
         ApplicationLogToDisk = false;
         MicrophoneTelemetry = false;
         TelemetryLatencyEnabled = false;
@@ -152,7 +155,7 @@ public partial class DiagnosticsViewModel : ObservableObject
         try
         {
             var l = LoggingSettingsService.Instance.Current;
-            LogAmbientLighting = l.LogAmbientLighting;
+            VerboseAmbientLighting = l.VerboseAmbientLighting;
 
             var t = TelemetrySettingsService.Instance.Current;
             ApplicationLogToDisk = t.ApplicationLogToDisk;
@@ -171,7 +174,7 @@ public partial class DiagnosticsViewModel : ObservableObject
     private void PushLoggingToSettings()
     {
         var l = LoggingSettingsService.Instance.Current;
-        l.LogAmbientLighting = LogAmbientLighting;
+        l.VerboseAmbientLighting = VerboseAmbientLighting;
         LoggingSettingsService.Instance.Save();
     }
 
@@ -194,7 +197,7 @@ public partial class DiagnosticsViewModel : ObservableObject
         _isSyncing = true;
         try
         {
-            LogAmbientLighting = false;
+            VerboseAmbientLighting = false;
         }
         finally { _isSyncing = false; }
         PushLoggingToSettings();

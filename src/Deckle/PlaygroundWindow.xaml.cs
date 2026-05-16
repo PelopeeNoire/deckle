@@ -351,14 +351,26 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundNav.PaneClosed += (_, _) =>
             OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
 
-        // Tap on empty background → move focus to RootGrid, which dismisses
-        // the caret from a NumberBox the user just edited. Focused input
-        // controls in WinUI 3 keep focus on background clicks unless some
-        // other element claims it — same UX wart as Settings windows if
-        // left unhandled. Tapped bubbles up only when no child control
-        // marks it Handled, so clicks that land on a Slider / NumberBox /
-        // Expander header don't trigger dismissal.
-        RootGrid.Tapped += (_, _) => RootGrid.Focus(FocusState.Pointer);
+        // Tap on empty background → move focus to RootGrid, which
+        // dismisses the caret from a NumberBox the user just edited.
+        // CRITICAL : filter on OriginalSource. Tapped is a routed event
+        // and WinUI 3's ButtonBase derivatives (Button, DropDownButton,
+        // ToggleButton, ComboBox, NumberBox spin buttons …) do NOT mark
+        // it Handled when they fire Click. Without this guard, every
+        // click on a button or dropdown bubbles here, RootGrid steals
+        // focus mid-action, and the flyout / dropdown loses its anchor
+        // before the click is fully processed. Symptom : "the
+        // DropDownButton doesn't open on the first click", "the
+        // ComboBox needs 3-4 clicks to select" — the actual cause of
+        // the bug we've been chasing for two passes. By scoping
+        // dismissal to clicks that land on the RootGrid itself
+        // (transparent empty area), the focus shift only happens for
+        // genuine background taps.
+        RootGrid.Tapped += (_, e) =>
+        {
+            if (ReferenceEquals(e.OriginalSource, RootGrid))
+                RootGrid.Focus(FocusState.Pointer);
+        };
 
         this.Closed += (_, _) =>
         {
@@ -2586,22 +2598,28 @@ public sealed partial class PlaygroundWindow : Window
             // Tag : the lightId + the zone + the button to relabel on
             // selection. OnZoneMenuItemClick reads from there ; no
             // closure capture, no dict to clean up.
+            // DropDownButton with the label left-aligned (default is
+            // centered — looks "Top" floating mid-button which was
+            // hard to read at a glance). MinWidth=130 fits the longest
+            // label ("Bottom") comfortably. MenuFlyoutItem (not
+            // RadioMenuFlyoutItem) so the items don't reserve a radio-
+            // dot column on the left ; the current selection is
+            // already obvious from the button's own label, the
+            // pastille was visual noise.
             var zoneButton = new DropDownButton
             {
-                Content  = LabelForZone(effectiveZone),
-                MinWidth = 130,
-                Tag      = light.Id,
+                Content                   = LabelForZone(effectiveZone),
+                MinWidth                  = 130,
+                Tag                       = light.Id,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
             };
             var zoneFlyout = new MenuFlyout();
-            string groupName = $"zone-{light.Id}";
             foreach (var opt in _zoneOptions)
             {
-                var menuItem = new RadioMenuFlyoutItem
+                var menuItem = new MenuFlyoutItem
                 {
-                    Text      = opt.Label,
-                    GroupName = groupName,
-                    IsChecked = opt.Zone == effectiveZone,
-                    Tag       = new ZoneMenuTag(light.Id, opt.Zone, zoneButton),
+                    Text = opt.Label,
+                    Tag  = new ZoneMenuTag(light.Id, opt.Zone, zoneButton),
                 };
                 menuItem.Click += OnZoneMenuItemClick;
                 zoneFlyout.Items.Add(menuItem);
@@ -2778,12 +2796,12 @@ public sealed partial class PlaygroundWindow : Window
 
     private void OnZoneMenuItemClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not RadioMenuFlyoutItem item) return;
+        if (sender is not MenuFlyoutItem item) return;
         if (item.Tag is not ZoneMenuTag tag) return;
 
         // Update the button label to reflect the new selection — the
         // DropDownButton's Content is just text, no automatic binding
-        // to the active flyout item (unlike ComboBox.SelectedItem).
+        // to the active flyout item.
         tag.Button.Content = item.Text;
 
         var settings = AmbientSettingsService.Instance.Current;
@@ -2800,7 +2818,13 @@ public sealed partial class PlaygroundWindow : Window
         }
         AmbientSettingsService.Instance.Save();
 
-        LogService.Instance.Verbose(LogSource.Ambient,
+        // Info-level (not Verbose) : this is a discrete user action in
+        // the Playground, not high-frequency noise. The Verbose ambient
+        // toggle in Diagnostics drops the per-tick push spam ; user
+        // intent like a zone reassignment should always make it to the
+        // LogWindow so the Playground stays a useful "see what you
+        // did" surface.
+        LogService.Instance.Info(LogSource.Ambient,
             $"zone assign | id={tag.LightId} | zone={tag.Zone}");
 
         UpdateZoneOverlayHighlight();
@@ -2822,7 +2846,10 @@ public sealed partial class PlaygroundWindow : Window
         settings.UseMultiLight = useMulti;
         AmbientSettingsService.Instance.Save();
 
-        LogService.Instance.Verbose(LogSource.Ambient,
+        // Info-level : discrete user action in the Playground, not
+        // per-tick noise. Stays visible regardless of the verbose
+        // ambient toggle.
+        LogService.Instance.Info(LogSource.Ambient,
             $"settings update | key=UseMultiLight | value={useMulti}");
     }
 

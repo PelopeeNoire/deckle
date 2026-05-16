@@ -12,6 +12,12 @@ Référence unique pour décider **quoi logger, à quel niveau, avec quel format
 
 Document vivant. Version `1.0` : inventaire normatif appliqué au code,
 les sources et payloads décrits ci-dessous reflètent le runtime courant.
+Patch en cours (filename à bumper à `1.1` quand on factorise) : ajout
+de la section *Filtre runtime : mute Verbose par module* qui documente
+le toggle « Verbose ambient lighting » exposé par Diagnostics, et
+réajustement de deux gabarits AmbientEngine (`zone assign`, `settings
+update`) en `Info` au lieu de `Verbose` — actions utilisateur discrètes,
+doivent rester visibles dans Activity même quand le toggle est OFF.
 Les décisions prises ici cadrent toute future étape mesurée — étendre un
 payload existant ou en ajouter un suit la procédure section "Quand on
 ajoute une étape mesurée" ci-dessous.
@@ -130,6 +136,14 @@ du pipeline, ce sont des exports.
 - Est-ce que tout va bien mais on note pour référence ? → `Info`
 - Est-ce que c'est du bruit pour diagnostic expert ? → `Verbose`
 - Est-ce que c'est l'app qui raconte son histoire à l'utilisateur ? → `Narrative`
+
+### Filtre runtime : mute Verbose par module
+
+Depuis le polish J4, la page Diagnostics expose une section **Logging** sœur de **Telemetry**, qui héberge un toggle par famille pour drop le bruit Verbose de cette famille à la source (`TelemetryService.Log` regarde le tuple `(level, source)`). Premier (et seul aujourd'hui) toggle : **Verbose ambient lighting**, OFF par défaut, qui filtre `LogLevel.Verbose` quand `source ∈ {AMBIENT, SCREEN, HUE}`. Les autres niveaux (`Info` / `Success` / `Warning` / `Error` / `Narrative`) de ces mêmes sources passent toujours — les jalons (pipeline start/stop, group selected, bridge unreachable) et les actions utilisateur du Playground (`zone assign`, `settings update`) restent visibles dans Activity quel que soit l'état du toggle. La sémantique est « cache-moi le rythme cardiaque de l'ambient pendant que je joue, garde les milestones et les actions discrètes ».
+
+Conséquence sur les gabarits : une ligne **destinée à l'utilisateur** (action discrète, jalon) doit sortir en `Info` ou supérieur. Une ligne **destinée au diag expert** (per-tick, plomberie, métriques continues) sort en `Verbose`. Les deux familles cohabitent dans le même module, c'est le niveau qui décide qui survit au filtre.
+
+Ce pattern grandira avec les modules suivants (Whisp, Audio, Llm, Settings) : un toggle par famille dans la même section Logging, même semantic, même hashset par module dans `TelemetryService`.
 
 ### Format par niveau — deux registres distincts
 
@@ -781,10 +795,10 @@ Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | shape={group|multi}
 Verbose   AMBIENT  push | mode=group | rgb={r},{g},{b} | off={true|false}
 Verbose   AMBIENT  push | mode=multi | lights={K}/{N} | colors={lightId=R,G,B …}
 Verbose   AMBIENT  heartbeat | mode={group|multi} | period_sec={X:F1} | ticks={N} | pushed={N} | dropped={N} [| unmapped_lights={N}]
-Verbose   AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
+Info      AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
 Verbose   AMBIENT  zone suggest | id={lightId} | zone={…} | from=ent_config | ent_name={n} | xyz={X:F2},{Y:F2},{Z:F2}
 Verbose   AMBIENT  zone suggest skipped | reason={no_entertainment_areas|no_matching_entertainment_area}
-Verbose   AMBIENT  settings update | key={name} | value={v}
+Info      AMBIENT  settings update | key={name} | value={v}
 Warning   AMBIENT  Multi-light requested but driver doesn't expose IMultiLightOutput ({type}) — falling back to group push
 Warning   AMBIENT  Multi-light requested but driver returned no lights — falling back to group push
 Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
@@ -812,10 +826,10 @@ Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
 3. **Cumulés au stop** (déjà documentés plus bas) restent la vérité de session.
 
 Ce pattern suit la doctrine VAD : on ne loge pas chaque cycle, on loge quand le sujet change + résumé périodique. Les compteurs internes de l'engine (`_hbTicks`, `_hbPushed`, `_hbDropped`, `_hbUnmappedLights`) sont remis à zéro à chaque heartbeat émis, donc chaque ligne `heartbeat` lit "depuis le dernier heartbeat" et pas "depuis le start".
-- `zone assign` — émis par la card Light zones du Playground quand l'utilisateur sélectionne une zone pour une lampe. `id` = light id opaque (CLIP v1 pour Hue), `zone` = valeur de l'enum `LightZone`. `zone=None` correspond à un retrait de mapping (l'entrée est supprimée du dict)
+- `zone assign` — émis par la card Light zones du Playground quand l'utilisateur sélectionne une zone pour une lampe. `id` = light id opaque (CLIP v1 pour Hue), `zone` = valeur de l'enum `LightZone`. `zone=None` correspond à un retrait de mapping (l'entrée est supprimée du dict). Émis en **Info** (action utilisateur discrète, pas du bruit per-tick), donc visible dans Activity et toujours présent même quand le toggle Verbose ambient lighting est OFF — le Playground reste utile comme surface « voir ce qu'on vient de faire »
 - `zone suggest` — émis au moment où la card Light zones se construit, **une ligne par lampe** dont la position dans l'entertainment area Hue a permis de dériver une zone via `LightZoneSuggester`. `from=ent_config` indique la source de la suggestion (anticipation : `from=room` ou `from=ha_area` plus tard). `xyz` reproduit la position Hue normalisée [-1, 1] qui a été classée. La suggestion est ensuite persistée dans `AmbientSettings.LightZones` (et `zone assign` ne sera PAS émis pour cette même opération — c'est une init silencieuse, pas un acte utilisateur)
 - `zone suggest skipped` — émis quand la card Light zones s'est construite sans suggestion possible. `reason=no_entertainment_areas` = le bridge n'expose aucune entertainment area ; `reason=no_matching_entertainment_area` = au moins une area existe mais aucune ne contient les lights du group sélectionné
-- `settings update | key={name} | value={v}` — gabarit générique pour toute modification d'une property d'`AmbientSettings` depuis l'UI (Toggle UseMultiLight pour V0, d'autres champs à venir en J5/J9)
+- `settings update | key={name} | value={v}` — gabarit générique pour toute modification d'une property d'`AmbientSettings` depuis l'UI (RadioButtons UseMultiLight pour V0, d'autres champs à venir en J5/J9). Émis en **Info** pour la même raison que `zone assign` : action utilisateur discrète, doit rester visible dans Activity même Verbose ambient OFF
 
 **Erreurs et sévérités**
 

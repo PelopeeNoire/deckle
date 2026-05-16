@@ -14,23 +14,27 @@ namespace Deckle.Logging;
 //                JSONL pipeline) sees them. Toggles answer "which
 //                subsystem may emit in the log ?".
 //
-// Initial scope (J4 polish) : one toggle per Deckle module, starting
-// with the ambient-lighting pipeline. The same pattern will host the
-// Whisp / Audio / LLM / Settings toggles as the user calls them out —
-// the user wanted one knob per family, not one global verbosity
-// switch. Add a new bool, wire it in DiagnosticsViewModel +
-// DiagnosticsPage.xaml + Resources.resw, extend
-// TelemetryService.Log()'s source-set match, done.
+// Initial scope (J4 polish) : one toggle per Deckle module for the
+// Verbose-level traffic of that module. Starting with the ambient
+// lighting family (AMBIENT / SCREEN / HUE), the same pattern will host
+// Verbose toggles for Whisp / Audio / LLM / Settings as each becomes
+// worth silencing on its own. The intent is "show me the milestones
+// and warnings of every module, but hide the per-tick chatter of the
+// ones I'm not actively investigating". Add a new bool, wire it in
+// DiagnosticsViewModel + DiagnosticsPage.xaml + Resources.resw, extend
+// TelemetryService.Log()'s source-set match for that module, done.
 public sealed class LoggingSettings
 {
-    /// <summary>When false (the default), log emissions tagged with
-    /// one of the ambient-pipeline sources (<c>AMBIENT</c>,
-    /// <c>SCREEN</c>, <c>HUE</c>) are dropped at the
-    /// <see cref="TelemetryService"/> source — neither the LogWindow
-    /// nor the app.jsonl sink see them, and the rolling history buffer
-    /// doesn't grow with them either. Off by default because the
-    /// ambient pipeline emits a steady cadence of routine traffic that
-    /// drowns out the events worth reading ; flip on only when
-    /// investigating an ambient-specific issue.</summary>
-    public bool LogAmbientLighting { get; set; } = false;
+    /// <summary>When false (the default), <see cref="LogLevel.Verbose"/>
+    /// emissions tagged with one of the ambient-pipeline sources
+    /// (<c>AMBIENT</c>, <c>SCREEN</c>, <c>HUE</c>) are dropped at the
+    /// <see cref="TelemetryService"/> source. Info / Success / Warning /
+    /// Error / Narrative events from those same sources pass through
+    /// untouched — the workflow milestones (pipeline started, group
+    /// selected, bridge unreachable…) remain visible in the LogWindow.
+    /// The toggle exists to silence the high-frequency per-tick noise
+    /// (push lines, heartbeats, sampler diagnostics) that drown out
+    /// everything else while a game is running, without losing the
+    /// useful events that bracket the activity.</summary>
+    public bool VerboseAmbientLighting { get; set; } = false;
 }

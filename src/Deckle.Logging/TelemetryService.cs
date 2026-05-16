@@ -84,16 +84,19 @@ public sealed class TelemetryService
     // copied onto the event (for UI filtering) AND serialized inside the
     // payload as its enum name — the JSONL stays self-describing.
     //
-    // Per-module mute : log events whose source tag belongs to a Deckle
-    // module the user has silenced (via LoggingSettings, configured
-    // through DiagnosticsPage > Logging) are dropped at the source —
-    // neither the LogWindow nor any sink nor the rolling history buffer
-    // see them. Today the only module wired is the ambient-lighting
-    // family ({AMBIENT, SCREEN, HUE}) ; future toggles will extend the
-    // match set without touching the filter shape. Reads against the
-    // settings service are wrapped in a try/catch returning "enabled"
-    // (the safe-emit fallback) so a settings I/O glitch can never break
-    // logging or silently swallow events.
+    // Per-module Verbose mute : log events at LogLevel.Verbose whose
+    // source tag belongs to a Deckle module the user has silenced
+    // (via LoggingSettings, configured through DiagnosticsPage >
+    // Logging) are dropped at the source. Info / Success / Warning /
+    // Error / Narrative from those same sources pass through — the
+    // milestones (pipeline started, group selected, bridge
+    // unreachable…) always reach the LogWindow. Today the only
+    // module wired is the ambient-lighting family ({AMBIENT, SCREEN,
+    // HUE}) ; future toggles will extend the match shape without
+    // touching the filter logic. Reads against the settings service
+    // are wrapped in a try/catch returning "Verbose off" (matching
+    // the POCO default) so a settings I/O glitch can't surface a
+    // burst of routine traffic the user didn't ask for.
     private static readonly HashSet<string> _ambientLogSources = new(StringComparer.Ordinal)
     {
         LogSource.Ambient,
@@ -103,7 +106,9 @@ public sealed class TelemetryService
 
     public void Log(string source, string message, LogLevel level, UserFeedback? feedback)
     {
-        if (_ambientLogSources.Contains(source) && !IsAmbientLoggingEnabled())
+        if (level == LogLevel.Verbose
+            && _ambientLogSources.Contains(source)
+            && !IsVerboseAmbientLightingEnabled())
             return;
 
         var payload = new LogPayload(source, message, level.ToString());
@@ -113,19 +118,22 @@ public sealed class TelemetryService
         Emit(new TelemetryEvent(TelemetryKind.Log, SessionId, payload, level, feedback, text));
     }
 
-    private static bool IsAmbientLoggingEnabled()
+    private static bool IsVerboseAmbientLightingEnabled()
     {
         try
         {
-            return LoggingSettingsService.Instance.Current.LogAmbientLighting;
+            return LoggingSettingsService.Instance.Current.VerboseAmbientLighting;
         }
         catch
         {
-            // Fail safe : default to NOT emitting on a settings read
+            // Fail safe : default to Verbose-off on a settings read
             // failure, matching the POCO default. The user expects
-            // ambient logs to be silent unless they explicitly opt in,
-            // so a transient I/O glitch during boot must not flood the
-            // log with routine traffic the user didn't ask for.
+            // ambient verbose to stay silent unless they opt in, so a
+            // transient I/O glitch during boot must not surface a
+            // burst of routine traffic the user didn't ask for. The
+            // non-Verbose levels (Info / Warning / Error / …) pass
+            // through unconditionally — the milestone signal is
+            // preserved either way.
             return false;
         }
     }

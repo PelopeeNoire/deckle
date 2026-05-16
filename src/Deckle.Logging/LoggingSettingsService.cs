@@ -12,14 +12,16 @@ namespace Deckle.Logging;
 // alongside its sibling modules instead of buried under telemetry/.
 //
 // Consumer side : TelemetryService.Log() reads
-// Instance.Current.LogAmbientLighting on every emission tagged with an
-// ambient-pipeline source (AMBIENT / SCREEN / HUE) and drops the event
-// when it's off. The read is wrapped in a try/catch fallback to false
-// (matching the POCO default) so a settings I/O failure during boot
-// doesn't flood the LogWindow with routine ambient traffic the user
-// didn't ask for. Same closed-on-failure direction as TelemetryGates,
-// but for a different reason — here the failure mode is unwanted
-// noise, not data leakage.
+// Instance.Current.VerboseAmbientLighting on every Verbose-level
+// emission tagged with an ambient-pipeline source (AMBIENT / SCREEN /
+// HUE) and drops the event when it's off. Info / Success / Warning /
+// Error / Narrative emissions from those sources are unaffected — the
+// filter only ever touches Verbose. The read is wrapped in a try/catch
+// fallback to false (matching the POCO default) so a settings I/O
+// failure during boot doesn't surface a burst of routine ambient
+// verbose traffic the user didn't ask for. Same closed-on-failure
+// direction as TelemetryGates, but for a different reason — here the
+// failure mode is unwanted noise, not data leakage.
 //
 // Bootstrap note : LogService is in this same assembly. We still
 // inject the log callbacks via JsonSettingsStore lambdas so the

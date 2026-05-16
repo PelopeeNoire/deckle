@@ -1236,10 +1236,10 @@
     <value>Logging</value>
   </data>
   <data name="LoggingAmbientCard.Header" xml:space="preserve">
-    <value>Log ambient lighting</value>
+    <value>Verbose ambient lighting</value>
   </data>
   <data name="LoggingAmbientCard.Description" xml:space="preserve">
-    <value>Emit log lines from the ambient lighting pipeline — screen capture, Hue bridge, and the engine that drives them. Off by default ; turn on only when investigating an ambient-specific issue. The routine traffic from this family otherwise drowns out the events worth reading.</value>
+    <value>Show the per-tick log traffic from the ambient lighting pipeline — colour pushes, capture heartbeats, Hue REST calls. Off by default ; the routine cadence otherwise drowns out the events worth reading. Milestones (pipeline started, group selected, bridge unreachable) and Playground actions stay visible either way.</value>
   </data>
   <data name="DiagnosticsPageTelemetryHeaderLabel.Text" xml:space="preserve">
     <value>Telemetry</value>
