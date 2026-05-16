@@ -17,6 +17,12 @@ public sealed class AmbientSettingsService
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        // Tolerate case differences when reading legacy settings.json
+        // files written before PropertyNamingPolicy was set (or by a
+        // future record-typed property whose constructor parameter
+        // names aren't transformed by the naming policy). Cheap
+        // insurance — adds no cost on the well-formed read path.
+        PropertyNameCaseInsensitive = true,
     };
 
     private readonly JsonSettingsStore<AmbientSettings> _store;

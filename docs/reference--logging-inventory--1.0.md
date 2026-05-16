@@ -705,11 +705,29 @@ Success   HUE  Bridge paired ({bridge_id})
 Verbose   HUE  pair result | bridge_id={id} | username={head8}... | clientkey=[redacted]
 Info      HUE  Listing groups
 Verbose   HUE  groups list | bridge_id={id} | count={N}
+Info      HUE  Listing lights in group {id}
+Verbose   HUE  lights list | group_id={id} | count={N}
+Verbose   HUE  light | id={id} | name={n} | type={t} | reachable={true|false}
+Info      HUE  Listing entertainment configurations
+Verbose   HUE  entertainment list | count={N}
+Verbose   HUE  entertainment | id={id} | name={n} | lights={N}
+Verbose   HUE  placement | ent_id={id} | light_id={id} | x={X:F3} | y={Y:F3} | z={Z:F3}
+Verbose   HUE  light identify | light_id={id} | alert={lselect|none} | phase={start|stop}
 Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri} | tt_ds={n}
 Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | on=false | tt_ds={n}
+Verbose   HUE  push colour | light_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri} | tt_ds={n}
+Verbose   HUE  push colour | light_id={id} | rgb={r},{g},{b} | on=false | tt_ds={n}
+Warning   HUE  Set colour failed | group_id={id} | hr={status}
+Warning   HUE  Set colour failed | light_id={id} | hr={status}
+Warning   HUE  Identify {start|stop} failed | light_id={id} | hr={status}
+Warning   HUE  CLIP v2 GET failed | path={path} | hr={status}
 ```
 
+The `entertainment list` / `entertainment` / `placement` triple comes out of `ListEntertainmentConfigurationsAsync` (CLIP v2 GET /resource/entertainment_configuration) which we use only to recover Hue's stored XYZ positions per light. The XYZ feeds the `LightZoneSuggester` in `Deckle.Lighting.Ambient` so the Light zones UI can pre-fill the per-light zone ComboBox instead of asking the user to map them by hand. `light identify` is the bridge-side flash (alert=lselect, ~15 s) used by the [Identify] button in the same UI.
+
 `tt_ds` is the Hue `transitiontime` parameter in deciseconds (1 = 100 ms). Forced to 1 by the ambient driver to override the bridge factory default of 4 (= 400 ms), which would lag the lamp behind the screen on every push.
+
+The `light_id=` variant of `push colour` and `Set colour failed` is emitted by the multi-light path (one PUT /lights/{id}/state per fixture). The `group_id=` variant is emitted by the single-colour group path (one PUT /groups/{id}/action covering all lights in the group). Same payload schema on the wire, only the target tag differs in the log.
 
 **Erreurs et sévérités**
 
@@ -757,22 +775,47 @@ L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenC
 
 ```
 Info      AMBIENT  Ambient pipeline started
-Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
+Verbose   AMBIENT  start | source={capture status} | output={driver type} | shape={group|multi} | lights={N} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
 Info      AMBIENT  Ambient pipeline stopped
-Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1} | pushed={n} | dropped={n}
-Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | off={true|false} | dropped={true|false}
+Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | shape={group|multi} | duration_sec={X:F1} | pushed={n} | dropped={n}
+Verbose   AMBIENT  push | mode=group | rgb={r},{g},{b} | off={true|false}
+Verbose   AMBIENT  push | mode=multi | lights={K}/{N} | colors={lightId=R,G,B …}
+Verbose   AMBIENT  heartbeat | mode={group|multi} | period_sec={X:F1} | ticks={N} | pushed={N} | dropped={N} [| unmapped_lights={N}]
+Verbose   AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
+Verbose   AMBIENT  zone suggest | id={lightId} | zone={…} | from=ent_config | ent_name={n} | xyz={X:F2},{Y:F2},{Z:F2}
+Verbose   AMBIENT  zone suggest skipped | reason={no_entertainment_areas|no_matching_entertainment_area}
+Verbose   AMBIENT  settings update | key={name} | value={v}
+Warning   AMBIENT  Multi-light requested but driver doesn't expose IMultiLightOutput ({type}) — falling back to group push
+Warning   AMBIENT  Multi-light requested but driver returned no lights — falling back to group push
+Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
 ```
 
 **Vocabulaire AmbientEngine**
 
 - `source={capture status}` — `running` ou `stopped` au moment du start (l'engine démarre la capture si stopped)
 - `output={driver type}` — nom de la classe ILightOutput (typ. `HueRestLightOutput`)
-- `push_hz={N}` — cadence cible de la boucle push (15 par défaut, alignée avec MinUpdateInterval)
+- `shape={group|multi}` — pipeline résolu au start : `group` = single-colour push au group, `multi` = per-light push via `IMultiLightOutput`. Choix gouverné par `AmbientSettings.UseMultiLight` + capability driver + non-vide `MultiLights`
+- `lights={N}` — nombre de lights résolues par le driver en mode multi (0 en mode group)
+- `push_hz={N}` — cadence cible de la boucle push (15 en mode group, 10 en mode multi pour rester dans la zone de confort du bridge à N PUT en parallèle)
 - `sampler_grid={W}x{H}` — dimensions de la grille du FrameSampler au moment du start
 - `hdr={on|off}` — état HDR négocié par la capture (miroir du SCREEN log)
-- `off={true|false}` — true si l'average était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
-- `dropped={true|false}` — true si l'early-exit a évalué Δ < seuil et sauté le push
+- `mode={group|multi}` — pipeline shape sur la ligne `push` (miroir de `shape=` au start)
+- `lights={K}/{N}` — sur une ligne `push mode=multi`, K = nombre de lights effectivement pushées au tick (i.e. ayant changé de couleur), N = total
+- `colors={id=R,G,B …}` — sur une ligne `push mode=multi`, la composition exacte du batch envoyé : par light id, le sRGB pushé. Les lights non listées sont soit unmapped, soit ont passé l'early-exit ; le détail s'agrège dans le heartbeat suivant
+- `off={true|false}` — true si la couleur de zone était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
 - `pushed`/`dropped` au stop — compteurs cumulés sur la session
+
+**Cadence de log et heartbeat.** Avant le ramatonement des logs, la ligne `push` sortait à chaque tick (10-15 Hz). Sur un écran statique, 300 lignes identiques en 30 s pour rien. Le nouveau pattern :
+
+1. **Une ligne `push` n'est émise que lorsqu'un push effectif a lieu** — c'est-à-dire quand au moins une couleur change. Sur écran statique, zéro ligne `push`. Sur contenu dynamique, le débit suit le rythme des changements perceptibles.
+2. **Un `heartbeat` toutes les 5 s** consolide les ticks intermédiaires : nombre de ticks, push effectués, dropped (couleur identique au précédent push donc skipped), et en multi-mode `unmapped_lights` (somme des lights mappées à `None` ou absentes du dict, par tick × N ticks). Le heartbeat sort même quand rien ne pousse, ce qui prouve que la boucle tourne.
+3. **Cumulés au stop** (déjà documentés plus bas) restent la vérité de session.
+
+Ce pattern suit la doctrine VAD : on ne loge pas chaque cycle, on loge quand le sujet change + résumé périodique. Les compteurs internes de l'engine (`_hbTicks`, `_hbPushed`, `_hbDropped`, `_hbUnmappedLights`) sont remis à zéro à chaque heartbeat émis, donc chaque ligne `heartbeat` lit "depuis le dernier heartbeat" et pas "depuis le start".
+- `zone assign` — émis par la card Light zones du Playground quand l'utilisateur sélectionne une zone pour une lampe. `id` = light id opaque (CLIP v1 pour Hue), `zone` = valeur de l'enum `LightZone`. `zone=None` correspond à un retrait de mapping (l'entrée est supprimée du dict)
+- `zone suggest` — émis au moment où la card Light zones se construit, **une ligne par lampe** dont la position dans l'entertainment area Hue a permis de dériver une zone via `LightZoneSuggester`. `from=ent_config` indique la source de la suggestion (anticipation : `from=room` ou `from=ha_area` plus tard). `xyz` reproduit la position Hue normalisée [-1, 1] qui a été classée. La suggestion est ensuite persistée dans `AmbientSettings.LightZones` (et `zone assign` ne sera PAS émis pour cette même opération — c'est une init silencieuse, pas un acte utilisateur)
+- `zone suggest skipped` — émis quand la card Light zones s'est construite sans suggestion possible. `reason=no_entertainment_areas` = le bridge n'expose aucune entertainment area ; `reason=no_matching_entertainment_area` = au moins une area existe mais aucune ne contient les lights du group sélectionné
+- `settings update | key={name} | value={v}` — gabarit générique pour toute modification d'une property d'`AmbientSettings` depuis l'UI (Toggle UseMultiLight pour V0, d'autres champs à venir en J5/J9)
 
 **Erreurs et sévérités**
 

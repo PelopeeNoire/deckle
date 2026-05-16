@@ -325,8 +325,8 @@
                             CornerRadius="{ThemeResource ControlCornerRadius}"
                             Margin="32,24,16,32"
                             Padding="24">
-                        <Grid HorizontalAlignment="Center"
-                              VerticalAlignment="Center">
+                        <Grid HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch">
                             <StackPanel x:Name="AmbientPreviewEmptyState"
                                         Spacing="8"
                                         HorizontalAlignment="Center"
@@ -343,10 +343,69 @@
                                            MaxWidth="440"
                                            TextAlignment="Center" />
                             </StackPanel>
-                            <Grid x:Name="AmbientPreviewGrid"
-                                  Visibility="Collapsed"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center" />
+
+                            <!-- Viewbox wraps the preview grid + light
+                                 overlay so the whole composition scales
+                                 uniformly to fill the available area
+                                 (Stretch="Uniform" preserves the source
+                                 16:9-ish aspect). The inner Grid keeps
+                                 a fixed coordinate space at 480×272 dip
+                                 (built dynamically in code-behind from
+                                 the FrameSampler's reported dimensions
+                                 × CellSize) so Canvas-based overlays
+                                 (light markers, J4) can use absolute
+                                 positioning without fighting layout
+                                 changes when the window resizes. -->
+                            <Viewbox x:Name="AmbientPreviewViewbox"
+                                     Stretch="Uniform"
+                                     HorizontalAlignment="Stretch"
+                                     VerticalAlignment="Stretch"
+                                     Visibility="Collapsed">
+                                <Grid x:Name="AmbientPreviewStage">
+                                    <Grid x:Name="AmbientPreviewGrid" />
+                                    <!-- LightZonesOverlay sits above
+                                         the preview grid in z-order
+                                         and renders the 4 border-zone
+                                         rectangles (Top / Bottom /
+                                         Left / Right) so the user can
+                                         see what each lamp samples.
+                                         Position / size of each rect
+                                         is set in code-behind from
+                                         the AmbientEngine.BorderDepth
+                                         constant + the stage dims.
+                                         IsHitTestVisible=False so the
+                                         overlay never eats clicks
+                                         intended for the preview
+                                         cells or future widgets. -->
+                                    <Canvas x:Name="LightZonesOverlay"
+                                            IsHitTestVisible="False">
+                                        <Rectangle x:Name="ZoneTopRect"
+                                                   Visibility="Collapsed"
+                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                   StrokeThickness="1.5"
+                                                   StrokeDashArray="3,2"
+                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
+                                        <Rectangle x:Name="ZoneBottomRect"
+                                                   Visibility="Collapsed"
+                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                   StrokeThickness="1.5"
+                                                   StrokeDashArray="3,2"
+                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
+                                        <Rectangle x:Name="ZoneLeftRect"
+                                                   Visibility="Collapsed"
+                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                   StrokeThickness="1.5"
+                                                   StrokeDashArray="3,2"
+                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
+                                        <Rectangle x:Name="ZoneRightRect"
+                                                   Visibility="Collapsed"
+                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                   StrokeThickness="1.5"
+                                                   StrokeDashArray="3,2"
+                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
+                                    </Canvas>
+                                </Grid>
+                            </Viewbox>
                         </Grid>
                     </Border>
 
@@ -373,6 +432,86 @@
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
+
+                            <!-- Pipeline card. End-to-end chain : Screen
+                                 capture → FrameSampler → AmbientEngine
+                                 → Hue driver. Start enabled only when
+                                 both ends are ready (a group is
+                                 selected so we have an ILightOutput to
+                                 push to ; the capture service is
+                                 created on-demand by the engine itself
+                                 if not already running). The Pipeline
+                                 mode RadioButtons let the user pick
+                                 between a single average pushed to the
+                                 group and per-zone sampling driven by
+                                 the Light zones card below. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Pipeline (capture → analysis → lights)"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Wires the screen capture to the selected Hue group via the AmbientEngine. Per-pixel analysis at 15 Hz (group) or 10 Hz (per-light zones)."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <!-- Pipeline mode selector. Two
+                                         mutually exclusive shapes for
+                                         the AmbientEngine. RadioButtons
+                                         per the settings-system-design
+                                         doctrine : a choice between
+                                         two named modes belongs to
+                                         RadioButtons, not a Toggle —
+                                         both alternatives are visible
+                                         and named up front, no "on
+                                         content / off content" text
+                                         that shifts under the cursor.
+                                         Reads / writes
+                                         AmbientSettings.UseMultiLight ;
+                                         disabled while the pipeline is
+                                         running because the engine
+                                         resolves the shape once at
+                                         StartAsync. -->
+                                    <RadioButtons x:Name="PipelineModeRadios"
+                                                  Header="Pipeline mode"
+                                                  SelectionChanged="OnPipelineModeSelectionChanged">
+                                        <x:String>One colour pushed to the whole group</x:String>
+                                        <x:String>One colour per border zone (top / bottom / left / right)</x:String>
+                                    </RadioButtons>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="PipelineToggleButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="180"
+                                                IsEnabled="False"
+                                                Click="OnPipelineToggleClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon x:Name="PipelineToggleIcon"
+                                                          Glyph="&#xE768;"
+                                                          FontSize="14" />
+                                                <TextBlock x:Name="PipelineToggleLabel"
+                                                           Text="Start pipeline" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="PipelineStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="PipelineStatusText"
+                                                   Text="Pair a bridge and pick a group first"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
                             <!-- Screen capture controls card. AccentButtonStyle
                                  on the toggle so the primary action reads at a
@@ -638,60 +777,61 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Pipeline card (J3). End-to-end test of
-                                 the chain : Screen capture → AmbientEngine
-                                 → Hue driver. Start enabled only when both
-                                 ends are ready (a group is selected so
-                                 we have an ILightOutput to push to ; the
-                                 capture service is created on-demand by
-                                 the engine itself if not already running).
-                                 J3 step 1 pushes a mock HSV rotation at
-                                 5 Hz so the lamps rainbow-cycle, proving
-                                 the wiring works without any pixel
-                                 analysis yet. -->
-                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            <!-- Light zones card. Visible the moment a
+                                 group is selected ; for each light, a
+                                 row exposes the lamp name, an [Identify]
+                                 button (flashes the lamp 15 s) and a
+                                 ComboBox to pick which border zone the
+                                 lamp should reflect. The card sits
+                                 right under the Pipeline card so the
+                                 zone choice is co-located with the mode
+                                 selector that consumes it. -->
+                            <Border x:Name="LightZonesCard"
+                                    Visibility="Collapsed"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                     BorderThickness="1"
                                     CornerRadius="{ThemeResource ControlCornerRadius}"
                                     Padding="24">
-                                <StackPanel Spacing="20">
+                                <StackPanel Spacing="16">
                                     <StackPanel Spacing="4">
-                                        <TextBlock Text="Pipeline (capture → analysis → lights)"
+                                        <TextBlock Text="Light zones"
                                                    Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                        <TextBlock Text="J3 step 1 — wires the screen capture to the selected Hue group via the AmbientEngine. The lamps cycle through the rainbow at 5 Hz to validate the chain without any pixel analysis yet. Real frame analysis lands in step 2."
+                                        <TextBlock x:Name="LightZonesSubtitle"
+                                                   Text="Assign each lamp to a border zone. The engine samples one colour per zone (top / bottom / left / right band of the screen) and pushes it to every lamp mapped to that zone."
                                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                    TextWrapping="Wrap"
-                                                   MaxWidth="640" />
+                                                   MaxWidth="440" />
                                     </StackPanel>
-
-                                    <StackPanel Orientation="Horizontal"
-                                                Spacing="16"
-                                                VerticalAlignment="Center">
-                                        <Button x:Name="PipelineToggleButton"
-                                                Style="{ThemeResource AccentButtonStyle}"
-                                                MinWidth="180"
-                                                IsEnabled="False"
-                                                Click="OnPipelineToggleClick">
-                                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <FontIcon x:Name="PipelineToggleIcon"
-                                                          Glyph="&#xE768;"
-                                                          FontSize="14" />
-                                                <TextBlock x:Name="PipelineToggleLabel"
-                                                           Text="Start pipeline" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Ellipse x:Name="PipelineStatusDot"
-                                                 Width="10" Height="10"
-                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
-                                                 VerticalAlignment="Center" />
-                                        <TextBlock x:Name="PipelineStatusText"
-                                                   Text="Pair a bridge and pick a group first"
-                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
-                                                   VerticalAlignment="Center" />
-                                    </StackPanel>
+                                    <!-- Empty state. Shown when the
+                                         selected group has zero
+                                         addressable lights (e.g. a
+                                         pure Entertainment area whose
+                                         lights live only in the v2
+                                         configuration, or a freshly
+                                         created group). -->
+                                    <TextBlock x:Name="LightZonesEmptyState"
+                                               Visibility="Collapsed"
+                                               Text="No lights returned for this group. If this is an Entertainment Area, try selecting the matching Room/Zone instead, or check the Hue app."
+                                               Style="{ThemeResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                               TextWrapping="Wrap"
+                                               MaxWidth="440" />
+                                    <!-- Per-light rows are injected in
+                                         code-behind from the cached
+                                         IMultiLightOutput.ListLightsAsync
+                                         response. Each row is a
+                                         horizontal StackPanel : a
+                                         TextBlock with the light name,
+                                         an [Identify] button and a
+                                         ComboBox bound to the 5
+                                         LightZone values. -->
+                                    <StackPanel x:Name="LightZonesPanel"
+                                                Spacing="8" />
                                 </StackPanel>
                             </Border>
+
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

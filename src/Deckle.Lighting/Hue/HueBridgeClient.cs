@@ -197,21 +197,48 @@ public sealed class HueBridgeClient : IDisposable
     /// doesn't lag the screen by the 400 ms factory default. Pairing
     /// must have completed.
     /// </summary>
-    public async Task SetGroupColorAsync(string groupId, LightColor color, CancellationToken ct = default)
+    public Task SetGroupColorAsync(string groupId, LightColor color, CancellationToken ct = default)
+        => PutStateAsync(
+            $"api/{_credentials!.Username}/groups/{groupId}/action",
+            color,
+            target: $"group_id={groupId}",
+            ct);
+
+    /// <summary>
+    /// Pushes a single sRGB colour to one individual light. Same
+    /// conversion + <c>transitiontime</c> semantics as
+    /// <see cref="SetGroupColorAsync"/> ; the difference is the endpoint
+    /// (<c>/lights/{id}/state</c> vs. <c>/groups/{id}/action</c>) and
+    /// the addressing granularity. Used by the multi-light pipeline
+    /// where each light gets its own colour derived from a screen zone.
+    /// </summary>
+    public Task SetLightColorAsync(string lightId, LightColor color, CancellationToken ct = default)
+        => PutStateAsync(
+            $"api/{_credentials!.Username}/lights/{lightId}/state",
+            color,
+            target: $"light_id={lightId}",
+            ct);
+
+    // Shared body for the two PUT-state endpoints. CLIP v1 accepts the
+    // exact same payload shape on /groups/{id}/action and
+    // /lights/{id}/state — `on`, `bri`, `xy`, `transitiontime` — so the
+    // conversion + body building + log line live here and the public
+    // entry points just pick the URL and a log-friendly target tag.
+    private async Task PutStateAsync(string url, LightColor color, string target, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         EnsurePaired();
 
         var (xy, bri) = HueColorMath.RgbToHueXyBri(color);
-        var body = new HueGroupActionRequest
+        var body = new HueStateRequest
         {
             TransitionTime = AmbientTransitionDeciseconds,
         };
 
         if (bri == 0)
         {
-            // Black → turn the group off. Sending on:false alone
-            // is enough ; xy and bri are ignored by the bridge when
+            // Black → turn the light off. Sending on:false alone is
+            // enough ; xy and bri are ignored by the bridge when
             // on:false is present. transitiontime still applies and
             // gives a 100 ms fade-out instead of a hard cut.
             body.On = false;
@@ -223,27 +250,299 @@ public sealed class HueBridgeClient : IDisposable
             body.Xy = new[] { xy.X, xy.Y };
         }
 
-        var response = await _http.PutAsJsonAsync(
-            $"api/{_credentials!.Username}/groups/{groupId}/action",
-            body, _jsonOptions, ct).ConfigureAwait(false);
+        var response = await _http.PutAsJsonAsync(url, body, _jsonOptions, ct).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
             _log.Warning(LogSource.Hue,
-                $"Set colour failed | group_id={groupId} | hr={(int)response.StatusCode}");
+                $"Set colour failed | {target} | hr={(int)response.StatusCode}");
             response.EnsureSuccessStatusCode();
         }
 
         if (bri == 0)
         {
             _log.Verbose(LogSource.Hue,
-                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | on=false | tt_ds={AmbientTransitionDeciseconds}");
+                $"push colour | {target} | rgb={color.R},{color.G},{color.B} | on=false | tt_ds={AmbientTransitionDeciseconds}");
         }
         else
         {
             _log.Verbose(LogSource.Hue,
-                $"push colour | group_id={groupId} | rgb={color.R},{color.G},{color.B} | xy={xy.X:F4},{xy.Y:F4} | bri={bri} | tt_ds={AmbientTransitionDeciseconds}");
+                $"push colour | {target} | rgb={color.R},{color.G},{color.B} | xy={xy.X:F4},{xy.Y:F4} | bri={bri} | tt_ds={AmbientTransitionDeciseconds}");
         }
+    }
+
+    /// <summary>
+    /// Lists every entertainment area configured on the bridge with
+    /// the per-light spatial positions Hue stores for each. The bridge
+    /// exposes this only on the CLIP v2 resource graph
+    /// (<c>/clip/v2/resource/entertainment_configuration</c>) ; the
+    /// light references inside use v2 ids (rid), so we also fetch
+    /// <c>/clip/v2/resource/light</c> to map v2 ids back to the v1
+    /// integer-as-string ids the rest of the codebase uses
+    /// (<see cref="ListLightsInGroupAsync"/>, <see cref="SetLightColorAsync"/>,
+    /// etc.). The returned positions are normalised in [-1, 1] on
+    /// each axis ; coordinate convention is Hue's :
+    /// <list type="bullet">
+    ///   <item>X : -1 = left of TV, +1 = right of TV.</item>
+    ///   <item>Y : -1 = behind viewer, +1 = behind TV (front of room).</item>
+    ///   <item>Z : -1 = floor, +1 = ceiling.</item>
+    /// </list>
+    /// Returns an empty list if the user hasn't configured any
+    /// entertainment area in the Hue app.
+    /// </summary>
+    public async Task<IReadOnlyList<HueEntertainmentArea>> ListEntertainmentConfigurationsAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsurePaired();
+
+        _log.Info(LogSource.Hue, "Listing entertainment configurations");
+
+        var entResponse = await GetV2Async<HueV2Response<HueV2EntertainmentConfigDto>>(
+            "resource/entertainment_configuration", ct).ConfigureAwait(false);
+
+        if (entResponse?.Data is null || entResponse.Data.Count == 0)
+        {
+            _log.Verbose(LogSource.Hue, "entertainment list | count=0");
+            return [];
+        }
+
+        // Build the maps we need to resolve service_locations entries
+        // into a usable (v1 light id, name) pair.
+        //
+        // /resource/light has `id_v1` ("/lights/3") + `metadata.name`.
+        //   → v1Names :          v1-light-id → user-facing name
+        //
+        // /resource/entertainment is the per-lamp streaming endpoint
+        // attached to each colour-capable Hue light. Its `id` is what
+        // `service_locations[].service.rid` actually references in the
+        // entertainment_configuration response (rtype=entertainment),
+        // and its `id_v1` is the SAME "/lights/3" path as the
+        // underlying light — so we use it to bridge the v2 ent uuid
+        // back to the v1 light id used by the rest of the codebase.
+        //   → entUuidToV1 :      v2-entertainment-uuid → v1-light-id
+        //
+        // This is the fix for "entertainment | lights=0" : without
+        // /resource/entertainment, the rid lookup ran against the
+        // /resource/light map and missed every entry.
+        var v1Names = new Dictionary<string, string>();
+        var lightsResponse = await GetV2Async<HueV2Response<HueV2LightDto>>(
+            "resource/light", ct).ConfigureAwait(false);
+        if (lightsResponse?.Data is not null)
+        {
+            foreach (var lt in lightsResponse.Data)
+            {
+                if (string.IsNullOrEmpty(lt.IdV1)) continue;
+                int slash = lt.IdV1.LastIndexOf('/');
+                if (slash < 0 || slash >= lt.IdV1.Length - 1) continue;
+                var v1Id = lt.IdV1[(slash + 1)..];
+                if (!string.IsNullOrEmpty(lt.Metadata?.Name))
+                    v1Names[v1Id] = lt.Metadata.Name;
+            }
+        }
+
+        var entUuidToV1 = new Dictionary<string, string>();
+        var entServiceResponse = await GetV2Async<HueV2Response<HueV2EntertainmentServiceDto>>(
+            "resource/entertainment", ct).ConfigureAwait(false);
+        if (entServiceResponse?.Data is not null)
+        {
+            foreach (var es in entServiceResponse.Data)
+            {
+                if (string.IsNullOrEmpty(es.Id) || string.IsNullOrEmpty(es.IdV1)) continue;
+                int slash = es.IdV1.LastIndexOf('/');
+                if (slash < 0 || slash >= es.IdV1.Length - 1) continue;
+                entUuidToV1[es.Id] = es.IdV1[(slash + 1)..];
+            }
+        }
+        _log.Verbose(LogSource.Hue,
+            $"entertainment v2 catalog | services={entUuidToV1.Count} | lights={v1Names.Count}");
+
+        var areas = new List<HueEntertainmentArea>(entResponse.Data.Count);
+        foreach (var ent in entResponse.Data)
+        {
+            var placements = new List<HueLightPlacement>();
+            if (ent.Locations?.ServiceLocations is not null)
+            {
+                foreach (var loc in ent.Locations.ServiceLocations)
+                {
+                    if (loc.Service?.Rid is null) continue;
+                    if (!entUuidToV1.TryGetValue(loc.Service.Rid, out var v1Id)) continue;
+
+                    // Gather the position(s). Hue exposes both `position`
+                    // (single point, legacy) and `positions` (multi-
+                    // point, used for LED strips). Either may be filled.
+                    // We average them so a horizontal strip behind the
+                    // TV lands at its centroid instead of leaning on
+                    // one corner.
+                    double sumX = 0, sumY = 0, sumZ = 0;
+                    int n = 0;
+                    if (loc.Positions is not null)
+                    {
+                        foreach (var p in loc.Positions) { sumX += p.X; sumY += p.Y; sumZ += p.Z; n++; }
+                    }
+                    if (n == 0 && loc.Position is not null)
+                    {
+                        sumX = loc.Position.X; sumY = loc.Position.Y; sumZ = loc.Position.Z; n = 1;
+                    }
+                    if (n == 0) continue;
+
+                    var name = v1Names.TryGetValue(v1Id, out var nm) ? nm : $"Light {v1Id}";
+                    placements.Add(new HueLightPlacement(v1Id, name, sumX / n, sumY / n, sumZ / n));
+                }
+            }
+            areas.Add(new HueEntertainmentArea(
+                ent.Id ?? "",
+                ent.Metadata?.Name ?? "",
+                placements));
+        }
+
+        _log.Verbose(LogSource.Hue, $"entertainment list | count={areas.Count}");
+        foreach (var area in areas)
+        {
+            _log.Verbose(LogSource.Hue,
+                $"entertainment | id={area.Id} | name={area.Name} | lights={area.LightPlacements.Count}");
+            foreach (var p in area.LightPlacements)
+            {
+                _log.Verbose(LogSource.Hue,
+                    $"placement | ent_id={area.Id} | light_id={p.LightId} | name={p.Name} | x={p.X:F3} | y={p.Y:F3} | z={p.Z:F3}");
+            }
+        }
+        return areas;
+    }
+
+    // GET against the CLIP v2 resource graph. CLIP v2 requires the
+    // bearer key in a header (`hue-application-key`) instead of the
+    // URL segment that v1 uses, and returns `{"data":[...], "errors":[...]}`
+    // wrappers. The HttpClient base address is shared with v1 — only
+    // the path prefix + header differs, so we set them per request.
+    private async Task<T?> GetV2Async<T>(string path, CancellationToken ct) where T : class
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"clip/v2/{path}");
+        request.Headers.Add("hue-application-key", _credentials!.Username);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            _log.Warning(LogSource.Hue,
+                $"CLIP v2 GET failed | path={path} | hr={(int)response.StatusCode}");
+            response.EnsureSuccessStatusCode();
+        }
+        return await response.Content.ReadFromJsonAsync<T>(_jsonOptions, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Asks the bridge to flash the addressed light so the user can
+    /// spot it physically among other fixtures in the room. CLIP v1
+    /// exposes the operation through the same /state endpoint with
+    /// the <c>alert</c> field set to <c>lselect</c> (loop select :
+    /// the bulb breathes / pulses for ~15 s and then auto-restores
+    /// its previous state — we don't need to clean up). The bridge
+    /// ACKs the PUT immediately, the visible flash continues in the
+    /// background. Pair with <see cref="StopIdentifyAsync"/> when the
+    /// caller wants to cut the flash short (typical : ~3 s in the
+    /// Playground UI so the user isn't subjected to a 15 s strobe).
+    /// </summary>
+    public Task IdentifyLightAsync(string lightId, CancellationToken ct = default)
+        => SendAlertAsync(lightId, "lselect", "start", ct);
+
+    /// <summary>
+    /// Stops an ongoing identify flash on the addressed light by
+    /// setting <c>alert=none</c>. Idempotent — calling on a light
+    /// that isn't currently flashing is harmless ; the bridge just
+    /// acknowledges. The bridge restores the light's pre-flash state
+    /// with a soft transition.
+    /// </summary>
+    public Task StopIdentifyAsync(string lightId, CancellationToken ct = default)
+        => SendAlertAsync(lightId, "none", "stop", ct);
+
+    private async Task SendAlertAsync(string lightId, string alert, string phase, CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsurePaired();
+
+        var body = new HueAlertRequest { Alert = alert };
+
+        var response = await _http.PutAsJsonAsync(
+            $"api/{_credentials!.Username}/lights/{lightId}/state",
+            body, _jsonOptions, ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _log.Warning(LogSource.Hue,
+                $"Identify {phase} failed | light_id={lightId} | hr={(int)response.StatusCode}");
+            response.EnsureSuccessStatusCode();
+        }
+
+        _log.Verbose(LogSource.Hue,
+            $"light identify | light_id={lightId} | alert={alert} | phase={phase}");
+    }
+
+    /// <summary>
+    /// Lists the lights that belong to the given group, in the bridge's
+    /// own order. CLIP v1 doesn't return light metadata on the group
+    /// endpoint — only the array of light ids — so we issue two GETs :
+    /// one for the group (to get the id list) and one for <c>/lights</c>
+    /// (to map each id to its human name + reachability flag). Two
+    /// round-trips at "open settings" time is fine ; the multi-light
+    /// push loop caches the result and doesn't re-query per tick.
+    /// </summary>
+    public async Task<IReadOnlyList<HueLight>> ListLightsInGroupAsync(string groupId, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsurePaired();
+
+        _log.Info(LogSource.Hue, $"Listing lights in group {groupId}");
+
+        var groupDto = await _http.GetFromJsonAsync<HueGroupDto>(
+            $"api/{_credentials!.Username}/groups/{groupId}", _jsonOptions, ct)
+            .ConfigureAwait(false);
+
+        if (groupDto?.Lights is null || groupDto.Lights.Length == 0)
+        {
+            _log.Verbose(LogSource.Hue,
+                $"lights list | group_id={groupId} | count=0");
+            return [];
+        }
+
+        var lightsDict = await _http.GetFromJsonAsync<Dictionary<string, HueLightDto>>(
+            $"api/{_credentials!.Username}/lights", _jsonOptions, ct)
+            .ConfigureAwait(false);
+
+        if (lightsDict is null)
+        {
+            _log.Warning(LogSource.Hue,
+                $"Bridge returned no lights payload | group_id={groupId}");
+            return [];
+        }
+
+        var result = new List<HueLight>(groupDto.Lights.Length);
+        foreach (var id in groupDto.Lights)
+        {
+            if (lightsDict.TryGetValue(id, out var dto))
+            {
+                result.Add(new HueLight(
+                    id,
+                    dto.Name ?? $"Light {id}",
+                    dto.Type ?? "",
+                    dto.State?.Reachable ?? true));
+            }
+            else
+            {
+                // The group references a light id that isn't in the
+                // /lights dictionary — shouldn't happen in practice
+                // (the bridge maintains the invariant), but we keep
+                // the entry with a synthetic name rather than dropping
+                // it silently so the UI surfaces the discrepancy.
+                result.Add(new HueLight(id, $"Light {id}", "", false));
+            }
+        }
+
+        _log.Verbose(LogSource.Hue,
+            $"lights list | group_id={groupId} | count={result.Count}");
+        foreach (var l in result)
+        {
+            _log.Verbose(LogSource.Hue,
+                $"light | id={l.Id} | name={l.Name} | type={l.Type} | reachable={l.Reachable}");
+        }
+        return result;
     }
 
     private void EnsurePaired()
@@ -404,7 +703,10 @@ public sealed class HueBridgeClient : IDisposable
         [JsonPropertyName("type")]   public string?   Type   { get; set; }
     }
 
-    private sealed class HueGroupActionRequest
+    // Body schema for PUT /groups/{id}/action and PUT /lights/{id}/state.
+    // CLIP v1 accepts the exact same field set on both endpoints, so we
+    // share a single DTO.
+    private sealed class HueStateRequest
     {
         // Nullable on purpose — only the fields we set get serialised,
         // thanks to JsonIgnoreCondition.WhenWritingNull in _jsonOptions.
@@ -414,6 +716,103 @@ public sealed class HueBridgeClient : IDisposable
         [JsonPropertyName("bri")]            public byte?     Brightness     { get; set; }
         [JsonPropertyName("xy")]             public double[]? Xy             { get; set; }
         [JsonPropertyName("transitiontime")] public int?      TransitionTime { get; set; }
+    }
+
+    private sealed class HueLightDto
+    {
+        [JsonPropertyName("name")]  public string?            Name  { get; set; }
+        [JsonPropertyName("type")]  public string?            Type  { get; set; }
+        [JsonPropertyName("state")] public HueLightStateDto?  State { get; set; }
+    }
+
+    private sealed class HueLightStateDto
+    {
+        // The bridge returns many fields here (on, bri, xy, ct, alert, …).
+        // We only project the reachability flag for now — the colour
+        // pipeline pushes state, it doesn't read it back.
+        [JsonPropertyName("reachable")] public bool? Reachable { get; set; }
+    }
+
+    private sealed class HueAlertRequest
+    {
+        // Hue CLIP v1 alert values : "none" (clear), "select" (one
+        // breathe cycle), "lselect" (loop for ~15 s then auto-revert).
+        // We only ever send "lselect" for the Identify pattern.
+        [JsonPropertyName("alert")] public string Alert { get; set; } = "lselect";
+    }
+
+    // ── CLIP v2 DTOs ────────────────────────────────────────────────
+    //
+    // CLIP v2 wraps every collection response in `{"data":[...], "errors":[...]}`.
+    // We only project the fields we consume here — the resources expose
+    // many more (services, capabilities, …) we ignore.
+
+    private sealed class HueV2Response<T>
+    {
+        [JsonPropertyName("data")] public List<T>? Data { get; set; }
+    }
+
+    private sealed class HueV2LightDto
+    {
+        [JsonPropertyName("id")]       public string?         Id       { get; set; }
+        // id_v1 is the legacy CLIP v1 path for this resource — e.g.
+        // "/lights/3". We strip the prefix to recover the integer-as-
+        // string id the rest of the codebase manipulates.
+        [JsonPropertyName("id_v1")]    public string?         IdV1     { get; set; }
+        [JsonPropertyName("metadata")] public HueV2Metadata?  Metadata { get; set; }
+    }
+
+    // /clip/v2/resource/entertainment exposes one entry per colour-capable
+    // Hue light : the streaming endpoint attached to that light. Its
+    // `id_v1` mirrors the underlying light's v1 path (e.g. "/lights/3"),
+    // which is exactly what we need to map an entertainment_configuration
+    // service_location's `rid` (always an entertainment uuid, never a
+    // light uuid) back to the v1 light id.
+    private sealed class HueV2EntertainmentServiceDto
+    {
+        [JsonPropertyName("id")]    public string? Id   { get; set; }
+        [JsonPropertyName("id_v1")] public string? IdV1 { get; set; }
+    }
+
+    private sealed class HueV2EntertainmentConfigDto
+    {
+        [JsonPropertyName("id")]        public string?          Id        { get; set; }
+        [JsonPropertyName("metadata")]  public HueV2Metadata?   Metadata  { get; set; }
+        [JsonPropertyName("locations")] public HueV2Locations?  Locations { get; set; }
+    }
+
+    private sealed class HueV2Metadata
+    {
+        [JsonPropertyName("name")] public string? Name { get; set; }
+    }
+
+    private sealed class HueV2Locations
+    {
+        [JsonPropertyName("service_locations")] public List<HueV2ServiceLocation>? ServiceLocations { get; set; }
+    }
+
+    private sealed class HueV2ServiceLocation
+    {
+        [JsonPropertyName("service")]   public HueV2ResourceRef?    Service   { get; set; }
+        // `position` (singular) is the legacy single-point form ;
+        // `positions` is the newer multi-point form used for LED
+        // strips. The bridge fills either or both ; the consumer
+        // collapses them to a centroid.
+        [JsonPropertyName("position")]  public HueV2Position?       Position  { get; set; }
+        [JsonPropertyName("positions")] public List<HueV2Position>? Positions { get; set; }
+    }
+
+    private sealed class HueV2ResourceRef
+    {
+        [JsonPropertyName("rid")]   public string? Rid  { get; set; }
+        [JsonPropertyName("rtype")] public string? Type { get; set; }
+    }
+
+    private sealed class HueV2Position
+    {
+        [JsonPropertyName("x")] public double X { get; set; }
+        [JsonPropertyName("y")] public double Y { get; set; }
+        [JsonPropertyName("z")] public double Z { get; set; }
     }
 
     private abstract record PairOutcome
