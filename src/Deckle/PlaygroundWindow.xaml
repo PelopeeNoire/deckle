@@ -531,7 +531,7 @@
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="Screen capture"
                                                    Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                        <TextBlock Text="Pumps frames from the primary monitor through Windows.Graphics.Capture. Off by default ; click Start to begin."
+                                        <TextBlock Text="Pumps frames from the primary monitor through DXGI Output Duplication. Off by default ; click Start to begin."
                                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                    TextWrapping="Wrap"

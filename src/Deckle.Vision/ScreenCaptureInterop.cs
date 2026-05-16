@@ -1,34 +1,37 @@
 using System.Runtime.InteropServices;
-using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX.Direct3D11;
 using WinRT;
 
 namespace Deckle.Vision;
 
-// Interop helpers for Windows.Graphics.Capture on a desktop monitor.
-// The capture pipeline lives entirely in WinRT types (GraphicsCaptureItem,
-// Direct3D11CaptureFramePool, GraphicsCaptureSession) but two gateway
-// operations still require native interop:
+// Interop helpers for the capture pipeline (DXGI Output Duplication
+// since the WGC-to-DXGI migration — see ScreenCaptureService class
+// header for the rationale).
 //
-//   1. Resolving an IDirect3DDevice (the WinRT type the capture pool
-//      expects) from a fresh D3D11 device. We can't construct an
-//      IDirect3DDevice directly in C# — Microsoft only exposes
-//      CreateDirect3D11DeviceFromDXGIDevice (an undocumented but stable
-//      D3D11.dll export) which takes an IDXGIDevice ABI pointer and
-//      hands back an IInspectable that CsWinRT can project.
-//
-//   2. Building a GraphicsCaptureItem for a HMONITOR. The WinRT class
-//      has no public factory for monitors — only the IGraphicsCaptureItemInterop
-//      activation-factory COM interface exposes CreateForMonitor, which
-//      we have to QI manually via RoGetActivationFactory.
-//
-// Both gateways are documented at:
-//   learn.microsoft.com/uwp/api/windows.graphics.capture.direct3d11captureframepool
-//   learn.microsoft.com/windows/uwp/audio-video-camera/screen-capture
+// What lives here :
+//   1. CreateDirect3DDevice — wraps a fresh ID3D11Device as the WinRT
+//      IDirect3DDevice the FrameSampler holds. Accepts an optional
+//      adapter pointer (mandatory for the DXGI Duplication path, where
+//      the D3D11 device must be created on the adapter driving the
+//      target output).
+//   2. EnumerateMonitors / FindMonitorByDeviceName / GetPrimaryMonitor
+//      — HMONITOR resolution helpers shared by capture and the
+//      monitor-selector UI.
+//   3. GetD3D11Device / GetD3D11Texture — IDirect3DDxgiInterfaceAccess
+//      QI bridge to recover the native COM objects behind WinRT
+//      wrappers (used at FrameSampler init).
+//   4. DetectHdrState / FindDxgiOutputForMonitor — DXGI walk that
+//      matches an HMONITOR to its IDXGIAdapter + IDXGIOutput5 +
+//      reported HDR state.
+//   5. DXGI Output Duplication primitives (DuplicateOutput1,
+//      AcquireNextFrame, ReleaseFrame, GetDuplicationDesc) and the
+//      backing structs / vtable indices.
+//   6. D3D11 vtable indices + textur-related structs used by
+//      FrameSampler's GPU downsample path.
 //
 // Errors from PreserveSig=false P/Invoke surface as Marshal-thrown
-// COMException with the HRESULT preserved. ScreenCaptureService catches
-// and logs.
+// COMException with the HRESULT preserved. ScreenCaptureService
+// catches and logs.
 internal static class ScreenCaptureInterop
 {
     // ── HMONITOR ─────────────────────────────────────────────────────────────
@@ -164,6 +167,11 @@ internal static class ScreenCaptureInterop
 
     // ── D3D11 device → IDirect3DDevice (WinRT) ───────────────────────────────
 
+    // D3D_DRIVER_TYPE — UNKNOWN is mandatory when D3D11CreateDevice
+    // receives an explicit adapter pointer (the adapter implies its
+    // own driver type) ; HARDWARE is used when we let DXGI pick the
+    // default adapter.
+    private const int D3D_DRIVER_TYPE_UNKNOWN  = 0;
     private const int D3D_DRIVER_TYPE_HARDWARE = 1;
     private const uint D3D11_CREATE_DEVICE_BGRA_SUPPORT = 0x00000020;
     private const uint D3D11_SDK_VERSION = 7;
@@ -189,15 +197,19 @@ internal static class ScreenCaptureInterop
     // IDXGIDevice IID, queried from the freshly-created ID3D11Device.
     private static readonly Guid IID_IDXGIDevice = new("54ec77fa-1377-44e6-8c32-88fd5f44c84c");
 
-    public static IDirect3DDevice CreateDirect3DDevice()
+    public static IDirect3DDevice CreateDirect3DDevice(nint pAdapter = 0)
     {
         // 1. Create the D3D11 device. BGRA_SUPPORT is required for any
         //    consumer that wants to share the frames with the DirectX
-        //    composition stack (Win2D, CanvasBitmap, etc.). Driver type
-        //    hardware ; software fallback (WARP) not requested.
+        //    composition stack (Win2D, CanvasBitmap, etc.). When the
+        //    caller passes a specific adapter (pAdapter != 0), the
+        //    driver type must be UNKNOWN per the D3D11CreateDevice
+        //    contract — the adapter implies its type. With pAdapter=0
+        //    (default) we ask for HARDWARE explicitly to skip WARP.
+        int driverType = pAdapter == 0 ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_UNKNOWN;
         D3D11CreateDevice(
-            pAdapter:        0,
-            driverType:      D3D_DRIVER_TYPE_HARDWARE,
+            pAdapter:        pAdapter,
+            driverType:      driverType,
             software:        0,
             flags:           D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             pFeatureLevels:  0,
@@ -243,91 +255,6 @@ internal static class ScreenCaptureInterop
         finally
         {
             if (d3dDevicePtr != 0) Marshal.Release(d3dDevicePtr);
-        }
-    }
-
-    // ── GraphicsCaptureItem for a HMONITOR ───────────────────────────────────
-
-    // IGraphicsCaptureItemInterop. Documented in winrt/windows.graphics.capture.interop.h
-    // (Windows 10 SDK). Activation factory of GraphicsCaptureItem implements
-    // this COM interface in addition to IActivationFactory ; we QI it from
-    // RoGetActivationFactory.
-    [ComImport]
-    [Guid("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IGraphicsCaptureItemInterop
-    {
-        // PreserveSig=false would normally throw on HRESULT failure ; we
-        // keep explicit out IntPtr return so we can log the HRESULT in the
-        // caller (vs eating it inside the marshaller).
-        [PreserveSig]
-        int CreateForWindow([In] nint window, [In] in Guid iid, out nint result);
-
-        [PreserveSig]
-        int CreateForMonitor([In] nint monitor, [In] in Guid iid, out nint result);
-    }
-
-    // GraphicsCaptureItem WinRT class GUID. Stable across versions ; documented
-    // in winrt/Windows.Graphics.Capture.h.
-    private static readonly Guid IID_GraphicsCaptureItem = new("79C3F95B-31F7-4EC2-A464-632EF5D30760");
-    private static readonly Guid IID_IGraphicsCaptureItemInterop = new("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356");
-
-    // RoGetActivationFactory takes a HSTRING for the class id. We can't use
-    // [MarshalAs(UnmanagedType.HString)] on the string parameter directly —
-    // built-in HSTRING marshalling was removed from the .NET runtime in
-    // .NET 5 (see learn.microsoft.com/dotnet/core/compatibility/interop/5.0/built-in-support-for-winrt-removed).
-    // Attempting to call this P/Invoke with that directive throws
-    // MarshalDirectiveException ("Invalid managed/unmanaged type combination").
-    // We allocate the HSTRING manually via WindowsCreateString and pass it
-    // as an opaque IntPtr ; WindowsDeleteString releases it in the finally
-    // clause regardless of the call outcome.
-    [DllImport("combase.dll", PreserveSig = false, ExactSpelling = true)]
-    private static extern void RoGetActivationFactory(
-        IntPtr activatableClassId,
-        [In] in Guid iid,
-        [MarshalAs(UnmanagedType.Interface)] out IGraphicsCaptureItemInterop factory);
-
-    [DllImport("combase.dll", PreserveSig = false, ExactSpelling = true, CharSet = CharSet.Unicode)]
-    private static extern void WindowsCreateString(
-        [MarshalAs(UnmanagedType.LPWStr)] string sourceString,
-        uint length,
-        out IntPtr hstring);
-
-    [DllImport("combase.dll", PreserveSig = false, ExactSpelling = true)]
-    private static extern void WindowsDeleteString(IntPtr hstring);
-
-    public static GraphicsCaptureItem CreateGraphicsCaptureItem(nint hmon)
-    {
-        const string className = "Windows.Graphics.Capture.GraphicsCaptureItem";
-
-        // 1. Allocate a HSTRING for the class id ; the activation factory
-        //    lookup keeps a reference for the duration of the call, so we
-        //    can free our copy right after RoGetActivationFactory returns.
-        WindowsCreateString(className, (uint)className.Length, out IntPtr hstringClassId);
-        IGraphicsCaptureItemInterop factory;
-        try
-        {
-            RoGetActivationFactory(hstringClassId, in IID_IGraphicsCaptureItemInterop, out factory);
-        }
-        finally
-        {
-            WindowsDeleteString(hstringClassId);
-        }
-
-        // 2. Ask the factory for an item bound to our HMONITOR. The IID
-        //    we pass is the GraphicsCaptureItem WinRT class IID — the
-        //    factory uses it to decide which interface to project.
-        int hr = factory.CreateForMonitor(hmon, in IID_GraphicsCaptureItem, out nint itemPtr);
-        Marshal.ThrowExceptionForHR(hr);
-
-        try
-        {
-            // 3. Project the ABI pointer as the managed GraphicsCaptureItem.
-            return MarshalInspectable<GraphicsCaptureItem>.FromAbi(itemPtr);
-        }
-        finally
-        {
-            if (itemPtr != 0) Marshal.Release(itemPtr);
         }
     }
 
@@ -377,11 +304,13 @@ internal static class ScreenCaptureInterop
     // Native D3D11 + DXGI interface IIDs. Used as QI targets through
     // IDirect3DDxgiInterfaceAccess.GetInterface (D3D11) or
     // IDXGIAdapter / IDXGIOutput chains (DXGI).
-    private static readonly Guid IID_ID3D11Device         = new("db6f6ddb-ac77-4e88-8253-819df9bbf140");
-    private static readonly Guid IID_ID3D11Texture2D      = new("6f15aaf2-d208-4e89-9ab4-489535d34f9c");
-    private static readonly Guid IID_IDXGIAdapter         = new("2411e7e1-12ac-4ccf-bd14-9798e8534dc0");
-    private static readonly Guid IID_IDXGIFactory6        = new("c1b6694f-ff09-44a9-b03c-77900a0a1d17");
-    private static readonly Guid IID_IDXGIOutput6         = new("068346e8-aaec-4b84-add7-137f513f77a1");
+    private static readonly Guid IID_ID3D11Device           = new("db6f6ddb-ac77-4e88-8253-819df9bbf140");
+    private static readonly Guid IID_ID3D11Texture2D        = new("6f15aaf2-d208-4e89-9ab4-489535d34f9c");
+    private static readonly Guid IID_IDXGIAdapter           = new("2411e7e1-12ac-4ccf-bd14-9798e8534dc0");
+    private static readonly Guid IID_IDXGIFactory6          = new("c1b6694f-ff09-44a9-b03c-77900a0a1d17");
+    private static readonly Guid IID_IDXGIOutput5           = new("80a07424-ab52-42eb-833c-0c42fd282d98");
+    private static readonly Guid IID_IDXGIOutput6           = new("068346e8-aaec-4b84-add7-137f513f77a1");
+    private static readonly Guid IID_IDXGIOutputDuplication = new("191cfac3-a341-470d-b26e-a864f428319c");
 
     // Internal helper. Given a freshly AddRef'd ABI pointer (from
     // MarshalInspectable.FromManaged) and a target native COM IID, returns
@@ -602,6 +531,309 @@ internal static class ScreenCaptureInterop
         {
             if (factoryPtr != 0) Marshal.Release(factoryPtr);
         }
+    }
+
+    // ── DXGI Output Duplication ──────────────────────────────────────────────
+    //
+    // Desktop Duplication is the capture API that predates
+    // Windows.Graphics.Capture. It runs on every desktop session without
+    // a system-drawn capture indicator (the yellow border WGC paints
+    // around the captured monitor), and supports HDR via DXGI 1.5's
+    // DuplicateOutput1 + DXGI_FORMAT_R16G16B16A16_FLOAT in the format
+    // list. Documented in Microsoft Learn "Desktop Duplication API" and
+    // standard practice in OBS / NVIDIA ShadowPlay / HyperHDR.
+    //
+    // The pump is poll-based : IDXGIOutputDuplication::AcquireNextFrame
+    // blocks up to a caller-specified timeout for a new desktop frame,
+    // returning an IDXGIResource the caller QI's to ID3D11Texture2D.
+    // ReleaseFrame returns the buffer to the OS. A worker thread loops
+    // these two calls.
+    //
+    // Architecture note. The D3D11 device passed to DuplicateOutput1
+    // MUST be created on the same DXGI adapter as the output being
+    // duplicated, otherwise E_INVALIDARG. On multi-GPU laptops (Intel
+    // iGPU + NVIDIA dGPU) the default adapter is rarely the one driving
+    // the target monitor — we walk adapters/outputs to find the match,
+    // then create the device on that specific adapter.
+
+    public const int DXGI_ERROR_ACCESS_LOST   = unchecked((int)0x887A0026);
+    public const int DXGI_ERROR_WAIT_TIMEOUT  = unchecked((int)0x887A0027);
+    public const int DXGI_ERROR_INVALID_CALL  = unchecked((int)0x887A0001);
+    public const int DXGI_ERROR_DEVICE_REMOVED = unchecked((int)0x887A0005);
+    public const int DXGI_ERROR_DEVICE_HUNG   = unchecked((int)0x887A0006);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DXGI_RATIONAL
+    {
+        public uint Numerator;
+        public uint Denominator;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DXGI_MODE_DESC
+    {
+        public uint          Width;
+        public uint          Height;
+        public DXGI_RATIONAL RefreshRate;
+        public uint          Format;            // DXGI_FORMAT
+        public uint          ScanlineOrdering;  // DXGI_MODE_SCANLINE_ORDER
+        public uint          Scaling;           // DXGI_MODE_SCALING
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DXGI_OUTDUPL_DESC
+    {
+        public DXGI_MODE_DESC ModeDesc;
+        public uint           Rotation;                    // DXGI_MODE_ROTATION
+        public int            DesktopImageInSystemMemory;  // BOOL
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DXGI_OUTDUPL_POINTER_POSITION
+    {
+        public int X;
+        public int Y;
+        public int Visible; // BOOL
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DXGI_OUTDUPL_FRAME_INFO
+    {
+        public long                          LastPresentTime;
+        public long                          LastMouseUpdateTime;
+        public uint                          AccumulatedFrames;
+        public int                           RectsCoalesced;            // BOOL
+        public int                           ProtectedContentMaskedOut; // BOOL
+        public DXGI_OUTDUPL_POINTER_POSITION PointerPosition;
+        public uint                          TotalMetadataBufferSize;
+        public uint                          PointerShapeBufferSize;
+    }
+
+    /// <summary>The IDXGIAdapter + IDXGIOutput5 pair that drives a given
+    /// HMONITOR, plus the HDR state of that output. Both pointers are
+    /// AddRef'd ; caller releases via <see cref="Marshal.Release"/> when
+    /// done (typically alongside the IDXGIOutputDuplication's own
+    /// lifetime).</summary>
+    public readonly record struct DxgiOutputMatch(
+        nint     AdapterPtr,
+        nint     Output5Ptr,
+        HdrState Hdr);
+
+    /// <summary>
+    /// Walks every DXGI adapter / output combination and returns the
+    /// pair whose IDXGIOutput6::GetDesc1 reports the requested HMONITOR.
+    /// Throws <see cref="InvalidOperationException"/> if no match is
+    /// found (display disconnected mid-startup, headless adapter, etc.).
+    /// On success the caller owns one reference to each returned
+    /// pointer and must Release both.
+    /// </summary>
+    public static DxgiOutputMatch FindDxgiOutputForMonitor(nint hmon)
+    {
+        nint factoryPtr = 0;
+        try
+        {
+            CreateDXGIFactory2(0, in IID_IDXGIFactory6, out factoryPtr);
+
+            unsafe
+            {
+                var factoryVtbl = *(nint**)factoryPtr;
+                var enumAdapters = (delegate* unmanaged<nint, uint, nint*, int>)factoryVtbl[7];
+
+                for (uint adapterIdx = 0; adapterIdx < 32; adapterIdx++)
+                {
+                    nint adapterPtr;
+                    int hr = enumAdapters(factoryPtr, adapterIdx, &adapterPtr);
+                    if (hr != 0 || adapterPtr == 0) break;
+
+                    bool keepAdapter = false;
+                    try
+                    {
+                        var adapterVtbl = *(nint**)adapterPtr;
+                        var enumOutputs = (delegate* unmanaged<nint, uint, nint*, int>)adapterVtbl[7];
+
+                        for (uint outputIdx = 0; outputIdx < 16; outputIdx++)
+                        {
+                            nint outputPtr;
+                            hr = enumOutputs(adapterPtr, outputIdx, &outputPtr);
+                            if (hr != 0 || outputPtr == 0) break;
+
+                            bool keepOutput = false;
+                            try
+                            {
+                                // QI to IDXGIOutput6 for GetDesc1 (HDR state +
+                                // HMONITOR). Same vtable shape walk as
+                                // DetectHdrState.
+                                Guid iidOutput6 = IID_IDXGIOutput6;
+                                hr = Marshal.QueryInterface(outputPtr, in iidOutput6, out nint output6Ptr);
+                                if (hr != 0) continue;
+
+                                try
+                                {
+                                    var output6Vtbl = *(nint**)output6Ptr;
+                                    var getDesc1 = (delegate* unmanaged<nint, DXGI_OUTPUT_DESC1*, int>)output6Vtbl[27];
+                                    DXGI_OUTPUT_DESC1 desc;
+                                    hr = getDesc1(output6Ptr, &desc);
+                                    if (hr != 0) continue;
+
+                                    if (desc.Monitor != hmon) continue;
+
+                                    bool isHdr =
+                                        desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ||
+                                        desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
+                                    float peak = desc.MaxLuminance > 0 ? desc.MaxLuminance : 80f;
+                                    var hdrState = new HdrState(isHdr, peak, desc.ColorSpace);
+
+                                    // QI down to IDXGIOutput5 — the
+                                    // interface that exposes
+                                    // DuplicateOutput1 (HDR-capable
+                                    // duplication).
+                                    Guid iidOutput5 = IID_IDXGIOutput5;
+                                    hr = Marshal.QueryInterface(outputPtr, in iidOutput5, out nint output5Ptr);
+                                    Marshal.ThrowExceptionForHR(hr);
+
+                                    keepAdapter = true;
+                                    keepOutput = true;
+                                    return new DxgiOutputMatch(adapterPtr, output5Ptr, hdrState);
+                                }
+                                finally
+                                {
+                                    Marshal.Release(output6Ptr);
+                                }
+                            }
+                            finally
+                            {
+                                if (!keepOutput) Marshal.Release(outputPtr);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        if (!keepAdapter) Marshal.Release(adapterPtr);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            if (factoryPtr != 0) Marshal.Release(factoryPtr);
+        }
+
+        throw new InvalidOperationException(
+            $"No DXGI output found for HMONITOR 0x{hmon:X}. The monitor may have been disconnected, or its adapter doesn't expose a duplication-capable output.");
+    }
+
+    /// <summary>
+    /// Calls IDXGIOutput5::DuplicateOutput1 on the supplied output with
+    /// the given list of acceptable surface formats (priority order —
+    /// DXGI picks the first the OS can fulfil). The returned
+    /// IDXGIOutputDuplication pointer is AddRef'd ; caller releases
+    /// when done. supportedFormats must include at least one valid
+    /// DXGI_FORMAT (typically R16G16B16A16_FLOAT for HDR fallback to
+    /// B8G8R8A8_UNORM for SDR).
+    /// </summary>
+    public static nint DuplicateOutput1(nint output5Ptr, nint d3dDevicePtr, uint[] supportedFormats)
+    {
+        if (supportedFormats is null || supportedFormats.Length == 0)
+            throw new ArgumentException("supportedFormats must contain at least one DXGI_FORMAT", nameof(supportedFormats));
+
+        unsafe
+        {
+            var output5Vtbl = *(nint**)output5Ptr;
+            var duplicate = (delegate* unmanaged<nint, nint, uint, uint, uint*, nint*, int>)output5Vtbl[26];
+            nint duplicationPtr;
+            fixed (uint* fmtPtr = supportedFormats)
+            {
+                int hr = duplicate(
+                    output5Ptr,
+                    d3dDevicePtr,
+                    /* Flags */ 0,
+                    (uint)supportedFormats.Length,
+                    fmtPtr,
+                    &duplicationPtr);
+                Marshal.ThrowExceptionForHR(hr);
+            }
+            return duplicationPtr;
+        }
+    }
+
+    /// <summary>
+    /// Calls IDXGIOutputDuplication::GetDesc to retrieve the negotiated
+    /// surface format and dimensions. Useful right after DuplicateOutput1
+    /// to learn which format DXGI picked from the supplied priority list.
+    /// </summary>
+    public static DXGI_OUTDUPL_DESC GetDuplicationDesc(nint duplicationPtr)
+    {
+        unsafe
+        {
+            var vtbl = *(nint**)duplicationPtr;
+            var getDesc = (delegate* unmanaged<nint, DXGI_OUTDUPL_DESC*, void>)vtbl[7];
+            DXGI_OUTDUPL_DESC desc;
+            getDesc(duplicationPtr, &desc);
+            return desc;
+        }
+    }
+
+    /// <summary>
+    /// Calls IDXGIOutputDuplication::AcquireNextFrame. Blocks up to
+    /// <paramref name="timeoutMs"/> for a desktop image update. On
+    /// success returns S_OK and populates the out parameters ;
+    /// pDesktopResource is AddRef'd and the caller must call
+    /// <see cref="ReleaseFrame"/> after processing (which also Releases
+    /// the resource implicitly via OS bookkeeping — but we Release the
+    /// COM ref ourselves for symmetry with the QI to ID3D11Texture2D).
+    /// Other notable HRESULTs to handle explicitly :
+    /// <see cref="DXGI_ERROR_WAIT_TIMEOUT"/> (no new frame in the
+    /// interval — common, not an error), <see cref="DXGI_ERROR_ACCESS_LOST"/>
+    /// (desktop switch / mode change / fullscreen swap — caller must
+    /// recreate the IDXGIOutputDuplication).
+    /// </summary>
+    public static int AcquireNextFrame(
+        nint duplicationPtr,
+        uint timeoutMs,
+        out DXGI_OUTDUPL_FRAME_INFO frameInfo,
+        out nint desktopResourcePtr)
+    {
+        unsafe
+        {
+            var vtbl = *(nint**)duplicationPtr;
+            var acquire = (delegate* unmanaged<nint, uint, DXGI_OUTDUPL_FRAME_INFO*, nint*, int>)vtbl[8];
+            DXGI_OUTDUPL_FRAME_INFO info;
+            nint resourcePtr;
+            int hr = acquire(duplicationPtr, timeoutMs, &info, &resourcePtr);
+            frameInfo = info;
+            desktopResourcePtr = resourcePtr;
+            return hr;
+        }
+    }
+
+    /// <summary>
+    /// Calls IDXGIOutputDuplication::ReleaseFrame. Returns the previously
+    /// acquired frame's GPU buffer to the OS. Must be called once per
+    /// successful AcquireNextFrame ; calling it a second time returns
+    /// DXGI_ERROR_INVALID_CALL.
+    /// </summary>
+    public static int ReleaseFrame(nint duplicationPtr)
+    {
+        unsafe
+        {
+            var vtbl = *(nint**)duplicationPtr;
+            var release = (delegate* unmanaged<nint, int>)vtbl[14];
+            return release(duplicationPtr);
+        }
+    }
+
+    /// <summary>
+    /// QI helper : given an IDXGIResource pointer (typically from
+    /// AcquireNextFrame's out param), returns the underlying
+    /// ID3D11Texture2D. The returned pointer is AddRef'd ; caller
+    /// releases.
+    /// </summary>
+    public static nint QueryD3D11Texture(nint dxgiResourcePtr)
+    {
+        Guid iid = IID_ID3D11Texture2D;
+        int hr = Marshal.QueryInterface(dxgiResourcePtr, in iid, out nint texturePtr);
+        Marshal.ThrowExceptionForHR(hr);
+        return texturePtr;
     }
 
     // ── D3D11 vtable indices (counted from IUnknown::QueryInterface = 0) ─────

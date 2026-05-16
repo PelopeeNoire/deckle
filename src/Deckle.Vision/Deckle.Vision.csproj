@@ -10,11 +10,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Versions aligned on Deckle.csproj. WindowsAppSDK is required for the
-         CsWinRT projection of Windows.Graphics.Capture types (FramePool,
-         IDirect3DDevice, GraphicsCaptureItem). The library itself is not a
-         WinUI XAML lib — UseWinUI stays off because Deckle.Vision consumes
-         the headless WinRT APIs only. -->
+    <!-- Versions aligned on Deckle.csproj. WindowsAppSDK is required for
+         the CsWinRT projection of IDirect3DDevice (the WinRT wrapper
+         FrameSampler holds onto for D3D11 texture allocation). The
+         capture pipeline itself uses DXGI Output Duplication via raw
+         COM interop (no WinRT capture API anymore — see
+         ScreenCaptureService class header for the migration rationale).
+         The library is not a WinUI XAML lib — UseWinUI stays off because
+         Deckle.Vision consumes the headless WinRT APIs only. -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
   </ItemGroup>

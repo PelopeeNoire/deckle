@@ -50,8 +50,8 @@ public static class LogSource
     public const string Setup = "SETUP";
 
     // ── Ambient lighting pipeline ───────────────────────────────────────────
-    // Screen capture (Windows.Graphics.Capture session, frame pool polling)
-    // emitted from Deckle.Vision. Naming follows the same capability-not-
+    // Screen capture (DXGI Output Duplication poll loop) emitted from
+    // Deckle.Vision. Naming follows the same capability-not-
     // module rule as CAPTURE: the source tag points at what the events
     // describe (screen capture), not at the module that owns the code.
     // Once the ambient lighting analysis and driver layers ship, their tags

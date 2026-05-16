@@ -9,7 +9,6 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Graphics.Capture;
 using WinRT.Interop;
 using Deckle.Audio;
 using Deckle.Chrono.Hud;
@@ -145,9 +144,10 @@ public sealed partial class PlaygroundWindow : Window
     // Created lazily on the first Start click ; disposed on Stop, on
     // Closing→Hide (so a hidden Playground doesn't keep the capture
     // pipeline running silently), and on the terminal Closed event.
-    // FrameArrived fires on the framepool worker thread ; the UI timer
-    // samples FrameCount on the UI thread once a second to compute FPS
-    // without per-frame DispatcherQueue marshaling.
+    // FrameArrived fires on the capture service's worker thread (the
+    // DXGI Output Duplication poll loop) ; the UI timer samples
+    // FrameCount on the UI thread once a second to compute FPS without
+    // per-frame DispatcherQueue marshaling.
     private ScreenCaptureService? _screenCapture;
     private readonly DispatcherTimer _screenCaptureFpsTimer = new()
         { Interval = TimeSpan.FromMilliseconds(1000) };
@@ -1617,10 +1617,11 @@ public sealed partial class PlaygroundWindow : Window
 
     private void OnScreenCaptureStopped()
     {
-        // Fires on the framepool worker thread when the captured item
-        // closes itself (display disconnected, signed-out, etc.). Marshal
-        // back to the UI thread to update the button + status, then run
-        // the same teardown as a user-driven Stop.
+        // Fires on the capture service's worker thread when the loop
+        // exits unexpectedly (sustained ACCESS_LOST recreate failure —
+        // display disconnected, signed-out, etc.). Marshal back to the
+        // UI thread to update the button + status, then run the same
+        // teardown as a user-driven Stop.
         DispatcherQueue.TryEnqueue(() => StopScreenCaptureIfRunning());
     }
 
@@ -2044,12 +2045,13 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     // FrameArrived handler that hands the frame to the FrameSampler.
-    // Runs on the FreeThreaded pool's worker thread ; FrameSampler.Process
-    // is thread-safe internally. The frame is disposed by the capture
-    // service after this delegate returns — we must not retain it.
-    // Cadence is throttled at the capture session level via
-    // MinUpdateInterval, so we don't gate per-frame work here.
-    private void OnSamplerFrameArrived(Direct3D11CaptureFrame frame)
+    // Runs on the capture service's worker thread ; FrameSampler.Process
+    // is thread-safe internally. The frame's TexturePtr is borrowed for
+    // the handler scope only — we must not retain it (the capture
+    // service Releases the underlying COM ref after this returns).
+    // Cadence is throttled at the capture loop level, so we don't gate
+    // per-frame work here.
+    private void OnSamplerFrameArrived(CapturedFrame frame)
     {
         _frameSampler?.Process(frame);
     }
