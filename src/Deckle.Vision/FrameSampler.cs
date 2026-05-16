@@ -31,10 +31,16 @@ namespace Deckle.Vision;
 //   7. Unmap and atomically publish the new SampledFrame via
 //      Volatile.Write on _latestSample.
 //
+// Averaging is gamma-correct : per-pixel sRGB bytes go through
+// ColorSpace.SrgbToLinear8Lut before summing, the mean is computed in
+// linear light, then re-encoded via LinearToSrgb on the way out. The
+// per-cell grid stays in sRGB bytes for the downstream consumers
+// (Playground preview, AmbientEngine.SampleZone which re-linearises on
+// its own).
+//
 // What we don't do (out of scope J3 step 2) :
 //   - Black-border detection (J4).
 //   - Zone weighting / multi-region extraction (J4).
-//   - Linear-light averaging (gamma-correct mean — J4/J5).
 //   - Spring-damper smoothing (J5).
 //
 // Ownership :
@@ -250,24 +256,38 @@ public sealed class FrameSampler : IAsyncDisposable
     private SampledFrame ReadSampleFromMapped(in ScreenCaptureInterop.D3D11_MAPPED_SUBRESOURCE mapped)
     {
         var grid = new Color[_gridCols * _gridRows];
-        long sumR = 0, sumG = 0, sumB = 0;
+        double sumRLin = 0, sumGLin = 0, sumBLin = 0;
         int count = 0;
 
         if (_isHdr)
         {
-            ReadGridFP16(in mapped, grid, ref sumR, ref sumG, ref sumB, ref count);
+            ReadGridFP16(in mapped, grid, ref sumRLin, ref sumGLin, ref sumBLin, ref count);
         }
         else
         {
-            ReadGridBGRA8(in mapped, grid, ref sumR, ref sumG, ref sumB, ref count);
+            ReadGridBGRA8(in mapped, grid, ref sumRLin, ref sumGLin, ref sumBLin, ref count);
         }
 
-        Color avg = count == 0
-            ? Color.FromArgb(0xFF, 0, 0, 0)
-            : Color.FromArgb(0xFF,
-                (byte)(sumR / count),
-                (byte)(sumG / count),
-                (byte)(sumB / count));
+        // Average in linear light, re-encode via the sRGB OETF so the
+        // returned colour matches what a perceptually-correct mean of
+        // the source pixels would produce. Arithmetic averaging on the
+        // raw sRGB bytes would bias mid-tones upward (sRGB's ~2.4 gamma
+        // makes equal byte deltas non-uniform in photons).
+        Color avg;
+        if (count == 0)
+        {
+            avg = Color.FromArgb(0xFF, 0, 0, 0);
+        }
+        else
+        {
+            float avgR = (float)(sumRLin / count);
+            float avgG = (float)(sumGLin / count);
+            float avgB = (float)(sumBLin / count);
+            avg = Color.FromArgb(0xFF,
+                (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(avgR) * 255f), 0, 255),
+                (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(avgG) * 255f), 0, 255),
+                (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(avgB) * 255f), 0, 255));
+        }
 
         return new SampledFrame(avg, grid, _gridCols, _gridRows);
     }
@@ -275,7 +295,7 @@ public sealed class FrameSampler : IAsyncDisposable
     private void ReadGridBGRA8(
         in ScreenCaptureInterop.D3D11_MAPPED_SUBRESOURCE mapped,
         Color[] grid,
-        ref long sumR, ref long sumG, ref long sumB, ref int count)
+        ref double sumRLin, ref double sumGLin, ref double sumBLin, ref int count)
     {
         unsafe
         {
@@ -292,9 +312,9 @@ public sealed class FrameSampler : IAsyncDisposable
                     byte g = p[1];
                     byte r = p[2];
                     grid[row * _gridCols + col] = Color.FromArgb(0xFF, r, g, b);
-                    sumR += r;
-                    sumG += g;
-                    sumB += b;
+                    sumRLin += ColorSpace.SrgbToLinear8Lut[r];
+                    sumGLin += ColorSpace.SrgbToLinear8Lut[g];
+                    sumBLin += ColorSpace.SrgbToLinear8Lut[b];
                     count++;
                 }
             }
@@ -304,7 +324,7 @@ public sealed class FrameSampler : IAsyncDisposable
     private void ReadGridFP16(
         in ScreenCaptureInterop.D3D11_MAPPED_SUBRESOURCE mapped,
         Color[] grid,
-        ref long sumR, ref long sumG, ref long sumB, ref int count)
+        ref double sumRLin, ref double sumGLin, ref double sumBLin, ref int count)
     {
         // Tone-map runs against the rolling content peak captured by
         // the *previous* frame ; this frame's max feeds the rolling
@@ -333,11 +353,19 @@ public sealed class FrameSampler : IAsyncDisposable
                     if (g > framePeak) framePeak = g;
                     if (b > framePeak) framePeak = b;
 
+                    // Per-pixel Hable tone-map in linear scRGB, then
+                    // sRGB OETF for the per-cell display value. The
+                    // sum that feeds the grid-wide average goes back
+                    // through the LUT so it stays in linear light
+                    // (symmetric with ReadGridBGRA8 — the bias
+                    // introduced by re-encoding then re-linearising
+                    // is sub-perceptual after Hable has already
+                    // compressed the highlights).
                     Color c = ColorSpace.ScRgbToSrgb(r, g, b, toneMapPeak, exposureEv);
                     grid[row * _gridCols + col] = c;
-                    sumR += c.R;
-                    sumG += c.G;
-                    sumB += c.B;
+                    sumRLin += ColorSpace.SrgbToLinear8Lut[c.R];
+                    sumGLin += ColorSpace.SrgbToLinear8Lut[c.G];
+                    sumBLin += ColorSpace.SrgbToLinear8Lut[c.B];
                     count++;
                 }
             }

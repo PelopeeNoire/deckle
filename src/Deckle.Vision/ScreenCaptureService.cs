@@ -182,6 +182,24 @@ public sealed class ScreenCaptureService : IDisposable
 
                 _session = _pool.CreateCaptureSession(_item);
 
+                // Best-effort suppression of the yellow capture border
+                // Windows draws around the captured monitor. The setter
+                // is gated by the `graphicsCaptureWithoutBorder`
+                // capability, which can only be declared in an MSIX
+                // package manifest. On unpackaged desktop apps (our
+                // current shape — MSIX is explicitly deferred) the
+                // setter writes the property but the OS keeps drawing
+                // the border ; when Deckle is eventually packaged, the
+                // same code path will start hiding it. The try/catch
+                // covers older OS builds where the property doesn't
+                // exist (pre-Win10 21H1, build < 20348).
+                try { _session.IsBorderRequired = false; }
+                catch (Exception ex)
+                {
+                    _log.Verbose(LogSource.Screen,
+                        $"is_border_required setter failed (older OS ?) — {ex.GetType().Name}: {ex.Message}");
+                }
+
                 // Throttle the pump to ~15 Hz — Windows itself stops
                 // raising FrameArrived more than once per interval. The
                 // try/catch is paranoia in case the property is somehow

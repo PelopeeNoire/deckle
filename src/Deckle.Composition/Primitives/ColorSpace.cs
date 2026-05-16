@@ -63,6 +63,59 @@ public static class ColorSpace
             (byte)MathF.Round(Math.Clamp(LinearToSrgb(bLin), 0f, 1f) * 255f));
     }
 
+    // sRGB 8-bit → OKLCh — inverse of OklchToRgb. Same pipeline run
+    // backwards : sRGB byte → linear via the LUT → cone responses via
+    // the forward Björn Ottosson matrix → cube root → OKLab via the
+    // forward matrix → polar (C, h) in the a-b plane.
+    //
+    // Used by AmbientEngine.ApplySaturationBoost to scale chroma at
+    // constant L : HSV-S boosting drags yellows brighter and blues
+    // darker because HSV's V is not perceptually uniform (the same
+    // asymmetry that drove the conic stroke onto OKLCh — see the file
+    // header). OKLCh's L is, so chroma scaling preserves perceived
+    // lightness across the hue wheel.
+    //
+    // Hue is returned in turns ∈ [0, 1) to match OklchToRgb's
+    // convention. Atan2 wraps at the −x axis ; the if-branch lifts the
+    // negative half-turn back into [0, 1).
+    //
+    // Edge case : a perfectly grey input (r = g = b) yields a = b = 0,
+    // so C = 0 and h is degenerate. Atan2(0, 0) returns 0 in .NET, which
+    // gives h = 0 — caller is expected to treat C == 0 as "hue
+    // irrelevant" rather than read h.
+    public static (float L, float C, float h) RgbToOklch(byte r, byte g, byte b)
+    {
+        float rLin = SrgbToLinear8Lut[r];
+        float gLin = SrgbToLinear8Lut[g];
+        float bLin = SrgbToLinear8Lut[b];
+
+        // Linear sRGB → non-linear cone responses (forward, Björn
+        // Ottosson's matrix — inverse of the OklchToRgb step).
+        float lLin = 0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin;
+        float mLin = 0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin;
+        float sLin = 0.0883024619f * rLin + 0.2817188376f * gLin + 0.6299787005f * bLin;
+
+        // Cube root to recover the non-linear cone responses (inverse
+        // of the cube in OklchToRgb). Negative branches don't appear
+        // for in-gamut sRGB inputs but Cbrt handles them either way.
+        float l_ = MathF.Cbrt(lLin);
+        float m_ = MathF.Cbrt(mLin);
+        float s_ = MathF.Cbrt(sLin);
+
+        // Cone responses → OKLab (forward matrix).
+        float L    = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_;
+        float a    = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_;
+        float bLab = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_;
+
+        // OKLab → OKLCh (polar in the a-b plane).
+        float C = MathF.Sqrt(a * a + bLab * bLab);
+        float hRad = MathF.Atan2(bLab, a);
+        float h = hRad / MathF.Tau;
+        if (h < 0f) h += 1f;
+
+        return (L, C, h);
+    }
+
     // sRGB OETF (IEC 61966-2-1). Handles the linear toe for small
     // values so the curve stays continuous at the piecewise seam.
     // Negative inputs are mirrored through the curve — produces a
@@ -90,6 +143,23 @@ public static class ColorSpace
         return x <= 0.04045f
             ? x / 12.92f
             : MathF.Pow((x + 0.055f) / 1.055f, 2.4f);
+    }
+
+    // Byte-indexed precomputation of SrgbToLinear over [0, 255]. 1 KB
+    // resident, init once at type load. Consumed by every gamma-correct
+    // averaging site in the ambient pipeline — FrameSampler grids and
+    // AmbientEngine.SampleZone — where summing arithmetic sRGB bytes
+    // would otherwise bias mid-tones upward (sRGB encodes luminance via
+    // a ~2.4 gamma, so equal byte deltas don't represent equal photon
+    // deltas). One lookup replaces a Pow per pixel.
+    public static readonly float[] SrgbToLinear8Lut = InitSrgbToLinear8Lut();
+
+    private static float[] InitSrgbToLinear8Lut()
+    {
+        var lut = new float[256];
+        for (int i = 0; i < 256; i++)
+            lut[i] = SrgbToLinear(i / 255f);
+        return lut;
     }
 
     // scRGB FP16 → sRGB 8-bit, content-relative Hable filmic tone-map.

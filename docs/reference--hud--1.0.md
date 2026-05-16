@@ -225,3 +225,11 @@ else if (status.StartsWith("Réécriture") || status.StartsWith("Rewriting"))
 ```
 
 Le double prefix `Réécriture` / `Rewriting` est defensif : le sweep FR->EN sur `WhispEngine.cs:858` est differe jusqu'au merge de la branche logs en cours, le dispatcher reste robuste sur les deux chaines en attendant.
+
+## HDR highlights — reporté à V2
+
+L'idée de scintiller des highlights `> 1.0` scRGB sur la stroke conique chrono et les transitions notifications via le headroom HDR du display n'est pas réalisable sur la pile actuelle. `Microsoft.UI.Composition` Windows App SDK `1.8` ne supporte pas de swap chain HDR / scRGB FP16 natif, et ses brushes (`CompositionSolidColorBrush`, `CompositionLinearGradientBrush`, `CompositionSurfaceBrush`) clippent implicitement à `[0, 1]` sRGB. Confirmé par les issues GitHub [microsoft-ui-xaml#777](https://github.com/microsoft/microsoft-ui-xaml/issues/777) et [microsoft-ui-xaml#67](https://github.com/microsoft/microsoft-ui-xaml/issues/67), sans roadmap.
+
+Le seul workaround documenté est un `D3D11 SwapChainPanel` interopéré avec swap chain HDR10 ou scRGB FP16 alloué manuellement et rendering D3D direct — au prix de l'abandon des animations déclaratives Composition (Expression, ImplicitAnimations, Effects) sur la surface. Disproportionné pour le bénéfice perceptuel sur un overlay 320×64 secondaire.
+
+Re-éval triggers : Windows App SDK ajoute un support natif (backdrop HDR sur `Window`, brush Composition extended-range) ; OU un autre composant Deckle nécessite déjà un swap chain custom (viewport HDR debug Ambient, calibration tool) et la mutualisation devient rentable. Voir [architecture--color-science-pipeline--0.1.md](architecture--color-science-pipeline--0.1.md) axe 3 pour le détail.
