@@ -81,9 +81,10 @@ public sealed class AmbientEngine : IAsyncDisposable
     private static readonly LogService _log = LogService.Instance;
 
     // Push cadence — group mode. 15 Hz matches the screen capture
-    // cadence set on GraphicsCaptureSession.MinUpdateInterval. One
-    // frame in, one push out (modulo the early-exit). 15 Hz is well
-    // within the REST CLIP v1 sweet spot (10-20 Hz) for the Hue bridge.
+    // cadence throttled inside ScreenCaptureService (ThrottleIntervalMs
+    // = 66 ms). One frame in, one push out (modulo the early-exit).
+    // 15 Hz is well within the REST CLIP v1 sweet spot (10-20 Hz) for
+    // the Hue bridge.
     private const int GroupPushHz = 15;
 
     // Push cadence — multi-light mode. Each tick fans out N parallel
@@ -409,9 +410,10 @@ public sealed class AmbientEngine : IAsyncDisposable
                 _capture.PeakLuminance);
 
             // Subscribe sampler to the capture pump. FrameArrived fires
-            // on the FreeThreaded pool's worker thread ; FrameSampler
-            // .Process is thread-safe internally (lock + Volatile.Write
-            // on _latestSample).
+            // on the capture service's worker thread (the DXGI
+            // AcquireNextFrame loop) ; FrameSampler.Process is
+            // thread-safe internally (lock + Volatile.Write on
+            // _latestSample).
             _capture.FrameArrived += OnFrameArrived;
 
             await _output!.ConnectAsync(ct).ConfigureAwait(false);
@@ -487,7 +489,7 @@ public sealed class AmbientEngine : IAsyncDisposable
         }
     }
 
-    private void OnFrameArrived(global::Windows.Graphics.Capture.Direct3D11CaptureFrame frame)
+    private void OnFrameArrived(CapturedFrame frame)
     {
         _sampler?.Process(frame);
     }

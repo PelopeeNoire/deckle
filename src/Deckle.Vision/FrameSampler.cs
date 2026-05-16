@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Windows.Graphics;
-using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
 using Windows.UI;
@@ -12,9 +11,10 @@ namespace Deckle.Vision;
 // FrameSampler — GPU downsample + CPU readback for the ambient-lighting
 // pixel analysis path (J3 step 2).
 //
-// Per-frame flow (runs on the FreeThreaded frame pool's worker thread,
+// Per-frame flow (runs on the capture service's worker thread,
 // serialised via _lock) :
-//   1. QI the Direct3D11CaptureFrame.Surface to ID3D11Texture2D.
+//   1. Read CapturedFrame.TexturePtr — already an ID3D11Texture2D
+//      pointer, borrowed for the handler scope by the capture service.
 //   2. CopyResource into our intermediate texture (allocated at source
 //      resolution with mip levels enabled and MISC_GENERATE_MIPS).
 //   3. GenerateMips on the intermediate SRV — the GPU walks the
@@ -23,8 +23,9 @@ namespace Deckle.Vision;
 //      texture (CPU-readable, USAGE_STAGING + CPU_ACCESS_READ).
 //      Readback bus traffic ≈ 1 KB at 30×17×4 bytes (BGRA8) or
 //      ≈ 2 KB at 30×17×8 bytes (FP16). Sub-millisecond.
-//   5. Map the staging, iterate the ~510 pixels, compute the arithmetic
-//      RGB average + fill the per-cell Color[] grid.
+//   5. Map the staging, iterate the ~510 pixels, compute the
+//      gamma-correct RGB average (via SrgbToLinear8Lut) + fill the
+//      per-cell Color[] grid.
 //   6. If the source format is FP16 (HDR), tone-map scRGB → 8-bit sRGB
 //      via ColorSpace.ScRgbToSrgb against the display's reported
 //      peak luminance.
@@ -34,7 +35,6 @@ namespace Deckle.Vision;
 // What we don't do (out of scope J3 step 2) :
 //   - Black-border detection (J4).
 //   - Zone weighting / multi-region extraction (J4).
-//   - Linear-light averaging (gamma-correct mean — J4/J5).
 //   - Spring-damper smoothing (J5).
 //
 // Ownership :
@@ -170,15 +170,18 @@ public sealed class FrameSampler : IAsyncDisposable
             $"sampler init | grid={_gridCols}x{_gridRows} | mip={_targetMip} | tone_map={(_isHdr ? "scrgb_to_srgb" : "none")} | peak_lum={_peakLuminance:F0}");
     }
 
-    public void Process(Direct3D11CaptureFrame frame)
+    public void Process(CapturedFrame frame)
     {
         if (_disposed) return;
+        if (frame.TexturePtr == 0) return;
 
-        nint capturedTex = 0;
+        // The texture pointer is borrowed — the capture service owns
+        // it for the duration of this handler and Releases on return.
+        // We do not Marshal.Release it ourselves.
+        nint capturedTex = frame.TexturePtr;
+
         try
         {
-            capturedTex = ScreenCaptureInterop.GetD3D11Texture(frame.Surface);
-
             lock (_lock)
             {
                 if (_disposed) return;
@@ -240,10 +243,6 @@ public sealed class FrameSampler : IAsyncDisposable
         {
             _log.Warning(LogSource.Screen,
                 $"sampler process failed — {ex.GetType().Name}: {ex.Message}");
-        }
-        finally
-        {
-            if (capturedTex != 0) Marshal.Release(capturedTex);
         }
     }
 
