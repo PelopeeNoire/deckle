@@ -1239,7 +1239,7 @@
     <value>Log ambient capture activity</value>
   </data>
   <data name="LoggingAmbientCard.Description" xml:space="preserve">
-    <value>Emit the per-tick log lines from the ambient capture loop — colour pushes, periodic heartbeats. On by default ; turn off while playing to keep the LogWindow readable. Pipeline milestones (started, stopped), user actions (zone assignment, mode change, group selection) and bridge errors stay visible regardless.</value>
+    <value>Emit the per-tick Verbose log lines from the ambient capture pipeline — engine push lines, periodic heartbeats, Hue bridge calls, screen capture frame diagnostics. Off by default — the cadence from these three modules otherwise drowns the LogWindow during play. Turn on when investigating engine behaviour or calibrating tunables. Pipeline milestones (started, stopped), user actions (zone assignment, mode change, group selection) and any warning or error stay visible regardless of this toggle.</value>
   </data>
   <data name="DiagnosticsPageTelemetryHeaderLabel.Text" xml:space="preserve">
     <value>Telemetry</value>

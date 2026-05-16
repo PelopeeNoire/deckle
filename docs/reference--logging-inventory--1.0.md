@@ -16,11 +16,13 @@ Patch en cours (filename à bumper à `1.1` quand on consolide) :
 renforce la doctrine de séparation Verbose ↔ Info (les IDs et le
 format `k=v` sont Verbose-only, jamais dans Info / Success / Warning /
 Error) avec une table d'exemples ❌/✅, et documente le toggle **Log
-ambient capture activity** ajouté dans Diagnostics — gating au site
-d'émission dans la boucle `AmbientEngine.PushLoopAsync` plutôt qu'un
-filtre central, parce qu'un filtre `(level, source)` ne sait pas
-distinguer un Verbose miroir d'action utilisateur d'un Verbose
-per-tick de la boucle.
+ambient capture activity** ajouté dans Diagnostics. L'architecture
+retenue après itération : filtre central dans `TelemetryService.Log`
+avec dimension temporelle, `_captureActive` flag set/clear par
+`AmbientEngine` autour de sa boucle. Couvre les Verbose émis par
+HueBridgeClient et ScreenCaptureService aussi (modules consumed par
+l'engine), pas seulement par l'engine lui-même. Default OFF —
+quiet par défaut.
 Les décisions prises ici cadrent toute future étape mesurée — étendre un
 payload existant ou en ajouter un suit la procédure section "Quand on
 ajoute une étape mesurée" ci-dessous.
@@ -155,19 +157,39 @@ Lorsqu'une action mérite à la fois une signalisation sémantique pour l'utilis
 
 Le miroir Verbose **suit toujours** l'Info Capital quand il y a un détail technique à acter. Ce n'est pas optionnel — c'est le contrat qui rend les logs greppables.
 
-### Filtre runtime : capture activity (per-loop)
+### Filtre runtime : capture activity (per-loop window)
 
-Depuis le polish J4, la page Diagnostics expose une section **Logging** sœur de **Telemetry**, qui héberge un toggle par boucle runtime pour suspendre l'émission des lignes per-tick de cette boucle. Premier (et seul aujourd'hui) toggle : **Log ambient capture activity**, ON par défaut, qui gate les Verbose émis par `AmbientEngine.PushLoopAsync` (lignes `push | mode=… | rgb=…` et `heartbeat | …`). La lecture se fait **au site d'émission**, pas dans un filtre central : la boucle interroge `LoggingSettingsService.Instance.Current.LogAmbientCaptureActivity` à chaque tick et skip son `_log.Verbose` quand le flag est OFF.
+Depuis le polish J4, la page Diagnostics expose une section **Logging** sœur de **Telemetry**, qui héberge un toggle par boucle runtime pour suspendre l'émission de ses lignes per-tick. Premier (et seul aujourd'hui) toggle : **Log ambient capture activity**, OFF par défaut.
 
-Ce qui reste visible quel que soit l'état du toggle :
+Le filtre est centralisé dans `TelemetryService.Log` et joue sur trois dimensions :
 
-- Les milestones `Info AMBIENT Ambient pipeline started/stopped` et leurs miroirs Verbose `start | …` / `stop | …` (émis hors boucle).
-- Les actions utilisateur depuis le Playground ou AmbientPage (`zone assign`, `settings update`, `pipeline mode set to …`) et leurs miroirs Verbose — ces lignes ne sortent pas de la boucle.
-- Les `Warning` / `Error` de la boucle (push échec, loop crash) — ils sont inconditionnels par doctrine.
+```
+si  _captureActive
+    && level == LogLevel.Verbose
+    && source ∈ {AMBIENT, SCREEN, HUE}
+    && !LogAmbientCaptureActivity
+alors drop
+```
 
-**Pourquoi pas un filtre `(level, source)` centralisé.** Une première itération a tenté de filtrer `level == Verbose && source ∈ {AMBIENT, SCREEN, HUE}` dans `TelemetryService.Log`. Le problème doctrinal : un `Verbose` miroir d'une action utilisateur (e.g. zone assign déclenché pendant que la capture tourne) est structurellement identique à un `Verbose` push line émis par la boucle de capture — même source, même level, le filtre central ne peut pas les distinguer. La séparation propre est temporelle (« cette ligne sort-elle de la boucle qui tourne ? »), donc le filtre vit dans la boucle, pas dans le hub.
+`_captureActive` est un `volatile bool` sur `TelemetryService`, set par `AmbientEngine.StartAsync` juste avant de lancer la boucle push (donc après ses milestones Info + Verbose mirror), clear par `AmbientEngine.Stop` dès l'entrée (donc avant les milestones de stop). C'est cette dimension temporelle qui rend le filtre correct : un `Verbose AMBIENT` émis pendant que la boucle est idle (zone suggest au build, settings update au démarrage, etc.) passe parce que `_captureActive` est faux. Un `Verbose HUE push colour | …` émis pendant que la boucle tourne (depuis `HueBridgeClient.SetLightColorAsync`, appelé inside loop) est filtré.
 
-Ce pattern grandira avec les boucles suivantes (transcription Whisp, capture micro Audio…) : un toggle par boucle dans la même section Logging, même architecture self-gated au call site.
+Ce qui n'est jamais coupé par ce toggle :
+
+- Tout niveau ≥ Info — milestones, warnings, errors, narrative. Les `Info AMBIENT Ambient pipeline started / stopped` passent toujours, les `Warning AMBIENT Push failed` et `Error AMBIENT Push loop crashed` aussi.
+- Toute ligne émise hors window capture-active — par construction, le flag est faux à ces moments-là (group resolve, lights listing, sampler init, stop diagnostic mirror).
+- Toute Verbose émise depuis une source hors {AMBIENT, SCREEN, HUE} — le set est ciblé sur la pipeline ambient.
+
+Ce qui est gated quand toggle OFF :
+
+- `Verbose AMBIENT push | …` (per-tick), `Verbose AMBIENT heartbeat | …` — émis par `AmbientEngine.PushLoopAsync`.
+- `Verbose HUE push colour | light_id=… | rgb=… | …` — émis par `HueBridgeClient` à chaque PUT inside loop.
+- `Verbose SCREEN` runtime traces (frame ops, sampler diagnostics inside loop).
+
+**Pourquoi un filtre central plutôt qu'au site d'émission.** Une itération précédente avait posé le check `if (LoggingSettingsService.Instance.Current.LogAmbientCaptureActivity) _log.Verbose(...)` dans `AmbientEngine.PushLoopAsync`. Ça gate l'engine mais PAS les modules qu'il consomme (HueBridgeClient, ScreenCaptureService) — leurs lignes Verbose continuaient de sortir. Pour les couvrir, il faudrait répéter le check dans chaque module, ce qui couple les modules consumed à un toggle qui n'est pas leur affaire. Le filtre central laisse les modules naïfs et porte la dimension temporelle (`_captureActive`) une seule fois, sur le hub qui voit tout passer.
+
+**Pourquoi pas un filtre `(level, source)` central sans la dimension temporelle.** Une itération encore antérieure avait tenté ça. Le problème : un `Verbose AMBIENT zone assign | …` mirror d'action utilisateur est structurellement identique à un `Verbose AMBIENT push | …` per-tick. Sans dimension temporelle, le filtre ne peut pas les distinguer et silence les deux. Le flag temporel résout ça : un user action émis pendant que la boucle est idle (cas normal) passe ; émis pendant que la boucle tourne (cas rare), il est filtré, mais l'Info Capital miroir (« Zone Top assigned to Falcon ») le compense en restant visible dans Activity.
+
+Ce pattern grandira avec les boucles suivantes (transcription Whisp, capture micro Audio…) : un toggle par boucle, un flag `_<loop>Active` par boucle sur `TelemetryService`, le module set/clear son flag autour de son window, le filtre central étend son set de sources et son test booléen.
 
 ### Format par niveau — deux registres distincts
 

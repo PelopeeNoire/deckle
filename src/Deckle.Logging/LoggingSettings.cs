@@ -14,39 +14,51 @@ namespace Deckle.Logging;
 //                TelemetryService). Toggles answer "which slice of
 //                runtime activity should land in the LogWindow ?".
 //
-// Distinction from a hypothetical "Verbose × source" filter : the
-// dimension is **temporal scope**, not log level. The user wants to
-// silence the routine traffic of a runtime LOOP (push-per-tick,
-// heartbeat, frame stats) while keeping milestones and user actions
-// fully visible — even at Verbose level. A level-based filter cannot
-// distinguish "Verbose mirror of a user action" from "Verbose noise
-// of the push loop" because both share source + level. The toggle is
-// therefore consumed AT THE CALL SITE inside the runtime loop, not in
-// a central filter.
+// Filter shape : (capture-active window) × Verbose × source set.
+// The flag <see cref="TelemetryService.SetCaptureActive"/> delimits
+// the temporal window — only AmbientEngine sets it, only around its
+// push loop, and the central filter in TelemetryService.Log consults
+// it on every emission. A level-only filter cannot tell a Verbose
+// push line from a Verbose user-action mirror (same source, same
+// level), but the temporal scope can : a user action emitted before
+// the engine starts, after it stops, or during an idle session is
+// outside the window and passes through. A Verbose user action that
+// happens to land inside the window IS filtered, accepted trade-off
+// because the matching Info Capital sentence stays visible in
+// Activity (cf. Verbose/Info doctrine elsewhere in this section).
 //
 // Initial scope (J4 polish) : one toggle for the ambient capture
 // loop. The same shape will host Whisp transcription loop, Audio
 // capture loop, etc. as each becomes worth silencing on its own.
 public sealed class LoggingSettings
 {
-    /// <summary>When false, the high-frequency log lines emitted by
-    /// the <see cref="Deckle.Lighting.Ambient.AmbientEngine"/> push
-    /// loop (per-tick <c>push</c> lines, periodic <c>heartbeat</c>)
-    /// are suppressed AT THE CALL SITE — the engine reads this flag
-    /// before each emission and skips when off. The pipeline
-    /// milestones (<c>Ambient pipeline started/stopped</c>, their
-    /// Verbose <c>start | …</c> / <c>stop | …</c> diagnostic mirrors)
-    /// and every user action triggered from the Playground or
-    /// AmbientPage (zone assign, mode change, group selection) stay
-    /// visible regardless — those don't fire from the runtime loop.
-    /// Warnings and errors from the loop also pass through, since
-    /// they're emitted via <see cref="LogLevel.Warning"/> / Error
-    /// and are unconditional.
+    /// <summary>When false (the default), every Verbose-level log
+    /// emitted from <c>AMBIENT</c>, <c>SCREEN</c> or <c>HUE</c> while
+    /// the AmbientEngine capture loop is active is dropped at
+    /// <see cref="TelemetryService.Log"/>. The capture-active window
+    /// is delimited by <see cref="TelemetryService.SetCaptureActive"/>
+    /// which the engine flips on right before launching its push loop
+    /// and off as the very first step of <c>Stop</c> — so the
+    /// pipeline milestones (<c>Ambient pipeline started/stopped</c>)
+    /// and their Verbose diagnostic mirrors (<c>start | …</c> /
+    /// <c>stop | …</c>) sit outside the window and pass through.
     ///
-    /// Default <c>true</c> : the user explicitly called these logs
-    /// "very important" — they describe what the engine is actually
-    /// doing tick by tick and are the first thing to consult when
-    /// the rendered output looks wrong. Flip to false only while
-    /// playing, to keep the LogWindow readable.</summary>
-    public bool LogAmbientCaptureActivity { get; set; } = true;
+    /// Anything emitted before the loop starts (group resolution,
+    /// lights listing, sampler init, zone suggestions) or after it
+    /// stops (final stop mirror) is also outside the window and
+    /// unaffected. Non-Verbose levels (Info / Success / Warning /
+    /// Error / Narrative) pass through unconditionally — milestones
+    /// and faults always reach the LogWindow regardless of the
+    /// toggle. User actions from the Playground (zone assign Verbose
+    /// mirror, settings update Verbose mirror) emitted while the
+    /// engine happens to be running ARE filtered ; the matching Info
+    /// Capital sentence still reaches Activity, so the user sees
+    /// what they did either way.
+    ///
+    /// Default <c>false</c> : the ambient pipeline emits a steady
+    /// cadence of per-tick traffic from three modules (engine, screen
+    /// capture, Hue REST client) that drowns out everything else
+    /// during play. Flip to <c>true</c> only when investigating
+    /// engine behaviour or calibrating a new tunable.</summary>
+    public bool LogAmbientCaptureActivity { get; set; } = false;
 }

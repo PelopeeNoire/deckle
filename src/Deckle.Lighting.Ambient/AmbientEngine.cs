@@ -262,6 +262,16 @@ public sealed class AmbientEngine : IAsyncDisposable
         _droppedCount = 0;
         _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
         _lastR = _lastG = _lastB = -1;
+
+        // Open the capture-active window AFTER the started milestones
+        // (Info + Verbose mirror above) have flushed, so they pass the
+        // central filter even with LogAmbientCaptureActivity off. From
+        // here on, Verbose AMBIENT / SCREEN / HUE inside the loop are
+        // candidates for filtering — see TelemetryService.Log. The
+        // window closes at the very top of Stop() so the matching stop
+        // milestones also pass.
+        TelemetryService.Instance.SetCaptureActive(true);
+
         _pushLoopTask = Task.Run(() => PushLoopAsync(_cts.Token), _cts.Token);
 
         IsRunning = true;
@@ -275,6 +285,14 @@ public sealed class AmbientEngine : IAsyncDisposable
     public void Stop()
     {
         if (!IsRunning) return;
+
+        // Close the capture-active window FIRST so the stopped
+        // milestones (Info + Verbose mirror below) pass the central
+        // filter even with LogAmbientCaptureActivity off. The push
+        // loop may still emit a final tick before cancellation
+        // propagates ; those late Verbose lines also pass since the
+        // flag is already off.
+        TelemetryService.Instance.SetCaptureActive(false);
 
         long endTimestamp = Stopwatch.GetTimestamp();
         double durationSec = (endTimestamp - _startTimestamp) / (double)Stopwatch.Frequency;
@@ -365,16 +383,12 @@ public sealed class AmbientEngine : IAsyncDisposable
             _lastR = targetR; _lastG = targetG; _lastB = targetB;
             _pushedCount++;
             _hbPushed++;
-            // Per-tick Verbose : gated by the user toggle. Cf.
-            // LoggingSettings.LogAmbientCaptureActivity rationale —
-            // these lines fire many times per second during active
-            // play and the user wants to silence them locally without
-            // losing the milestones or user actions.
-            if (ShouldLogCaptureActivity())
-            {
-                _log.Verbose(LogSource.Ambient,
-                    $"push | mode=group | rgb={targetR},{targetG},{targetB} | off={isDark}");
-            }
+            // Verbose gating is centralised in TelemetryService :
+            // since the capture-active flag is on at this point and
+            // source=AMBIENT, this line is dropped automatically when
+            // the user toggle is off. No call-site check needed.
+            _log.Verbose(LogSource.Ambient,
+                $"push | mode=group | rgb={targetR},{targetG},{targetB} | off={isDark}");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -492,12 +506,9 @@ public sealed class AmbientEngine : IAsyncDisposable
             await multi.SetLightColorsAsync(toPush, ct).ConfigureAwait(false);
             _pushedCount++;
             _hbPushed++;
-            // Per-tick Verbose : gated. Same rationale as group mode.
-            if (ShouldLogCaptureActivity())
-            {
-                _log.Verbose(LogSource.Ambient,
-                    $"push | mode=multi | lights={toPush.Count}/{_multiLights.Count} | colors={FormatPushedColors(toPush)}");
-            }
+            // Verbose gating is centralised in TelemetryService.
+            _log.Verbose(LogSource.Ambient,
+                $"push | mode=multi | lights={toPush.Count}/{_multiLights.Count} | colors={FormatPushedColors(toPush)}");
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -529,34 +540,16 @@ public sealed class AmbientEngine : IAsyncDisposable
         double elapsedMs = (now - _hbTimestamp) * 1000.0 / Stopwatch.Frequency;
         if (elapsedMs < HeartbeatIntervalMs) return;
 
-        // Gated like the push lines : heartbeat is per-loop chatter,
-        // belongs to the same family the user wants to silence while
-        // playing. Counters are reset either way so the next heartbeat
-        // window starts from zero — the metric stays correct when the
-        // toggle is flipped back on mid-session.
-        if (ShouldLogCaptureActivity())
-        {
-            _log.Verbose(LogSource.Ambient,
-                $"heartbeat | mode={(_multiLightActive ? "multi" : "group")} | period_sec={elapsedMs / 1000.0:F1} | ticks={_hbTicks} | pushed={_hbPushed} | dropped={_hbDropped}{(_multiLightActive ? $" | unmapped_lights={_hbUnmappedLights}" : "")}");
-        }
+        // Per-tick Verbose : centrally gated by the capture-active
+        // window + user toggle in TelemetryService. Counters are
+        // reset whether the line was emitted or not, so the next
+        // heartbeat window starts from zero — the metric stays
+        // correct when the toggle flips mid-session.
+        _log.Verbose(LogSource.Ambient,
+            $"heartbeat | mode={(_multiLightActive ? "multi" : "group")} | period_sec={elapsedMs / 1000.0:F1} | ticks={_hbTicks} | pushed={_hbPushed} | dropped={_hbDropped}{(_multiLightActive ? $" | unmapped_lights={_hbUnmappedLights}" : "")}");
 
         _hbTimestamp = now;
         _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
-    }
-
-    // Reads the user-controlled per-loop logging toggle. Called from
-    // each per-tick Verbose emission inside the push loop, never from
-    // the milestone Info lines (those are always visible). Reading the
-    // settings store on every tick costs essentially nothing — it's an
-    // in-memory snapshot — and lets the toggle take effect on the next
-    // tick when the user flips it from the Diagnostics page mid-
-    // session. Try/catch with a true fallback so a settings I/O glitch
-    // can't accidentally silence the engine — the doctrine fallback
-    // here is "keep emitting", consistent with the POCO default.
-    private static bool ShouldLogCaptureActivity()
-    {
-        try { return LoggingSettingsService.Instance.Current.LogAmbientCaptureActivity; }
-        catch { return true; }
     }
 
     // Averages all cells whose centre falls inside the matching border

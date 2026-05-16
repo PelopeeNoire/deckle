@@ -23,19 +23,22 @@ public partial class DiagnosticsViewModel : ObservableObject
 
     // ── Logging — runtime emission filters ──────────────────────────────────
 
-    // Per-loop logging toggle for the ambient capture activity. The
-    // flag gates the high-frequency Verbose lines emitted from inside
-    // AmbientEngine.PushLoopAsync (per-tick push, periodic heartbeat).
-    // Pipeline milestones (started / stopped), user actions from the
-    // Playground (zone assign, mode change), and bridge errors are
-    // emitted outside the loop and therefore not affected by this
-    // toggle. Default true — the user explicitly called these logs
-    // "very important" ; flip to false only while playing to keep the
-    // LogWindow readable. The section will grow with sibling per-loop
-    // toggles for Whisp / Audio / Llm as each captures a runtime loop
-    // worth silencing. Wired through LoggingSettingsService —
-    // separate store from TelemetrySettings so flipping it leaves the
-    // disk-persistence opt-ins untouched.
+    // Capture-window logging toggle for the ambient pipeline. The
+    // central filter in TelemetryService.Log drops every Verbose
+    // event from AMBIENT / SCREEN / HUE sources emitted while
+    // AmbientEngine has its capture-active flag on. AmbientEngine
+    // sets the flag right before launching its push loop (after the
+    // started milestones) and clears it at the very top of Stop
+    // (before the stopped milestones) — so the bracketing milestones
+    // and any user action emitted outside that window pass through.
+    // Non-Verbose levels also pass unconditionally. Default false —
+    // the routine cadence from three modules drowns out everything
+    // else during play, so the user starts quiet and opts in when
+    // investigating. The section will grow with sibling per-loop
+    // toggles for Whisp / Audio / Llm as each captures a runtime
+    // loop worth silencing. Wired through LoggingSettingsService —
+    // separate store from TelemetrySettings so flipping it leaves
+    // the disk-persistence opt-ins untouched.
     [ObservableProperty]
     public partial bool LogAmbientCaptureActivity { get; set; }
 
@@ -131,15 +134,16 @@ public partial class DiagnosticsViewModel : ObservableObject
         // Guard BEFORE any property assignment — same reason as GeneralViewModel.
         _isSyncing = true;
 
-        // Logging defaults are "open" by family : every per-loop
-        // toggle starts ON because the user explicitly considers
-        // those logs important — they tell you what each runtime
-        // loop is actually doing. Flipping a family OFF is a focused
-        // act ("I'm playing right now and the ambient cadence is too
-        // chatty"). Telemetry defaults are "closed" for the opposite
-        // reason — disk-persistence streams stay off until the user
-        // explicitly opts in to where their data lands.
-        LogAmbientCaptureActivity = true;
+        // Logging defaults are "closed" by family : every per-loop
+        // capture toggle starts OFF because the routine cadence
+        // drowns out everything else. Non-Verbose levels and
+        // out-of-loop emissions are unaffected, so milestones,
+        // errors, and user actions stay visible — only the per-tick
+        // noise is suppressed. Telemetry defaults are also "closed"
+        // but for a different reason : disk-persistence streams stay
+        // off until the user explicitly opts in to where their data
+        // lands.
+        LogAmbientCaptureActivity = false;
         ApplicationLogToDisk = false;
         MicrophoneTelemetry = false;
         TelemetryLatencyEnabled = false;
@@ -198,7 +202,7 @@ public partial class DiagnosticsViewModel : ObservableObject
         _isSyncing = true;
         try
         {
-            LogAmbientCaptureActivity = true;
+            LogAmbientCaptureActivity = false;
         }
         finally { _isSyncing = false; }
         PushLoggingToSettings();
