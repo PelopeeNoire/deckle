@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Numerics;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
@@ -199,6 +200,42 @@ public sealed partial class PlaygroundWindow : Window
     private DispatcherTimer? _previewTimer;
     private Microsoft.UI.Xaml.Shapes.Rectangle[]? _previewCells;
 
+    // ── Ambient lighting — light zones (J4) ─────────────────────────
+    //
+    // _placementLights is the cached list of fixtures returned by the
+    // connected IMultiLightOutput, populated when a Hue group is
+    // selected (after ConnectAsync) and reset when the group changes.
+    //
+    // The per-light zone picker is a DropDownButton + MenuFlyout in
+    // the LightZonesPanel rows. We don't keep a back-reference to the
+    // buttons : selections flow through the menu item Click handler
+    // which carries everything it needs in its Tag (ZoneMenuTag), and
+    // a teardown is just LightZonesPanel.Children.Clear() — the GC
+    // collects the orphaned visual subtree, lambdas captured by menu
+    // items go with it.
+    //
+    // PreviewCellSize is the native dip size of one downsampled cell
+    // in the preview grid. The whole stage (preview grid + zone
+    // overlay) lives in a coordinate space sized at GridCols × CellSize
+    // by GridRows × CellSize ; the Viewbox above it scales the whole
+    // composition uniformly to fill the available area.
+    private const double PreviewCellSize = 16;
+    private List<LightDescriptor>? _placementLights;
+
+    // Zone suggestion derived from a Hue entertainment area's positions.
+    // Computed once per group selection in ResolveLightsAndBuildPlacementAsync
+    // and read by BuildLightZonesUi to pre-fill ComboBoxes for lights
+    // the user hasn't explicitly mapped yet. Null = no matching
+    // entertainment area was found (or fetching failed) and the
+    // ComboBoxes start on "None".
+    private Dictionary<string, LightZone>? _suggestedZones;
+
+    // Total UX duration of an Identify flash. The bridge would
+    // happily run alert=lselect for 15 s ; we cap it at 3 s so the
+    // user spots the lamp without sitting through a strobe, then we
+    // send alert=none to cut the flash short.
+    private static readonly TimeSpan IdentifyFlashDuration = TimeSpan.FromSeconds(3);
+
     public PlaygroundWindow()
     {
         InitializeComponent();
@@ -221,20 +258,23 @@ public sealed partial class PlaygroundWindow : Window
         // breathing room for the tuning expanders to sit comfortably wide
         // out of the box. Min 1520×600 is still a usable surface, just
         // tight ; first-launch size aims for the comfortable end.
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1800, 900));
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1800, 1440));
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min width 1520: NavView pane in Left mode is ~320 dip (default
-        // OpenPaneLength), HUD page itself wants 1200 dip min (preview
-        // column 720 + tuning column 480). Below 1520 the tuning
-        // slider/NumberBox composite loses readable space or the pane
-        // collapses to LeftCompact unexpectedly. Min height bumped to 600
-        // so the AmbientPage placeholder + capture card fit without
-        // scrolling at the smallest size.
-        presenter.PreferredMinimumWidth  = 1520;
+        // Min width 1280: NavView is now LeftCompact (48 dip strip) with
+        // the pane closed by default, so the playground content gets
+        // ~1230 dip to work with at minimum. HUD page wants 1200 dip
+        // (preview 720 + tuning 480), Ambient page wants 480 + 380 + 12
+        // gap ≈ 875 dip — both comfortable below 1280. Previous 1520
+        // cap was sized for the auto-expanded pane that we no longer
+        // surface at startup. Windows DPI scaling carries the rest :
+        // the dip-based layout adapts to the user's effective scale,
+        // so a 13" laptop @ 1920×1080 @ 150 % effective renders this
+        // window at 1280×600 dip without overflow.
+        presenter.PreferredMinimumWidth  = 1280;
         presenter.PreferredMinimumHeight = 600;
         AppWindow.SetPresenter(presenter);
 
@@ -281,17 +321,56 @@ public sealed partial class PlaygroundWindow : Window
                 // any. Skips the link-button dance when the user has
                 // already paired in a previous session.
                 RestoreHueFromSettings();
+
+                // Mirror the persisted UseMultiLight value into the
+                // RadioButtons. SelectedIndex 0 = group, 1 = per-zone.
+                // The SelectionChanged handler guards against feedback
+                // loops by comparing settings before writing back.
+                PipelineModeRadios.SelectedIndex =
+                    AmbientSettingsService.Instance.Current.UseMultiLight ? 1 : 0;
             };
         }
 
-        // Tap on empty background → move focus to RootGrid, which dismisses
-        // the caret from a NumberBox the user just edited. Focused input
-        // controls in WinUI 3 keep focus on background clicks unless some
-        // other element claims it — same UX wart as Settings windows if
-        // left unhandled. Tapped bubbles up only when no child control
-        // marks it Handled, so clicks that land on a Slider / NumberBox /
-        // Expander header don't trigger dismissal.
-        RootGrid.Tapped += (_, _) => RootGrid.Focus(FocusState.Pointer);
+        // Tooltip override : the previous attempt ran from root.Loaded
+        // which fires before the NavigationView has materialised its
+        // template parts, so FindVisualDescendantByName("TogglePaneButton")
+        // returned null and the FR tooltip stayed. Hooking on the
+        // NavView's own Loaded gets us closer, and the DispatcherQueue
+        // Low-priority enqueue lets the template generator finish
+        // before we walk the tree. Belt and braces : we also re-attempt
+        // on PaneOpened in case the toggle button only appears after
+        // the user expands the pane manually.
+        PlaygroundNav.Loaded += (_, _) =>
+        {
+            DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation"));
+        };
+        PlaygroundNav.PaneOpened += (_, _) =>
+            OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
+        PlaygroundNav.PaneClosed += (_, _) =>
+            OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
+
+        // Tap on empty background → move focus to RootGrid, which
+        // dismisses the caret from a NumberBox the user just edited.
+        // CRITICAL : filter on OriginalSource. Tapped is a routed event
+        // and WinUI 3's ButtonBase derivatives (Button, DropDownButton,
+        // ToggleButton, ComboBox, NumberBox spin buttons …) do NOT mark
+        // it Handled when they fire Click. Without this guard, every
+        // click on a button or dropdown bubbles here, RootGrid steals
+        // focus mid-action, and the flyout / dropdown loses its anchor
+        // before the click is fully processed. Symptom : "the
+        // DropDownButton doesn't open on the first click", "the
+        // ComboBox needs 3-4 clicks to select" — the actual cause of
+        // the bug we've been chasing for two passes. By scoping
+        // dismissal to clicks that land on the RootGrid itself
+        // (transparent empty area), the focus shift only happens for
+        // genuine background taps.
+        RootGrid.Tapped += (_, e) =>
+        {
+            if (ReferenceEquals(e.OriginalSource, RootGrid))
+                RootGrid.Focus(FocusState.Pointer);
+        };
 
         this.Closed += (_, _) =>
         {
@@ -1764,6 +1843,16 @@ public sealed partial class PlaygroundWindow : Window
             _hueLightOutput = null;
         }
 
+        // Tear down zone assignments UI + state carried over from the
+        // previous group — light ids belong to a different fixture set
+        // and the user shouldn't see stale entries on the new group.
+        // ResolveLightsAndBuildPlacementAsync will repopulate _placementLights
+        // / _suggestedZones from the new group's data before
+        // BuildLightZonesUi reads them.
+        _placementLights = null;
+        _suggestedZones  = null;
+        ClearLightZonesUi();
+
         if (HueGroupComboBox.SelectedItem is not ComboBoxItem { Tag: HueGroup group })
         {
             SetHueColorButtonsEnabled(false);
@@ -1783,6 +1872,15 @@ public sealed partial class PlaygroundWindow : Window
             // and read back at Playground open).
             AmbientSettingsService.Instance.Current.HueLastGroupId = group.Id;
             AmbientSettingsService.Instance.Save();
+
+            // Resolve the individual lights inside the group so the user
+            // can place them on the preview. Best-effort — a failure
+            // here doesn't break the group-mode pipeline, it just means
+            // the per-light placement UI stays empty. We pass the
+            // HueGroup along because the fallback (when /groups/{id}
+            // returns no lights) needs the group's display name to
+            // match against the v2 entertainment_configuration set.
+            await ResolveLightsAndBuildPlacementAsync(group).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -1932,6 +2030,11 @@ public sealed partial class PlaygroundWindow : Window
                 _pipelineStartedCapture = false;
             }
 
+            // Re-enable the Pipeline mode selector now that the engine
+            // is down — the user can switch shape and the next Start
+            // will pick up the new value.
+            PipelineModeRadios.IsEnabled = true;
+
             SetPipelineReady();
             return;
         }
@@ -1974,12 +2077,30 @@ public sealed partial class PlaygroundWindow : Window
             BuildPreviewGrid(_frameSampler.GridCols, _frameSampler.GridRows);
             StartPreviewTimer();
 
-            _ambientEngine = new AmbientEngine(_screenCapture, _hueLightOutput, _frameSampler);
+            // Lock the Pipeline mode selector while the engine is up :
+            // the engine reads UseMultiLight at StartAsync and doesn't
+            // hot-reload, so changing it mid-run would silently desync
+            // the radios from the actual pipeline shape.
+            PipelineModeRadios.IsEnabled = false;
+
+            // Pass the live AmbientSettings dictionaries by reference
+            // (cast to IReadOnlyDictionary) — the engine observes UI-
+            // driven changes (zone combo, brightness slider) without
+            // a restart.
+            var ambient = AmbientSettingsService.Instance.Current;
+            _ambientEngine = new AmbientEngine(
+                _screenCapture, _hueLightOutput, _frameSampler,
+                zoneAssignments: ambient.LightZones,
+                lightBrightness: ambient.LightBrightness,
+                useMultiLight: ambient.UseMultiLight);
             await _ambientEngine.StartAsync().ConfigureAwait(true);
 
             PipelineToggleIcon.Glyph = ScreenCaptureGlyphStop;
             PipelineToggleLabel.Text = "Stop pipeline";
-            PipelineStatusText.Text  = $"Running (analysis, {_frameSampler.GridCols}×{_frameSampler.GridRows}{(_frameSampler.IsHdr ? ", HDR" : "")})";
+            string shapeLabel = _ambientEngine.IsMultiLightActive
+                ? $"multi-light ×{_ambientEngine.MultiLights?.Count ?? 0}"
+                : "group";
+            PipelineStatusText.Text = $"Running ({shapeLabel}, {_frameSampler.GridCols}×{_frameSampler.GridRows}{(_frameSampler.IsHdr ? ", HDR" : "")})";
             PipelineStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
         }
         catch (Exception ex)
@@ -2007,6 +2128,8 @@ public sealed partial class PlaygroundWindow : Window
                 try { StopScreenCaptureIfRunning(); } catch { /* best effort */ }
                 _pipelineStartedCapture = false;
             }
+            // Re-enable the selector so the user can switch and retry.
+            PipelineModeRadios.IsEnabled = true;
         }
         finally
         {
@@ -2036,13 +2159,12 @@ public sealed partial class PlaygroundWindow : Window
         AmbientPreviewGrid.ColumnDefinitions.Clear();
         AmbientPreviewGrid.Children.Clear();
 
-        const double CellSize = 16;
         const double Gap = 1;
 
         for (int c = 0; c < cols; c++)
-            AmbientPreviewGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(CellSize) });
+            AmbientPreviewGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(PreviewCellSize) });
         for (int r = 0; r < rows; r++)
-            AmbientPreviewGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellSize) });
+            AmbientPreviewGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(PreviewCellSize) });
 
         _previewCells = new Microsoft.UI.Xaml.Shapes.Rectangle[cols * rows];
 
@@ -2068,8 +2190,20 @@ public sealed partial class PlaygroundWindow : Window
             }
         }
 
-        AmbientPreviewEmptyState.Visibility = Visibility.Collapsed;
-        AmbientPreviewGrid.Visibility       = Visibility.Visible;
+        // The Viewbox above scales the whole stage uniformly, so we
+        // size the stage to the grid's natural dip footprint here.
+        // Zone overlay rectangles get re-laid out so they keep
+        // tracking the right border bands when the sampler reports
+        // new grid dimensions.
+        double stageWidth  = cols * PreviewCellSize;
+        double stageHeight = rows * PreviewCellSize;
+        AmbientPreviewStage.Width  = stageWidth;
+        AmbientPreviewStage.Height = stageHeight;
+        LightZonesOverlay.Width    = stageWidth;
+        LightZonesOverlay.Height   = stageHeight;
+        LayoutLightZoneRects(stageWidth, stageHeight);
+
+        UpdatePreviewViewboxVisibility();
     }
 
     private void StartPreviewTimer()
@@ -2091,9 +2225,26 @@ public sealed partial class PlaygroundWindow : Window
             AmbientPreviewGrid.RowDefinitions.Clear();
             AmbientPreviewGrid.ColumnDefinitions.Clear();
             _previewCells = null;
-            AmbientPreviewGrid.Visibility       = Visibility.Collapsed;
-            AmbientPreviewEmptyState.Visibility = Visibility.Visible;
         }
+        // Keep the Viewbox visible if light markers are still around —
+        // the user may want to keep placing while the pipeline is
+        // stopped. UpdatePreviewViewboxVisibility flips to the empty
+        // state only when nothing's left to show.
+        UpdatePreviewViewboxVisibility();
+    }
+
+    // Centralised visibility flip for the preview stage. The Viewbox
+    // is shown whenever there's content to display — either an active
+    // preview grid (pipeline running) or resolved lights with their
+    // zone overlay (a group is selected on a multi-light-capable
+    // driver). Otherwise the empty-state stack panel takes over.
+    private void UpdatePreviewViewboxVisibility()
+    {
+        bool hasCells = _previewCells is not null;
+        bool hasZones = _placementLights is { Count: > 0 };
+        bool show     = hasCells || hasZones;
+        AmbientPreviewViewbox.Visibility    = show ? Visibility.Visible : Visibility.Collapsed;
+        AmbientPreviewEmptyState.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnPreviewTimerTick(object? sender, object e)
@@ -2115,6 +2266,601 @@ public sealed partial class PlaygroundWindow : Window
                 brush.Color = c;
             }
         }
+    }
+
+    // ── Light zones (J4) ────────────────────────────────────────────────
+    //
+    // Lights → zone-assignment wiring. Called from
+    // OnHueGroupSelectionChanged after a successful ConnectAsync : the
+    // connected output is queried for its fixture list, one ComboBox-
+    // bearing row is appended to LightZonesPanel per light, and the
+    // four border-zone rectangles in LightZonesOverlay are sized to
+    // match AmbientEngine.BorderDepth × stage dims.
+
+    // Display label for each LightZone enum value, in the order they
+    // appear in the ComboBox. Kept in code-behind so the rest of the
+    // module stays free of XAML strings (no x:Uid involvement yet —
+    // the surface is dev-only Playground in V0, localisation lands in
+    // a later milestone).
+    // Zone options exposed by every per-light DropDownButton +
+    // MenuFlyout pair in the Light zones card. The set is static :
+    // five values, fixed shape, never changes at runtime. Used by
+    // BuildLightZonesUi to populate each menu and by LabelForZone to
+    // resolve the button caption for the current selection. We tried
+    // ComboBox first — both with Items.Add and with ItemsSource — and
+    // both surfaced a "first click doesn't open / select" bug that
+    // tracks back to WinUI 3 ComboBox popup measure/focus quirks in
+    // code-behind construction. DropDownButton + RadioMenuFlyoutItem
+    // is deterministic : Click opens the flyout, item Click selects,
+    // no popup measure dependency on the first interaction.
+    private sealed record ZoneOption(LightZone Zone, string Label);
+
+    private static readonly ZoneOption[] _zoneOptions =
+    [
+        new ZoneOption(LightZone.None,   "None"),
+        new ZoneOption(LightZone.Top,    "Top"),
+        new ZoneOption(LightZone.Bottom, "Bottom"),
+        new ZoneOption(LightZone.Left,   "Left"),
+        new ZoneOption(LightZone.Right,  "Right"),
+    ];
+
+    private async Task ResolveLightsAndBuildPlacementAsync(HueGroup group)
+    {
+        // Group-mode-only drivers don't expose IMultiLightOutput ; we
+        // just leave the zones UI empty (the pipeline still works in
+        // group mode).
+        if (_hueLightOutput is not IMultiLightOutput multi)
+        {
+            _placementLights = null;
+            _suggestedZones  = null;
+            ClearLightZonesUi();
+            return;
+        }
+
+        List<LightDescriptor> lights;
+        try
+        {
+            var resolved = await multi.ListLightsAsync().ConfigureAwait(true);
+            lights = new List<LightDescriptor>(resolved);
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Listing lights failed — {ex.GetType().Name}: {ex.Message}");
+            _placementLights = null;
+            BuildLightZonesUi(); // Show card with empty state.
+            return;
+        }
+
+        LogService.Instance.Verbose(LogSource.Ambient,
+            $"resolve lights | group_id={group.Id} | group_name={group.Name} | from_group={lights.Count}");
+
+        // Always try to resolve a matching entertainment area, even
+        // when /groups returned lights — its placements drive the zone
+        // suggestions. When /groups returned nothing AND the area
+        // knows about lights, the area also becomes the fallback
+        // lights source (typical for pure Entertainment groups whose
+        // fixtures live only on the v2 surface).
+        var matchedArea = await FindMatchingEntertainmentAreaAsync(group, lights).ConfigureAwait(true);
+
+        if (lights.Count == 0 && matchedArea is { LightPlacements.Count: > 0 })
+        {
+            LogService.Instance.Info(LogSource.Hue,
+                $"Using entertainment area '{matchedArea.Name}' as the lights source ({matchedArea.LightPlacements.Count} lights)");
+            foreach (var p in matchedArea.LightPlacements)
+            {
+                lights.Add(new LightDescriptor(p.LightId, p.Name, IsReachable: true));
+            }
+        }
+
+        _suggestedZones = matchedArea is not null
+            ? BuildSuggestionsFromArea(matchedArea, lights)
+            : null;
+
+        _placementLights = lights;
+        BuildLightZonesUi();
+    }
+
+    // Picks the entertainment area on the bridge that best matches the
+    // selected group. Preference order :
+    //   1. Exact case-insensitive name match (the Hue mobile app
+    //      typically names the v1 group and its v2 area the same).
+    //   2. Greatest overlap of light ids — fallback when names diverge
+    //      (e.g. the user renamed one of the two).
+    // Returns null when no entertainment areas exist on the bridge or
+    // none can be associated with the selected group.
+    private async Task<HueEntertainmentArea?> FindMatchingEntertainmentAreaAsync(
+        HueGroup group, IReadOnlyList<LightDescriptor> lights)
+    {
+        if (_hueBridge is not { IsPaired: true }) return null;
+
+        IReadOnlyList<HueEntertainmentArea> areas;
+        try
+        {
+            areas = await _hueBridge.ListEntertainmentConfigurationsAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Verbose(LogSource.Hue,
+                $"List entertainment configs failed — {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+
+        if (areas.Count == 0)
+        {
+            LogService.Instance.Verbose(LogSource.Ambient,
+                "match ent area | result=no_areas");
+            return null;
+        }
+
+        // 1. Name match (case-insensitive).
+        foreach (var a in areas)
+        {
+            if (string.Equals(a.Name, group.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                LogService.Instance.Verbose(LogSource.Ambient,
+                    $"match ent area | result=name | ent_id={a.Id} | name={a.Name}");
+                return a;
+            }
+        }
+
+        // 2. Light-id overlap. Skip when /groups returned nothing —
+        // overlap is necessarily 0 in that case.
+        if (lights.Count > 0)
+        {
+            var idSet = new HashSet<string>(lights.Count);
+            foreach (var l in lights) idSet.Add(l.Id);
+            HueEntertainmentArea? best = null;
+            int bestOverlap = 0;
+            foreach (var a in areas)
+            {
+                int overlap = 0;
+                foreach (var p in a.LightPlacements)
+                    if (idSet.Contains(p.LightId)) overlap++;
+                if (overlap > bestOverlap) { best = a; bestOverlap = overlap; }
+            }
+            if (best is not null)
+            {
+                LogService.Instance.Verbose(LogSource.Ambient,
+                    $"match ent area | result=overlap | ent_id={best.Id} | name={best.Name} | overlap={bestOverlap}");
+                return best;
+            }
+        }
+
+        LogService.Instance.Verbose(LogSource.Ambient,
+            "match ent area | result=no_match");
+        return null;
+    }
+
+    private Dictionary<string, LightZone> BuildSuggestionsFromArea(
+        HueEntertainmentArea area, IReadOnlyList<LightDescriptor> lights)
+    {
+        var lightIdSet = new HashSet<string>(lights.Count);
+        foreach (var l in lights) lightIdSet.Add(l.Id);
+
+        var suggestions = new Dictionary<string, LightZone>();
+        foreach (var p in area.LightPlacements)
+        {
+            if (!lightIdSet.Contains(p.LightId)) continue;
+            var zone = LightZoneSuggester.Suggest(p);
+            suggestions[p.LightId] = zone;
+            LogService.Instance.Verbose(LogSource.Ambient,
+                $"zone suggest | id={p.LightId} | zone={zone} | from=ent_config | ent_name={area.Name} | xyz={p.X:F2},{p.Y:F2},{p.Z:F2}");
+        }
+        return suggestions;
+    }
+
+    private void BuildLightZonesUi()
+    {
+        ClearLightZonesUi();
+
+        // Show the card the moment a group has been selected even if
+        // the lights resolution came back empty — the empty state is
+        // valuable feedback ("we see the group, it has no addressable
+        // lights"). Hiding the card entirely looked like a silent
+        // failure in earlier iterations.
+        LightZonesCard.Visibility = Visibility.Visible;
+
+        // Stage dims may not be set yet if no pipeline run has
+        // happened ; fall back to the typical 30×17 footprint so the
+        // overlay rectangles have somewhere to land in the meantime.
+        // BuildPreviewGrid will overwrite the dims + call
+        // LayoutLightZoneRects on the first pipeline start.
+        double stageWidth  = AmbientPreviewStage.Width  > 0 ? AmbientPreviewStage.Width  : 30 * PreviewCellSize;
+        double stageHeight = AmbientPreviewStage.Height > 0 ? AmbientPreviewStage.Height : 17 * PreviewCellSize;
+        AmbientPreviewStage.Width  = stageWidth;
+        AmbientPreviewStage.Height = stageHeight;
+        LightZonesOverlay.Width    = stageWidth;
+        LightZonesOverlay.Height   = stageHeight;
+        LayoutLightZoneRects(stageWidth, stageHeight);
+
+        if (_placementLights is null || _placementLights.Count == 0)
+        {
+            LightZonesEmptyState.Visibility = Visibility.Visible;
+            UpdateZoneOverlayHighlight();
+            UpdatePreviewViewboxVisibility();
+            return;
+        }
+        LightZonesEmptyState.Visibility = Visibility.Collapsed;
+
+        var settings = AmbientSettingsService.Instance.Current;
+
+        // Build one row per light : "Light name" TextBlock + [Identify]
+        // button + zone ComboBox. The combo's Tag carries the light id
+        // so the SelectionChanged handler can route the persisted update
+        // back to AmbientSettings.LightZones ; the Identify button's
+        // Tag does the same for the flash routing.
+        //
+        // Resolution order for the initial combo value :
+        //   1. The user's persisted choice in AmbientSettings.LightZones
+        //      (any non-None entry wins — the user spoke).
+        //   2. Otherwise, the suggestion derived from the Hue
+        //      entertainment area (auto-pre-fill ; persisted on first
+        //      build so the next session sees the same value).
+        //   3. Otherwise, None.
+        bool suggestionWritten = false;
+        foreach (var light in _placementLights)
+        {
+            LightZone persistedZone = settings.LightZones.TryGetValue(light.Id, out var z)
+                ? z
+                : LightZone.None;
+
+            LightZone suggestedZone = LightZone.None;
+            if (_suggestedZones is not null && _suggestedZones.TryGetValue(light.Id, out var s))
+                suggestedZone = s;
+
+            LightZone effectiveZone;
+            if (persistedZone != LightZone.None)
+            {
+                effectiveZone = persistedZone;
+            }
+            else if (suggestedZone != LightZone.None)
+            {
+                effectiveZone = suggestedZone;
+                settings.LightZones[light.Id] = suggestedZone;
+                suggestionWritten = true;
+            }
+            else
+            {
+                effectiveZone = LightZone.None;
+            }
+
+            // Row layout : one horizontal StackPanel per lamp, side by
+            // side. The lamp name on the left anchors the row ; the
+            // Identify button gives the user a way to confirm the
+            // physical fixture ; the zone DropDownButton on the right
+            // is the only thing the engine reads.
+            //
+            // We deliberately don't label the button with a "Zone"
+            // header — the current value reads unambiguously on its
+            // own ("Top" / "Bottom" / "Left" / "Right" / "None"), and
+            // the lamp name to its left is enough anchor to know what
+            // is being mapped.
+            //
+            // Brightness control omitted on purpose for V0 : "every
+            // lamp at 100 %, balance later." Per-light brightness
+            // still persists in AmbientSettings.LightBrightness and
+            // the engine still honours an existing entry, but no UI
+            // surfaces it yet — the control will return when its UX
+            // is rethought.
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing     = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var nameLabel = new TextBlock
+            {
+                Text   = light.IsReachable ? light.Name : $"{light.Name} (offline)",
+                VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 140,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+
+            // Identify button — fires alert=lselect to flash the lamp
+            // for ~3 s so the user can spot which physical fixture
+            // this row controls. Disabled for the flash duration so a
+            // second click can't queue an overlapping flash.
+            var identifyButton = new Button
+            {
+                Tag = light.Id,
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    Children =
+                    {
+                        // Lightbulb glyph (Segoe Fluent Icons E7E8) —
+                        // reads as "tell me which lamp this is".
+                        new FontIcon { Glyph = "", FontSize = 14 },
+                        new TextBlock { Text = "Identify" },
+                    },
+                },
+                IsEnabled = light.IsReachable,
+            };
+            identifyButton.Click += OnIdentifyLightClick;
+
+            // Zone picker built as DropDownButton + MenuFlyout instead
+            // of ComboBox. The ComboBox path had a persistent "first
+            // click doesn't open the dropdown, then 2-3 clicks before
+            // selection registers" bug — WinUI 3 ComboBox has known
+            // flakiness when created in code-behind, especially around
+            // popup measure / focus handoff on the first interaction.
+            // DropDownButton + MenuFlyout sidesteps all of it : the
+            // button opens the flyout on Click (no measure-time
+            // dependency), the flyout items are MenuFlyoutItem-style
+            // (focus-friendly, click-to-select), and the visual state
+            // machine is decoupled from popup positioning. Same shape
+            // as File Explorer's "View" button or Photos' edit modes.
+            //
+            // Each RadioMenuFlyoutItem carries a ZoneMenuTag in its
+            // Tag : the lightId + the zone + the button to relabel on
+            // selection. OnZoneMenuItemClick reads from there ; no
+            // closure capture, no dict to clean up.
+            // DropDownButton with the label left-aligned (default is
+            // centered — looks "Top" floating mid-button which was
+            // hard to read at a glance). MinWidth=130 fits the longest
+            // label ("Bottom") comfortably. MenuFlyoutItem (not
+            // RadioMenuFlyoutItem) so the items don't reserve a radio-
+            // dot column on the left ; the current selection is
+            // already obvious from the button's own label, the
+            // pastille was visual noise.
+            var zoneButton = new DropDownButton
+            {
+                Content                   = LabelForZone(effectiveZone),
+                MinWidth                  = 130,
+                Tag                       = light.Id,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+            };
+            var zoneFlyout = new MenuFlyout();
+            foreach (var opt in _zoneOptions)
+            {
+                var menuItem = new MenuFlyoutItem
+                {
+                    Text = opt.Label,
+                    Tag  = new ZoneMenuTag(light.Id, light.Name, opt.Zone, zoneButton),
+                };
+                menuItem.Click += OnZoneMenuItemClick;
+                zoneFlyout.Items.Add(menuItem);
+            }
+            zoneButton.Flyout = zoneFlyout;
+
+            row.Children.Add(nameLabel);
+            row.Children.Add(identifyButton);
+            row.Children.Add(zoneButton);
+            LightZonesPanel.Children.Add(row);
+        }
+
+        if (suggestionWritten) AmbientSettingsService.Instance.Save();
+
+        LightZonesCard.Visibility = Visibility.Visible;
+        UpdateZoneOverlayHighlight();
+        UpdatePreviewViewboxVisibility();
+    }
+
+    private async void OnIdentifyLightClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button) return;
+        if (button.Tag is not string lightId) return;
+        if (_hueLightOutput is not IMultiLightOutput multi) return;
+
+        // Swap the button content : the Lightbulb glyph becomes a
+        // small ProgressRing so the user has unambiguous "yes, the
+        // flash is running right now" feedback during the 3 s window.
+        // The original content is restored in the finally block.
+        var originalContent = button.Content;
+        button.IsEnabled = false;
+        button.Content   = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Children =
+            {
+                new ProgressRing { Width = 14, Height = 14, IsActive = true },
+                new TextBlock     { Text = "Flashing" },
+            },
+        };
+
+        try
+        {
+            await multi.IdentifyLightAsync(lightId).ConfigureAwait(true);
+            await Task.Delay(IdentifyFlashDuration).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Identify failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            // Best-effort cut of the bridge-side flash so the lamp
+            // doesn't keep breathing for the remaining ~12 s of the
+            // lselect window. Failure here is silent — the lamp will
+            // auto-restore after the bridge's own timeout anyway.
+            try { await multi.StopIdentifyAsync(lightId).ConfigureAwait(true); }
+            catch { /* best effort */ }
+
+            button.Content   = originalContent;
+            button.IsEnabled = true;
+        }
+    }
+
+    // DOM-only reset for the Light zones card : rip the per-light
+    // rows, hide the card and its empty state. Does NOT touch the
+    // _placementLights / _suggestedZones state fields — those are
+    // owned by the resolver and reset explicitly by the caller when
+    // appropriate (e.g. when the user switches group, the resolver
+    // overwrites them with a fresh result). Clearing them here was
+    // the root cause of the "no lights returned" bug : BuildLightZonesUi
+    // calls Clear at start to rebuild from scratch, which would nuke
+    // the freshly-resolved _placementLights before the rebuild loop
+    // had a chance to use them.
+    private void ClearLightZonesUi()
+    {
+        // Children.Clear() releases every row and the visual subtree
+        // hanging off it — DropDownButton, MenuFlyout, RadioMenuFlyoutItems,
+        // Identify button. Their event handlers (page methods or lambdas
+        // captured in the row) become unreachable once the visuals are
+        // detached and the GC reclaims them. No explicit unhook needed.
+        LightZonesPanel.Children.Clear();
+        LightZonesCard.Visibility       = Visibility.Collapsed;
+        LightZonesEmptyState.Visibility = Visibility.Collapsed;
+        ZoneTopRect.Visibility    = Visibility.Collapsed;
+        ZoneBottomRect.Visibility = Visibility.Collapsed;
+        ZoneLeftRect.Visibility   = Visibility.Collapsed;
+        ZoneRightRect.Visibility  = Visibility.Collapsed;
+        UpdatePreviewViewboxVisibility();
+    }
+
+    // Computes the dip-space rectangle each zone covers on the preview
+    // stage and positions the matching overlay Rectangle accordingly.
+    // The geometry mirrors the engine's SampleZone bounds : Top covers
+    // the upper BorderDepth band, Bottom the lower, Left and Right the
+    // matching vertical strips. We use the same BorderDepth constant
+    // exposed by AmbientEngine so the user-visible band matches what
+    // the engine actually samples.
+    private void LayoutLightZoneRects(double stageWidth, double stageHeight)
+    {
+        double bandH = stageHeight * AmbientEngine.BorderDepth;
+        double bandV = stageWidth  * AmbientEngine.BorderDepth;
+
+        Canvas.SetLeft(ZoneTopRect, 0);
+        Canvas.SetTop (ZoneTopRect, 0);
+        ZoneTopRect.Width  = stageWidth;
+        ZoneTopRect.Height = bandH;
+
+        Canvas.SetLeft(ZoneBottomRect, 0);
+        Canvas.SetTop (ZoneBottomRect, stageHeight - bandH);
+        ZoneBottomRect.Width  = stageWidth;
+        ZoneBottomRect.Height = bandH;
+
+        Canvas.SetLeft(ZoneLeftRect, 0);
+        Canvas.SetTop (ZoneLeftRect, 0);
+        ZoneLeftRect.Width  = bandV;
+        ZoneLeftRect.Height = stageHeight;
+
+        Canvas.SetLeft(ZoneRightRect, stageWidth - bandV);
+        Canvas.SetTop (ZoneRightRect, 0);
+        ZoneRightRect.Width  = bandV;
+        ZoneRightRect.Height = stageHeight;
+
+        UpdateZoneOverlayHighlight();
+    }
+
+    // Shows a zone's overlay rectangle iff at least one light is
+    // assigned to it. Pure visual cue — the engine samples the four
+    // zones every tick regardless of whether anything reads the
+    // result, but rendering the bands the user doesn't use would
+    // clutter the preview.
+    private void UpdateZoneOverlayHighlight()
+    {
+        bool hasTop    = false;
+        bool hasBottom = false;
+        bool hasLeft   = false;
+        bool hasRight  = false;
+        var settings = AmbientSettingsService.Instance.Current;
+        if (_placementLights is not null)
+        {
+            foreach (var light in _placementLights)
+            {
+                if (!settings.LightZones.TryGetValue(light.Id, out var z)) continue;
+                switch (z)
+                {
+                    case LightZone.Top:    hasTop    = true; break;
+                    case LightZone.Bottom: hasBottom = true; break;
+                    case LightZone.Left:   hasLeft   = true; break;
+                    case LightZone.Right:  hasRight  = true; break;
+                }
+            }
+        }
+        ZoneTopRect.Visibility    = hasTop    ? Visibility.Visible : Visibility.Collapsed;
+        ZoneBottomRect.Visibility = hasBottom ? Visibility.Visible : Visibility.Collapsed;
+        ZoneLeftRect.Visibility   = hasLeft   ? Visibility.Visible : Visibility.Collapsed;
+        ZoneRightRect.Visibility  = hasRight  ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Carrier for everything OnZoneMenuItemClick needs : the lamp id
+    // (to route the assignment), the lamp display name (for the Info
+    // Capital log line), the zone the menu item represents, and the
+    // DropDownButton that should be re-labelled on selection. Sits on
+    // the MenuFlyoutItem.Tag so the handler is a plain delegate
+    // without per-row closure capture.
+    private sealed record ZoneMenuTag(string LightId, string LightName, LightZone Zone, DropDownButton Button);
+
+    private static string LabelForZone(LightZone zone)
+    {
+        for (int i = 0; i < _zoneOptions.Length; i++)
+            if (_zoneOptions[i].Zone == zone) return _zoneOptions[i].Label;
+        return _zoneOptions[0].Label; // Fallback to "None".
+    }
+
+    private void OnZoneMenuItemClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuFlyoutItem item) return;
+        if (item.Tag is not ZoneMenuTag tag) return;
+
+        // Update the button label to reflect the new selection — the
+        // DropDownButton's Content is just text, no automatic binding
+        // to the active flyout item.
+        tag.Button.Content = item.Text;
+
+        var settings = AmbientSettingsService.Instance.Current;
+        if (tag.Zone == LightZone.None)
+        {
+            // Treat None as "unmapped" : remove the entry so the JSON
+            // file stays tidy (no growing list of None entries for
+            // every light that's ever been picked then unselected).
+            settings.LightZones.Remove(tag.LightId);
+        }
+        else
+        {
+            settings.LightZones[tag.LightId] = tag.Zone;
+        }
+        AmbientSettingsService.Instance.Save();
+
+        // Pair Info Capital + Verbose mirror, per logging doctrine
+        // (cf. reference--logging-inventory--1.0.md §"Filtre runtime")
+        // — Info is a semantic sentence for human readers in Activity
+        // (no opaque IDs), Verbose carries the technical k=v with the
+        // light id for grep / diag. The Verbose mirror is NOT gated by
+        // LogAmbientCaptureActivity : that toggle only silences the
+        // engine's per-tick chatter inside the push loop, never user
+        // actions, even when they happen while the pipeline runs.
+        string zoneSummary = tag.Zone == LightZone.None
+            ? $"Zone cleared on {tag.LightName}"
+            : $"Zone {tag.Zone} assigned to {tag.LightName}";
+        LogService.Instance.Info(LogSource.Ambient, zoneSummary);
+        LogService.Instance.Verbose(LogSource.Ambient,
+            $"zone assign | id={tag.LightId} | zone={tag.Zone}");
+
+        UpdateZoneOverlayHighlight();
+    }
+
+    private void OnPipelineModeSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not RadioButtons radios) return;
+        // Index 0 = "group" (UseMultiLight=false), 1 = "per-zone"
+        // (UseMultiLight=true). Anything else (no selection) ignored.
+        bool useMulti = radios.SelectedIndex switch
+        {
+            0 => false,
+            1 => true,
+            _ => AmbientSettingsService.Instance.Current.UseMultiLight,
+        };
+        var settings = AmbientSettingsService.Instance.Current;
+        if (settings.UseMultiLight == useMulti) return;
+        settings.UseMultiLight = useMulti;
+        AmbientSettingsService.Instance.Save();
+
+        // Pair Info Capital + Verbose mirror, same doctrine as zone
+        // assign above. Info reads as a human sentence in Activity ;
+        // Verbose carries the property name / value for grep.
+        string modeLabel = useMulti ? "per-zone" : "group";
+        LogService.Instance.Info(LogSource.Ambient,
+            $"Pipeline mode set to {modeLabel}");
+        LogService.Instance.Verbose(LogSource.Ambient,
+            $"settings update | key=UseMultiLight | value={useMulti}");
     }
 
     private void CancelHueRotationIfRunning()
@@ -2208,5 +2954,41 @@ public sealed partial class PlaygroundWindow : Window
         }
 
         SetPipelineNotReady();
+    }
+
+    // ── NavigationView tooltip i18n override ────────────────────────────────
+    //
+    // The NavigationView pane-toggle button (hamburger / "≡") inherits a
+    // tooltip from the OS resource bundle — "Open navigation" on EN,
+    // "Ouvrir navigation" on FR, etc. Deckle's UI is locked to English so
+    // we override that string explicitly. The toggle button is a template
+    // part named "TogglePaneButton" ; we walk the visual tree after the
+    // NavigationView has applied its template (i.e. once it's loaded) and
+    // set ToolTipService.ToolTip + AutomationProperties.Name on the
+    // resolved button so both sighted and assistive surfaces match.
+    //
+    // No-op if the part can't be resolved (e.g. WinUI changes the
+    // template part name in a future update) — better silently mismatched
+    // than crashing on a cosmetic concern.
+    private static void OverrideNavPaneToggleTooltip(NavigationView nav, string tooltip)
+    {
+        var toggle = FindVisualDescendantByName<Button>(nav, "TogglePaneButton");
+        if (toggle is null) return;
+        ToolTipService.SetToolTip(toggle, tooltip);
+        AutomationProperties.SetName(toggle, tooltip);
+    }
+
+    private static T? FindVisualDescendantByName<T>(DependencyObject root, string name)
+        where T : FrameworkElement
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T t && t.Name == name) return t;
+            var found = FindVisualDescendantByName<T>(child, name);
+            if (found is not null) return found;
+        }
+        return null;
     }
 }

@@ -3,18 +3,44 @@ using Deckle.Logging;
 
 namespace Deckle.Settings.ViewModels;
 
-// ViewModel for DiagnosticsPage — bridges TelemetrySettings to the XAML
-// via x:Bind. Migrated from GeneralViewModel in slice S2 along with the
-// page extraction (Telemetry was previously a section under General;
-// it's now a dedicated page with room for future sections like
-// log-level and LogWindow buffer settings).
+// ViewModel for DiagnosticsPage — bridges TelemetrySettings and
+// LoggingSettings to the XAML via x:Bind. Originally migrated from
+// GeneralViewModel in slice S2 (Telemetry only) ; J4 polish added the
+// Logging section to host runtime emission filters orthogonal to
+// disk persistence, which expanded the VM to cover two stores.
 //
-// Pattern: Load() pulls from the POCO, property changes push back via
-// PushToSettings(). The _isSyncing flag prevents re-saving during Load().
+// Pattern : Load() pulls from each store, property changes push back
+// via the matching PushXxxToSettings(). The _isSyncing flag prevents
+// re-saving during Load(). The split between PushLoggingToSettings()
+// and PushTelemetryToSettings() lets a single toggle touch only its
+// own store — flipping Verbose logging doesn't rewrite the telemetry
+// JSON file, which matters because the two share neither schema nor
+// lifecycle.
 public partial class DiagnosticsViewModel : ObservableObject
 {
     private static readonly LogService _log = LogService.Instance;
     private bool _isSyncing;
+
+    // ── Logging — runtime emission filters ──────────────────────────────────
+
+    // Capture-window logging toggle for the ambient pipeline. The
+    // central filter in TelemetryService.Log drops every Verbose
+    // event from AMBIENT / SCREEN / HUE sources emitted while
+    // AmbientEngine has its capture-active flag on. AmbientEngine
+    // sets the flag right before launching its push loop (after the
+    // started milestones) and clears it at the very top of Stop
+    // (before the stopped milestones) — so the bracketing milestones
+    // and any user action emitted outside that window pass through.
+    // Non-Verbose levels also pass unconditionally. Default false —
+    // the routine cadence from three modules drowns out everything
+    // else during play, so the user starts quiet and opts in when
+    // investigating. The section will grow with sibling per-loop
+    // toggles for Whisp / Audio / Llm as each captures a runtime
+    // loop worth silencing. Wired through LoggingSettingsService —
+    // separate store from TelemetrySettings so flipping it leaves
+    // the disk-persistence opt-ins untouched.
+    [ObservableProperty]
+    public partial bool LogAmbientCaptureActivity { get; set; }
 
     // ── Telemetry — opt-in disk persistence ─────────────────────────────────
 
@@ -52,55 +78,72 @@ public partial class DiagnosticsViewModel : ObservableObject
     [ObservableProperty]
     public partial string TelemetryStorageDirectory { get; set; }
 
+    partial void OnLogAmbientCaptureActivityChanged(bool value)
+    {
+        if (_isSyncing) return;
+        _log.Info(LogSource.SetGeneral, $"Logging.LogAmbientCaptureActivity ← {value}");
+        PushLoggingToSettings();
+    }
+
     partial void OnApplicationLogToDiskChanged(bool value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.ApplicationLogToDisk ← {value}");
-        PushToSettings();
+        PushTelemetryToSettings();
     }
 
     partial void OnMicrophoneTelemetryChanged(bool value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.MicrophoneTelemetry ← {value}");
-        PushToSettings();
+        PushTelemetryToSettings();
     }
 
     partial void OnTelemetryLatencyEnabledChanged(bool value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.LatencyEnabled ← {value}");
-        PushToSettings();
+        PushTelemetryToSettings();
     }
 
     partial void OnTelemetryCorpusEnabledChanged(bool value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.CorpusEnabled ← {value}");
-        PushToSettings();
+        PushTelemetryToSettings();
     }
 
     partial void OnRecordAudioCorpusChanged(bool value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.RecordAudioCorpus ← {value}");
-        PushToSettings();
+        PushTelemetryToSettings();
     }
 
     partial void OnTelemetryStorageDirectoryChanged(string value)
     {
         if (_isSyncing) return;
         _log.Info(LogSource.SetGeneral, $"Telemetry.StorageDirectory ← \"{value}\"");
-        PushToSettings();
+        PushTelemetryToSettings();
     }
 
-    // ── Sync with TelemetrySettingsService ───────────────────────────────────
+    // ── Sync with LoggingSettingsService and TelemetrySettingsService ───────
 
     public DiagnosticsViewModel()
     {
         // Guard BEFORE any property assignment — same reason as GeneralViewModel.
         _isSyncing = true;
 
+        // Logging defaults are "closed" by family : every per-loop
+        // capture toggle starts OFF because the routine cadence
+        // drowns out everything else. Non-Verbose levels and
+        // out-of-loop emissions are unaffected, so milestones,
+        // errors, and user actions stay visible — only the per-tick
+        // noise is suppressed. Telemetry defaults are also "closed"
+        // but for a different reason : disk-persistence streams stay
+        // off until the user explicitly opts in to where their data
+        // lands.
+        LogAmbientCaptureActivity = false;
         ApplicationLogToDisk = false;
         MicrophoneTelemetry = false;
         TelemetryLatencyEnabled = false;
@@ -116,6 +159,9 @@ public partial class DiagnosticsViewModel : ObservableObject
         _isSyncing = true;
         try
         {
+            var l = LoggingSettingsService.Instance.Current;
+            LogAmbientCaptureActivity = l.LogAmbientCaptureActivity;
+
             var t = TelemetrySettingsService.Instance.Current;
             ApplicationLogToDisk = t.ApplicationLogToDisk;
             MicrophoneTelemetry = t.MicrophoneTelemetry;
@@ -130,7 +176,14 @@ public partial class DiagnosticsViewModel : ObservableObject
         }
     }
 
-    private void PushToSettings()
+    private void PushLoggingToSettings()
+    {
+        var l = LoggingSettingsService.Instance.Current;
+        l.LogAmbientCaptureActivity = LogAmbientCaptureActivity;
+        LoggingSettingsService.Instance.Save();
+    }
+
+    private void PushTelemetryToSettings()
     {
         var t = TelemetrySettingsService.Instance.Current;
         t.ApplicationLogToDisk = ApplicationLogToDisk;
@@ -143,6 +196,18 @@ public partial class DiagnosticsViewModel : ObservableObject
     }
 
     // ── Reset ───────────────────────────────────────────────────────────────
+
+    public void ResetLoggingDefaults()
+    {
+        _isSyncing = true;
+        try
+        {
+            LogAmbientCaptureActivity = false;
+        }
+        finally { _isSyncing = false; }
+        PushLoggingToSettings();
+        _log.Info(LogSource.SetGeneral, "Logging section reset to defaults");
+    }
 
     public void ResetTelemetryDefaults()
     {
@@ -157,7 +222,7 @@ public partial class DiagnosticsViewModel : ObservableObject
             TelemetryStorageDirectory = "";
         }
         finally { _isSyncing = false; }
-        PushToSettings();
+        PushTelemetryToSettings();
         _log.Info(LogSource.SetGeneral, "Telemetry section reset to defaults");
     }
 }

@@ -78,18 +78,82 @@ public sealed class TelemetryService
         }
     }
 
+    // ── Capture-active window ──────────────────────────────────────────────
+    //
+    // Set by AmbientEngine around its push-loop lifetime. While true,
+    // <see cref="Log"/> drops Verbose emissions tagged with one of the
+    // ambient-pipeline sources (AMBIENT / SCREEN / HUE) when the user
+    // has the LogAmbientCaptureActivity toggle off. Idle (flag false)
+    // → no filtering ; the temporal scope lets us distinguish a
+    // Verbose user-action mirror (typically emitted while the engine
+    // is idle, e.g. before pressing Start) from a Verbose push line
+    // emitted from inside the loop, even though both share source
+    // and level. Volatile bool : reads on every Log call are
+    // single-instruction atomic, no torn read possible, no lock
+    // overhead on the hot path.
+    private volatile bool _captureActive;
+
+    /// <summary>Called by <c>AmbientEngine</c> to delimit its
+    /// capture window. Set true after the engine has emitted its
+    /// "started" milestone (so that line passes), false at the very
+    /// top of <c>Stop</c> (so the "stopped" milestone also passes).
+    /// Idempotent ; concurrent writes are safe (volatile bool).</summary>
+    public void SetCaptureActive(bool active) => _captureActive = active;
+
+    private static readonly HashSet<string> _ambientLogSources = new(StringComparer.Ordinal)
+    {
+        LogSource.Ambient,
+        LogSource.Screen,
+        LogSource.Hue,
+    };
+
     // ── Log ────────────────────────────────────────────────────────────────
     //
     // Used by the LogService façade for the 6 log levels. The level is
     // copied onto the event (for UI filtering) AND serialized inside the
     // payload as its enum name — the JSONL stays self-describing.
+    //
+    // Central filter : during an active capture window, drop Verbose
+    // lines tagged with one of the ambient sources if the user has
+    // the LogAmbientCaptureActivity toggle off. Cannot live at the
+    // call site because the noisiest emissions come from modules the
+    // engine consumes (HueBridgeClient.SetLightColorAsync,
+    // ScreenCaptureService runtime traces) — those modules don't know
+    // they're "inside a capture loop". The temporal flag carries that
+    // context for them. Non-Verbose levels pass unconditionally
+    // (milestones, warnings, errors always visible). Verbose outside
+    // the active window passes too (group resolution, lights listing,
+    // sampler init, zone suggestions, stop diagnostic mirror).
     public void Log(string source, string message, LogLevel level, UserFeedback? feedback)
     {
+        if (_captureActive
+            && level == LogLevel.Verbose
+            && _ambientLogSources.Contains(source)
+            && !IsAmbientCaptureLoggingEnabled())
+            return;
+
         var payload = new LogPayload(source, message, level.ToString());
         string text = source.Length > 0
             ? $"{DateTime.Now:HH:mm:ss.fff} [{source}] {message}"
             : $"{DateTime.Now:HH:mm:ss.fff} {message}";
         Emit(new TelemetryEvent(TelemetryKind.Log, SessionId, payload, level, feedback, text));
+    }
+
+    private static bool IsAmbientCaptureLoggingEnabled()
+    {
+        try
+        {
+            return LoggingSettingsService.Instance.Current.LogAmbientCaptureActivity;
+        }
+        catch
+        {
+            // Fail safe : match the POCO default (false → filter on).
+            // A settings I/O glitch during the capture loop should
+            // honour the user's quiet-by-default preference, not flood
+            // them with traffic. Errors and milestones still pass —
+            // this fallback only affects the Verbose noise.
+            return false;
+        }
     }
 
     // ── Latency ────────────────────────────────────────────────────────────

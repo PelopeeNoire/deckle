@@ -12,6 +12,17 @@ Référence unique pour décider **quoi logger, à quel niveau, avec quel format
 
 Document vivant. Version `1.0` : inventaire normatif appliqué au code,
 les sources et payloads décrits ci-dessous reflètent le runtime courant.
+Patch en cours (filename à bumper à `1.1` quand on consolide) :
+renforce la doctrine de séparation Verbose ↔ Info (les IDs et le
+format `k=v` sont Verbose-only, jamais dans Info / Success / Warning /
+Error) avec une table d'exemples ❌/✅, et documente le toggle **Log
+ambient capture activity** ajouté dans Diagnostics. L'architecture
+retenue après itération : filtre central dans `TelemetryService.Log`
+avec dimension temporelle, `_captureActive` flag set/clear par
+`AmbientEngine` autour de sa boucle. Couvre les Verbose émis par
+HueBridgeClient et ScreenCaptureService aussi (modules consumed par
+l'engine), pas seulement par l'engine lui-même. Default OFF —
+quiet par défaut.
 Les décisions prises ici cadrent toute future étape mesurée — étendre un
 payload existant ou en ajouter un suit la procédure section "Quand on
 ajoute une étape mesurée" ci-dessous.
@@ -130,6 +141,55 @@ du pipeline, ce sont des exports.
 - Est-ce que tout va bien mais on note pour référence ? → `Info`
 - Est-ce que c'est du bruit pour diagnostic expert ? → `Verbose`
 - Est-ce que c'est l'app qui raconte son histoire à l'utilisateur ? → `Narrative`
+
+### Doctrine de séparation Verbose ↔ Info — règle dure
+
+**Les identifiants opaques et le format `k=v` sont Verbose-only.** Une ligne `Info`, `Success`, `Warning` ou `Error` est une phrase Capital courte, lisible par un humain qui n'a aucune connaissance de l'implémentation. Si la ligne contient un ID (light id Hue, group id, file path, hash, line index, opaque token quelconque) ou un format à séparateurs `|`, alors par définition c'est une ligne Verbose, pas une ligne sémantique. Un Info qui contient un ID est une erreur de niveau, pas une variante stylistique.
+
+Lorsqu'une action mérite à la fois une signalisation sémantique pour l'utilisateur ET un détail technique pour le diag, on émet **deux lignes** : une Info Capital sans IDs, et son miroir Verbose en k=v avec les IDs. Aucun chevauchement.
+
+| ❌ Mauvais (mélange) | ✅ Bon (séparation) |
+|---|---|
+| `Info AMBIENT zone assign \| id=42 \| zone=Top` | `Info AMBIENT Zone Top assigned to Falcon` |
+| | `Verbose AMBIENT zone assign \| id=42 \| zone=Top` |
+| `Info AMBIENT settings update \| key=UseMultiLight \| value=true` | `Info AMBIENT Pipeline mode set to per-zone` |
+| | `Verbose AMBIENT settings update \| key=UseMultiLight \| value=true` |
+
+Le miroir Verbose **suit toujours** l'Info Capital quand il y a un détail technique à acter. Ce n'est pas optionnel — c'est le contrat qui rend les logs greppables.
+
+### Filtre runtime : capture activity (per-loop window)
+
+Depuis le polish J4, la page Diagnostics expose une section **Logging** sœur de **Telemetry**, qui héberge un toggle par boucle runtime pour suspendre l'émission de ses lignes per-tick. Premier (et seul aujourd'hui) toggle : **Log ambient capture activity**, OFF par défaut.
+
+Le filtre est centralisé dans `TelemetryService.Log` et joue sur trois dimensions :
+
+```
+si  _captureActive
+    && level == LogLevel.Verbose
+    && source ∈ {AMBIENT, SCREEN, HUE}
+    && !LogAmbientCaptureActivity
+alors drop
+```
+
+`_captureActive` est un `volatile bool` sur `TelemetryService`, set par `AmbientEngine.StartAsync` juste avant de lancer la boucle push (donc après ses milestones Info + Verbose mirror), clear par `AmbientEngine.Stop` dès l'entrée (donc avant les milestones de stop). C'est cette dimension temporelle qui rend le filtre correct : un `Verbose AMBIENT` émis pendant que la boucle est idle (zone suggest au build, settings update au démarrage, etc.) passe parce que `_captureActive` est faux. Un `Verbose HUE push colour | …` émis pendant que la boucle tourne (depuis `HueBridgeClient.SetLightColorAsync`, appelé inside loop) est filtré.
+
+Ce qui n'est jamais coupé par ce toggle :
+
+- Tout niveau ≥ Info — milestones, warnings, errors, narrative. Les `Info AMBIENT Ambient pipeline started / stopped` passent toujours, les `Warning AMBIENT Push failed` et `Error AMBIENT Push loop crashed` aussi.
+- Toute ligne émise hors window capture-active — par construction, le flag est faux à ces moments-là (group resolve, lights listing, sampler init, stop diagnostic mirror).
+- Toute Verbose émise depuis une source hors {AMBIENT, SCREEN, HUE} — le set est ciblé sur la pipeline ambient.
+
+Ce qui est gated quand toggle OFF :
+
+- `Verbose AMBIENT push | …` (per-tick), `Verbose AMBIENT heartbeat | …` — émis par `AmbientEngine.PushLoopAsync`.
+- `Verbose HUE push colour | light_id=… | rgb=… | …` — émis par `HueBridgeClient` à chaque PUT inside loop.
+- `Verbose SCREEN` runtime traces (frame ops, sampler diagnostics inside loop).
+
+**Pourquoi un filtre central plutôt qu'au site d'émission.** Une itération précédente avait posé le check `if (LoggingSettingsService.Instance.Current.LogAmbientCaptureActivity) _log.Verbose(...)` dans `AmbientEngine.PushLoopAsync`. Ça gate l'engine mais PAS les modules qu'il consomme (HueBridgeClient, ScreenCaptureService) — leurs lignes Verbose continuaient de sortir. Pour les couvrir, il faudrait répéter le check dans chaque module, ce qui couple les modules consumed à un toggle qui n'est pas leur affaire. Le filtre central laisse les modules naïfs et porte la dimension temporelle (`_captureActive`) une seule fois, sur le hub qui voit tout passer.
+
+**Pourquoi pas un filtre `(level, source)` central sans la dimension temporelle.** Une itération encore antérieure avait tenté ça. Le problème : un `Verbose AMBIENT zone assign | …` mirror d'action utilisateur est structurellement identique à un `Verbose AMBIENT push | …` per-tick. Sans dimension temporelle, le filtre ne peut pas les distinguer et silence les deux. Le flag temporel résout ça : un user action émis pendant que la boucle est idle (cas normal) passe ; émis pendant que la boucle tourne (cas rare), il est filtré, mais l'Info Capital miroir (« Zone Top assigned to Falcon ») le compense en restant visible dans Activity.
+
+Ce pattern grandira avec les boucles suivantes (transcription Whisp, capture micro Audio…) : un toggle par boucle, un flag `_<loop>Active` par boucle sur `TelemetryService`, le module set/clear son flag autour de son window, le filtre central étend son set de sources et son test booléen.
 
 ### Format par niveau — deux registres distincts
 
@@ -705,11 +765,29 @@ Success   HUE  Bridge paired ({bridge_id})
 Verbose   HUE  pair result | bridge_id={id} | username={head8}... | clientkey=[redacted]
 Info      HUE  Listing groups
 Verbose   HUE  groups list | bridge_id={id} | count={N}
+Info      HUE  Listing lights in group {id}
+Verbose   HUE  lights list | group_id={id} | count={N}
+Verbose   HUE  light | id={id} | name={n} | type={t} | reachable={true|false}
+Info      HUE  Listing entertainment configurations
+Verbose   HUE  entertainment list | count={N}
+Verbose   HUE  entertainment | id={id} | name={n} | lights={N}
+Verbose   HUE  placement | ent_id={id} | light_id={id} | x={X:F3} | y={Y:F3} | z={Z:F3}
+Verbose   HUE  light identify | light_id={id} | alert={lselect|none} | phase={start|stop}
 Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri} | tt_ds={n}
 Verbose   HUE  push colour | group_id={id} | rgb={r},{g},{b} | on=false | tt_ds={n}
+Verbose   HUE  push colour | light_id={id} | rgb={r},{g},{b} | xy={x:F4},{y:F4} | bri={bri} | tt_ds={n}
+Verbose   HUE  push colour | light_id={id} | rgb={r},{g},{b} | on=false | tt_ds={n}
+Warning   HUE  Set colour failed | group_id={id} | hr={status}
+Warning   HUE  Set colour failed | light_id={id} | hr={status}
+Warning   HUE  Identify {start|stop} failed | light_id={id} | hr={status}
+Warning   HUE  CLIP v2 GET failed | path={path} | hr={status}
 ```
 
+The `entertainment list` / `entertainment` / `placement` triple comes out of `ListEntertainmentConfigurationsAsync` (CLIP v2 GET /resource/entertainment_configuration) which we use only to recover Hue's stored XYZ positions per light. The XYZ feeds the `LightZoneSuggester` in `Deckle.Lighting.Ambient` so the Light zones UI can pre-fill the per-light zone ComboBox instead of asking the user to map them by hand. `light identify` is the bridge-side flash (alert=lselect, ~15 s) used by the [Identify] button in the same UI.
+
 `tt_ds` is the Hue `transitiontime` parameter in deciseconds (1 = 100 ms). Forced to 1 by the ambient driver to override the bridge factory default of 4 (= 400 ms), which would lag the lamp behind the screen on every push.
+
+The `light_id=` variant of `push colour` and `Set colour failed` is emitted by the multi-light path (one PUT /lights/{id}/state per fixture). The `group_id=` variant is emitted by the single-colour group path (one PUT /groups/{id}/action covering all lights in the group). Same payload schema on the wire, only the target tag differs in the log.
 
 **Erreurs et sévérités**
 
@@ -757,22 +835,52 @@ L'engine est le hub qui relie l'amont (capture écran via `Deckle.Vision.ScreenC
 
 ```
 Info      AMBIENT  Ambient pipeline started
-Verbose   AMBIENT  start | source={capture status} | output={driver type} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
+Verbose   AMBIENT  start | source={capture status} | output={driver type} | shape={group|multi} | lights={N} | push_hz={N} | sampler_grid={W}x{H} | hdr={on|off}
 Info      AMBIENT  Ambient pipeline stopped
-Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | duration_sec={X:F1} | pushed={n} | dropped={n}
-Verbose   AMBIENT  push | mode=analysis | rgb={r},{g},{b} | off={true|false} | dropped={true|false}
+Verbose   AMBIENT  stop | reason={user|cancelled|disposed} | shape={group|multi} | duration_sec={X:F1} | pushed={n} | dropped={n}
+Verbose   AMBIENT  push | mode=group | rgb={r},{g},{b} | off={true|false}
+Verbose   AMBIENT  push | mode=multi | lights={K}/{N} | colors={lightId=R,G,B …}
+Verbose   AMBIENT  heartbeat | mode={group|multi} | period_sec={X:F1} | ticks={N} | pushed={N} | dropped={N} [| unmapped_lights={N}]
+Info      AMBIENT  Zone {None|Top|Bottom|Left|Right} assigned to {lightName}
+Info      AMBIENT  Zone cleared on {lightName}
+Verbose   AMBIENT  zone assign | id={lightId} | zone={None|Top|Bottom|Left|Right}
+Verbose   AMBIENT  zone suggest | id={lightId} | zone={…} | from=ent_config | ent_name={n} | xyz={X:F2},{Y:F2},{Z:F2}
+Verbose   AMBIENT  zone suggest skipped | reason={no_entertainment_areas|no_matching_entertainment_area}
+Info      AMBIENT  Pipeline mode set to {group|per-zone}
+Verbose   AMBIENT  settings update | key={name} | value={v}
+Warning   AMBIENT  Multi-light requested but driver doesn't expose IMultiLightOutput ({type}) — falling back to group push
+Warning   AMBIENT  Multi-light requested but driver returned no lights — falling back to group push
+Warning   AMBIENT  Multi-light push failed — {ExType}: {message}
 ```
 
 **Vocabulaire AmbientEngine**
 
 - `source={capture status}` — `running` ou `stopped` au moment du start (l'engine démarre la capture si stopped)
 - `output={driver type}` — nom de la classe ILightOutput (typ. `HueRestLightOutput`)
-- `push_hz={N}` — cadence cible de la boucle push (15 par défaut, alignée avec MinUpdateInterval)
+- `shape={group|multi}` — pipeline résolu au start : `group` = single-colour push au group, `multi` = per-light push via `IMultiLightOutput`. Choix gouverné par `AmbientSettings.UseMultiLight` + capability driver + non-vide `MultiLights`
+- `lights={N}` — nombre de lights résolues par le driver en mode multi (0 en mode group)
+- `push_hz={N}` — cadence cible de la boucle push (15 en mode group, 10 en mode multi pour rester dans la zone de confort du bridge à N PUT en parallèle)
 - `sampler_grid={W}x{H}` — dimensions de la grille du FrameSampler au moment du start
 - `hdr={on|off}` — état HDR négocié par la capture (miroir du SCREEN log)
-- `off={true|false}` — true si l'average était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
-- `dropped={true|false}` — true si l'early-exit a évalué Δ < seuil et sauté le push
+- `mode={group|multi}` — pipeline shape sur la ligne `push` (miroir de `shape=` au start)
+- `lights={K}/{N}` — sur une ligne `push mode=multi`, K = nombre de lights effectivement pushées au tick (i.e. ayant changé de couleur), N = total
+- `colors={id=R,G,B …}` — sur une ligne `push mode=multi`, la composition exacte du batch envoyé : par light id, le sRGB pushé. Les lights non listées sont soit unmapped, soit ont passé l'early-exit ; le détail s'agrège dans le heartbeat suivant
+- `off={true|false}` — true si la couleur de zone était sous le seuil "lights-out" et a été clampée à (0,0,0) avant push (la bridge convertit en `on:false`)
 - `pushed`/`dropped` au stop — compteurs cumulés sur la session
+
+**Cadence de log et heartbeat.** Avant le ramatonement des logs, la ligne `push` sortait à chaque tick (10-15 Hz). Sur un écran statique, 300 lignes identiques en 30 s pour rien. Le nouveau pattern :
+
+1. **Une ligne `push` n'est émise que lorsqu'un push effectif a lieu** — c'est-à-dire quand au moins une couleur change. Sur écran statique, zéro ligne `push`. Sur contenu dynamique, le débit suit le rythme des changements perceptibles.
+2. **Un `heartbeat` toutes les 5 s** consolide les ticks intermédiaires : nombre de ticks, push effectués, dropped (couleur identique au précédent push donc skipped), et en multi-mode `unmapped_lights` (somme des lights mappées à `None` ou absentes du dict, par tick × N ticks). Le heartbeat sort même quand rien ne pousse, ce qui prouve que la boucle tourne.
+3. **Cumulés au stop** (déjà documentés plus bas) restent la vérité de session.
+
+Ce pattern suit la doctrine VAD : on ne loge pas chaque cycle, on loge quand le sujet change + résumé périodique. Les compteurs internes de l'engine (`_hbTicks`, `_hbPushed`, `_hbDropped`, `_hbUnmappedLights`) sont remis à zéro à chaque heartbeat émis, donc chaque ligne `heartbeat` lit "depuis le dernier heartbeat" et pas "depuis le start".
+- `Zone {…} assigned to {lightName}` / `Zone cleared on {lightName}` — pair Info Capital sémantique pour l'action utilisateur dans la card Light zones. Ne porte aucun ID, lisible dans Activity. Toujours visible quel que soit l'état de Log ambient capture activity (sort hors boucle de capture)
+- `zone assign | id={lightId} | zone={…}` — miroir Verbose technique de l'Info ci-dessus. `id` = light id opaque (CLIP v1 pour Hue), `zone` = valeur de l'enum `LightZone`. `zone=None` correspond à un retrait de mapping (l'entrée est supprimée du dict). Verbose car porte l'ID — la doctrine impose les IDs en Verbose uniquement
+- `zone suggest` — émis au moment où la card Light zones se construit, **une ligne par lampe** dont la position dans l'entertainment area Hue a permis de dériver une zone via `LightZoneSuggester`. `from=ent_config` indique la source de la suggestion (anticipation : `from=room` ou `from=ha_area` plus tard). `xyz` reproduit la position Hue normalisée [-1, 1] qui a été classée. La suggestion est ensuite persistée dans `AmbientSettings.LightZones` (et `zone assign` ne sera PAS émis pour cette même opération — c'est une init silencieuse, pas un acte utilisateur)
+- `zone suggest skipped` — émis quand la card Light zones s'est construite sans suggestion possible. `reason=no_entertainment_areas` = le bridge n'expose aucune entertainment area ; `reason=no_matching_entertainment_area` = au moins une area existe mais aucune ne contient les lights du group sélectionné
+- `Pipeline mode set to {group|per-zone}` — Info Capital sémantique émis par le RadioButtons UseMultiLight du Playground. Phrase user-facing, pas d'ID, pas de k=v. Sort hors boucle de capture donc toujours visible
+- `settings update | key={name} | value={v}` — miroir Verbose technique. Gabarit générique pour toute modification d'une property d'`AmbientSettings` depuis l'UI (UseMultiLight pour V0, d'autres champs à venir en J5/J9). Verbose car le format `k=v` + identifiants techniques (nom de property) relèvent du diag expert
 
 **Erreurs et sévérités**
 

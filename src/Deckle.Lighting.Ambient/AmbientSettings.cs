@@ -80,6 +80,49 @@ public sealed class AmbientSettings
     /// <summary>Active analysis mode. Defaults to <see cref="AmbientMode.Game"/>
     /// — the V0 behaviour. J6 lights up <see cref="AmbientMode.Realistic"/>.</summary>
     public AmbientMode Mode { get; set; } = AmbientMode.Game;
+
+    // ── Multi-light zones (J4) ─────────────────────────────────────
+    //
+    // When the connected output is an IMultiLightOutput and the engine
+    // is told to run in multi-light mode, it pushes one colour per
+    // zone — top / bottom / left / right border of the screen — and
+    // every light assigned to a zone via <see cref="LightZones"/>
+    // receives that colour. Lights mapped to <see cref="LightZone.None"/>
+    // (or absent from the map entirely) are not driven by the engine
+    // and keep whatever state the bridge last gave them.
+    //
+    // When <see cref="UseMultiLight"/> is false (default), the engine
+    // falls back to the single-colour group push regardless of what
+    // <see cref="LightZones"/> holds — useful for A/B comparison
+    // without losing the zone assignments.
+
+    /// <summary>Master switch for the multi-light pipeline. False keeps
+    /// the legacy "one average → group action" behaviour. True activates
+    /// per-zone sampling driven by <see cref="LightZones"/>, but only
+    /// if the connected driver exposes
+    /// <see cref="Deckle.Lighting.IMultiLightOutput"/> ; otherwise the
+    /// engine logs a warning and falls back to single-colour push.</summary>
+    public bool UseMultiLight { get; set; } = false;
+
+    /// <summary>Per-light zone assignment, keyed by the driver's opaque
+    /// light id (Hue : CLIP v1 integer-as-string). Empty by default ;
+    /// the assignment UI populates it as the user picks a zone in the
+    /// combo box of each light. Light ids missing from the map default
+    /// to <see cref="LightZone.None"/> at sampling time, so a newly
+    /// added bulb is skipped silently rather than tinted to an
+    /// arbitrary edge.</summary>
+    public Dictionary<string, LightZone> LightZones { get; set; } = new();
+
+    /// <summary>Per-light brightness multiplier in [0, 1], keyed by the
+    /// driver's opaque light id. 1.0 = full intensity (the sampled
+    /// colour pushed verbatim), 0.5 = half (R/G/B halved before push,
+    /// which also halves Hue's derived <c>bri</c>), 0 = effectively off
+    /// (the off-threshold clamp kicks in and Hue receives <c>on:false</c>).
+    /// Light ids missing from the map default to 1.0 — a newly added
+    /// bulb runs at full brightness until the user adjusts its slider.
+    /// Stored separately from <see cref="LightZones"/> so the user can
+    /// dim a single lamp without losing its zone assignment.</summary>
+    public Dictionary<string, double> LightBrightness { get; set; } = new();
 }
 
 /// <summary>How <see cref="AmbientEngine"/> derives the colour pushed

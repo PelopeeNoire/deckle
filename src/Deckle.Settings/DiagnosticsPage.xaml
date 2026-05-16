@@ -11,8 +11,12 @@
     <!-- Same layout pattern as GeneralPage / WhisperPage: Grid wrapper +
          StackPanel MaxWidth=1000 + SettingsCardSpacing=4 + section
          headers in BodyStrong + Margin 1,30,0,6. Page extracted from
-         GeneralPage in slice S2 ; structured to grow with future
-         non-telemetry sections (LogWindow buffer, log levels, …). -->
+         GeneralPage in slice S2 ; J4 polish added the Logging section
+         to host runtime emission filters (Verbose toggle today, more
+         per-source filters / minimum-level overrides to come), so the
+         page now reads as two parallel groups : Logging on top
+         (controls what's emitted) and Telemetry below (controls what's
+         persisted to disk). -->
     <Page.Resources>
         <x:Double x:Key="SettingsCardSpacing">4</x:Double>
         <Style x:Key="SettingsSectionHeaderTextBlockStyle"
@@ -41,6 +45,33 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,12" />
+
+                <!-- ── Logging ─────────────────────────────────────────────────
+                     Runtime emission filters. Distinct from Telemetry below :
+                     this section controls what the in-app log surface (and
+                     the JSONL pipeline downstream) actually emit, while
+                     Telemetry controls which of those streams are persisted
+                     to disk. The two sections are structured identically so
+                     the page reads as two parallel groups of opt-ins. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="DiagnosticsPageLoggingHeaderLabel"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetLogging_Click" />
+                </Grid>
+
+                <controls:SettingsCard x:Uid="LoggingAmbientCard"
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
+                    <ToggleSwitch IsOn="{x:Bind ViewModel.LogAmbientCaptureActivity, Mode=TwoWay}" />
+                </controls:SettingsCard>
 
                 <!-- ── Telemetry ───────────────────────────────────────────── -->
                 <Grid>

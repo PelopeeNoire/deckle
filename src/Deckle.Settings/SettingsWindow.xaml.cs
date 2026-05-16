@@ -1,6 +1,7 @@
 using System.Linq;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -68,6 +69,24 @@ public sealed partial class SettingsWindow : Window
         // On pousse le Frame vers le bas pour que le titre de page ne chevauche
         // pas le hamburger (pattern Windows Terminal Settings).
         Nav.DisplayModeChanged += OnNavDisplayModeChanged;
+
+        // Override the NavigationView pane-toggle tooltip. WinUI 3
+        // sources that string from the OS locale ("Ouvrir navigation"
+        // on a French Windows install), which clashes with Deckle's
+        // English UI. The toggle button lives under the template part
+        // "TogglePaneButton" ; we walk the visual tree after the
+        // template generator has materialised it (Nav.Loaded + Low
+        // priority dispatch). PaneOpened / PaneClosed re-apply
+        // defensively in case the button is recreated when the state
+        // flips. No-op if the template part name changes upstream.
+        Nav.Loaded += (_, _) =>
+        {
+            DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => OverrideNavPaneToggleTooltip(Nav, "Open navigation"));
+        };
+        Nav.PaneOpened += (_, _) => OverrideNavPaneToggleTooltip(Nav, "Open navigation");
+        Nav.PaneClosed += (_, _) => OverrideNavPaneToggleTooltip(Nav, "Open navigation");
 
         // Sélection initiale → déclenche SelectionChanged → navigation vers
         // GeneralPage. Un seul chemin de navigation, pas de double-nav.
@@ -209,5 +228,34 @@ public sealed partial class SettingsWindow : Window
             _log.Info(LogSource.Settings, "Open logs from footer");
             OnShowLogsRequested?.Invoke();
         }
+    }
+
+    // ── NavigationView tooltip i18n override ────────────────────────────────
+    //
+    // Duplicates the helpers in PlaygroundWindow.xaml.cs by design —
+    // two callsites isn't enough to justify a shared assembly yet, and
+    // pulling them into Deckle.Localization would force that pure
+    // resw-facing module to take a WinUI 3 control dependency it
+    // doesn't otherwise need. Extract when a third caller appears.
+    private static void OverrideNavPaneToggleTooltip(NavigationView nav, string tooltip)
+    {
+        var toggle = FindVisualDescendantByName<Button>(nav, "TogglePaneButton");
+        if (toggle is null) return;
+        ToolTipService.SetToolTip(toggle, tooltip);
+        AutomationProperties.SetName(toggle, tooltip);
+    }
+
+    private static T? FindVisualDescendantByName<T>(DependencyObject root, string name)
+        where T : FrameworkElement
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T t && t.Name == name) return t;
+            var found = FindVisualDescendantByName<T>(child, name);
+            if (found is not null) return found;
+        }
+        return null;
     }
 }

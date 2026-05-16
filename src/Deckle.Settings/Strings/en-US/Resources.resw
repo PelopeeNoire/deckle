@@ -1230,7 +1230,16 @@
     <value>Diagnostics</value>
   </data>
   <data name="DiagnosticsPageSubtitleLabel.Text" xml:space="preserve">
-    <value>Telemetry and log output Deckle persists to disk for offline troubleshooting and prompt tuning. Everything is opt-in and stored locally.</value>
+    <value>Configure how Deckle reports its runtime activity — in-app log verbosity and the telemetry streams Deckle can persist to disk for offline troubleshooting. Everything is opt-in and stored locally.</value>
+  </data>
+  <data name="DiagnosticsPageLoggingHeaderLabel.Text" xml:space="preserve">
+    <value>Logging</value>
+  </data>
+  <data name="LoggingAmbientCard.Header" xml:space="preserve">
+    <value>Log ambient capture activity</value>
+  </data>
+  <data name="LoggingAmbientCard.Description" xml:space="preserve">
+    <value>Per-tick Verbose lines from the ambient pipeline — engine pushes, heartbeats, Hue calls, screen capture diagnostics.</value>
   </data>
   <data name="DiagnosticsPageTelemetryHeaderLabel.Text" xml:space="preserve">
     <value>Telemetry</value>
