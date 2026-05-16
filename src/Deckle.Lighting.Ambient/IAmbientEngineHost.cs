@@ -10,16 +10,11 @@ namespace Deckle.Lighting.Ambient;
 // The engine reads its settings on every tick : the HDR tuning
 // sliders (ExposureEv, SaturationBoost, MinBrightness), the zone
 // assignments and the per-light brightness, the multi-light master
-// flag, and the Hue bridge credentials. Writes are rarer — only the
-// LightZoneSuggester pre-populates LightZones at first connection,
-// and the host owns the Save() call.
+// flag, and the Hue bridge credentials. The engine doesn't write
+// back yet — a SaveSettings() method will be added here when the
+// LightZoneSuggester (or another engine-side consumer) starts
+// pre-populating LightZones at first connection.
 public interface IAmbientEngineHost
 {
     AmbientSettings Ambient { get; }
-
-    // Persist the current AmbientSettings to disk. Called by the
-    // engine after auto-populating LightZones from the entertainment
-    // area at first connection — the user shouldn't lose those
-    // suggestions on the next start.
-    void SaveSettings();
 }

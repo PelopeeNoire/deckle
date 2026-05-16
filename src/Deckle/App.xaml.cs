@@ -185,6 +185,18 @@ public partial class App : Microsoft.UI.Xaml.Application
         // pipeline boots automatically when the engine starts (fire-and-
         // forget Task so OnLaunched stays non-blocking).
         _ambientEngine = new AmbientEngine(new AppAmbientEngineHost());
+        // Surface every state transition in the logs (Info level so it
+        // lands in app.jsonl without requiring the LogAmbientCapture-
+        // Activity toggle). Subscribers in the windows (AmbientPage
+        // ProgressRing, Playground status) hook directly to the engine
+        // event ; we don't relay through tray UpdateStatus to avoid
+        // squatting the Whisp recording tooltip.
+        _ambientEngine.StateChanged += s =>
+            _log.Info(LogSource.Ambient, $"Ambient pipeline state: {s}");
+        // AmbientPage's NotPaired InfoBar action button needs to open
+        // the Playground (where Hue pairing lives in V0). Lighting.
+        // Ambient cannot reference Deckle, so the App fills the slot.
+        AmbientEngine.OpenPlaygroundRequested = () => ShowPlaygroundLazy();
         Milestone("ambient_engine");
 
         // LogWindow lazy : instanciée à la première ouverture via
@@ -597,7 +609,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         try { _messageHost?.Dispose();     } catch (Exception ex) { _log.Warning(LogSource.App, "message host dispose: " + ex.Message); }
         try { _overlayManager?.Dispose();  } catch (Exception ex) { _log.Warning(LogSource.App, "overlay manager dispose: " + ex.Message); }
         try { _engine?.Dispose();          } catch (Exception ex) { _log.Warning(LogSource.App, "engine dispose: " + ex.Message); }
-        try { _ambientEngine?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
+        // 5 s lets the push loop's in-flight HTTP push complete before
+        // we hard-exit. A 2 s cap was hit on stalled Hue bridges (Wi-Fi
+        // blip while quitting) and leaked D3D11 textures (intermediate
+        // /staging/SRV) because the push loop wrapped mid-await.
+        try { _ambientEngine?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)); }
         catch (Exception ex) { _log.Warning(LogSource.App, "ambient engine dispose: " + ex.Message); }
         Environment.Exit(0);
     }

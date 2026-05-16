@@ -1913,7 +1913,7 @@ public sealed partial class PlaygroundWindow : Window
     {
         PipelineToggleButton.IsEnabled = false;
         PipelineToggleIcon.Glyph = ScreenCaptureGlyphStart;
-        PipelineToggleLabel.Text = "Start pipeline";
+        PipelineToggleLabel.Text = "Turn Ambient Light on";
         PipelineStatusText.Text = "Pair a bridge and pick a group first";
         PipelineStatusDot.Fill = GetThemeBrush("SystemFillColorNeutralBrush");
     }
@@ -2016,14 +2016,26 @@ public sealed partial class PlaygroundWindow : Window
     // testing.
     private void SyncPipelineUiFromSettings()
     {
-        bool enabled = AmbientSettingsService.Instance.Current.Enabled;
+        var ambient = AmbientSettingsService.Instance.Current;
         if (PipelineToggleButton is null) return;
+        bool enabled = ambient.Enabled;
         PipelineToggleIcon.Glyph  = enabled ? ScreenCaptureGlyphStop : ScreenCaptureGlyphStart;
-        PipelineToggleLabel.Text  = enabled ? "Stop pipeline" : "Start pipeline";
-        PipelineStatusText.Text   = enabled ? "Running (driven by App)" : "Stopped";
+        PipelineToggleLabel.Text  = enabled ? "Turn Ambient Light off" : "Turn Ambient Light on";
+        PipelineStatusText.Text   = enabled ? "Running" : "Stopped";
         PipelineStatusDot.Fill    = GetThemeBrush(enabled
             ? "SystemFillColorSuccessBrush"
             : "SystemFillColorNeutralBrush");
+
+        // Mirror the multi-light flag into the radio buttons so a flip
+        // from the AmbientPage (when that lands) propagates here. The
+        // SelectionChanged handler short-circuits on equal values so
+        // this assignment doesn't re-fire Save.
+        int desiredIndex = ambient.UseMultiLight ? 1 : 0;
+        if (PipelineModeRadios is not null
+            && PipelineModeRadios.SelectedIndex != desiredIndex)
+        {
+            PipelineModeRadios.SelectedIndex = desiredIndex;
+        }
     }
 
     private void OnAmbientSettingsChangedFromPlayground()

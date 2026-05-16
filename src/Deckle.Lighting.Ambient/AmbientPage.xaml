@@ -42,6 +42,25 @@
                 <TextBlock x:Uid="AmbientStateSectionHeader"
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
+                <!-- Surfaced when the persisted Hue bridge state is
+                     incomplete (no IP / no username / no group). The
+                     toggle stays usable but a click will immediately
+                     revert ; the InfoBar redirects to the Playground
+                     where pairing lives in V0. Tied to the Loaded /
+                     Changed observer in code-behind. -->
+                <InfoBar x:Name="NotPairedInfoBar"
+                         x:Uid="AmbientNotPairedInfoBar"
+                         IsClosable="False"
+                         IsOpen="False"
+                         Severity="Warning"
+                         Margin="0,0,0,8">
+                    <InfoBar.ActionButton>
+                        <Button x:Name="OpenPlaygroundButton"
+                                x:Uid="AmbientNotPairedActionButton"
+                                Click="OpenPlaygroundButton_Click" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+
                 <controls:SettingsCard x:Uid="AmbientEnabledCard"
                                        HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
                     <ToggleSwitch x:Name="EnabledToggle"

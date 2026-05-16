@@ -9,19 +9,25 @@ namespace Deckle.Lighting.Ambient;
 // NavigationView from src/Deckle.Settings/SettingsWindow.xaml via the
 // item Tag "Deckle.Lighting.Ambient.AmbientPage, Deckle.Lighting.Ambient".
 //
-// V0 surface : master Enabled toggle, Mode selector (Game / Realistic),
-// HDR tuning sliders (Exposure / Saturation / Min brightness). Pair
-// flow, Entertainment Area selection, per-light zone assignment and
-// per-light brightness sliders still live in the Playground for this
-// pass — phase I migrates them here.
+// V0 surface : master Enabled toggle (with ProgressRing for transient
+// Starting / Stopping), Mode selector (Game / Realistic), HDR tuning
+// sliders (Exposure / Saturation / Min brightness), NotPaired InfoBar
+// (Warning) with "Open Playground" action when the persisted Hue
+// state is incomplete. Pair flow + Entertainment Area + Light zones +
+// per-light brightness still live in the Playground for this pass —
+// the InfoBar redirects there until they migrate.
 //
 // Persistence : event-handler style (Toggled / SelectionChanged /
-// ValueChanged) that mutes AmbientSettings.Current and calls
-// AmbientSettingsService.Instance.Save() inline. No view-model layer
-// — the page is short enough that the indirection wouldn't add
-// clarity. The _loading flag suppresses the initial Load-time
-// synchronisation so the very first round of property assignments
-// doesn't trigger a Save.
+// ValueChanged) that mutates AmbientSettings.Current and calls
+// AmbientSettingsService.Instance.Save() inline. No view-model layer.
+//
+// Sync state : two subscriptions wired in Loaded and dropped in
+// Unloaded. The Changed event re-syncs the controls from settings so
+// a flip from the tray / Playground propagates immediately to the
+// ToggleSwitch. The StateChanged event drives the transient UI
+// (ProgressRing, ModeCombo gating). Both subscriptions are guarded by
+// a _loading flag that suppresses the re-fire loop when handlers
+// touch the same controls that triggered them.
 public sealed partial class AmbientPage : Page
 {
     private bool _loading = true;
@@ -29,39 +35,105 @@ public sealed partial class AmbientPage : Page
     public AmbientPage()
     {
         InitializeComponent();
-        Loaded += AmbientPage_Loaded;
+        Loaded   += AmbientPage_Loaded;
+        Unloaded += AmbientPage_Unloaded;
     }
 
     private void AmbientPage_Loaded(object sender, RoutedEventArgs e)
     {
-        var s = AmbientSettingsService.Instance.Current;
+        ResyncFromSettings();
+        ApplyEngineState(AmbientEngine.Current?.State ?? AmbientEngineState.Off);
 
-        EnabledToggle.IsOn = s.Enabled;
-
-        // Mode combo : match the Tag to the enum name. Defaults to
-        // index 0 (Game) if the persisted value doesn't match — keeps
-        // a freshly-introduced enum value from leaving the combo
-        // blank.
-        ComboBoxItem? toSelect = null;
-        foreach (var item in ModeCombo.Items)
+        AmbientSettingsService.Instance.Changed += OnSettingsChanged;
+        if (AmbientEngine.Current is not null)
         {
-            if (item is ComboBoxItem cbi && cbi.Tag is string tag && tag == s.Mode.ToString())
-            {
-                toSelect = cbi;
-                break;
-            }
+            AmbientEngine.Current.StateChanged += OnEngineStateChanged;
         }
-        ModeCombo.SelectedItem = toSelect ?? ModeCombo.Items[0];
-
-        ExposureSlider.Value      = s.ExposureEv;
-        SaturationSlider.Value    = s.SaturationBoost * 100.0;
-        MinBrightnessSlider.Value = s.MinBrightness;
-
-        UpdateExposureText();
-        UpdateSaturationText();
-        UpdateMinBrightnessText();
 
         _loading = false;
+    }
+
+    private void AmbientPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        AmbientSettingsService.Instance.Changed -= OnSettingsChanged;
+        if (AmbientEngine.Current is not null)
+        {
+            AmbientEngine.Current.StateChanged -= OnEngineStateChanged;
+        }
+        _loading = true;
+    }
+
+    // Pulls the current persisted state into the controls. Called on
+    // first load and on every Changed event. Guarded by _loading so
+    // the handlers don't re-fire Save during the assignment loop.
+    private void ResyncFromSettings()
+    {
+        bool prevLoading = _loading;
+        _loading = true;
+        try
+        {
+            var s = AmbientSettingsService.Instance.Current;
+
+            EnabledToggle.IsOn = s.Enabled;
+
+            ComboBoxItem? toSelect = null;
+            foreach (var item in ModeCombo.Items)
+            {
+                if (item is ComboBoxItem cbi && cbi.Tag is string tag && tag == s.Mode.ToString())
+                {
+                    toSelect = cbi;
+                    break;
+                }
+            }
+            ModeCombo.SelectedItem = toSelect ?? ModeCombo.Items[0];
+
+            ExposureSlider.Value      = s.ExposureEv;
+            SaturationSlider.Value    = s.SaturationBoost * 100.0;
+            MinBrightnessSlider.Value = s.MinBrightness;
+
+            UpdateExposureText();
+            UpdateSaturationText();
+            UpdateMinBrightnessText();
+
+            // Pair completeness drives the NotPaired InfoBar. The
+            // criteria mirror AmbientEngine.StartAsync's validation
+            // so a user who toggles ON in this state sees the InfoBar
+            // BEFORE clicking (forewarned) and also AFTER the auto-
+            // revert (still incomplete).
+            bool paired = !string.IsNullOrEmpty(s.HueBridgeIp)
+                       && !string.IsNullOrEmpty(s.HueBridgeId)
+                       && !string.IsNullOrEmpty(s.HueUsername)
+                       && !string.IsNullOrEmpty(s.HueLastGroupId);
+            NotPairedInfoBar.IsOpen = !paired;
+        }
+        finally
+        {
+            _loading = prevLoading;
+        }
+    }
+
+    private void OnSettingsChanged()
+    {
+        DispatcherQueue.TryEnqueue(ResyncFromSettings);
+    }
+
+    private void OnEngineStateChanged(AmbientEngineState state)
+    {
+        DispatcherQueue.TryEnqueue(() => ApplyEngineState(state));
+    }
+
+    // Surfaces the engine's transition state on the page. The previous
+    // pass surfaced a ProgressRing for the transient Starting /
+    // Stopping states, but the ring stayed stuck in one runtime
+    // observation and the feature offered marginal value while a Hue
+    // pair takes only ~300–800 ms ; it has been retired. The
+    // ApplyEngineState pass is kept for the ModeCombo gating, which is
+    // genuinely useful : changing Mode mid-Running silently desyncs
+    // the radios from the pipeline shape, so we lock the combo while
+    // the engine runs.
+    private void ApplyEngineState(AmbientEngineState state)
+    {
+        ModeCombo.IsEnabled = state != AmbientEngineState.Running;
     }
 
     private void EnabledToggle_Toggled(object sender, RoutedEventArgs e)
@@ -105,6 +177,11 @@ public sealed partial class AmbientPage : Page
         if (_loading) return;
         AmbientSettingsService.Instance.Current.MinBrightness = (int)Math.Round(MinBrightnessSlider.Value);
         AmbientSettingsService.Instance.Save();
+    }
+
+    private void OpenPlaygroundButton_Click(object sender, RoutedEventArgs e)
+    {
+        AmbientEngine.OpenPlaygroundRequested?.Invoke();
     }
 
     private void UpdateExposureText()
