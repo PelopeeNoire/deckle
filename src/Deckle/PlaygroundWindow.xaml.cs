@@ -205,10 +205,14 @@ public sealed partial class PlaygroundWindow : Window
     // _placementLights is the cached list of fixtures returned by the
     // connected IMultiLightOutput, populated when a Hue group is
     // selected (after ConnectAsync) and reset when the group changes.
-    // _zoneSelectorByLightId maps light id → the ComboBox that lets
-    // the user pick a border zone for that light ; kept so the
-    // selection can be programmatically updated (e.g. to reflect a
-    // settings reload) without iterating LightZonesPanel children.
+    //
+    // The per-light zone picker is a DropDownButton + MenuFlyout in
+    // the LightZonesPanel rows. We don't keep a back-reference to the
+    // buttons : selections flow through the menu item Click handler
+    // which carries everything it needs in its Tag (ZoneMenuTag), and
+    // a teardown is just LightZonesPanel.Children.Clear() — the GC
+    // collects the orphaned visual subtree, lambdas captured by menu
+    // items go with it.
     //
     // PreviewCellSize is the native dip size of one downsampled cell
     // in the preview grid. The whole stage (preview grid + zone
@@ -217,7 +221,6 @@ public sealed partial class PlaygroundWindow : Window
     // composition uniformly to fill the available area.
     private const double PreviewCellSize = 16;
     private List<LightDescriptor>? _placementLights;
-    private readonly Dictionary<string, ComboBox> _zoneSelectorByLightId = new();
 
     // Zone suggestion derived from a Hue entertainment area's positions.
     // Computed once per group selection in ResolveLightsAndBuildPlacementAsync
@@ -261,14 +264,17 @@ public sealed partial class PlaygroundWindow : Window
         presenter.IsMinimizable = true;
         presenter.IsMaximizable = true;
         presenter.IsResizable   = true;
-        // Min width 1520: NavView pane in Left mode is ~320 dip (default
-        // OpenPaneLength), HUD page itself wants 1200 dip min (preview
-        // column 720 + tuning column 480). Below 1520 the tuning
-        // slider/NumberBox composite loses readable space or the pane
-        // collapses to LeftCompact unexpectedly. Min height bumped to 600
-        // so the AmbientPage placeholder + capture card fit without
-        // scrolling at the smallest size.
-        presenter.PreferredMinimumWidth  = 1520;
+        // Min width 1280: NavView is now LeftCompact (48 dip strip) with
+        // the pane closed by default, so the playground content gets
+        // ~1230 dip to work with at minimum. HUD page wants 1200 dip
+        // (preview 720 + tuning 480), Ambient page wants 480 + 380 + 12
+        // gap ≈ 875 dip — both comfortable below 1280. Previous 1520
+        // cap was sized for the auto-expanded pane that we no longer
+        // surface at startup. Windows DPI scaling carries the rest :
+        // the dip-based layout adapts to the user's effective scale,
+        // so a 13" laptop @ 1920×1080 @ 150 % effective renders this
+        // window at 1280×600 dip without overflow.
+        presenter.PreferredMinimumWidth  = 1280;
         presenter.PreferredMinimumHeight = 600;
         AppWindow.SetPresenter(presenter);
 
@@ -322,19 +328,28 @@ public sealed partial class PlaygroundWindow : Window
                 // loops by comparing settings before writing back.
                 PipelineModeRadios.SelectedIndex =
                     AmbientSettingsService.Instance.Current.UseMultiLight ? 1 : 0;
-
-                // Override the NavigationView pane-toggle tooltip. WinUI 3
-                // sources that string from the OS locale (e.g. "Ouvrir
-                // navigation" on a French Windows install), which clashes
-                // with Deckle's English UI. The toggle button lives under
-                // the NavView template part name "TogglePaneButton" ;
-                // walking the visual tree is the canonical fix — there's
-                // no public property exposing the tooltip directly. Same
-                // override applied for AutomationProperties.Name so screen
-                // readers also report the English label.
-                OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
             };
         }
+
+        // Tooltip override : the previous attempt ran from root.Loaded
+        // which fires before the NavigationView has materialised its
+        // template parts, so FindVisualDescendantByName("TogglePaneButton")
+        // returned null and the FR tooltip stayed. Hooking on the
+        // NavView's own Loaded gets us closer, and the DispatcherQueue
+        // Low-priority enqueue lets the template generator finish
+        // before we walk the tree. Belt and braces : we also re-attempt
+        // on PaneOpened in case the toggle button only appears after
+        // the user expands the pane manually.
+        PlaygroundNav.Loaded += (_, _) =>
+        {
+            DispatcherQueue.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                () => OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation"));
+        };
+        PlaygroundNav.PaneOpened += (_, _) =>
+            OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
+        PlaygroundNav.PaneClosed += (_, _) =>
+            OverrideNavPaneToggleTooltip(PlaygroundNav, "Open navigation");
 
         // Tap on empty background → move focus to RootGrid, which dismisses
         // the caret from a NumberBox the user just edited. Focused input
@@ -2255,22 +2270,17 @@ public sealed partial class PlaygroundWindow : Window
     // module stays free of XAML strings (no x:Uid involvement yet —
     // the surface is dev-only Playground in V0, localisation lands in
     // a later milestone).
-    // Zone options exposed by every per-light ComboBox in the Light
-    // zones card. The set is static : five values, fixed shape, never
-    // changes at runtime. We surface them as a record array so each
-    // ComboBox can bind via ItemsSource = _zoneOptions (with
-    // DisplayMemberPath = "Label") instead of populating combo.Items
-    // via Items.Add at row-build time. The Items.Add path was the
-    // source of a "the dropdown needs 3-4 clicks before it picks up
-    // selections" bug — WinUI 3's ComboBox measures its popup against
-    // the Items collection at the first interaction, and items added
-    // dynamically right before the first click would mismeasure the
-    // popup until enough layout passes had cleared the queue. Binding
-    // the static array via ItemsSource lets the popup measure
-    // correctly on first open. The same array is shared across every
-    // ComboBox in the card ; each ComboBox materialises its own
-    // container instances around the shared underlying ZoneOption
-    // values.
+    // Zone options exposed by every per-light DropDownButton +
+    // MenuFlyout pair in the Light zones card. The set is static :
+    // five values, fixed shape, never changes at runtime. Used by
+    // BuildLightZonesUi to populate each menu and by LabelForZone to
+    // resolve the button caption for the current selection. We tried
+    // ComboBox first — both with Items.Add and with ItemsSource — and
+    // both surfaced a "first click doesn't open / select" bug that
+    // tracks back to WinUI 3 ComboBox popup measure/focus quirks in
+    // code-behind construction. DropDownButton + RadioMenuFlyoutItem
+    // is deterministic : Click opens the flyout, item Click selects,
+    // no popup measure dependency on the first interaction.
     private sealed record ZoneOption(LightZone Zone, string Label);
 
     private static readonly ZoneOption[] _zoneOptions =
@@ -2506,11 +2516,11 @@ public sealed partial class PlaygroundWindow : Window
             // Row layout : one horizontal StackPanel per lamp, side by
             // side. The lamp name on the left anchors the row ; the
             // Identify button gives the user a way to confirm the
-            // physical fixture ; the zone ComboBox on the right is the
-            // only thing the engine reads.
+            // physical fixture ; the zone DropDownButton on the right
+            // is the only thing the engine reads.
             //
-            // We deliberately don't label the ComboBox with a "Zone"
-            // header — the selected value reads unambiguously on its
+            // We deliberately don't label the button with a "Zone"
+            // header — the current value reads unambiguously on its
             // own ("Top" / "Bottom" / "Left" / "Right" / "None"), and
             // the lamp name to its left is enough anchor to know what
             // is being mapped.
@@ -2559,28 +2569,49 @@ public sealed partial class PlaygroundWindow : Window
             };
             identifyButton.Click += OnIdentifyLightClick;
 
-            // ItemsSource = static array (see _zoneOptions header) so
-            // the popup measures correctly on first interaction.
-            // SelectedIndex is set BEFORE the SelectionChanged handler
-            // wires up so the initial assignment doesn't round-trip
-            // through OnLightZoneSelectionChanged (which would
-            // immediately re-save the same value).
-            var combo = new ComboBox
+            // Zone picker built as DropDownButton + MenuFlyout instead
+            // of ComboBox. The ComboBox path had a persistent "first
+            // click doesn't open the dropdown, then 2-3 clicks before
+            // selection registers" bug — WinUI 3 ComboBox has known
+            // flakiness when created in code-behind, especially around
+            // popup measure / focus handoff on the first interaction.
+            // DropDownButton + MenuFlyout sidesteps all of it : the
+            // button opens the flyout on Click (no measure-time
+            // dependency), the flyout items are MenuFlyoutItem-style
+            // (focus-friendly, click-to-select), and the visual state
+            // machine is decoupled from popup positioning. Same shape
+            // as File Explorer's "View" button or Photos' edit modes.
+            //
+            // Each RadioMenuFlyoutItem carries a ZoneMenuTag in its
+            // Tag : the lightId + the zone + the button to relabel on
+            // selection. OnZoneMenuItemClick reads from there ; no
+            // closure capture, no dict to clean up.
+            var zoneButton = new DropDownButton
             {
-                MinWidth          = 130,
-                Tag               = light.Id,
-                ItemsSource       = _zoneOptions,
-                DisplayMemberPath = nameof(ZoneOption.Label),
-                SelectedIndex     = IndexOfZone(effectiveZone),
+                Content  = LabelForZone(effectiveZone),
+                MinWidth = 130,
+                Tag      = light.Id,
             };
-            combo.SelectionChanged += OnLightZoneSelectionChanged;
+            var zoneFlyout = new MenuFlyout();
+            string groupName = $"zone-{light.Id}";
+            foreach (var opt in _zoneOptions)
+            {
+                var menuItem = new RadioMenuFlyoutItem
+                {
+                    Text      = opt.Label,
+                    GroupName = groupName,
+                    IsChecked = opt.Zone == effectiveZone,
+                    Tag       = new ZoneMenuTag(light.Id, opt.Zone, zoneButton),
+                };
+                menuItem.Click += OnZoneMenuItemClick;
+                zoneFlyout.Items.Add(menuItem);
+            }
+            zoneButton.Flyout = zoneFlyout;
 
             row.Children.Add(nameLabel);
             row.Children.Add(identifyButton);
-            row.Children.Add(combo);
+            row.Children.Add(zoneButton);
             LightZonesPanel.Children.Add(row);
-
-            _zoneSelectorByLightId[light.Id] = combo;
         }
 
         if (suggestionWritten) AmbientSettingsService.Instance.Save();
@@ -2649,15 +2680,11 @@ public sealed partial class PlaygroundWindow : Window
     // had a chance to use them.
     private void ClearLightZonesUi()
     {
-        foreach (var combo in _zoneSelectorByLightId.Values)
-        {
-            combo.SelectionChanged -= OnLightZoneSelectionChanged;
-        }
-        // Identify buttons live in the rows we're about to clear ; their
-        // Click handler is rooted to the page lifetime via the lambda
-        // capture, so dropping the row dereferences them and the GC
-        // cleans up. No explicit unhook needed.
-        _zoneSelectorByLightId.Clear();
+        // Children.Clear() releases every row and the visual subtree
+        // hanging off it — DropDownButton, MenuFlyout, RadioMenuFlyoutItems,
+        // Identify button. Their event handlers (page methods or lambdas
+        // captured in the row) become unreachable once the visuals are
+        // detached and the GC reclaims them. No explicit unhook needed.
         LightZonesPanel.Children.Clear();
         LightZonesCard.Visibility       = Visibility.Collapsed;
         LightZonesEmptyState.Visibility = Visibility.Collapsed;
@@ -2735,35 +2762,46 @@ public sealed partial class PlaygroundWindow : Window
         ZoneRightRect.Visibility  = hasRight  ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private static int IndexOfZone(LightZone zone)
+    // Carrier for everything OnZoneMenuItemClick needs : the lamp id
+    // (to route the assignment), the zone the menu item represents,
+    // and the DropDownButton that should be re-labelled on selection.
+    // Sits on the RadioMenuFlyoutItem.Tag so the handler is a plain
+    // delegate without per-row closure capture.
+    private sealed record ZoneMenuTag(string LightId, LightZone Zone, DropDownButton Button);
+
+    private static string LabelForZone(LightZone zone)
     {
         for (int i = 0; i < _zoneOptions.Length; i++)
-            if (_zoneOptions[i].Zone == zone) return i;
-        return 0; // Falls back to None for unknown values.
+            if (_zoneOptions[i].Zone == zone) return _zoneOptions[i].Label;
+        return _zoneOptions[0].Label; // Fallback to "None".
     }
 
-    private void OnLightZoneSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void OnZoneMenuItemClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not ComboBox combo) return;
-        if (combo.Tag is not string lightId) return;
-        if (combo.SelectedItem is not ZoneOption { Zone: var zone }) return;
+        if (sender is not RadioMenuFlyoutItem item) return;
+        if (item.Tag is not ZoneMenuTag tag) return;
+
+        // Update the button label to reflect the new selection — the
+        // DropDownButton's Content is just text, no automatic binding
+        // to the active flyout item (unlike ComboBox.SelectedItem).
+        tag.Button.Content = item.Text;
 
         var settings = AmbientSettingsService.Instance.Current;
-        if (zone == LightZone.None)
+        if (tag.Zone == LightZone.None)
         {
             // Treat None as "unmapped" : remove the entry so the JSON
             // file stays tidy (no growing list of None entries for
             // every light that's ever been picked then unselected).
-            settings.LightZones.Remove(lightId);
+            settings.LightZones.Remove(tag.LightId);
         }
         else
         {
-            settings.LightZones[lightId] = zone;
+            settings.LightZones[tag.LightId] = tag.Zone;
         }
         AmbientSettingsService.Instance.Save();
 
         LogService.Instance.Verbose(LogSource.Ambient,
-            $"zone assign | id={lightId} | zone={zone}");
+            $"zone assign | id={tag.LightId} | zone={tag.Zone}");
 
         UpdateZoneOverlayHighlight();
     }

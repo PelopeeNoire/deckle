@@ -43,6 +43,8 @@
                         x:Name="PlaygroundNav"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
+                        IsPaneOpen="False"
+                        PaneDisplayMode="LeftCompact"
                         SelectionChanged="OnPlaygroundNavSelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="NavItemHud"
