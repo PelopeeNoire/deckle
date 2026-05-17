@@ -201,20 +201,15 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <!-- Slider attribute order matters in WinUI 3 :
-                                             Minimum / Maximum / Value are assigned in
-                                             XML order, and Slider rejects Value outside
-                                             [Minimum, Maximum] at the assignment step.
-                                             With defaults Min=0, Max=0, Value=0, the
-                                             only safe order is Maximum → Value →
-                                             Minimum. Default Value=1.8 is overwritten
-                                             on Loaded by ResyncFromSettings reading
-                                             AmbientSettings.BrightnessCurveGamma. -->
+                                        <!-- Range/Value set in code-behind (Loaded
+                                             handler → InitGammaSliderRange) because
+                                             the WinUI 3 Slider parser rejects every
+                                             XML attribute order with a non-zero
+                                             Minimum + a Value in that range. Stays
+                                             unbounded in XAML so the parse never
+                                             touches the RangeBase invariants. -->
                                         <Slider x:Name="GammaSlider"
                                                 Grid.Column="0"
-                                                Maximum="3.0"
-                                                Value="1.8"
-                                                Minimum="1.0"
                                                 StepFrequency="0.05"
                                                 SmallChange="0.05" LargeChange="0.25"
                                                 TickFrequency="0.5"

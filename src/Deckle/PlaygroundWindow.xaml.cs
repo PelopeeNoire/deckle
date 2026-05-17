@@ -2952,6 +2952,16 @@ public sealed partial class PlaygroundWindow : Window
 
     private void InitPlaygroundAmbientTuning()
     {
+        // Set the gamma slider range here rather than in XAML : the
+        // WinUI 3 XAML parser rejected every attribute order with a
+        // non-zero Minimum (see AmbientPage GammaSlider rationale).
+        // Order matters at runtime too — Maximum first, then Value,
+        // then Minimum — so the RangeBase invariant holds at each
+        // assignment step.
+        PlaygroundGammaSlider.Maximum = 3.0;
+        PlaygroundGammaSlider.Value   = 1.8;
+        PlaygroundGammaSlider.Minimum = 1.0;
+
         // Subscription to AmbientSettingsService.Changed already lives
         // in the main Loaded handler (OnAmbientSettingsChangedFromPlayground
         // calls ResyncPlaygroundAmbientTuning alongside the pipeline-row

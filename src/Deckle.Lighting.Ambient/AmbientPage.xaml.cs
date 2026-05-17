@@ -58,6 +58,17 @@ public sealed partial class AmbientPage : Page
 
     private void AmbientPage_Loaded(object sender, RoutedEventArgs e)
     {
+        // Set the gamma slider range here rather than in XAML : the
+        // WinUI 3 XAML parser rejected every attribute order that put
+        // Minimum=1.0 with the default Value=0, and putting Value=1.8
+        // before Minimum still failed. Setting them post-construction
+        // bypasses the parse-time invariant check entirely. Order
+        // matters here too — Maximum first, then Value, then Minimum
+        // — so the runtime invariant holds at each step.
+        GammaSlider.Maximum = 3.0;
+        GammaSlider.Value   = 1.8;
+        GammaSlider.Minimum = 1.0;
+
         ResyncFromSettings();
         SyncHueBridgeUi();
         ApplyEngineState(AmbientEngine.Current?.State ?? AmbientEngineState.Off);
