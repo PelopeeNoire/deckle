@@ -435,8 +435,29 @@ public sealed partial class AmbientPage : Page
         AmbientSettingsService.Instance.Save();
     }
 
-    private void OnHueForgetClick(object sender, RoutedEventArgs e)
+    private async void OnHueForgetClick(object sender, RoutedEventArgs e)
     {
+        // Modal confirmation before clearing the pairing — matches
+        // Microsoft's official guidance for destructive actions
+        // (confirm in a ContentDialog rather than rely on the button
+        // colour alone). Wording is provisional, will pass through the
+        // UX copy review in a later sweep.
+        var dialog = new ContentDialog
+        {
+            Title             = "Forget Hue bridge?",
+            Content           = "The locally stored bridge address and credentials will be cleared. " +
+                                "The username remains valid on the bridge itself until you remove it " +
+                                "from the Hue mobile app, so you can pair again later without pressing " +
+                                "the link button.",
+            PrimaryButtonText = "Forget",
+            CloseButtonText   = "Cancel",
+            DefaultButton     = ContentDialogButton.Close,
+            XamlRoot          = this.XamlRoot,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
         HuePairingService.Instance.Forget();
         // SyncHueBridgeUi fires via BridgeChanged event ; we just clear
         // any transient pair status text so the row reads clean.
