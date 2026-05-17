@@ -90,10 +90,13 @@ public sealed partial class AmbientPage : Page
             ExposureSlider.Value      = s.ExposureEv;
             SaturationSlider.Value    = s.SaturationBoost * 100.0;
             MinBrightnessSlider.Value = s.MinBrightness;
+            GammaSlider.Value         = s.BrightnessCurveGamma;
+            GammaCurveCanvas.Gamma    = s.BrightnessCurveGamma;
 
             UpdateExposureText();
             UpdateSaturationText();
             UpdateMinBrightnessText();
+            UpdateGammaText();
 
             // Pair completeness drives the NotPaired InfoBar. The
             // criteria mirror AmbientEngine.StartAsync's validation
@@ -179,6 +182,17 @@ public sealed partial class AmbientPage : Page
         AmbientSettingsService.Instance.Save();
     }
 
+    private void GammaSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdateGammaText();
+        // Live-update the curve viz even during the load pass — the
+        // widget itself is purely visual, no persistence, no save loop.
+        GammaCurveCanvas.Gamma = GammaSlider.Value;
+        if (_loading) return;
+        AmbientSettingsService.Instance.Current.BrightnessCurveGamma = GammaSlider.Value;
+        AmbientSettingsService.Instance.Save();
+    }
+
     private void OpenPlaygroundButton_Click(object sender, RoutedEventArgs e)
     {
         AmbientEngine.OpenPlaygroundRequested?.Invoke();
@@ -198,5 +212,10 @@ public sealed partial class AmbientPage : Page
     private void UpdateMinBrightnessText()
     {
         MinBrightnessValueText.Text = $"{(int)Math.Round(MinBrightnessSlider.Value)}";
+    }
+
+    private void UpdateGammaText()
+    {
+        GammaValueText.Text = $"γ {GammaSlider.Value:F2}";
     }
 }

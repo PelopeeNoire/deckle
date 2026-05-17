@@ -193,6 +193,15 @@
   <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
     <value>Floor on the bulb brightness when the lamp is on. Keeps mid-tone scenes readable through the diffuser.</value>
   </data>
+  <data name="AmbientGammaCard.Header" xml:space="preserve">
+    <value>Brightness curve</value>
+  </data>
+  <data name="AmbientGammaCard.Description" xml:space="preserve">
+    <value>How dim scenes map to lamp brightness. Higher γ pulls dim scenes further down without dimming bright ones. Compare the accent curve to the dashed linear reference.</value>
+  </data>
+  <data name="AmbientGammaCaption.Text" xml:space="preserve">
+    <value>γ 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows</value>
+  </data>
 
   <!-- ── Configuration pointer (transient — phase I) ───────── -->
   <data name="AmbientConfigSectionHeader.Text" xml:space="preserve">

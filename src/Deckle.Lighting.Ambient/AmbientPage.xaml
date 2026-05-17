@@ -3,7 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
-    xmlns:ui="using:CommunityToolkit.WinUI">
+    xmlns:ui="using:CommunityToolkit.WinUI"
+    xmlns:ambientControls="using:Deckle.Lighting.Ambient.Controls">
 
     <!-- Pattern canonique Microsoft Learn (SettingsExpander sample
          "Settings page example") : StackPanel max 1000 dans un Grid,
@@ -164,6 +165,62 @@
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            MinWidth="48"
                                            TextAlignment="End" />
+                            </Grid>
+                        </controls:SettingsCard>
+
+                        <!-- Brightness response curve : the only HDR
+                             knob that benefits from a visual reference,
+                             because intuition breaks down on power-law
+                             curves. The widget lives left of the slider
+                             so the eye reads "this is what the curve
+                             looks like" before "this is where the slider
+                             sits". Caption summarises the practical
+                             range so the user knows what's reasonable
+                             without trial-and-error. -->
+                        <controls:SettingsCard x:Uid="AmbientGammaCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ambientControls:BrightnessCurveCanvas
+                                    x:Name="GammaCurveCanvas"
+                                    Grid.Column="0"
+                                    VerticalAlignment="Top" />
+                                <Grid Grid.Column="1"
+                                      VerticalAlignment="Center"
+                                      RowSpacing="8">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="GammaSlider"
+                                                Grid.Column="0"
+                                                Minimum="1.0" Maximum="3.0"
+                                                StepFrequency="0.05"
+                                                SmallChange="0.05" LargeChange="0.25"
+                                                TickFrequency="0.5"
+                                                TickPlacement="Outside"
+                                                ValueChanged="GammaSlider_ValueChanged" />
+                                        <TextBlock x:Name="GammaValueText"
+                                                   Grid.Column="1"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   MinWidth="48"
+                                                   TextAlignment="End" />
+                                    </Grid>
+                                    <TextBlock x:Uid="AmbientGammaCaption"
+                                               Grid.Row="1"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                               TextWrapping="Wrap" />
+                                </Grid>
                             </Grid>
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
