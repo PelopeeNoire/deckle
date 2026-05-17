@@ -46,9 +46,10 @@
                 <!-- Surfaced when the persisted Hue bridge state is
                      incomplete (no IP / no username / no group). The
                      toggle stays usable but a click will immediately
-                     revert ; the InfoBar redirects to the Playground
-                     where pairing lives in V0. Tied to the Loaded /
-                     Changed observer in code-behind. -->
+                     revert. The action button expands the Hue bridge
+                     expander in the Configuration section below and
+                     scrolls to it. Tied to the Loaded / Changed
+                     observer in code-behind. -->
                 <InfoBar x:Name="NotPairedInfoBar"
                          x:Uid="AmbientNotPairedInfoBar"
                          IsClosable="False"
@@ -56,9 +57,9 @@
                          Severity="Warning"
                          Margin="0,0,0,8">
                     <InfoBar.ActionButton>
-                        <Button x:Name="OpenPlaygroundButton"
+                        <Button x:Name="ConfigureBridgeButton"
                                 x:Uid="AmbientNotPairedActionButton"
-                                Click="OpenPlaygroundButton_Click" />
+                                Click="ConfigureBridgeButton_Click" />
                     </InfoBar.ActionButton>
                 </InfoBar>
 
@@ -228,16 +229,115 @@
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--
-                    Pair + Entertainment Area + Light zones + per-light
-                    brightness still live in the Playground for V0. The
-                    pointer below tells the user where to go ; phase I will
-                    migrate that pair flow into this page.
+                    Hue bridge pairing now lives in this page (was in the
+                    Playground in V0). The bridge state is owned by the
+                    process-wide HuePairingService — the same instance the
+                    Playground and the AmbientEngine consume — so re-pairing
+                    or forgetting from either surface takes effect everywhere.
+                    Per-light zone assignment and per-light brightness still
+                    live in the Playground for now (richer UI tied to the
+                    preview grid).
                 -->
                 <TextBlock x:Uid="AmbientConfigSectionHeader"
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
-                <controls:SettingsCard x:Uid="AmbientConfigPointerCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE713;}" />
+                <controls:SettingsExpander x:Uid="HueBridgeExpander"
+                                           x:Name="HueBridgeExpander"
+                                           HeaderIcon="{ui:FontIcon Glyph=&#xE839;}">
+                    <!-- Header right-side : compact status text + dot. The
+                         expander shows / hides the per-section cards below
+                         on click. -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Ellipse x:Name="HueBridgeStatusDot"
+                                 Width="10" Height="10"
+                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                 VerticalAlignment="Center" />
+                        <TextBlock x:Name="HueBridgeStatusText"
+                                   Text="Not paired"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <!-- Bridge address row. Discover queries
+                             discovery.meethue.com and autofills the textbox ;
+                             manual entry is the fallback when the cloud lookup
+                             returns nothing (firewall, offline, etc.). Pair
+                             launches the 30 s link-button countdown via
+                             HuePairingService.PairAsync. -->
+                        <controls:SettingsCard x:Uid="HueBridgeAddressCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="8" RowSpacing="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="HueBridgeIpTextBox"
+                                         Grid.Row="0" Grid.Column="0"
+                                         PlaceholderText="192.168.1.5" />
+                                <Button x:Name="HueDiscoverButton"
+                                        x:Uid="HueDiscoverButton"
+                                        Grid.Row="0" Grid.Column="1"
+                                        Click="OnHueDiscoverClick" />
+                                <Button x:Name="HuePairButton"
+                                        Grid.Row="0" Grid.Column="2"
+                                        Style="{ThemeResource AccentButtonStyle}"
+                                        Click="OnHuePairClick">
+                                    <TextBlock x:Name="HuePairLabel"
+                                               Text="Pair (press link button)" />
+                                </Button>
+                                <TextBlock x:Name="HuePairStatusText"
+                                           Grid.Row="1" Grid.Column="0"
+                                           Grid.ColumnSpan="3"
+                                           Text=""
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </Grid>
+                        </controls:SettingsCard>
+
+                        <!-- Entertainment group / room. Populated by clicking
+                             "List groups" once paired. The combo writes
+                             HueLastGroupId on selection — same key the
+                             AmbientEngine reads on Start. -->
+                        <controls:SettingsCard x:Uid="HueBridgeGroupCard"
+                                               ContentAlignment="Vertical">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="HueGroupComboBox"
+                                          Grid.Column="0"
+                                          HorizontalAlignment="Stretch"
+                                          IsEnabled="False"
+                                          SelectionChanged="OnHueGroupSelectionChanged" />
+                                <Button x:Name="HueListGroupsButton"
+                                        x:Uid="HueListGroupsButton"
+                                        Grid.Column="1"
+                                        IsEnabled="False"
+                                        Click="OnHueListGroupsClick" />
+                            </Grid>
+                        </controls:SettingsCard>
+
+                        <!-- Forget : clears the persisted credentials and
+                             disposes the bridge client via the service. The
+                             username on the bridge itself is NOT revoked —
+                             the user pairs again later without re-pressing
+                             the link button if the bridge still recognises
+                             the username. -->
+                        <controls:SettingsCard x:Uid="HueBridgeForgetCard">
+                            <Button x:Name="HueForgetButton"
+                                    x:Uid="HueForgetButton"
+                                    IsEnabled="False"
+                                    Click="OnHueForgetClick" />
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
 
             </StackPanel>
         </Grid>

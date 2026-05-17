@@ -1,7 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using Deckle.Lighting.Hue;
+using Deckle.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 
 namespace Deckle.Lighting.Ambient;
 
@@ -9,28 +14,40 @@ namespace Deckle.Lighting.Ambient;
 // NavigationView from src/Deckle.Settings/SettingsWindow.xaml via the
 // item Tag "Deckle.Lighting.Ambient.AmbientPage, Deckle.Lighting.Ambient".
 //
-// V0 surface : master Enabled toggle (with ProgressRing for transient
-// Starting / Stopping), Mode selector (Game / Realistic), HDR tuning
-// sliders (Exposure / Saturation / Min brightness), NotPaired InfoBar
-// (Warning) with "Open Playground" action when the persisted Hue
-// state is incomplete. Pair flow + Entertainment Area + Light zones +
-// per-light brightness still live in the Playground for this pass —
-// the InfoBar redirects there until they migrate.
+// Surface : master Enabled toggle, Mode selector (Game / Realistic),
+// HDR tuning sliders (Exposure / Saturation / Min brightness /
+// brightness curve γ with live visualisation), Hue bridge pairing
+// expander (Discover / Pair / List groups / Forget). Light zones and
+// per-light brightness still live in the Playground for now ; they
+// move here in a later pass if Louis decides the UI is worth it.
 //
 // Persistence : event-handler style (Toggled / SelectionChanged /
 // ValueChanged) that mutates AmbientSettings.Current and calls
 // AmbientSettingsService.Instance.Save() inline. No view-model layer.
 //
-// Sync state : two subscriptions wired in Loaded and dropped in
-// Unloaded. The Changed event re-syncs the controls from settings so
-// a flip from the tray / Playground propagates immediately to the
-// ToggleSwitch. The StateChanged event drives the transient UI
-// (ProgressRing, ModeCombo gating). Both subscriptions are guarded by
-// a _loading flag that suppresses the re-fire loop when handlers
-// touch the same controls that triggered them.
+// Sync state : three subscriptions wired in Loaded and dropped in
+// Unloaded. The Settings Changed event re-syncs the controls from
+// settings so a flip from the tray / Playground propagates immediately
+// to the ToggleSwitch. The engine StateChanged event drives the
+// transient UI (ModeCombo gating). The HuePairingService.BridgeChanged
+// event re-syncs the Hue expander row so a re-pair / forget from the
+// Playground reflects live. All three are guarded by a _loading flag
+// that suppresses the re-fire loop when handlers touch the same
+// controls that triggered them.
 public sealed partial class AmbientPage : Page
 {
     private bool _loading = true;
+
+    // Hue pairing local state. The countdown CTS is owned by this page
+    // so the Unloaded handler can cancel an in-flight pair if the user
+    // navigates away. _hueIsPairing guards double-clicks on the Pair
+    // button. _hueGroupComboSuppress prevents the SelectionChanged
+    // handler from firing while ListGroupsAsync is repopulating the
+    // combo's Items collection.
+    private CancellationTokenSource? _huePairCts;
+    private bool _hueIsPairing;
+    private IReadOnlyList<HueGroup> _hueGroups = [];
+    private bool _hueGroupComboSuppress;
 
     public AmbientPage()
     {
@@ -42,9 +59,11 @@ public sealed partial class AmbientPage : Page
     private void AmbientPage_Loaded(object sender, RoutedEventArgs e)
     {
         ResyncFromSettings();
+        SyncHueBridgeUi();
         ApplyEngineState(AmbientEngine.Current?.State ?? AmbientEngineState.Off);
 
         AmbientSettingsService.Instance.Changed += OnSettingsChanged;
+        HuePairingService.Instance.BridgeChanged += OnHueBridgeChanged;
         if (AmbientEngine.Current is not null)
         {
             AmbientEngine.Current.StateChanged += OnEngineStateChanged;
@@ -55,7 +74,15 @@ public sealed partial class AmbientPage : Page
 
     private void AmbientPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        // Cancel any in-flight pair countdown if the user navigates
+        // away — PairAsync exits with OperationCanceledException, the
+        // catch in OnHuePairClick resets the visuals.
+        try { _huePairCts?.Cancel(); } catch { /* best effort */ }
+        _huePairCts?.Dispose();
+        _huePairCts = null;
+
         AmbientSettingsService.Instance.Changed -= OnSettingsChanged;
+        HuePairingService.Instance.BridgeChanged -= OnHueBridgeChanged;
         if (AmbientEngine.Current is not null)
         {
             AmbientEngine.Current.StateChanged -= OnEngineStateChanged;
@@ -193,9 +220,206 @@ public sealed partial class AmbientPage : Page
         AmbientSettingsService.Instance.Save();
     }
 
-    private void OpenPlaygroundButton_Click(object sender, RoutedEventArgs e)
+    private void ConfigureBridgeButton_Click(object sender, RoutedEventArgs e)
     {
-        AmbientEngine.OpenPlaygroundRequested?.Invoke();
+        // Expand the Hue bridge expander and scroll it into view so the
+        // user lands on the pair flow without manual scrolling. The
+        // SettingsExpander.IsExpanded property is two-way bindable and
+        // immediately triggers the visual transition.
+        HueBridgeExpander.IsExpanded = true;
+        HueBridgeExpander.StartBringIntoView();
+    }
+
+    // ── Hue pairing handlers ────────────────────────────────────────
+
+    private void OnHueBridgeChanged()
+    {
+        // BridgeChanged can fire from any thread (Pair runs on a worker
+        // task, Forget is direct from UI thread). Marshal to the UI
+        // thread because the sync touches XAML elements.
+        if (DispatcherQueue.HasThreadAccess) SyncHueBridgeUi();
+        else                                 DispatcherQueue.TryEnqueue(SyncHueBridgeUi);
+    }
+
+    // Project HuePairingService state into the Hue expander visuals.
+    // Idempotent : called on Loaded, on every BridgeChanged, and after
+    // every local pair / forget operation. The pair status text (e.g.
+    // "Waiting (30 s)") is owned by the individual handlers — this
+    // method only touches the steady-state "Paired" / "Not paired"
+    // label so it doesn't stomp transient UI mid-pair.
+    private void SyncHueBridgeUi()
+    {
+        var paired = HuePairingService.Instance.PairedBridge;
+        var bridge = HuePairingService.Instance.Bridge;
+
+        if (paired is null || bridge is null || !bridge.IsPaired)
+        {
+            HueBridgeStatusDot.Fill   = GetThemeBrush("SystemFillColorNeutralBrush");
+            HueBridgeStatusText.Text  = "Not paired";
+            HuePairLabel.Text         = "Pair (press link button)";
+            HueListGroupsButton.IsEnabled = false;
+            HueForgetButton.IsEnabled     = false;
+
+            _hueGroupComboSuppress = true;
+            HueGroupComboBox.Items.Clear();
+            HueGroupComboBox.IsEnabled = false;
+            _hueGroupComboSuppress = false;
+            return;
+        }
+
+        var creds = bridge.Credentials!;
+        HueBridgeStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
+        HueBridgeStatusText.Text  = $"Paired ({creds.UsernameHead})";
+        HueBridgeIpTextBox.Text   = paired.InternalIpAddress;
+        HuePairLabel.Text         = "Re-pair";
+        HueListGroupsButton.IsEnabled = true;
+        HueForgetButton.IsEnabled     = true;
+    }
+
+    private static Brush GetThemeBrush(string resourceKey)
+        => (Brush)Application.Current.Resources[resourceKey];
+
+    private async void OnHueDiscoverClick(object sender, RoutedEventArgs e)
+    {
+        HueDiscoverButton.IsEnabled = false;
+        try
+        {
+            var bridges = await HuePairingService.Instance
+                .DiscoverAsync()
+                .ConfigureAwait(true);
+            if (bridges.Count > 0)
+            {
+                HueBridgeIpTextBox.Text = bridges[0].InternalIpAddress;
+            }
+            // Empty bridges list : leave the textbox alone, user types
+            // the IP manually (the LogWindow shows the verbose discovery
+            // outcome). No status dot change.
+        }
+        finally
+        {
+            HueDiscoverButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHuePairClick(object sender, RoutedEventArgs e)
+    {
+        if (_hueIsPairing) return;
+
+        var ip = HueBridgeIpTextBox.Text?.Trim();
+        if (string.IsNullOrEmpty(ip))
+        {
+            HuePairStatusText.Text = "Bridge IP required";
+            return;
+        }
+
+        try { _huePairCts?.Cancel(); } catch { /* best effort */ }
+        _huePairCts?.Dispose();
+        _huePairCts = new CancellationTokenSource();
+        _hueIsPairing = true;
+
+        HuePairButton.IsEnabled = false;
+        HuePairLabel.Text       = "Waiting for link button…";
+        HuePairStatusText.Text  = "Press the link button on the bridge — 30 s window.";
+
+        var target = new HueBridge(Id: "manual", InternalIpAddress: ip, Port: 443);
+        try
+        {
+            var creds = await HuePairingService.Instance
+                .PairAsync(target, ct: _huePairCts.Token)
+                .ConfigureAwait(true);
+            HuePairStatusText.Text = $"Paired ({creds.UsernameHead}). Click List groups to continue.";
+            // SyncHueBridgeUi fires via BridgeChanged event and flips
+            // the dot to success + label to Re-pair.
+        }
+        catch (OperationCanceledException)
+        {
+            HuePairStatusText.Text = "Cancelled.";
+        }
+        catch (TimeoutException)
+        {
+            HuePairStatusText.Text = "Timed out — try again, the link button must be pressed within 30 s.";
+        }
+        catch (Exception ex)
+        {
+            HuePairStatusText.Text = $"Failed: {ex.Message}";
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Pair from Settings failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            _hueIsPairing = false;
+            HuePairButton.IsEnabled = true;
+        }
+    }
+
+    private async void OnHueListGroupsClick(object sender, RoutedEventArgs e)
+    {
+        if (!HuePairingService.Instance.IsPaired) return;
+
+        HueListGroupsButton.IsEnabled = false;
+        try
+        {
+            _hueGroups = await HuePairingService.Instance
+                .ListGroupsAsync()
+                .ConfigureAwait(true);
+
+            _hueGroupComboSuppress = true;
+            HueGroupComboBox.Items.Clear();
+            foreach (var g in _hueGroups)
+            {
+                HueGroupComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = g.DisplayLabel,
+                    Tag     = g,
+                });
+            }
+            _hueGroupComboSuppress = false;
+
+            HueGroupComboBox.IsEnabled = _hueGroups.Count > 0;
+            if (_hueGroups.Count > 0)
+            {
+                string? lastId = AmbientSettingsService.Instance.Current.HueLastGroupId;
+                int preselect = 0;
+                if (!string.IsNullOrEmpty(lastId))
+                {
+                    for (int i = 0; i < _hueGroups.Count; i++)
+                    {
+                        if (_hueGroups[i].Id == lastId) { preselect = i; break; }
+                    }
+                }
+                HueGroupComboBox.SelectedIndex = preselect;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogService.Instance.Warning(LogSource.Hue,
+                $"Listing groups from Settings failed — {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            HueListGroupsButton.IsEnabled = true;
+        }
+    }
+
+    private void OnHueGroupSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_hueGroupComboSuppress) return;
+        if (HueGroupComboBox.SelectedItem is not ComboBoxItem { Tag: HueGroup group }) return;
+
+        // Persist the chosen group so AmbientEngine.StartAsync finds it
+        // on the next pipeline start. Symmetric with the Playground
+        // OnHueGroupSelectionChanged handler.
+        AmbientSettingsService.Instance.Current.HueLastGroupId = group.Id;
+        AmbientSettingsService.Instance.Save();
+    }
+
+    private void OnHueForgetClick(object sender, RoutedEventArgs e)
+    {
+        HuePairingService.Instance.Forget();
+        // SyncHueBridgeUi fires via BridgeChanged event ; we just clear
+        // any transient pair status text so the row reads clean.
+        HuePairStatusText.Text = "";
+        HueBridgeIpTextBox.Text = "";
     }
 
     private void UpdateExposureText()
