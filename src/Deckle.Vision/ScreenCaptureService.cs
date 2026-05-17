@@ -377,7 +377,15 @@ public sealed class ScreenCaptureService : IDisposable
 
             if (hr != 0)
             {
-                _log.Warning(LogSource.Screen,
+                // Downgraded to Verbose : the backoff + retry loop
+                // can fire this once every 500 ms for the lifetime of
+                // a degraded output (sleep / display unplug / HDR
+                // toggle landing on INVALID_CALL = 0x887A0001), which
+                // floods the LogWindow at Info. TODO : if a specific
+                // hr starts showing up often in field reports, add a
+                // dedicated recovery branch above (like ACCESS_LOST)
+                // rather than relying on the generic retry.
+                _log.Verbose(LogSource.Screen,
                     $"AcquireNextFrame failed (hr=0x{hr:X8}) — backing off {ErrorBackoffMs} ms");
                 if (desktopResourcePtr != 0) Marshal.Release(desktopResourcePtr);
                 try { Task.Delay(ErrorBackoffMs, ct).Wait(ct); } catch (OperationCanceledException) { break; }

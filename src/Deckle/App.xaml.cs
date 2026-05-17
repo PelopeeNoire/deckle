@@ -369,24 +369,25 @@ public partial class App : Microsoft.UI.Xaml.Application
         _tray.UpdateStatus("Ready");
         _log.Info(LogSource.Status, "Ready");
 
+        // Force Ambient master toggle OFF at boot — explicit user
+        // action via Settings / tray re-enables the pipeline. Louis
+        // explicit preference : the app should not start screen
+        // capture + Hue traffic on its own at launch. Subscribe the
+        // observer AFTER the force-off so the Changed event doesn't
+        // bounce a Start call we just suppressed.
+        if (AmbientSettingsService.Instance.Current.Enabled)
+        {
+            AmbientSettingsService.Instance.Current.Enabled = false;
+            AmbientSettingsService.Instance.Save();
+            _log.Info(LogSource.Ambient,
+                "Ambient master toggle forced OFF at boot — explicit user action required to enable");
+        }
+
         // Ambient Light master toggle observer. Drives Start / Stop on
         // the canonical engine instantiated above. The engine owns its
         // own capture / sampler / Hue dependencies so the pipeline runs
         // without any window needing to be open.
         AmbientSettingsService.Instance.Changed += OnAmbientSettingsChanged;
-
-        // Boot-time auto-start : if the previous session left Enabled=
-        // true and the bridge is paired, kick the pipeline now. The
-        // Changed event only fires on subsequent flips, so without this
-        // kick the engine would sit idle until the user re-toggles. We
-        // intentionally don't await — the start path does I/O (capture
-        // init, bridge connect, list lights) and shouldn't block the
-        // launch sequence ; failures are logged and Enabled is
-        // reverted by ApplyAmbientEnabledAsync.
-        if (AmbientSettingsService.Instance.Current.Enabled)
-        {
-            _ = ApplyAmbientEnabledAsync(true);
-        }
 
         // Message-only Win32 host — invisible by construction (HWND_MESSAGE
         // parent). Hosts the tray callback and global hotkeys without any
