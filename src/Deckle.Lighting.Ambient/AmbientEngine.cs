@@ -136,11 +136,14 @@ public sealed class AmbientEngine : IAsyncDisposable
 
     private readonly IAmbientEngineHost _host;
 
-    // All four deps are owned by the engine — instantiated in
-    // StartAsync, disposed in Stop. Null when the engine is idle. The
+    // Three deps are owned by the engine — instantiated in StartAsync,
+    // disposed in Stop. Null when the engine is idle. The
     // ScreenCaptureService is created fresh on every start so the
     // monitor selection + HDR negotiation are picked up from the
-    // current Windows state rather than a stale snapshot.
+    // current Windows state rather than a stale snapshot. The bridge
+    // client is borrowed from HuePairingService (singleton owner,
+    // shared with the Playground and Settings AmbientPage) — never
+    // disposed here, the reference is simply released on Stop.
     private ScreenCaptureService? _capture;
     private HueBridgeClient? _bridgeClient;
     private ILightOutput? _output;
@@ -396,18 +399,16 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         try
         {
-            // ── Build owned deps ──────────────────────────────────
-            // Hue bridge serves HTTPS on port 443 (the discovery
-            // response confirms this on every consumer firmware). The
-            // ClientKey field is unused on the REST CLIP v1 path —
-            // pass empty to satisfy the record's non-nullable string.
-            var bridge = new HueBridge(
-                Id: ambient.HueBridgeId,
-                InternalIpAddress: ambient.HueBridgeIp,
-                Port: 443);
-            var creds = new HueCredentials(ambient.HueUsername, "");
-
-            _bridgeClient = new HueBridgeClient(bridge, creds);
+            // ── Wire owned deps ───────────────────────────────────
+            // The bridge client is owned by HuePairingService — a
+            // process-wide singleton that auto-restores from settings
+            // on first access (and is shared with the Playground +
+            // Settings AmbientPage so re-pairing from one surface
+            // takes effect everywhere without an engine restart). The
+            // engine borrows the reference, never disposes it.
+            _bridgeClient = HuePairingService.Instance.Bridge
+                ?? throw new InvalidOperationException(
+                    "HuePairingService restored no bridge from settings — paired state in settings.json is inconsistent.");
             _output = new HueRestLightOutput(_bridgeClient, ambient.HueLastGroupId);
 
             _capture = new ScreenCaptureService();
@@ -526,11 +527,12 @@ public sealed class AmbientEngine : IAsyncDisposable
             try { disp.Dispose(); } catch { }
         }
         _output = null;
-        if (_bridgeClient is not null)
-        {
-            try { _bridgeClient.Dispose(); } catch { }
-            _bridgeClient = null;
-        }
+        // _bridgeClient is borrowed from HuePairingService — do NOT
+        // dispose. The service owns the lifecycle ; if the user forgot
+        // the bridge mid-run, _bridgeClient may already be disposed
+        // and any in-flight push will surface a HttpRequestException
+        // that the next Start picks up cleanly.
+        _bridgeClient = null;
         _multiLights = null;
         _multiLastPushed = null;
     }

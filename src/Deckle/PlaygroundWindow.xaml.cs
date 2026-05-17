@@ -156,13 +156,22 @@ public sealed partial class PlaygroundWindow : Window
 
     // ── Ambient lighting — Hue REST driver (J2) ────────────────────────
     //
-    // The bridge client is created on the first Pair attempt and lives
-    // for the duration of the Playground session ; no persistence
-    // across window close (Louis's explicit choice for the playground
-    // contract — tester librement, tout reset à la fermeture). On
-    // Closing→Hide we cancel any in-flight pairing and dispose the
-    // client ; the next Pair click starts a fresh client.
-    private HueBridgeClient? _hueBridge;
+    // The Hue bridge state (paired client, credentials, IP) is owned
+    // by HuePairingService.Instance — the process-wide singleton that
+    // both the Playground and the Settings AmbientPage consume. The
+    // Playground tracks two transient pieces of state on its own :
+    // the local CancellationTokenSource for an in-flight pair (so the
+    // Closing handler can cancel it), and a guard flag against double-
+    // clicks on the Pair button. Everything else (current bridge,
+    // discover results, persist creds, fire BridgeChanged) lives in
+    // the service.
+    //
+    // Closing→Hide intentionally does NOT forget the bridge. The
+    // canonical AmbientEngine running in App also consumes the
+    // service, so tearing down here would also kill ambient lighting
+    // for the rest of the app — which is wrong now that the service
+    // is shared. The user explicitly clicks "Forget" (Settings or a
+    // future Playground action) to invalidate the credentials.
     private CancellationTokenSource? _huePairCts;
     private bool _hueIsPairing;
     private IReadOnlyList<HueGroup> _hueGroups = [];
@@ -319,10 +328,16 @@ public sealed partial class PlaygroundWindow : Window
                 // setting ItemsSource earlier silently no-ops.
                 TargetCardsRepeater.ItemsSource = _targetCardNames;
                 ApplyTarget();
-                // Restore the Hue bridge from persisted settings, if
-                // any. Skips the link-button dance when the user has
-                // already paired in a previous session.
-                RestoreHueFromSettings();
+                // Project HuePairingService state into the row visuals.
+                // The service auto-restored its bridge from settings on
+                // first access, so paired sessions land here with the
+                // row already showing "Paired" without further work.
+                SyncHueUiFromService();
+
+                // Stay in sync with re-pair / forget operations that
+                // happen from another surface (Settings AmbientPage)
+                // while the Playground is open.
+                HuePairingService.Instance.BridgeChanged += OnHueBridgeChangedFromPlayground;
 
                 // Mirror the persisted UseMultiLight value into the
                 // RadioButtons. SelectedIndex 0 = group, 1 = per-zone.
@@ -388,6 +403,7 @@ public sealed partial class PlaygroundWindow : Window
             _screenCaptureFpsTimer.Stop();
             StopScreenCaptureIfRunning();
             TeardownHueIfActive();
+            HuePairingService.Instance.BridgeChanged -= OnHueBridgeChangedFromPlayground;
             // Detach the composition child first so the compositor stops
             // referencing the bundle's visual tree, then dispose. In the
             // singleton-hidden pattern (Closing→Hide) Closed only fires at
@@ -398,47 +414,61 @@ public sealed partial class PlaygroundWindow : Window
         };
     }
 
-    // Restore the Hue bridge state from AmbientSettings. Populates the
-    // IP textbox, reconstructs the HueBridgeClient with the saved
-    // username, and visually shows the bridge as paired so the user
-    // can go straight to "List groups". No network call here — the
-    // first authenticated REST request happens when the user clicks
-    // List groups or selects a group. If the bridge is unreachable or
-    // the username got revoked, that's where the failure surfaces.
-    private void RestoreHueFromSettings()
+    // BridgeChanged handler — marshal to the UI thread because the
+    // event can fire from any thread (a Settings page pair handler,
+    // an AmbientEngine restore at start, …) and SyncHueUiFromService
+    // touches XAML elements.
+    private void OnHueBridgeChangedFromPlayground()
     {
-        var settings = AmbientSettingsService.Instance.Current;
-        if (string.IsNullOrWhiteSpace(settings.HueBridgeIp) ||
-            string.IsNullOrWhiteSpace(settings.HueUsername))
+        if (DispatcherQueue.HasThreadAccess)
         {
-            return; // Nothing persisted yet — first run / unpaired state.
+            SyncHueUiFromService();
+        }
+        else
+        {
+            DispatcherQueue.TryEnqueue(SyncHueUiFromService);
+        }
+    }
+
+    // Sync the Hue pairing row visuals from HuePairingService state.
+    // The service auto-restores its bridge at first access (lazy
+    // singleton ctor), so by the time the Playground Loaded handler
+    // calls us here the bridge is already either paired-from-settings
+    // or absent (first run / forgotten state). We only project that
+    // state into the UI — populate the IP textbox, swap the Pair
+    // label between "Pair" / "Re-pair", flip the status dot, enable
+    // the next-step row. No network call here — the first REST
+    // request happens when the user clicks List groups or selects a
+    // group ; that's where a stale username / unreachable bridge
+    // surfaces.
+    //
+    // Idempotent : safe to call again whenever BridgeChanged fires
+    // (e.g. the user pairs from Settings while the Playground is
+    // open).
+    private void SyncHueUiFromService()
+    {
+        var paired = HuePairingService.Instance.PairedBridge;
+        var bridge = HuePairingService.Instance.Bridge;
+
+        if (paired is null || bridge is null || !bridge.IsPaired)
+        {
+            // Nothing persisted yet — first run, or the user forgot
+            // the bridge. Leave the IP textbox empty so the user can
+            // discover or type, reset the row to the unpaired visual.
+            HueBridgeIpTextBox.Text = string.Empty;
+            HuePairLabel.Text       = "Pair (press link button)";
+            HuePairStatusText.Text  = "Not paired";
+            HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorNeutralBrush");
+            HueListGroupsButton.IsEnabled = false;
+            return;
         }
 
-        try
-        {
-            var bridge = new HueBridge(
-                Id:                settings.HueBridgeId ?? "restored",
-                InternalIpAddress: settings.HueBridgeIp,
-                Port:              443);
-            // ClientKey is unused on the REST CLIP v1 path ; we never
-            // persisted it. Restored credentials carry an empty value.
-            var creds = new HueCredentials(settings.HueUsername, ClientKey: "");
-            _hueBridge = new HueBridgeClient(bridge, creds);
-
-            HueBridgeIpTextBox.Text = settings.HueBridgeIp;
-            HuePairLabel.Text       = "Re-pair";
-            HuePairStatusText.Text  = $"Paired ({creds.UsernameHead}, saved)";
-            HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
-            HueListGroupsButton.IsEnabled = true;
-
-            LogService.Instance.Verbose(LogSource.Hue,
-                $"restore | bridge_ip={settings.HueBridgeIp} | bridge_id={settings.HueBridgeId} | username={creds.UsernameHead} | last_group_id={settings.HueLastGroupId ?? "none"}");
-        }
-        catch (Exception ex)
-        {
-            LogService.Instance.Warning(LogSource.Hue,
-                $"Hue restore failed — {ex.GetType().Name}: {ex.Message} (user will need to re-pair)");
-        }
+        var creds = bridge.Credentials!;
+        HueBridgeIpTextBox.Text = paired.InternalIpAddress;
+        HuePairLabel.Text       = "Re-pair";
+        HuePairStatusText.Text  = $"Paired ({creds.UsernameHead}, saved)";
+        HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
+        HueListGroupsButton.IsEnabled = true;
     }
 
     // ── Lifecycle surface (called by App) ───────────────────────────────
@@ -1665,7 +1695,9 @@ public sealed partial class PlaygroundWindow : Window
         HueDiscoverButton.IsEnabled = false;
         try
         {
-            var bridges = await HueDiscovery.DiscoverViaCloudAsync().ConfigureAwait(true);
+            var bridges = await HuePairingService.Instance
+                .DiscoverAsync()
+                .ConfigureAwait(true);
             if (bridges.Count == 0)
             {
                 // Cloud returned empty — log + leave the textbox alone
@@ -1699,15 +1731,10 @@ public sealed partial class PlaygroundWindow : Window
             return;
         }
 
-        // Replace any previous client (lets the user retry against a
-        // different IP without restarting the window) ; the old one
-        // owns an HttpClient that needs disposing.
-        TeardownHueIfActive();
-
-        _hueBridge = new HueBridgeClient(new HueBridge(
-            Id: "manual",
-            InternalIpAddress: ip,
-            Port: 443));
+        // Cancel any local pair already running (paranoid — the
+        // _hueIsPairing guard above usually wins first).
+        try { _huePairCts?.Cancel(); } catch { /* best effort */ }
+        _huePairCts?.Dispose();
         _huePairCts = new CancellationTokenSource();
         _hueIsPairing = true;
 
@@ -1716,30 +1743,23 @@ public sealed partial class PlaygroundWindow : Window
         HuePairStatusText.Text  = "Waiting (30 s)";
         HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorCautionBrush");
 
+        var target = new HueBridge(Id: "manual", InternalIpAddress: ip, Port: 443);
         try
         {
-            var creds = await _hueBridge.PairAsync(
-                overallTimeout: TimeSpan.FromSeconds(30),
-                pollInterval:   TimeSpan.FromSeconds(2),
-                ct:             _huePairCts.Token)
+            // The service runs the link-button countdown, persists the
+            // creds on success, disposes the previous bridge client,
+            // and fires BridgeChanged — our OnHueBridgeChangedFromPlayground
+            // handler also fires SyncHueUiFromService(), but we still
+            // touch the row visuals here because we want pair-specific
+            // copy ("Paired (xxx)") that the generic sync helper
+            // doesn't surface.
+            var creds = await HuePairingService.Instance
+                .PairAsync(target, ct: _huePairCts.Token)
                 .ConfigureAwait(true);
 
             HuePairStatusText.Text = $"Paired ({creds.UsernameHead})";
             HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorSuccessBrush");
             HuePairLabel.Text      = "Re-pair";
-
-            // Pairing succeeded → persist the bridge state so the user
-            // doesn't have to press the link button again next session.
-            // We do NOT persist the ClientKey (Entertainment v2 PSK) —
-            // the REST path doesn't need it and storing a PSK in a JSON
-            // file is the wrong choice. HueLastGroupId stays whatever
-            // the previous pair set ; if the user picks a new group
-            // it gets overwritten by OnHueGroupSelectionChanged below.
-            var ambient = AmbientSettingsService.Instance.Current;
-            ambient.HueBridgeIp = _hueBridge.Bridge.InternalIpAddress;
-            ambient.HueBridgeId = _hueBridge.Bridge.Id;
-            ambient.HueUsername = creds.Username;
-            AmbientSettingsService.Instance.Save();
 
             // Pairing succeeded → unlock the next row. List groups is
             // a separate explicit step (the user might want to inspect
@@ -1750,24 +1770,24 @@ public sealed partial class PlaygroundWindow : Window
         }
         catch (OperationCanceledException)
         {
-            // Window closed mid-pair, or user re-clicked. Don't
-            // surface anything — the visual state is whatever the
-            // teardown leaves behind.
+            // Window closed mid-pair, or user re-clicked. Reset the
+            // visuals — the service didn't swap the bridge so the
+            // previous pairing (if any) is still intact.
             HuePairStatusText.Text = "Cancelled";
             HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorNeutralBrush");
-            HuePairLabel.Text      = "Pair (press link button)";
+            HuePairLabel.Text      = HuePairingService.Instance.IsPaired ? "Re-pair" : "Pair (press link button)";
         }
         catch (TimeoutException)
         {
             HuePairStatusText.Text = "Timed out — try again";
             HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCriticalBrush");
-            HuePairLabel.Text      = "Pair (press link button)";
+            HuePairLabel.Text      = HuePairingService.Instance.IsPaired ? "Re-pair" : "Pair (press link button)";
         }
         catch (Exception ex)
         {
             HuePairStatusText.Text = $"Failed: {ex.Message}";
             HuePairStatusDot.Fill  = GetThemeBrush("SystemFillColorCriticalBrush");
-            HuePairLabel.Text      = "Pair (press link button)";
+            HuePairLabel.Text      = HuePairingService.Instance.IsPaired ? "Re-pair" : "Pair (press link button)";
         }
         finally
         {
@@ -1778,12 +1798,14 @@ public sealed partial class PlaygroundWindow : Window
 
     private async void OnHueListGroupsClick(object sender, RoutedEventArgs e)
     {
-        if (_hueBridge is not { IsPaired: true }) return;
+        if (!HuePairingService.Instance.IsPaired) return;
 
         HueListGroupsButton.IsEnabled = false;
         try
         {
-            _hueGroups = await _hueBridge.ListGroupsAsync().ConfigureAwait(true);
+            _hueGroups = await HuePairingService.Instance
+                .ListGroupsAsync()
+                .ConfigureAwait(true);
 
             // Repopulate the combo. The suppress flag stops the
             // SelectionChanged handler from firing while we're
@@ -1839,7 +1861,8 @@ public sealed partial class PlaygroundWindow : Window
     private async void OnHueGroupSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_hueGroupComboSuppress) return;
-        if (_hueBridge is not { IsPaired: true }) return;
+        var bridge = HuePairingService.Instance.Bridge;
+        if (bridge is not { IsPaired: true }) return;
 
         // Cancel any in-flight rotation against the previous group
         // and dispose the previous HueRestLightOutput before pointing
@@ -1868,7 +1891,7 @@ public sealed partial class PlaygroundWindow : Window
             return;
         }
 
-        _hueLightOutput = new HueRestLightOutput(_hueBridge, group.Id);
+        _hueLightOutput = new HueRestLightOutput(bridge, group.Id);
         try
         {
             await _hueLightOutput.ConnectAsync().ConfigureAwait(true);
@@ -2280,12 +2303,14 @@ public sealed partial class PlaygroundWindow : Window
     private async Task<HueEntertainmentArea?> FindMatchingEntertainmentAreaAsync(
         HueGroup group, IReadOnlyList<LightDescriptor> lights)
     {
-        if (_hueBridge is not { IsPaired: true }) return null;
+        if (!HuePairingService.Instance.IsPaired) return null;
 
         IReadOnlyList<HueEntertainmentArea> areas;
         try
         {
-            areas = await _hueBridge.ListEntertainmentConfigurationsAsync().ConfigureAwait(true);
+            areas = await HuePairingService.Instance
+                .ListEntertainmentConfigurationsAsync()
+                .ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -2793,17 +2818,13 @@ public sealed partial class PlaygroundWindow : Window
 
     private void TeardownHueIfActive()
     {
-        // The canonical engine lives in App and owns its own bridge
-        // client ; tearing down the local Playground "Hue test" bits
-        // doesn't require touching it. Flip Enabled off so the App
-        // observer stops the pipeline cleanly before we invalidate
-        // the credentials the user is about to re-pair.
-        var ambient = AmbientSettingsService.Instance.Current;
-        if (ambient.Enabled)
-        {
-            ambient.Enabled = false;
-            AmbientSettingsService.Instance.Save();
-        }
+        // The canonical bridge is owned by HuePairingService — both the
+        // App-side AmbientEngine and the Settings AmbientPage point at
+        // the same instance. Tearing it down here would kill ambient
+        // lighting for the whole process every time the user closes
+        // the Playground, which is wrong. Forget is an explicit user
+        // action (Settings → Forget bridge), not a side-effect of
+        // closing a debug window.
 
         // Sampler / preview teardown that mirrors the pipeline stop
         // path (capture-stop-symmetry handled by the pipeline click
@@ -2837,24 +2858,20 @@ public sealed partial class PlaygroundWindow : Window
 
         // The HueRestLightOutput is a thin wrapper around the bridge
         // client ; disposing it doesn't close the HttpClient (the
-        // bridge client owns that). DisposeAsync is fire-and-forget
-        // here — we can't await in a synchronous teardown and the
-        // dispose work is non-blocking anyway.
+        // bridge client is owned by HuePairingService). DisposeAsync
+        // is fire-and-forget here — we can't await in a synchronous
+        // teardown and the dispose work is non-blocking anyway.
         _hueLightOutput?.DisposeAsync().AsTask();
         _hueLightOutput = null;
         _hueGroups = [];
 
-        _hueBridge?.Dispose();
-        _hueBridge = null;
-
-        // Reset the dependent UI so a follow-up pair attempt starts
-        // from a clean state. Pair-row controls are reset by
-        // OnHuePairClick itself — we only touch the rows that depend
-        // on a paired bridge. Combo suppress guard avoids triggering
-        // OnHueGroupSelectionChanged during the clear.
+        // Reset the group-row UI so a follow-up Pair attempt starts
+        // from a clean state. The Pair row itself is left alone — the
+        // service still holds the paired bridge and SyncHueUiFromService
+        // would re-populate the "Re-pair" / Paired (xxx) state on the
+        // next open.
         if (HueListGroupsButton is not null)
         {
-            HueListGroupsButton.IsEnabled = false;
             _hueGroupComboSuppress = true;
             HueGroupComboBox.Items.Clear();
             HueGroupComboBox.IsEnabled = false;

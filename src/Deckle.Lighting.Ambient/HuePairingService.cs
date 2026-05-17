@@ -48,7 +48,27 @@ public sealed class HuePairingService : IDisposable
     public static TimeSpan DefaultPairingTimeout => TimeSpan.FromSeconds(30);
     public static TimeSpan DefaultPollInterval   => TimeSpan.FromSeconds(2);
 
-    private HuePairingService() { }
+    // Lazy singleton init runs RestoreFromSettings as a side-effect on
+    // first access so any caller (Playground, AmbientPage, AmbientEngine)
+    // sees a restored Bridge without having to coordinate a boot-time
+    // call. RestoreFromSettings is idempotent — calling it again later
+    // (e.g. from a UI Refresh) re-builds the client from the current
+    // persisted state, which is what the user expects after editing
+    // settings.json by hand. The BridgeChanged event fires here but
+    // typically has no subscribers yet — UI surfaces subscribe later
+    // and re-read Bridge on their own when they open.
+    private HuePairingService()
+    {
+        try
+        {
+            RestoreFromSettings();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(LogSource.Hue,
+                $"Bridge auto-restore at boot failed — {ex.GetType().Name}: {ex.Message} (user will need to re-pair)");
+        }
+    }
 
     /// <summary>Active bridge client when paired, null otherwise.
     /// Use this for control-path calls (SetGroupColorAsync,
