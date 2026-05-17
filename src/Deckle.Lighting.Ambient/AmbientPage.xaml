@@ -216,86 +216,72 @@
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
                     <controls:SettingsExpander.Items>
-                        <!-- Bridge address row. Discover queries
-                             discovery.meethue.com and autofills the textbox ;
-                             manual entry is the fallback when the cloud lookup
-                             returns nothing (firewall, offline, etc.). Pair
+                        <!-- Bridge address row. SettingsCard default
+                             layout : Header on the left, content on the
+                             right, mirrors the HDR tuning cards above.
+                             Discover queries discovery.meethue.com and
+                             autofills the textbox ; manual entry is the
+                             fallback when the cloud lookup returns
+                             nothing (firewall, offline, etc.). Pair
                              launches the 30 s link-button countdown via
-                             HuePairingService.PairAsync. -->
-                        <controls:SettingsCard x:Uid="HueBridgeAddressCard"
-                                               ContentAlignment="Vertical">
-                            <Grid ColumnSpacing="8" RowSpacing="8">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                             HuePairingService.PairAsync. Transient
+                             status text lives below the card (separate
+                             TextBlock) so the card itself stays clean. -->
+                        <controls:SettingsCard x:Uid="HueBridgeAddressCard">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBox x:Name="HueBridgeIpTextBox"
-                                         Grid.Row="0" Grid.Column="0"
+                                         Width="160"
                                          PlaceholderText="192.168.1.5" />
                                 <Button x:Name="HueDiscoverButton"
                                         x:Uid="HueDiscoverButton"
-                                        Grid.Row="0" Grid.Column="1"
                                         Click="OnHueDiscoverClick" />
                                 <Button x:Name="HuePairButton"
-                                        Grid.Row="0" Grid.Column="2"
                                         Style="{ThemeResource AccentButtonStyle}"
                                         Click="OnHuePairClick">
                                     <TextBlock x:Name="HuePairLabel"
                                                Text="Pair (press link button)" />
                                 </Button>
-                                <TextBlock x:Name="HuePairStatusText"
-                                           Grid.Row="1" Grid.Column="0"
-                                           Grid.ColumnSpan="3"
-                                           Text=""
-                                           Style="{ThemeResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextWrapping="Wrap" />
-                            </Grid>
+                            </StackPanel>
                         </controls:SettingsCard>
 
-                        <!-- Entertainment group / room. Populated by clicking
-                             "List groups" once paired. The combo writes
-                             HueLastGroupId on selection — same key the
-                             AmbientEngine reads on Start. -->
-                        <controls:SettingsCard x:Uid="HueBridgeGroupCard"
-                                               ContentAlignment="Vertical">
-                            <Grid ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                        <!-- Transient pair status (countdown / errors /
+                             paired confirmation). Plain TextBlock inside
+                             a borderless card slot — collapsed when
+                             empty so the row disappears entirely instead
+                             of leaving a hollow card behind. -->
+                        <TextBlock x:Name="HuePairStatusText"
+                                   Text=""
+                                   Visibility="Collapsed"
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="16,4,16,8" />
+
+                        <!-- Entertainment group / room. -->
+                        <controls:SettingsCard x:Uid="HueBridgeGroupCard">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
                                 <ComboBox x:Name="HueGroupComboBox"
-                                          Grid.Column="0"
-                                          HorizontalAlignment="Stretch"
+                                          Width="240"
                                           IsEnabled="False"
                                           SelectionChanged="OnHueGroupSelectionChanged" />
                                 <Button x:Name="HueListGroupsButton"
                                         x:Uid="HueListGroupsButton"
-                                        Grid.Column="1"
                                         IsEnabled="False"
                                         Click="OnHueListGroupsClick" />
-                            </Grid>
+                            </StackPanel>
                         </controls:SettingsCard>
 
-                        <!-- Forget : critical destructive action — styled
-                             with the system Critical fill colour so the eye
-                             reads "this clears the pairing" before the user
-                             clicks. The username on the bridge itself is
-                             NOT revoked — the user can pair again later
-                             without re-pressing the link button if the
-                             bridge still recognises the username. -->
+                        <!-- Forget : destructive action using the
+                             shared CriticalAccentButtonStyle (App.xaml).
+                             Full ControlTemplate with VisualStates
+                             pinned to the SystemFillColorCritical*
+                             family — hover / pressed don't fall back to
+                             the standard accent. -->
                         <controls:SettingsCard x:Uid="HueBridgeForgetCard">
                             <Button x:Name="HueForgetButton"
                                     x:Uid="HueForgetButton"
+                                    Style="{StaticResource CriticalAccentButtonStyle}"
                                     IsEnabled="False"
-                                    Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
-                                    BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
-                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                     Click="OnHueForgetClick" />
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>

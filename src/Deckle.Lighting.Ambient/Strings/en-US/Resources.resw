@@ -175,14 +175,26 @@
   <data name="AmbientExposureCard.Header" xml:space="preserve">
     <value>Exposure</value>
   </data>
+  <data name="AmbientExposureCard.Description" xml:space="preserve">
+    <value>Brightness bias in stops. +1 EV doubles the lamp ; use it for dim HDR content.</value>
+  </data>
   <data name="AmbientSaturationCard.Header" xml:space="preserve">
     <value>Saturation</value>
+  </data>
+  <data name="AmbientSaturationCard.Description" xml:space="preserve">
+    <value>Chroma boost. 100% is neutral, 150–180% restores Hue Sync vividness.</value>
   </data>
   <data name="AmbientMinBrightnessCard.Header" xml:space="preserve">
     <value>Minimum brightness</value>
   </data>
+  <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
+    <value>Floor on the lamp brightness when on. Stops mid-tones from washing out.</value>
+  </data>
   <data name="AmbientGammaCard.Header" xml:space="preserve">
     <value>Brightness curve</value>
+  </data>
+  <data name="AmbientGammaCard.Description" xml:space="preserve">
+    <value>Squashes dim scenes. Higher γ dims shadows harder without touching highlights.</value>
   </data>
   <data name="AmbientTuningPlaygroundHint.Text" xml:space="preserve">
     <value>Open the Playground to tune these values with a live preview.</value>

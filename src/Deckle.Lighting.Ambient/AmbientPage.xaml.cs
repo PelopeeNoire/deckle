@@ -290,6 +290,17 @@ public sealed partial class AmbientPage : Page
     private static Brush GetThemeBrush(string resourceKey)
         => (Brush)Application.Current.Resources[resourceKey];
 
+    // Set the transient pair status caption — auto-collapse the
+    // surrounding TextBlock when empty so the row disappears entirely
+    // (vs leaving a hollow caption slot below the address card).
+    private void SetHuePairStatus(string text)
+    {
+        HuePairStatusText.Text = text;
+        HuePairStatusText.Visibility = string.IsNullOrEmpty(text)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
     private async void OnHueDiscoverClick(object sender, RoutedEventArgs e)
     {
         HueDiscoverButton.IsEnabled = false;
@@ -319,7 +330,7 @@ public sealed partial class AmbientPage : Page
         var ip = HueBridgeIpTextBox.Text?.Trim();
         if (string.IsNullOrEmpty(ip))
         {
-            HuePairStatusText.Text = "Bridge IP required";
+            SetHuePairStatus("Bridge IP required");
             return;
         }
 
@@ -330,7 +341,7 @@ public sealed partial class AmbientPage : Page
 
         HuePairButton.IsEnabled = false;
         HuePairLabel.Text       = "Waiting for link button…";
-        HuePairStatusText.Text  = "Press the link button on the bridge — 30 s window.";
+        SetHuePairStatus("Press the link button on the bridge — 30 s window.");
 
         var target = new HueBridge(Id: "manual", InternalIpAddress: ip, Port: 443);
         try
@@ -338,21 +349,21 @@ public sealed partial class AmbientPage : Page
             var creds = await HuePairingService.Instance
                 .PairAsync(target, ct: _huePairCts.Token)
                 .ConfigureAwait(true);
-            HuePairStatusText.Text = $"Paired ({creds.UsernameHead}). Click List groups to continue.";
+            SetHuePairStatus($"Paired ({creds.UsernameHead}). Click List groups to continue.");
             // SyncHueBridgeUi fires via BridgeChanged event and flips
             // the dot to success + label to Re-pair.
         }
         catch (OperationCanceledException)
         {
-            HuePairStatusText.Text = "Cancelled.";
+            SetHuePairStatus("Cancelled.");
         }
         catch (TimeoutException)
         {
-            HuePairStatusText.Text = "Timed out — try again, the link button must be pressed within 30 s.";
+            SetHuePairStatus("Timed out — try again, the link button must be pressed within 30 s.");
         }
         catch (Exception ex)
         {
-            HuePairStatusText.Text = $"Failed: {ex.Message}";
+            SetHuePairStatus($"Failed: {ex.Message}");
             LogService.Instance.Warning(LogSource.Hue,
                 $"Pair from Settings failed — {ex.GetType().Name}: {ex.Message}");
         }
@@ -429,7 +440,7 @@ public sealed partial class AmbientPage : Page
         HuePairingService.Instance.Forget();
         // SyncHueBridgeUi fires via BridgeChanged event ; we just clear
         // any transient pair status text so the row reads clean.
-        HuePairStatusText.Text = "";
+        SetHuePairStatus("");
         HueBridgeIpTextBox.Text = "";
     }
 
