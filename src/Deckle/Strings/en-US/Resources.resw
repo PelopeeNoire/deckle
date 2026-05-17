@@ -1479,4 +1479,58 @@
     <value>Deckle Overlay</value>
   </data>
 
+  <!-- ── AmbientPage code-behind (Loc.Get / Loc.Format) ──────
+       Duplicated from src/Deckle.Lighting.Ambient/Strings/en-US/
+       Resources.resw because the default ResourceLoader binds to
+       the main app's PRI ; per-module x:Uid lookups resolve
+       automatically against the module's own PRI but Loc.Get
+       does not. Same pattern as the Whisp / Llm Loc keys mirrored
+       in this file. Keep these in sync with the module's .resw —
+       the module copy is the source of truth for wording. -->
+  <data name="AmbientHue_Status_NotPaired" xml:space="preserve">
+    <value>Not paired</value>
+  </data>
+  <data name="AmbientHue_Status_Paired" xml:space="preserve">
+    <value>Paired</value>
+  </data>
+  <data name="AmbientHue_PairLabel_Pair" xml:space="preserve">
+    <value>Pair bridge</value>
+  </data>
+  <data name="AmbientHue_PairLabel_Repair" xml:space="preserve">
+    <value>Re-pair bridge</value>
+  </data>
+  <data name="AmbientHue_PairLabel_Waiting" xml:space="preserve">
+    <value>Waiting for link button…</value>
+  </data>
+  <data name="AmbientHue_PairStatus_IpRequired" xml:space="preserve">
+    <value>Enter a bridge IP address.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_PressLink" xml:space="preserve">
+    <value>Press the link button on the bridge within 30 seconds.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_Success" xml:space="preserve">
+    <value>Paired. Click Load rooms to continue.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_Cancelled" xml:space="preserve">
+    <value>Cancelled.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_TimedOut" xml:space="preserve">
+    <value>Timed out. Try again and press the link button within 30 seconds.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_Failed_Format" xml:space="preserve">
+    <value>Couldn't pair: {0}. Check the bridge IP and try again.</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_Title" xml:space="preserve">
+    <value>Forget Hue bridge?</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_Content" xml:space="preserve">
+    <value>Deckle will forget your bridge address and credentials. You can pair again later from the Hue app without pressing the link button.</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_PrimaryButton" xml:space="preserve">
+    <value>Forget bridge</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_CloseButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+
 </root>
