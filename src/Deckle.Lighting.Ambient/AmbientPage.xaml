@@ -20,17 +20,10 @@
             </Style.Setters>
         </Style>
 
-        <!-- Slider / value / reset triplet styles — calque exact de
-             WhisperPage.xaml so the HDR tuning cards read identical to
-             the Whisper decoding cards (compact slider, value text
-             right, subtle reset button that fades in at hover). -->
-        <Style x:Key="SettingSliderStyle"
-               TargetType="Slider">
-            <Setter Property="MinWidth" Value="180" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="IsThumbToolTipEnabled" Value="True" />
-        </Style>
-
+        <!-- Slider value text + reset button styles. The slider itself
+             is plain WinUI 3 (Width inline so the four sliders in the
+             section line up visually) — no shared style needed beyond
+             value + reset which appear next to every slider. -->
         <Style x:Key="SliderValueTextStyle"
                BasedOn="{StaticResource BodyTextBlockStyle}"
                TargetType="TextBlock">
@@ -149,18 +142,20 @@
                                      Click="ResetTuningSection_Click" />
                 </Grid>
 
-                <!-- HDR slider cards. Pattern Whisper :
-                     ContentAlignment="Vertical" so the slider full-width
-                     can breathe under the description, slider + value +
-                     reset triplet inside the card. Reset opacity 0 at
-                     rest, lifted to 1 on PointerEntered of the card
-                     (WireHover in code-behind). -->
+                <!-- HDR slider cards. SettingsCard default layout :
+                     Header (title + description) on the left, Content
+                     (slider triplet) on the right, same line. The
+                     fixed slider Width = 220 + value MinWidth = 56
+                     aligns the four sliders visually across the section.
+                     Reset opacity 0 at rest, lifted to 1 on
+                     PointerEntered of the card (WireHover code-behind). -->
                 <controls:SettingsCard x:Name="ExposureCard"
-                                       x:Uid="AmbientExposureCard"
-                                       ContentAlignment="Vertical">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                       x:Uid="AmbientExposureCard">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
                         <Slider x:Name="ExposureSlider"
-                                Style="{StaticResource SettingSliderStyle}"
+                                Width="220"
+                                VerticalAlignment="Center"
+                                IsThumbToolTipEnabled="True"
                                 Minimum="-2.0" Maximum="2.0"
                                 StepFrequency="0.1"
                                 SmallChange="0.1" LargeChange="0.5"
@@ -178,11 +173,12 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Name="SaturationCard"
-                                       x:Uid="AmbientSaturationCard"
-                                       ContentAlignment="Vertical">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                       x:Uid="AmbientSaturationCard">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
                         <Slider x:Name="SaturationSlider"
-                                Style="{StaticResource SettingSliderStyle}"
+                                Width="220"
+                                VerticalAlignment="Center"
+                                IsThumbToolTipEnabled="True"
                                 Minimum="0" Maximum="200"
                                 StepFrequency="5"
                                 SmallChange="5" LargeChange="25"
@@ -200,11 +196,12 @@
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Name="MinBrightnessCard"
-                                       x:Uid="AmbientMinBrightnessCard"
-                                       ContentAlignment="Vertical">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                       x:Uid="AmbientMinBrightnessCard">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
                         <Slider x:Name="MinBrightnessSlider"
-                                Style="{StaticResource SettingSliderStyle}"
+                                Width="220"
+                                VerticalAlignment="Center"
+                                IsThumbToolTipEnabled="True"
                                 Minimum="0" Maximum="254"
                                 StepFrequency="2"
                                 SmallChange="2" LargeChange="20"
@@ -225,9 +222,11 @@
                      Expander header, canvas viz reveals on expand. -->
                 <controls:SettingsExpander x:Name="GammaExpander"
                                            x:Uid="AmbientGammaExpander">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
                         <Slider x:Name="GammaSlider"
-                                Style="{StaticResource SettingSliderStyle}"
+                                Width="220"
+                                VerticalAlignment="Center"
+                                IsThumbToolTipEnabled="True"
                                 StepFrequency="0.05"
                                 SmallChange="0.05" LargeChange="0.25"
                                 TickFrequency="0.5"
@@ -344,16 +343,15 @@
                             </StackPanel>
                         </controls:SettingsCard>
 
-                        <!-- Forget : destructive action using the
-                             shared CriticalAccentButtonStyle (App.xaml).
-                             Full ControlTemplate with VisualStates
-                             pinned to the SystemFillColorCritical*
-                             family — hover / pressed don't fall back to
-                             the standard accent. -->
+                        <!-- Forget : DefaultButtonStyle (no custom red).
+                             The destructive signal is carried by the
+                             ContentDialog confirmation that opens at
+                             click, following Microsoft's official
+                             Settings pattern (confirm-then-act, not
+                             red-button-then-act). -->
                         <controls:SettingsCard x:Uid="HueBridgeForgetCard">
                             <Button x:Name="HueForgetButton"
                                     x:Uid="HueForgetButton"
-                                    Style="{StaticResource CriticalAccentButtonStyle}"
                                     IsEnabled="False"
                                     Click="OnHueForgetClick" />
                         </controls:SettingsCard>

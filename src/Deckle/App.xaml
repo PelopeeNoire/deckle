@@ -21,87 +21,14 @@
                 </Style.Setters>
             </Style>
 
-            <!-- CriticalAccentButtonStyle : destructive action style for
-                 Forget / Delete / Remove buttons. WinUI 3 ships
-                 SystemFillColorCriticalBrush but NOT Secondary /
-                 Tertiary variants of it (those keys exist only for
-                 AccentFill, not Critical). We define our own
-                 pointer-over / pressed brushes with the Windows 11
-                 critical red at progressively darker values, so the
-                 destructive signal persists across every interaction
-                 state. -->
-            <SolidColorBrush x:Key="CriticalButtonBackground"            Color="#C42B1C" />
-            <SolidColorBrush x:Key="CriticalButtonBackgroundPointerOver" Color="#B92619" />
-            <SolidColorBrush x:Key="CriticalButtonBackgroundPressed"     Color="#A4140A" />
-            <Style x:Key="CriticalAccentButtonStyle" TargetType="Button">
-                <Setter Property="Foreground"      Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-                <Setter Property="HorizontalAlignment"            Value="Left" />
-                <Setter Property="VerticalAlignment"              Value="Center" />
-                <Setter Property="HorizontalContentAlignment"     Value="Center" />
-                <Setter Property="VerticalContentAlignment"       Value="Center" />
-                <Setter Property="Padding"                        Value="{StaticResource ButtonPadding}" />
-                <Setter Property="FontFamily"                     Value="{ThemeResource ContentControlThemeFontFamily}" />
-                <Setter Property="FontSize"                       Value="{ThemeResource ControlContentThemeFontSize}" />
-                <Setter Property="UseSystemFocusVisuals"          Value="{StaticResource UseSystemFocusVisuals}" />
-                <Setter Property="FocusVisualMargin"              Value="-3" />
-                <Setter Property="MinHeight"                      Value="32" />
-                <Setter Property="MinWidth"                       Value="120" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Button">
-                            <Grid x:Name="RootGrid"
-                                  Background="{StaticResource CriticalButtonBackground}"
-                                  BorderBrush="{StaticResource CriticalButtonBackground}"
-                                  BorderThickness="{ThemeResource ButtonBorderThemeThickness}"
-                                  CornerRadius="{ThemeResource ControlCornerRadius}">
-                                <VisualStateManager.VisualStateGroups>
-                                    <VisualStateGroup x:Name="CommonStates">
-                                        <VisualState x:Name="Normal" />
-                                        <VisualState x:Name="PointerOver">
-                                            <VisualState.Setters>
-                                                <Setter Target="RootGrid.Background"
-                                                        Value="{StaticResource CriticalButtonBackgroundPointerOver}" />
-                                                <Setter Target="RootGrid.BorderBrush"
-                                                        Value="{StaticResource CriticalButtonBackgroundPointerOver}" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                        <VisualState x:Name="Pressed">
-                                            <VisualState.Setters>
-                                                <Setter Target="RootGrid.Background"
-                                                        Value="{StaticResource CriticalButtonBackgroundPressed}" />
-                                                <Setter Target="RootGrid.BorderBrush"
-                                                        Value="{StaticResource CriticalButtonBackgroundPressed}" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                        <VisualState x:Name="Disabled">
-                                            <VisualState.Setters>
-                                                <Setter Target="RootGrid.Background"
-                                                        Value="{ThemeResource AccentButtonBackgroundDisabled}" />
-                                                <Setter Target="RootGrid.BorderBrush"
-                                                        Value="{ThemeResource AccentButtonBorderBrushDisabled}" />
-                                                <Setter Target="ContentPresenter.Foreground"
-                                                        Value="{ThemeResource AccentButtonForegroundDisabled}" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                    </VisualStateGroup>
-                                </VisualStateManager.VisualStateGroups>
-                                <ContentPresenter x:Name="ContentPresenter"
-                                                  BorderBrush="{TemplateBinding BorderBrush}"
-                                                  BorderThickness="{TemplateBinding BorderThickness}"
-                                                  Content="{TemplateBinding Content}"
-                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  ContentTransitions="{TemplateBinding ContentTransitions}"
-                                                  CornerRadius="{TemplateBinding CornerRadius}"
-                                                  Foreground="{TemplateBinding Foreground}"
-                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  Padding="{TemplateBinding Padding}"
-                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                                                  AutomationProperties.AccessibilityView="Raw" />
-                            </Grid>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
+            <!-- Pas de style "Critical / destructive" custom au niveau
+                 App. WinUI 3 n'en fournit pas, et l'imiter avec des
+                 rouges hardcodés produit un bouton qui ne suit pas le
+                 thème (light/dark/contrast). Pattern Microsoft officiel
+                 pour les actions destructrices : ContentDialog de
+                 confirmation, pas bouton rouge. Forget / Remove restent
+                 DefaultButtonStyle, le dialog qu'ils ouvrent porte le
+                 signal. -->
         </ResourceDictionary>
     </Application.Resources>
 </Application>
