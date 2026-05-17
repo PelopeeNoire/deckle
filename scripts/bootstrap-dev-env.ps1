@@ -262,6 +262,14 @@ if ($DryRun) {
 
 if ($plan.Count -gt 0 -and -not $Yes) {
     Write-Host ""
+    # Warn about UAC if VS is in the plan — its installer needs elevation.
+    # If the user isn't at the keyboard to click "Yes", the install stalls.
+    $needsUac = $plan | Where-Object { $_.Name -match 'Visual Studio' }
+    if ($needsUac) {
+        Write-Host "Heads-up: the Visual Studio install triggers a UAC prompt." -ForegroundColor Yellow
+        Write-Host "Stay at the keyboard to click 'Yes' when it appears." -ForegroundColor Yellow
+        Write-Host ""
+    }
     $reply = Read-Host "Proceed? [y/N]"
     if ($reply -notmatch '^[yY]') {
         Write-Host "Aborted." -ForegroundColor Yellow
@@ -273,20 +281,35 @@ if ($plan.Count -gt 0 -and -not $Yes) {
 # Execute
 # =============================================================================
 
+# Track per-item outcome so the final summary can report what actually
+# happened rather than what was planned.
+$results = New-Object System.Collections.Generic.List[object]
+
 if ($plan.Count -gt 0) {
     Write-Section "Installing"
     foreach ($item in $plan) {
         Write-Step "→ $($item.Name)"
+        $itemFailed = $false
+        $itemError = $null
         try {
             & $item.Cmd
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
-                Write-Fail "$($item.Name) installer exited with code $LASTEXITCODE"
+                $itemFailed = $true
+                $itemError = "installer exited with code $LASTEXITCODE"
+                Write-Fail "$($item.Name) — $itemError"
             } else {
                 Write-Good $item.Name
             }
         } catch {
-            Write-Fail "$($item.Name) — $($_.Exception.Message)"
+            $itemFailed = $true
+            $itemError = $_.Exception.Message
+            Write-Fail "$($item.Name) — $itemError"
         }
+        $results.Add([pscustomobject]@{
+            Name    = $item.Name
+            Failed  = $itemFailed
+            Error   = $itemError
+        })
     }
 }
 
@@ -336,22 +359,88 @@ if (-not $SkipAssets) {
 }
 
 # =============================================================================
+# Post-install verification — re-probe what we just touched
+# =============================================================================
+
+# Re-run the same probes against the new state. PATH for newly-installed
+# tools may not be live in this session (winget refreshes PATH for the
+# current process, but not always reliably), so a "still missing" here
+# isn't always a real failure — it can mean "installed but visible only
+# after terminal restart". The summary distinguishes the two.
+$finalState = [ordered]@{
+    Gh        = Test-Command 'gh'
+    Dotnet    = Test-Command 'dotnet'
+    MsBuild   = Find-MsBuild
+    Scoop     = Test-Command 'scoop'
+    Gcc       = Test-Command 'gcc'
+    Cmake     = Test-Command 'cmake'
+    Ninja     = Test-Command 'ninja'
+    VulkanSdk = if ($env:VULKAN_SDK -and (Test-Path $env:VULKAN_SDK)) { $env:VULKAN_SDK } else { $null }
+    Ollama    = Test-Command 'ollama'
+}
+
+# =============================================================================
+# Summary recap
+# =============================================================================
+
+Write-Section "Summary"
+
+$installedCount = ($results | Where-Object { -not $_.Failed }).Count
+$failedCount    = ($results | Where-Object { $_.Failed }).Count
+
+if ($plan.Count -eq 0) {
+    Write-Host "  Nothing to install — current state already covers the requested tier." -ForegroundColor Green
+} else {
+    Write-Host "  Installs attempted : $($plan.Count)" -ForegroundColor White
+    Write-Host "  Succeeded          : $installedCount" -ForegroundColor Green
+    if ($failedCount -gt 0) {
+        Write-Host "  Failed             : $failedCount" -ForegroundColor Red
+        foreach ($r in $results | Where-Object { $_.Failed }) {
+            Write-Host "    - $($r.Name) : $($r.Error)" -ForegroundColor Red
+        }
+    }
+}
+
+# Re-display the new state inline so the user sees what is now probable
+# in this very session. Tools installed by winget often need a new
+# terminal before they appear in PATH — that's expected, not a failure.
+Write-Host ""
+Write-Host "  Post-install state (this session, before reopening terminal):" -ForegroundColor White
+foreach ($k in $finalState.Keys) {
+    $v = $finalState[$k]
+    if ($v) { Write-Good "$k : $v" } else { Write-Miss $k }
+}
+if ($plan.Count -gt 0) {
+    Write-Host ""
+    Write-Host "  Some freshly-installed tools may only appear in a new terminal." -ForegroundColor Yellow
+    Write-Host "  Re-run with -DryRun in a fresh session to confirm full coverage." -ForegroundColor Yellow
+}
+
+# =============================================================================
 # Next steps
 # =============================================================================
 
 Write-Section "Next steps"
 
-if ($Full) {
-    Write-Host "  - Clone whisper.cpp for native rebuilds (location is your choice):" -ForegroundColor White
-    Write-Host "      git clone https://github.com/ggerganov/whisper.cpp D:\workspace\whisper.cpp" -ForegroundColor DarkGray
-    Write-Host "    Recipe: docs/reference--native-runtime--1.0.md" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "  - Pull an Ollama model for the rewrite feature (pick one):" -ForegroundColor White
-    Write-Host "      ollama pull llama3.2:3b      # ~2 GB, fast on CPU-only laptops" -ForegroundColor DarkGray
-    Write-Host "      ollama pull phi3:mini        # ~2 GB, comparable" -ForegroundColor DarkGray
-}
+Write-Host "  1. Open a new PowerShell terminal so DECKLE_MSBUILD / VULKAN_SDK" -ForegroundColor White
+Write-Host "     and any freshly-installed tool become visible." -ForegroundColor White
+Write-Host ""
+Write-Host "  2. Verify nothing is missing:" -ForegroundColor White
+Write-Host "       scripts\bootstrap-dev-env.ps1 -DryRun" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  3. Build + run Deckle:" -ForegroundColor White
+Write-Host "       scripts\build-run.ps1" -ForegroundColor DarkGray
+Write-Host "     or use the interactive launcher:" -ForegroundColor White
+Write-Host "       scripts\launcher.ps1" -ForegroundColor DarkGray
 
-Write-Host "  - Open a new terminal so DECKLE_MSBUILD / VULKAN_SDK are picked up." -ForegroundColor White
-Write-Host "  - Then build + run:" -ForegroundColor White
-Write-Host "      scripts\build-run.ps1" -ForegroundColor DarkGray
+if ($Full) {
+    Write-Host ""
+    Write-Host "  4. (-Full only) Clone whisper.cpp for native rebuilds:" -ForegroundColor White
+    Write-Host "       git clone https://github.com/ggerganov/whisper.cpp D:\workspace\whisper.cpp" -ForegroundColor DarkGray
+    Write-Host "     Recipe: docs/reference--native-runtime--1.0.md" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  5. (-Full only) Pull an Ollama model for the rewrite feature:" -ForegroundColor White
+    Write-Host "       ollama pull llama3.2:3b      # ~2 GB, fast on CPU-only laptops" -ForegroundColor DarkGray
+    Write-Host "       ollama pull phi3:mini        # ~2 GB, comparable" -ForegroundColor DarkGray
+}
 Write-Host ""
