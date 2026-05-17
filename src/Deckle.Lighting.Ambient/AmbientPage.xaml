@@ -151,7 +151,9 @@
                      PointerEntered of the card (WireHover code-behind). -->
                 <controls:SettingsCard x:Name="ExposureCard"
                                        x:Uid="AmbientExposureCard">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock x:Name="ExposureValueText"
+                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Slider x:Name="ExposureSlider"
                                 Width="220"
                                 VerticalAlignment="Center"
@@ -162,8 +164,6 @@
                                 TickFrequency="0.5"
                                 TickPlacement="Outside"
                                 ValueChanged="ExposureSlider_ValueChanged" />
-                        <TextBlock x:Name="ExposureValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Button x:Name="ExposureReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="ExposureReset_Click">
@@ -174,7 +174,9 @@
 
                 <controls:SettingsCard x:Name="SaturationCard"
                                        x:Uid="AmbientSaturationCard">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock x:Name="SaturationValueText"
+                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Slider x:Name="SaturationSlider"
                                 Width="220"
                                 VerticalAlignment="Center"
@@ -185,8 +187,6 @@
                                 TickFrequency="25"
                                 TickPlacement="Outside"
                                 ValueChanged="SaturationSlider_ValueChanged" />
-                        <TextBlock x:Name="SaturationValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Button x:Name="SaturationReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="SaturationReset_Click">
@@ -197,7 +197,9 @@
 
                 <controls:SettingsCard x:Name="MinBrightnessCard"
                                        x:Uid="AmbientMinBrightnessCard">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock x:Name="MinBrightnessValueText"
+                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Slider x:Name="MinBrightnessSlider"
                                 Width="220"
                                 VerticalAlignment="Center"
@@ -208,8 +210,6 @@
                                 TickFrequency="50"
                                 TickPlacement="Outside"
                                 ValueChanged="MinBrightnessSlider_ValueChanged" />
-                        <TextBlock x:Name="MinBrightnessValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Button x:Name="MinBrightnessReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="MinBrightnessReset_Click">
@@ -218,11 +218,13 @@
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <!-- Brightness curve : same slider triplet in the
-                     Expander header, canvas viz reveals on expand. -->
+                <!-- Brightness curve : same triplet in the Expander
+                     header, canvas viz reveals on expand. -->
                 <controls:SettingsExpander x:Name="GammaExpander"
                                            x:Uid="AmbientGammaExpander">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock x:Name="GammaValueText"
+                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Slider x:Name="GammaSlider"
                                 Width="220"
                                 VerticalAlignment="Center"
@@ -232,8 +234,6 @@
                                 TickFrequency="0.5"
                                 TickPlacement="Outside"
                                 ValueChanged="GammaSlider_ValueChanged" />
-                        <TextBlock x:Name="GammaValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
                         <Button x:Name="GammaReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="GammaReset_Click">
