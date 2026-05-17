@@ -31,7 +31,7 @@ namespace Deckle.Lighting.Ambient.Controls;
 public sealed partial class BrightnessCurveCanvas : UserControl
 {
     private const int SampleCount = 64;
-    private const double Padding  = 4.0;
+    private const double PlotPadding  = 4.0;
 
     public BrightnessCurveCanvas()
     {
@@ -85,11 +85,11 @@ public sealed partial class BrightnessCurveCanvas : UserControl
             StrokeThickness = 1.0,
             StrokeDashArray = new DoubleCollection { 3.0, 3.0 },
         };
-        reference.Points.Add(new Point(Padding, h - Padding));
-        reference.Points.Add(new Point(w - Padding, Padding));
+        reference.Points.Add(new Point(PlotPadding, h - PlotPadding));
+        reference.Points.Add(new Point(w - PlotPadding, PlotPadding));
         PlotCanvas.Children.Add(reference);
 
-        // Accent curve : 64 samples, X mapped to [Padding, w - Padding]
+        // Accent curve : 64 samples, X mapped to [PlotPadding, w - PlotPadding]
         // and Y inverted because canvas Y grows downward.
         var curve = new Polyline
         {
@@ -109,8 +109,8 @@ public sealed partial class BrightnessCurveCanvas : UserControl
         {
             double ratio = (double)i / SampleCount;
             double yNorm = System.Math.Pow(ratio, g); // [0, 1]
-            double x = Padding + ratio * (w - 2 * Padding);
-            double y = (h - Padding) - yNorm * (h - 2 * Padding);
+            double x = PlotPadding + ratio * (w - 2 * PlotPadding);
+            double y = (h - PlotPadding) - yNorm * (h - 2 * PlotPadding);
             curve.Points.Add(new Point(x, y));
         }
 
