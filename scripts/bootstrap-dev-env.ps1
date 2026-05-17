@@ -43,7 +43,8 @@ param(
     [switch]$SkipAssets,
 
     # Release tag passed to setup-assets.ps1 -FromRelease. Pins which
-    # native-vX.Y.Z bundle gets downloaded.
+    # native-vX.Y.Z bundle gets downloaded. Bump this default whenever a
+    # new native-vX.Y.Z release ships on GitHub.
     [string]$AssetsRelease = '1.0.0',
 
     # Skip the confirmation prompt before installing.

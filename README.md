@@ -6,7 +6,7 @@ the machine.
 
 Built with WinUI 3, .NET 10, and Windows App SDK 1.8. Targets Windows 11.
 
-> Status — **personal project, early public release.** Tested on a handful of
+> Status — **personal project, early public release.** Tested on two
 > Windows 11 machines. Not packaged for the Microsoft Store. Build from source
 > with the instructions below.
 
@@ -133,7 +133,6 @@ to see the plan without installing anything.
 | `scripts/setup-assets.ps1` | Provision `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. |
 | `scripts/launcher.ps1` | Interactive two-step picker: worktree → action (build, run, setup). |
 | `scripts/build-run.ps1` | Build via VS MSBuild + launch. Resolves MSBuild automatically. |
-| `scripts/publish-unpackaged.ps1` | Produce a self-contained publish folder (no installer, no MSIX). |
 | `scripts/publish-native-runtime.ps1` | Maintainer-only: zip + publish a `native-vX.Y.Z` GitHub release. |
 
 ---

@@ -35,7 +35,6 @@ All scripts live under `scripts/`. Run from the repo root in PowerShell 7+.
 | `setup-assets.ps1` | Populate `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. `-FromRelease X.Y.Z` for published bundles. | Yes |
 | `launcher.ps1` | Interactive picker: select a worktree then an action (build, run, setup). | **No** (builds) |
 | `build-run.ps1` | Build + launch Deckle. | **No** (builds) |
-| `publish-unpackaged.ps1` | Self-contained publish. | **No** (builds) |
 | `publish-native-runtime.ps1` | Zip + push a `native-vX.Y.Z` release. | **No** (publishes) |
 
 ---
