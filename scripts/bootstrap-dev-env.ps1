@@ -99,6 +99,77 @@ function Find-MsBuild {
     return $null
 }
 
+# Returns the JSON metadata of the latest VS install (installation path,
+# version, installed packages), or $null if no VS detected. Used by the
+# component verification path.
+function Get-VsInfo {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path $vswhere)) { return $null }
+    $json = & $vswhere -latest -prerelease -products * -format json 2>$null
+    if (-not $json) { return $null }
+    return $json | ConvertFrom-Json | Select-Object -First 1
+}
+
+# Required VS components for Deckle's WinUI 3 build. Used both for fresh
+# installs (passed to winget --override) and for verifying pre-existing
+# installs (compared against vswhere's packages list, then added via
+# setup.exe modify --add).
+#
+# Why each one:
+# - ManagedDesktop workload : .NET desktop dev (WinUI 3 project templates,
+#   IDE features, .NET SDK targeting pack).
+# - WindowsAppSDK.Cs component group : XAML compiler + WindowsAppSDK
+#   runtime + project templates for C# WinAppSDK projects.
+# - VC.Tools.x86.x64 : MSVC C++ build tools. Required by the WinUI XAML
+#   compiler's GetLatestMSVCVersion task even for pure-C# projects (it
+#   enumerates VC\Tools\MSVC\ to locate platform headers — without this
+#   component, the build fails with MSB4018).
+$RequiredVsComponents = @(
+    'Microsoft.VisualStudio.Workload.ManagedDesktop',
+    'Microsoft.VisualStudio.ComponentGroup.WindowsAppSDK.Cs',
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+)
+
+# Verifies that the required VS components are installed; if any are
+# missing, invokes setup.exe modify --add to install them. Idempotent.
+# Triggers a UAC prompt if elevation is needed for the modify operation.
+function Ensure-VsComponents {
+    param([string[]]$RequiredComponents = $script:RequiredVsComponents)
+
+    $vs = Get-VsInfo
+    if (-not $vs) {
+        throw "No Visual Studio install detected — install VS first."
+    }
+
+    $installedIds = @($vs.packages | ForEach-Object { $_.id })
+    $missing = @($RequiredComponents | Where-Object { $_ -notin $installedIds })
+
+    if ($missing.Count -eq 0) {
+        Write-Good "All required VS components are present"
+        return
+    }
+
+    Write-Step "Missing VS components:"
+    foreach ($m in $missing) { Write-Host "    - $m" -ForegroundColor Yellow }
+    Write-Step "Adding via VS Installer (a UAC prompt will appear)..."
+
+    $setup = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'
+    if (-not (Test-Path $setup)) {
+        throw "VS Installer setup.exe not found at $setup"
+    }
+
+    $setupArgs = @('modify', '--installPath', $vs.installationPath)
+    foreach ($c in $missing) { $setupArgs += @('--add', $c) }
+    $setupArgs += @('--passive', '--wait', '--norestart')
+
+    & $setup @setupArgs
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "setup.exe modify exited with code $LASTEXITCODE — try the VS Installer GUI manually"
+    }
+    Write-Good "VS components added successfully"
+}
+
 # =============================================================================
 # Probe
 # =============================================================================
@@ -182,28 +253,37 @@ if (-not $state.Dotnet) {
 }
 
 if (-not $state.MsBuild) {
-    # VS 2026 Community + WinUI workload. The override string adds the
-    # ManagedDesktop workload (covers .NET WinUI 3) plus the WindowsAppSDK
-    # component group (XAML compiler, project templates, runtime). If VS
-    # 2026 introduces a dedicated WinUI workload ID, swap the --add line.
-    # --quiet --wait --norestart make the installer headless; --norestart
-    # avoids the reboot prompt mid-bootstrap.
-    Add-Plan 'Visual Studio 2026 Community + WinUI workload' `
-        'MSBuild Framework (needed: dotnet build CLI hits XamlCompiler MSB3073, see CLAUDE.md)' {
-        # VS 2026 dropped the year suffix from its winget ID (was
-        # Microsoft.VisualStudio.2022.Community, now just .Community).
-        # ManagedDesktop = .NET desktop workload (WinUI 3 project templates).
-        # WindowsAppSDK.Cs = XAML compiler, runtime, packaging.
-        # VC.Tools.x86.x64 = MSVC C++ build tools — required by the WinUI
-        #   XAML compiler's GetLatestMSVCVersion task even for pure-C# projects
-        #   (it enumerates VC\Tools\MSVC\ to locate platform headers).
-        $override = '--quiet --wait --norestart ' +
-                    '--add Microsoft.VisualStudio.Workload.ManagedDesktop;includeRecommended ' +
-                    '--add Microsoft.VisualStudio.ComponentGroup.WindowsAppSDK.Cs ' +
-                    '--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+    # Fresh install: winget pulls VS 2026 Community AND every required
+    # component in one shot via --override. VS 2026 dropped the year suffix
+    # from its winget ID (was Microsoft.VisualStudio.2022.Community, now
+    # just .Community).
+    Add-Plan 'Visual Studio 2026 Community + WinUI components' `
+        'MSBuild Framework + .NET desktop + WinAppSDK + MSVC tools (needed: dotnet build CLI hits XamlCompiler MSB3073, see CLAUDE.md)' {
+        # Build --override from $RequiredVsComponents so the install path
+        # and the verification path share a single source of truth. Only
+        # the Workload accepts ;includeRecommended; component groups and
+        # individual components don't.
+        $overrideParts = @('--quiet', '--wait', '--norestart')
+        foreach ($c in $script:RequiredVsComponents) {
+            if ($c -match '\.Workload\.') {
+                $overrideParts += "--add $c;includeRecommended"
+            } else {
+                $overrideParts += "--add $c"
+            }
+        }
+        $override = $overrideParts -join ' '
         winget install --id Microsoft.VisualStudio.Community -e `
             --accept-source-agreements --accept-package-agreements `
             --override $override
+    }
+} else {
+    # VS is already installed. winget would refuse to re-modify it ("already
+    # up to date"), so we go through setup.exe modify directly to add any
+    # required components that are missing. Idempotent — no-op when
+    # everything is already present.
+    Add-Plan 'VS WinUI components verification' `
+        'Probe vswhere for required workloads/components and add missing ones via setup.exe modify' {
+        Ensure-VsComponents
     }
 }
 
@@ -262,11 +342,12 @@ if ($DryRun) {
 
 if ($plan.Count -gt 0 -and -not $Yes) {
     Write-Host ""
-    # Warn about UAC if VS is in the plan — its installer needs elevation.
-    # If the user isn't at the keyboard to click "Yes", the install stalls.
-    $needsUac = $plan | Where-Object { $_.Name -match 'Visual Studio' }
+    # Warn about UAC if any VS-touching item is in the plan — both the
+    # winget install and setup.exe modify (used by component verification)
+    # need elevation. If the user isn't at the keyboard, the install stalls.
+    $needsUac = $plan | Where-Object { $_.Name -match 'Visual Studio|VS WinUI components' }
     if ($needsUac) {
-        Write-Host "Heads-up: the Visual Studio install triggers a UAC prompt." -ForegroundColor Yellow
+        Write-Host "Heads-up: any Visual Studio install or modify triggers a UAC prompt." -ForegroundColor Yellow
         Write-Host "Stay at the keyboard to click 'Yes' when it appears." -ForegroundColor Yellow
         Write-Host ""
     }
