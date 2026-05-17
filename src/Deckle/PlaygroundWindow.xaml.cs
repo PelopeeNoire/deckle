@@ -350,6 +350,12 @@ public sealed partial class PlaygroundWindow : Window
                 // toggle, and stay in sync with subsequent flips made
                 // from the tray menu or the AmbientPage.
                 SyncPipelineUiFromSettings();
+
+                // Populate the HDR tuning sandbox sliders from the live
+                // settings + flip the re-fire suppressor off so the
+                // user's slider drags write back through.
+                InitPlaygroundAmbientTuning();
+
                 AmbientSettingsService.Instance.Changed += OnAmbientSettingsChangedFromPlayground;
             };
         }
@@ -2064,7 +2070,11 @@ public sealed partial class PlaygroundWindow : Window
 
     private void OnAmbientSettingsChangedFromPlayground()
     {
-        DispatcherQueue.TryEnqueue(SyncPipelineUiFromSettings);
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            SyncPipelineUiFromSettings();
+            ResyncPlaygroundAmbientTuning();
+        });
     }
 
     // FrameArrived handler that hands the frame to the FrameSampler.
@@ -2917,4 +2927,112 @@ public sealed partial class PlaygroundWindow : Window
         }
         return null;
     }
+
+    // ── Ambient HDR tuning sandbox (live) ───────────────────────────
+    //
+    // Mirrors Settings → Ambient lighting → HDR tuning : same four
+    // knobs (γ / Exposure / Saturation / Min brightness), same
+    // AmbientSettings keys, same engine hot-reload on the next push.
+    // Surfaced inline in the Playground so the user can tune while
+    // the preview grid runs next to them ; values persist exactly
+    // as if set from Settings.
+    //
+    // _ambientTuningLoading mirrors AmbientPage's _loading flag : a
+    // re-fire suppressor that lets ResyncPlaygroundAmbientTuning
+    // populate slider Values without triggering Save loops back into
+    // the settings store. SettingsChanged is observed so that a flip
+    // from Settings (or another surface) propagates to the sandbox
+    // sliders too — the user can have both windows open and stay in
+    // sync.
+
+    // Re-fire suppressor when ResyncPlaygroundAmbientTuning populates
+    // the slider values — the ValueChanged handlers would otherwise
+    // Save back into the same settings keys they just read.
+    private bool _ambientTuningLoading = true;
+
+    private void InitPlaygroundAmbientTuning()
+    {
+        // Subscription to AmbientSettingsService.Changed already lives
+        // in the main Loaded handler (OnAmbientSettingsChangedFromPlayground
+        // calls ResyncPlaygroundAmbientTuning alongside the pipeline-row
+        // sync). Here we just project the initial state into the sliders
+        // and release the suppressor flag.
+        ResyncPlaygroundAmbientTuning();
+        _ambientTuningLoading = false;
+    }
+
+    private void ResyncPlaygroundAmbientTuning()
+    {
+        bool prev = _ambientTuningLoading;
+        _ambientTuningLoading = true;
+        try
+        {
+            var s = AmbientSettingsService.Instance.Current;
+
+            PlaygroundExposureSlider.Value      = s.ExposureEv;
+            PlaygroundSaturationSlider.Value    = s.SaturationBoost * 100.0;
+            PlaygroundMinBrightnessSlider.Value = s.MinBrightness;
+            PlaygroundGammaSlider.Value         = s.BrightnessCurveGamma;
+            PlaygroundGammaCanvas.Gamma         = s.BrightnessCurveGamma;
+
+            UpdatePlaygroundExposureText();
+            UpdatePlaygroundSaturationText();
+            UpdatePlaygroundMinBrightnessText();
+            UpdatePlaygroundGammaText();
+        }
+        finally
+        {
+            _ambientTuningLoading = prev;
+        }
+    }
+
+    private void OnPlaygroundGammaSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundGammaText();
+        // Update the canvas even during the load pass — purely visual.
+        PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.BrightnessCurveGamma = PlaygroundGammaSlider.Value;
+        AmbientSettingsService.Instance.Save();
+    }
+
+    private void OnPlaygroundExposureSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundExposureText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.ExposureEv = PlaygroundExposureSlider.Value;
+        AmbientSettingsService.Instance.Save();
+    }
+
+    private void OnPlaygroundSaturationSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundSaturationText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.SaturationBoost = PlaygroundSaturationSlider.Value / 100.0;
+        AmbientSettingsService.Instance.Save();
+    }
+
+    private void OnPlaygroundMinBrightnessSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundMinBrightnessText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.MinBrightness =
+            (int)Math.Round(PlaygroundMinBrightnessSlider.Value);
+        AmbientSettingsService.Instance.Save();
+    }
+
+    private void UpdatePlaygroundGammaText()
+        => PlaygroundGammaValueText.Text = $"γ {PlaygroundGammaSlider.Value:F2}";
+
+    private void UpdatePlaygroundExposureText()
+    {
+        double v = PlaygroundExposureSlider.Value;
+        PlaygroundExposureValueText.Text = $"{(v >= 0 ? "+" : "")}{v:F1} EV";
+    }
+
+    private void UpdatePlaygroundSaturationText()
+        => PlaygroundSaturationValueText.Text = $"{(int)Math.Round(PlaygroundSaturationSlider.Value)} %";
+
+    private void UpdatePlaygroundMinBrightnessText()
+        => PlaygroundMinBrightnessValueText.Text = $"{(int)Math.Round(PlaygroundMinBrightnessSlider.Value)}";
 }
