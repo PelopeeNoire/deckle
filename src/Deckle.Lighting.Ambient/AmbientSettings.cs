@@ -126,28 +126,37 @@ public sealed class AmbientSettings
 
     // ── HDR tuning (this branch) ───────────────────────────────────
     //
-    // Three user-tunable sliders exposed in AmbientPage. Analogous to
+    // Four user-tunable sliders exposed in AmbientPage. Analogous to
     // the basic colour-grading panel of a video editor (exposure /
-    // saturation / lift). Defaults aim at a "Hue Sync-like" presence
-    // out of the box on HDR displays — bright and saturated. Each
-    // setting is read on every tick by AmbientEngine via the host so
-    // changes apply live without restarting the pipeline.
+    // saturation / lift / response curve). Defaults aim at a "Hue
+    // Sync-like" presence out of the box on HDR displays — bright and
+    // saturated. Each setting is read on every tick by AmbientEngine
+    // via the host so changes apply live without restarting the
+    // pipeline.
     //
-    // Why these three :
+    // Why these four :
     //   - Exposure compensates for scRGB content peaking well below
     //     the display's reported MaxLuminance on a typical scene,
     //     which leaves the post-tone-map output dim. +1 EV roughly
     //     doubles brightness, restoring "Hue Sync" presence.
     //   - Saturation boost compensates for the de-saturation that
     //     happens when spatially averaging bright + dark pixels (the
-    //     average drifts toward grey). Applied in HSV-S so hue stays
-    //     stable.
+    //     average drifts toward grey). Applied in OKLCh so hue stays
+    //     stable and perceived luminance doesn't drift across the
+    //     hue wheel.
     //   - Min brightness compensates for HueColorMath deriving bri
     //     from max(R,G,B) — a mid-tone scene like (60, 40, 80) gives
     //     bri ≈ 31 %, dim enough that the lamp's diffuser swallows
     //     the colour. A floor of ~180 keeps the chromaticity
     //     readable on the lamp without manual scene-by-scene
     //     adjustment.
+    //   - Brightness curve gamma squashes the bottom of the bri range
+    //     via a power law on max(R,G,B). The linear default reads as
+    //     visibly lit in a dark room on dim scenes (max ≈ 25/255 still
+    //     pushes bri ≈ 25). gamma > 1 stretches the bottom of the
+    //     range without touching saturated highlights : (max/255)^γ ×
+    //     254. gamma = 1.0 disables. Applied as a uniform RGB scale
+    //     so xy chromaticity stays invariant — only bri drops.
 
     /// <summary>Exposure compensation in EV (stops of light) applied
     /// in linear-light before the tone-map. 0 = no change (default),
@@ -170,6 +179,18 @@ public sealed class AmbientSettings
     /// room, dim enough to follow the screen's intent. Tuned in
     /// AmbientPage.</summary>
     public int MinBrightness { get; set; } = 180;
+
+    /// <summary>Power-law exponent applied to the brightness response
+    /// curve : <c>bri = (max/255)^γ × 254</c> instead of strictly
+    /// linear. γ = 1.0 disables the curve (baseline). γ &gt; 1 squashes
+    /// the bottom of the range — a scene with max = 25/255 pushes
+    /// bri ≈ 4 at γ = 1.8 instead of bri ≈ 25 linear, which reads as
+    /// dim in a dark room. Saturated highlights (max = 255) are
+    /// untouched at any γ. Range of practical interest [1.0, 3.0].
+    /// Default 1.8 — empirically the sweet spot for a typical living-
+    /// room setup ; bump higher for dimmer rooms. Tuned in
+    /// AmbientPage.</summary>
+    public double BrightnessCurveGamma { get; set; } = 1.8;
 }
 
 /// <summary>How <see cref="AmbientEngine"/> derives the colour pushed

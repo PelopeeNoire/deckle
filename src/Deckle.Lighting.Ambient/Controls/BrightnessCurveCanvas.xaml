@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Deckle.Lighting.Ambient.Controls.BrightnessCurveCanvas"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Square canvas tied to a fixed pixel size on purpose : the curve
+         viz is a small diagnostic widget that reads at one zoom level
+         and shouldn't reflow with the parent. Both consumers (Settings
+         AmbientPage card + Playground tuning row) wrap us in a layout
+         that allocates exactly Width × Height — no Stretch shenanigans. -->
+    <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="{ThemeResource ControlCornerRadius}"
+            Width="160"
+            Height="160">
+        <Canvas x:Name="PlotCanvas"
+                Width="160"
+                Height="160" />
+    </Border>
+</UserControl>

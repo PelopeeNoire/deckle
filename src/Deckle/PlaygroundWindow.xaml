@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Deckle.Controls"
     xmlns:chrono="using:Deckle.Chrono.Hud"
+    xmlns:ambientControls="using:Deckle.Lighting.Ambient.Controls"
     Title="Deckle Playground">
 
     <!-- RootGrid is hit-testable (Background="Transparent") + focusable
@@ -511,6 +512,156 @@
                                                    Text="Pair a bridge and pick a group first"
                                                    Style="{ThemeResource BodyStrongTextBlockStyle}"
                                                    VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- HDR tuning (live) card. Same four user-tunable
+                                 knobs as Settings → Ambient lighting, surfaced
+                                 inline so the user can tune γ / exposure /
+                                 saturation / min-brightness while a live
+                                 preview grid runs next to them in this same
+                                 window. Reads and writes the same
+                                 AmbientSettings keys ; the engine hot-reloads
+                                 every value at each push tick. The
+                                 BrightnessCurveCanvas widget makes the gamma
+                                 curve visible alongside the slider — γ is
+                                 hard to intuit from a number alone. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="HDR tuning (live)"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Same four knobs as Settings → Ambient lighting, exposed inline so you can tune while the preview grid is live next to you. Values persist across restarts and apply on the next push tick."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <!-- Brightness curve (γ) — widget left,
+                                         slider right, value text far right. -->
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <ambientControls:BrightnessCurveCanvas
+                                            x:Name="PlaygroundGammaCanvas"
+                                            Grid.Column="0"
+                                            VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1"
+                                                    VerticalAlignment="Center"
+                                                    Spacing="6">
+                                            <TextBlock Text="Brightness curve (γ)"
+                                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Slider x:Name="PlaygroundGammaSlider"
+                                                        Grid.Column="0"
+                                                        Minimum="1.0" Maximum="3.0"
+                                                        StepFrequency="0.05"
+                                                        SmallChange="0.05" LargeChange="0.25"
+                                                        TickFrequency="0.5"
+                                                        TickPlacement="Outside"
+                                                        ValueChanged="OnPlaygroundGammaSliderChanged" />
+                                                <TextBlock x:Name="PlaygroundGammaValueText"
+                                                           Grid.Column="1"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           MinWidth="56"
+                                                           TextAlignment="End" />
+                                            </Grid>
+                                            <TextBlock Text="γ 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Exposure (EV) — single slider row. -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Exposure (EV)"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="PlaygroundExposureSlider"
+                                                    Grid.Column="0"
+                                                    Minimum="-2.0" Maximum="2.0"
+                                                    StepFrequency="0.1"
+                                                    SmallChange="0.1" LargeChange="0.5"
+                                                    TickFrequency="0.5"
+                                                    TickPlacement="Outside"
+                                                    ValueChanged="OnPlaygroundExposureSliderChanged" />
+                                            <TextBlock x:Name="PlaygroundExposureValueText"
+                                                       Grid.Column="1"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       MinWidth="56"
+                                                       TextAlignment="End" />
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <!-- Saturation — stored 0.0–2.0, displayed 0–200 %. -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Saturation"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="PlaygroundSaturationSlider"
+                                                    Grid.Column="0"
+                                                    Minimum="0" Maximum="200"
+                                                    StepFrequency="5"
+                                                    SmallChange="5" LargeChange="25"
+                                                    TickFrequency="25"
+                                                    TickPlacement="Outside"
+                                                    ValueChanged="OnPlaygroundSaturationSliderChanged" />
+                                            <TextBlock x:Name="PlaygroundSaturationValueText"
+                                                       Grid.Column="1"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       MinWidth="56"
+                                                       TextAlignment="End" />
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <!-- Min brightness — bridge bri 0–254. -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Minimum brightness"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="PlaygroundMinBrightnessSlider"
+                                                    Grid.Column="0"
+                                                    Minimum="0" Maximum="254"
+                                                    StepFrequency="2"
+                                                    SmallChange="2" LargeChange="20"
+                                                    TickFrequency="50"
+                                                    TickPlacement="Outside"
+                                                    ValueChanged="OnPlaygroundMinBrightnessSliderChanged" />
+                                            <TextBlock x:Name="PlaygroundMinBrightnessValueText"
+                                                       Grid.Column="1"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       MinWidth="56"
+                                                       TextAlignment="End" />
+                                        </Grid>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

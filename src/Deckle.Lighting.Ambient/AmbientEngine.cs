@@ -136,11 +136,14 @@ public sealed class AmbientEngine : IAsyncDisposable
 
     private readonly IAmbientEngineHost _host;
 
-    // All four deps are owned by the engine — instantiated in
-    // StartAsync, disposed in Stop. Null when the engine is idle. The
+    // Three deps are owned by the engine — instantiated in StartAsync,
+    // disposed in Stop. Null when the engine is idle. The
     // ScreenCaptureService is created fresh on every start so the
     // monitor selection + HDR negotiation are picked up from the
-    // current Windows state rather than a stale snapshot.
+    // current Windows state rather than a stale snapshot. The bridge
+    // client is borrowed from HuePairingService (singleton owner,
+    // shared with the Playground and Settings AmbientPage) — never
+    // disposed here, the reference is simply released on Stop.
     private ScreenCaptureService? _capture;
     private HueBridgeClient? _bridgeClient;
     private ILightOutput? _output;
@@ -202,17 +205,26 @@ public sealed class AmbientEngine : IAsyncDisposable
     // HDR tuning snapshot, refreshed at the top of each tick from
     // _host.Ambient. Live-reload — the AmbientPage sliders apply on
     // the next tick without restarting the pipeline. See
-    // AmbientSettings.ExposureEv / SaturationBoost / MinBrightness
-    // for the user-facing semantics. The snapshot avoids re-reading
-    // the host four times per pixel inside the helpers.
+    // AmbientSettings.ExposureEv / SaturationBoost / MinBrightness /
+    // BrightnessCurveGamma for the user-facing semantics. The snapshot
+    // avoids re-reading the host on every pixel inside the helpers.
     //   - Exposure is forwarded to FrameSampler (applied in linear
     //     light before the tone-map, mathematically correct).
-    //   - Saturation boost is applied here on the sRGB output (a
-    //     simple HSV-S amplification to keep hue stable).
-    //   - Min brightness is applied here on the sRGB output (raises
+    //   - Saturation boost is applied here on the sRGB output (OKLCh
+    //     chroma amplification to keep hue stable and perceived
+    //     luminance constant across the hue wheel).
+    //   - Brightness curve gamma is applied here on the sRGB output
+    //     as a uniform RGB scale (xy chromaticity invariant — only
+    //     the bri derived from max(R,G,B) drops). Squashes the bottom
+    //     of the bri range so dim scenes don't read as visibly lit in
+    //     a dark room. γ = 1.0 is a no-op.
+    //   - Min brightness is applied last on the sRGB output (raises
     //     the max channel to the floor while preserving chromaticity).
-    private double _saturationBoost = 1.0;
-    private int    _minBrightness   = 0;
+    //     Comes after the curve so the effective floor matches the
+    //     value the user set, not the curve-attenuated version of it.
+    private double _saturationBoost      = 1.0;
+    private double _brightnessCurveGamma = 1.0;
+    private int    _minBrightness        = 0;
 
     // Last-constructed engine, exposed for the AmbientPage that lives
     // in Deckle.Lighting.Ambient and cannot reference App (circular).
@@ -387,18 +399,16 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         try
         {
-            // ── Build owned deps ──────────────────────────────────
-            // Hue bridge serves HTTPS on port 443 (the discovery
-            // response confirms this on every consumer firmware). The
-            // ClientKey field is unused on the REST CLIP v1 path —
-            // pass empty to satisfy the record's non-nullable string.
-            var bridge = new HueBridge(
-                Id: ambient.HueBridgeId,
-                InternalIpAddress: ambient.HueBridgeIp,
-                Port: 443);
-            var creds = new HueCredentials(ambient.HueUsername, "");
-
-            _bridgeClient = new HueBridgeClient(bridge, creds);
+            // ── Wire owned deps ───────────────────────────────────
+            // The bridge client is owned by HuePairingService — a
+            // process-wide singleton that auto-restores from settings
+            // on first access (and is shared with the Playground +
+            // Settings AmbientPage so re-pairing from one surface
+            // takes effect everywhere without an engine restart). The
+            // engine borrows the reference, never disposes it.
+            _bridgeClient = HuePairingService.Instance.Bridge
+                ?? throw new InvalidOperationException(
+                    "HuePairingService restored no bridge from settings — paired state in settings.json is inconsistent.");
             _output = new HueRestLightOutput(_bridgeClient, ambient.HueLastGroupId);
 
             _capture = new ScreenCaptureService();
@@ -517,11 +527,12 @@ public sealed class AmbientEngine : IAsyncDisposable
             try { disp.Dispose(); } catch { }
         }
         _output = null;
-        if (_bridgeClient is not null)
-        {
-            try { _bridgeClient.Dispose(); } catch { }
-            _bridgeClient = null;
-        }
+        // _bridgeClient is borrowed from HuePairingService — do NOT
+        // dispose. The service owns the lifecycle ; if the user forgot
+        // the bridge mid-run, _bridgeClient may already be disposed
+        // and any in-flight push will surface a HttpRequestException
+        // that the next Start picks up cleanly.
+        _bridgeClient = null;
         _multiLights = null;
         _multiLastPushed = null;
     }
@@ -586,13 +597,14 @@ public sealed class AmbientEngine : IAsyncDisposable
             while (!ct.IsCancellationRequested)
             {
                 // Refresh the HDR tuning snapshot from the host. Cheap
-                // (three property reads on the singleton settings) and
+                // (four property reads on the singleton settings) and
                 // gives the AmbientPage sliders a one-tick reaction
                 // window without a restart.
                 var ambient = _host.Ambient;
                 _sampler!.SetExposureEv(ambient.ExposureEv);
-                _saturationBoost = ambient.SaturationBoost;
-                _minBrightness   = ambient.MinBrightness;
+                _saturationBoost      = ambient.SaturationBoost;
+                _brightnessCurveGamma = ambient.BrightnessCurveGamma;
+                _minBrightness        = ambient.MinBrightness;
 
                 var sample = _sampler!.LatestSample;
                 if (sample is null)
@@ -844,17 +856,23 @@ public sealed class AmbientEngine : IAsyncDisposable
     }
 
     // Apply the user-tuned HDR transforms to a candidate sRGB colour.
-    // Order : saturation boost first (in HSV-S, hue stable), min
-    // brightness floor last (raises chromaticity-preserving). Bypassed
-    // when the off-threshold has fired — a dark scene must stay dark
-    // even if the user set a high min-brightness floor (otherwise the
-    // floor would re-light the lamp during a movie's black frame).
+    // Order : saturation boost first (OKLCh chroma, hue stable),
+    // brightness response curve next (gamma squash on dim scenes,
+    // chromaticity preserved), min brightness floor last (raises
+    // chromaticity-preserving). The floor comes after the curve so
+    // the effective floor the user sees on a dim scene is the value
+    // they actually set, not the curve-attenuated version of it.
+    // Bypassed when the off-threshold has fired — a dark scene must
+    // stay dark even if the user set a high min-brightness floor
+    // (otherwise the floor would re-light the lamp during a movie's
+    // black frame).
     private (byte R, byte G, byte B) ApplyTuning(byte r, byte g, byte b, bool isDark)
     {
         if (isDark) return (0, 0, 0);
 
         (byte sR, byte sG, byte sB) = ApplySaturationBoost(r, g, b, _saturationBoost);
-        return ApplyMinBrightness(sR, sG, sB, _minBrightness);
+        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveGamma);
+        return ApplyMinBrightness(cR, cG, cB, _minBrightness);
     }
 
     // OKLCh chroma amplification : multiply C by `boost` at constant L,
@@ -885,6 +903,38 @@ public sealed class AmbientEngine : IAsyncDisposable
         float newC = (float)Math.Max(0.0, C * boost);
         var result = ColorSpace.OklchToRgb(L, newC, h);
         return (result.R, result.G, result.B);
+    }
+
+    // Brightness response curve : squash the bottom of the bri range
+    // via a power law on max(R,G,B), implemented as a uniform RGB
+    // scale so xy chromaticity stays invariant (only `bri` derived
+    // from max(R,G,B) drops). gamma=1.0 is a no-op (early-out skips
+    // the math).
+    //
+    // Reference points at γ = 1.8 :
+    //   max=25  → bri ≈ 4    (vs 25 linear)
+    //   max=64  → bri ≈ 22   (vs 64 linear)
+    //   max=128 → bri ≈ 73   (vs 128 linear)
+    //   max=255 → bri = 254  (unchanged)
+    //
+    // Kept ambient-only (not in HueColorMath) so manual swatch pushes
+    // still honour the "this colour at full power" contract. See
+    // AmbientSettings.BrightnessCurveGamma for the user-facing
+    // semantics and tuning rationale.
+    private static (byte R, byte G, byte B) ApplyBrightnessCurve(byte r, byte g, byte b, double gamma)
+    {
+        if (Math.Abs(gamma - 1.0) < 0.001) return (r, g, b);
+
+        int max = Math.Max(r, Math.Max(g, b));
+        if (max == 0) return (r, g, b);
+
+        double ratio = max / 255.0;
+        double scale = Math.Pow(ratio, gamma - 1.0);
+
+        return (
+            (byte)Math.Clamp((int)Math.Round(r * scale), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(g * scale), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(b * scale), 0, 255));
     }
 
     // Min-brightness floor : raise the max channel to `minBri` while

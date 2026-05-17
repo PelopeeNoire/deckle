@@ -142,10 +142,10 @@
     <value>Hue bridge not configured</value>
   </data>
   <data name="AmbientNotPairedInfoBar.Message" xml:space="preserve">
-    <value>Pair a Philips Hue bridge and pick a light group before turning Ambient Light on. The setup wizard lives in the Playground for now.</value>
+    <value>Pair a Philips Hue bridge and pick a light group before turning Ambient Light on.</value>
   </data>
   <data name="AmbientNotPairedActionButton.Content" xml:space="preserve">
-    <value>Open Playground</value>
+    <value>Configure bridge</value>
   </data>
 
   <!-- ── Behaviour ─────────────────────────────────────────── -->
@@ -193,16 +193,52 @@
   <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
     <value>Floor on the bulb brightness when the lamp is on. Keeps mid-tone scenes readable through the diffuser.</value>
   </data>
+  <data name="AmbientGammaCard.Header" xml:space="preserve">
+    <value>Brightness curve</value>
+  </data>
+  <data name="AmbientGammaCard.Description" xml:space="preserve">
+    <value>How dim scenes map to lamp brightness. Higher γ pulls dim scenes further down without dimming bright ones. Compare the accent curve to the dashed linear reference.</value>
+  </data>
+  <data name="AmbientGammaCaption.Text" xml:space="preserve">
+    <value>γ 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows</value>
+  </data>
 
-  <!-- ── Configuration pointer (transient — phase I) ───────── -->
+  <!-- ── Configuration : Hue bridge pairing ────────────────── -->
   <data name="AmbientConfigSectionHeader.Text" xml:space="preserve">
     <value>Configuration</value>
   </data>
-  <data name="AmbientConfigPointerCard.Header" xml:space="preserve">
-    <value>Pair bridge and assign light zones</value>
+  <data name="HueBridgeExpander.Header" xml:space="preserve">
+    <value>Hue bridge</value>
   </data>
-  <data name="AmbientConfigPointerCard.Description" xml:space="preserve">
-    <value>For this preview the Hue pair flow and per-light zone assignment live in the Playground window. They'll move here in the next pass.</value>
+  <data name="HueBridgeExpander.Description" xml:space="preserve">
+    <value>Pair with your Philips Hue bridge and pick the room or zone the Ambient pipeline drives. Discover finds the bridge on your network ; the link button on top of the bridge must be pressed during the pair window.</value>
+  </data>
+  <data name="HueBridgeAddressCard.Header" xml:space="preserve">
+    <value>Bridge address</value>
+  </data>
+  <data name="HueBridgeAddressCard.Description" xml:space="preserve">
+    <value>LAN IP of your bridge. Discover queries Philips's directory ; type manually if discovery returns nothing.</value>
+  </data>
+  <data name="HueDiscoverButton.Content" xml:space="preserve">
+    <value>Discover</value>
+  </data>
+  <data name="HueBridgeGroupCard.Header" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="HueBridgeGroupCard.Description" xml:space="preserve">
+    <value>The room, zone or entertainment area the Ambient pipeline drives. List groups fetches the catalog from the bridge.</value>
+  </data>
+  <data name="HueListGroupsButton.Content" xml:space="preserve">
+    <value>List groups</value>
+  </data>
+  <data name="HueBridgeForgetCard.Header" xml:space="preserve">
+    <value>Forget bridge</value>
+  </data>
+  <data name="HueBridgeForgetCard.Description" xml:space="preserve">
+    <value>Clears the stored credentials locally. The username remains valid on the bridge until you remove it from the Hue mobile app.</value>
+  </data>
+  <data name="HueForgetButton.Content" xml:space="preserve">
+    <value>Forget</value>
   </data>
 
 </root>
