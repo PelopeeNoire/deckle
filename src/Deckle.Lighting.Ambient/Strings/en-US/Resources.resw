@@ -118,14 +118,14 @@
 
   <!-- AmbientPage strings consumed via x:Uid. Master state +
        Behaviour (Mode) + HDR tuning (Exposure / Saturation /
-       Min brightness sliders) + Configuration pointer. Pair flow,
-       Entertainment Area, Light zones and per-light brightness
-       still live in the Playground until phase I migrates them. -->
+       Min brightness / Brightness curve) + Configuration (Hue
+       bridge pairing). Per-light zones and per-light brightness
+       still live in the Playground until phase II migrates them. -->
   <data name="AmbientPageTitleLabel.Text" xml:space="preserve">
     <value>Ambient Light</value>
   </data>
   <data name="AmbientPageSubtitleLabel.Text" xml:space="preserve">
-    <value>Mirror what's on your screen to your Philips Hue lights. Best paired with HDR content for full presence.</value>
+    <value>Mirror your screen to your Philips Hue lights. Works best with HDR content.</value>
   </data>
 
   <!-- ── State ─────────────────────────────────────────────── -->
@@ -156,7 +156,7 @@
     <value>Mode</value>
   </data>
   <data name="AmbientModeCard.Description" xml:space="preserve">
-    <value>Game maps the screen palette to lights directly. Realistic biases toward the scene's diegetic light. Changing this requires restarting the pipeline.</value>
+    <value>Game mirrors the screen palette directly. Realistic favours the scene's actual light sources. Changing this restarts the pipeline.</value>
   </data>
   <data name="AmbientModeGame.Content" xml:space="preserve">
     <value>Game</value>
@@ -166,9 +166,11 @@
   </data>
 
   <!-- ── HDR tuning ────────────────────────────────────────── -->
-  <!-- Flat SettingsCards (no SettingsExpander wrapper). Headers
-       only — the per-knob rationale lives in the Playground HDR
-       tuning card where a live preview makes experimentation cheap. -->
+  <!-- Flat SettingsCards (no SettingsExpander wrapper) for the
+       three classic knobs ; Brightness curve hosts its viz in an
+       Expander. Descriptions kept short — the dense per-knob
+       rationale lives in the Playground HDR tuning card where a
+       live preview makes experimentation cheap. -->
   <data name="AmbientTuningSectionHeader.Text" xml:space="preserve">
     <value>HDR tuning</value>
   </data>
@@ -176,25 +178,25 @@
     <value>Exposure</value>
   </data>
   <data name="AmbientExposureCard.Description" xml:space="preserve">
-    <value>Brightness bias in stops. +1 EV doubles the lamp ; use it for dim HDR content.</value>
+    <value>Boost or dim the lamp overall. +1 doubles brightness — useful for dim HDR content.</value>
   </data>
   <data name="AmbientSaturationCard.Header" xml:space="preserve">
     <value>Saturation</value>
   </data>
   <data name="AmbientSaturationCard.Description" xml:space="preserve">
-    <value>Chroma boost. 100% is neutral, 150–180% restores Hue Sync vividness.</value>
+    <value>Colour intensity. 100% is neutral; 150–180% gives Hue Sync–like vividness.</value>
   </data>
   <data name="AmbientMinBrightnessCard.Header" xml:space="preserve">
     <value>Minimum brightness</value>
   </data>
   <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
-    <value>Floor on the lamp brightness when on. Stops mid-tones from washing out.</value>
+    <value>Lowest brightness the lamp drops to. Prevents mid-tone scenes from looking washed out.</value>
   </data>
   <data name="AmbientGammaExpander.Header" xml:space="preserve">
     <value>Brightness curve</value>
   </data>
   <data name="AmbientGammaExpander.Description" xml:space="preserve">
-    <value>Squashes dim scenes. Higher γ dims shadows harder without touching highlights. Expand to see the curve.</value>
+    <value>Shapes how dim scenes map to the lamp. Higher values darken shadows without affecting bright areas. Expand to see the curve.</value>
   </data>
   <data name="AmbientTuningPlaygroundHint.Text" xml:space="preserve">
     <value>Open the Playground to tune these values with a live preview.</value>
@@ -214,25 +216,92 @@
     <value>Hue bridge</value>
   </data>
   <data name="HueBridgeExpander.Description" xml:space="preserve">
-    <value>Pair with your Philips Hue bridge and pick the room the pipeline drives.</value>
+    <value>Pair your Philips Hue bridge and pick which room the lights follow.</value>
   </data>
   <data name="HueBridgeAddressCard.Header" xml:space="preserve">
     <value>Bridge address</value>
   </data>
   <data name="HueDiscoverButton.Content" xml:space="preserve">
-    <value>Discover</value>
+    <value>Find bridge</value>
   </data>
   <data name="HueBridgeGroupCard.Header" xml:space="preserve">
-    <value>Group</value>
+    <value>Room or zone</value>
   </data>
   <data name="HueListGroupsButton.Content" xml:space="preserve">
-    <value>List groups</value>
+    <value>Load rooms</value>
   </data>
   <data name="HueBridgeForgetCard.Header" xml:space="preserve">
     <value>Forget bridge</value>
   </data>
   <data name="HueForgetButton.Content" xml:space="preserve">
     <value>Forget</value>
+  </data>
+
+  <!-- Initial values for runtime-mutated TextBlocks (status row +
+       pair button label). The code-behind SyncHueBridgeUi rewrites
+       these on Loaded and on every BridgeChanged event ; the values
+       below are only the placeholder that shows for the few ms
+       before the Loaded handler fires. -->
+  <data name="HueBridgeStatusText.Text" xml:space="preserve">
+    <value>Not paired</value>
+  </data>
+  <data name="HuePairLabel.Text" xml:space="preserve">
+    <value>Pair bridge</value>
+  </data>
+
+  <!-- ── Code-behind strings (Loc.Get / Loc.Format) ────────── -->
+  <!-- Hue bridge status row, rewritten by SyncHueBridgeUi each
+       time HuePairingService raises BridgeChanged. -->
+  <data name="AmbientHue_Status_NotPaired" xml:space="preserve">
+    <value>Not paired</value>
+  </data>
+  <data name="AmbientHue_Status_Paired" xml:space="preserve">
+    <value>Paired</value>
+  </data>
+  <data name="AmbientHue_PairLabel_Pair" xml:space="preserve">
+    <value>Pair bridge</value>
+  </data>
+  <data name="AmbientHue_PairLabel_Repair" xml:space="preserve">
+    <value>Re-pair bridge</value>
+  </data>
+  <data name="AmbientHue_PairLabel_Waiting" xml:space="preserve">
+    <value>Waiting for link button…</value>
+  </data>
+
+  <!-- Transient pair status caption below the address card.
+       Cleared back to empty when the row should disappear. -->
+  <data name="AmbientHue_PairStatus_IpRequired" xml:space="preserve">
+    <value>Enter a bridge IP address.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_PressLink" xml:space="preserve">
+    <value>Press the link button on the bridge within 30 seconds.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_Success" xml:space="preserve">
+    <value>Paired. Click Load rooms to continue.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_Cancelled" xml:space="preserve">
+    <value>Cancelled.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_TimedOut" xml:space="preserve">
+    <value>Timed out. Try again and press the link button within 30 seconds.</value>
+  </data>
+  <data name="AmbientHue_PairStatus_Failed_Format" xml:space="preserve">
+    <value>Couldn't pair: {0}. Check the bridge IP and try again.</value>
+  </data>
+
+  <!-- Forget bridge confirmation dialog. Microsoft destructive
+       pattern : confirm-then-act, button labelled with the action. -->
+  <data name="AmbientHue_ForgetDialog_Title" xml:space="preserve">
+    <value>Forget Hue bridge?</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_Content" xml:space="preserve">
+    <value>Deckle will forget your bridge address and credentials. You can pair again later from the Hue app without pressing the link button.</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_PrimaryButton" xml:space="preserve">
+    <value>Forget bridge</value>
+  </data>
+  <data name="AmbientHue_ForgetDialog_CloseButton" xml:space="preserve">
+    <value>Cancel</value>
   </data>
 
 </root>

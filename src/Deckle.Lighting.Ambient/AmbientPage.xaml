@@ -283,7 +283,7 @@
                                  Fill="{ThemeResource SystemFillColorNeutralBrush}"
                                  VerticalAlignment="Center" />
                         <TextBlock x:Name="HueBridgeStatusText"
-                                   Text="Not paired"
+                                   x:Uid="HueBridgeStatusText"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
@@ -311,7 +311,7 @@
                                         Style="{ThemeResource AccentButtonStyle}"
                                         Click="OnHuePairClick">
                                     <TextBlock x:Name="HuePairLabel"
-                                               Text="Pair (press link button)" />
+                                               x:Uid="HuePairLabel" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>

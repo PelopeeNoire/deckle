@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Deckle.Lighting.Hue;
+using Deckle.Localization;
 using Deckle.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -333,8 +334,8 @@ public sealed partial class AmbientPage : Page
         if (paired is null || bridge is null || !bridge.IsPaired)
         {
             HueBridgeStatusDot.Fill   = GetThemeBrush("SystemFillColorNeutralBrush");
-            HueBridgeStatusText.Text  = "Not paired";
-            HuePairLabel.Text         = "Pair (press link button)";
+            HueBridgeStatusText.Text  = Loc.Get("AmbientHue_Status_NotPaired");
+            HuePairLabel.Text         = Loc.Get("AmbientHue_PairLabel_Pair");
             HueListGroupsButton.IsEnabled = false;
             HueForgetButton.IsEnabled     = false;
 
@@ -345,11 +346,10 @@ public sealed partial class AmbientPage : Page
             return;
         }
 
-        var creds = bridge.Credentials!;
         HueBridgeStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
-        HueBridgeStatusText.Text  = $"Paired ({creds.UsernameHead})";
+        HueBridgeStatusText.Text  = Loc.Get("AmbientHue_Status_Paired");
         HueBridgeIpTextBox.Text   = paired.InternalIpAddress;
-        HuePairLabel.Text         = "Re-pair";
+        HuePairLabel.Text         = Loc.Get("AmbientHue_PairLabel_Repair");
         HueListGroupsButton.IsEnabled = true;
         HueForgetButton.IsEnabled     = true;
     }
@@ -397,7 +397,7 @@ public sealed partial class AmbientPage : Page
         var ip = HueBridgeIpTextBox.Text?.Trim();
         if (string.IsNullOrEmpty(ip))
         {
-            SetHuePairStatus("Bridge IP required");
+            SetHuePairStatus(Loc.Get("AmbientHue_PairStatus_IpRequired"));
             return;
         }
 
@@ -407,30 +407,30 @@ public sealed partial class AmbientPage : Page
         _hueIsPairing = true;
 
         HuePairButton.IsEnabled = false;
-        HuePairLabel.Text       = "Waiting for link button…";
-        SetHuePairStatus("Press the link button on the bridge — 30 s window.");
+        HuePairLabel.Text       = Loc.Get("AmbientHue_PairLabel_Waiting");
+        SetHuePairStatus(Loc.Get("AmbientHue_PairStatus_PressLink"));
 
         var target = new HueBridge(Id: "manual", InternalIpAddress: ip, Port: 443);
         try
         {
-            var creds = await HuePairingService.Instance
+            await HuePairingService.Instance
                 .PairAsync(target, ct: _huePairCts.Token)
                 .ConfigureAwait(true);
-            SetHuePairStatus($"Paired ({creds.UsernameHead}). Click List groups to continue.");
+            SetHuePairStatus(Loc.Get("AmbientHue_PairStatus_Success"));
             // SyncHueBridgeUi fires via BridgeChanged event and flips
             // the dot to success + label to Re-pair.
         }
         catch (OperationCanceledException)
         {
-            SetHuePairStatus("Cancelled.");
+            SetHuePairStatus(Loc.Get("AmbientHue_PairStatus_Cancelled"));
         }
         catch (TimeoutException)
         {
-            SetHuePairStatus("Timed out — try again, the link button must be pressed within 30 s.");
+            SetHuePairStatus(Loc.Get("AmbientHue_PairStatus_TimedOut"));
         }
         catch (Exception ex)
         {
-            SetHuePairStatus($"Failed: {ex.Message}");
+            SetHuePairStatus(Loc.Format("AmbientHue_PairStatus_Failed_Format", ex.Message));
             LogService.Instance.Warning(LogSource.Hue,
                 $"Pair from Settings failed — {ex.GetType().Name}: {ex.Message}");
         }
@@ -507,17 +507,14 @@ public sealed partial class AmbientPage : Page
         // Modal confirmation before clearing the pairing — matches
         // Microsoft's official guidance for destructive actions
         // (confirm in a ContentDialog rather than rely on the button
-        // colour alone). Wording is provisional, will pass through the
-        // UX copy review in a later sweep.
+        // colour alone). Wording lives in Strings/en-US/Resources.resw
+        // under the AmbientHue_ForgetDialog_* keys.
         var dialog = new ContentDialog
         {
-            Title             = "Forget Hue bridge?",
-            Content           = "The locally stored bridge address and credentials will be cleared. " +
-                                "The username remains valid on the bridge itself until you remove it " +
-                                "from the Hue mobile app, so you can pair again later without pressing " +
-                                "the link button.",
-            PrimaryButtonText = "Forget",
-            CloseButtonText   = "Cancel",
+            Title             = Loc.Get("AmbientHue_ForgetDialog_Title"),
+            Content           = Loc.Get("AmbientHue_ForgetDialog_Content"),
+            PrimaryButtonText = Loc.Get("AmbientHue_ForgetDialog_PrimaryButton"),
+            CloseButtonText   = Loc.Get("AmbientHue_ForgetDialog_CloseButton"),
             DefaultButton     = ContentDialogButton.Close,
             XamlRoot          = this.XamlRoot,
         };
