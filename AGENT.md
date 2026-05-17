@@ -10,11 +10,18 @@ For Claude-specific doctrine (skills, MCP servers, pedagogy, tone), see
 
 ## Non-negotiable rules
 
-1. **Never build or publish.** Do not run `build-run.ps1`, `MSBuild.exe`,
-   `dotnet build`, or any variant. The maintainer builds and validates
-   runtime. Stop at the summary of changes.
-2. **No Co-Authored-By trailers.** Commits go under the maintainer's identity
-   only. No `Co-Authored-By: <agent>` lines, no `Generated with` footers.
+These rules apply to **AI agents acting on this repo**, not to human
+contributors who clone and build it.
+
+1. **Agents do not build or publish.** Do not run `build-run.ps1`,
+   `MSBuild.exe`, `dotnet build`, `publish-unpackaged.ps1`, or any variant.
+   The maintainer builds and validates runtime. Stop at the summary of
+   changes and let the human run the build. (A human contributor *should*
+   build to test their own changes — this rule is about the agent loop,
+   not the workflow.)
+2. **No Co-Authored-By trailers.** Commits go under the maintainer's
+   identity only. No `Co-Authored-By: <agent>` lines, no
+   `Generated with <tool>` footers.
 
 ---
 
@@ -74,7 +81,7 @@ module are used when internal structure warrants it.
 
 ### Modules with internal CLAUDE.md
 
-Six of fifteen modules have non-trivial contracts documented:
+Five of fifteen modules have non-trivial contracts documented:
 
 - `src/Deckle/CLAUDE.md` — app host lifetime, WinUI 3 pitfalls, build commands
 - `src/Deckle.Audio/CLAUDE.md` — WASAPI capture, circular buffers, RMS
@@ -82,7 +89,7 @@ Six of fifteen modules have non-trivial contracts documented:
 - `src/Deckle.Settings/CLAUDE.md` — NavigationView shell, SettingsHost, modular pages
 - `src/Deckle.Whisp/CLAUDE.md` — transcription pipeline, segment callback, VAD, hot-reload
 
-The remaining nine modules (Core, Chrono, Chrono.Hud, Composition, Vision,
+The remaining ten modules (Core, Chrono, Chrono.Hud, Composition, Vision,
 Lighting, Lighting.Ambient, Llm, Localization, Shell) are either
 straightforward or still being scaffolded.
 
