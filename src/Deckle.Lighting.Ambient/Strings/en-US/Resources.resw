@@ -295,7 +295,7 @@
     <value>Forget Hue bridge?</value>
   </data>
   <data name="AmbientHue_ForgetDialog_Content" xml:space="preserve">
-    <value>Deckle will forget your bridge address and credentials. You can pair again later from the Hue app without pressing the link button.</value>
+    <value>Deckle will forget your bridge address and credentials. To pair again, press the link button on the bridge.</value>
   </data>
   <data name="AmbientHue_ForgetDialog_PrimaryButton" xml:space="preserve">
     <value>Forget bridge</value>
