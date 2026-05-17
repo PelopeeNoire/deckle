@@ -1,47 +1,70 @@
 # Deckle
 
-Local-first voice-to-clipboard transcription utility for Windows. Press a
-hotkey, talk, release — the transcription lands in the clipboard, ready to
-paste anywhere.
+Local-first Windows utility that bundles personal productivity tools into a
+single system-tray app. No cloud dependency, no account, no telemetry leaving
+the machine.
 
-Built on [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with Vulkan
-GPU acceleration. WinUI 3 UI, .NET 10, Windows App SDK 1.8. No cloud
-dependency, no account, no telemetry leaving the machine.
+Built with WinUI 3, .NET 10, and Windows App SDK 1.8. Targets Windows 11.
 
-> Status — **personal project, early public release.** Tested on a single
-> Windows 11 machine. Not packaged for the Microsoft Store. Build from source
+> Status — **personal project, early public release.** Tested on two
+> Windows 11 machines. Not packaged for the Microsoft Store. Build from source
 > with the instructions below.
 
 ---
 
-## What it does
+## Subsystems
+
+### Voice transcription (Whisp)
+
+Press a hotkey, talk, release — the transcription lands in the clipboard,
+ready to paste anywhere.
 
 - **Hotkey-driven recording.** Three configurable global hotkeys (default:
   the key just left of `1`) toggle audio capture from the system microphone.
-- **Local Whisper transcription.** Audio is decoded by `libwhisper` (whisper.cpp)
-  with the user's chosen model (`ggml-base`, `ggml-large-v3`, etc.). Vulkan
-  backend by default; CPU fallback if no GPU is available.
+- **Local Whisper transcription.** Audio is decoded by `libwhisper`
+  ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) with the user's
+  chosen model (`ggml-base`, `ggml-large-v3`, etc.). Vulkan backend by
+  default; CPU fallback if no GPU is available.
 - **Clipboard write + optional auto-paste.** The raw transcription is written
   to the clipboard. If the foreground window has a text-editable focus, a
-  `Ctrl+V` is injected. If not, the text just sits on the clipboard for
-  manual paste.
-- **Optional LLM rewrite via Ollama.** A configurable profile can post-process
-  the raw transcription through a local Ollama instance (Mistral/Ministral,
-  Llama, Qwen, Gemma, Phi families supported). Off by default.
-- **HUD.** A small overlay window shows recording state, elapsed time, and
-  microphone level while the hotkey is held.
-- **System tray.** Quit, open settings, open the live log window — all from
-  the tray.
+  `Ctrl+V` is injected. If not, the text sits on the clipboard for manual
+  paste.
+- **Optional LLM rewrite via Ollama.** A configurable profile can
+  post-process the raw transcription through a local Ollama instance. Off by
+  default.
+
+### Ambient lighting
+
+Captures the screen in real-time via DXGI Output Duplication and drives
+Philips Hue lights to match the dominant colors, with per-zone mapping and
+HDR support.
+
+- **DXGI capture backend.** No yellow capture border (unlike
+  `Windows.Graphics.Capture`). Minimal latency, GPU-side frame copy.
+- **Color science pipeline.** Gamut clipping, linear-light averaging, OKLCh
+  saturation boost. Accurate color reproduction on any display profile.
+- **Multi-zone support.** Map screen regions to individual Hue lights. Auto-
+  discovery of the Hue Entertainment group.
+- **Hue Entertainment API v2.** Direct UDP streaming to Hue Bridge — no
+  third-party NuGet, no cloud relay.
+
+### Shared infrastructure
+
+- **HUD overlay.** A small topmost window shows recording state, elapsed
+  time, and microphone level while the hotkey is held.
+- **System tray.** Quit, open settings, toggle ambient lighting, open the
+  live log window — all from the tray.
+- **Settings.** NavigationView-based settings UI with per-module pages,
+  auto-save, and consent dialogs for telemetry.
 
 ---
 
 ## What it does *not* do
 
-- It does not upload audio anywhere. Everything stays on the machine.
+- It does not upload audio or screen captures anywhere.
 - It does not auto-update. Builds are manual.
-- It does not run on Windows 10. Targets Windows 11 (Windows App SDK 1.8
-  minimums apply).
-- It does not work on macOS or Linux. The whole stack is Win32 / WinUI 3 /
+- It does not run on Windows 10. Targets Windows 11.
+- It does not work on macOS or Linux. The stack is Win32 / WinUI 3 /
   Windows App SDK.
 
 ---
@@ -50,77 +73,82 @@ dependency, no account, no telemetry leaving the machine.
 
 ### Prerequisites
 
-- **Windows 11**.
-- **.NET 10 SDK** (`10.0.104` or newer ; pinned by `global.json`).
+The fastest path from a fresh Windows 11 machine is the bootstrap script:
+
+```powershell
+scripts/bootstrap-dev-env.ps1           # Tier 1 (managed build)
+scripts/bootstrap-dev-env.ps1 -Full     # Tier 1 + native recompile + Ollama
+```
+
+It probes what is already installed, installs the missing pieces via winget
+and Scoop, sets the required environment variables, and invokes
+`setup-assets.ps1` to provision the runtime data. Run with `-DryRun` first
+to see the plan without installing anything.
+
+#### Tier 1 — build & run Deckle (sufficient for C# / XAML work)
+
+- **Windows 11.**
+- **.NET 10 SDK** (pinned by `global.json` with `rollForward: latestFeature`).
 - **Visual Studio 2026 Community** with the *WinUI application development*
-  workload — the build relies on its `MSBuild.exe` (Framework runtime). The
-  Build CLI in `dotnet build` currently breaks WinUI 3 XAML compilation, see
-  the *Build* section in [`CLAUDE.md`](CLAUDE.md) for the technical detail.
-- **whisper.cpp** cloned next to this repo and built locally with the
-  Vulkan backend. The required DLLs (`libwhisper.dll`, `ggml.dll`,
-  `ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`) and the three MinGW
-  runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
-  `libwinpthread-1.dll`) are pulled in by `scripts/setup-assets.ps1`.
-- **MinGW** via Scoop (`scoop install mingw`) for the C++ runtime DLLs the
-  Vulkan backend links against.
-- **Vulkan SDK** for GPU acceleration. Optional — whisper.cpp falls back to
-  CPU if no Vulkan runtime is present.
-- **Ollama** for LLM rewrite. Optional — the rewrite feature is off by
-  default and the app works without it.
+  workload. The build relies on its `MSBuild.exe` (Framework runtime) because
+  `dotnet build` currently breaks WinUI 3 XAML compilation — see the
+  *Build* section in [`CLAUDE.md`](CLAUDE.md) for the technical detail.
+
+#### Tier 2 — recompile whisper.cpp native DLLs (rare, maintainer-only)
+
+- **Scoop** (`scoop.sh`).
+- **MinGW** (`scoop install mingw`) — GCC 15.2, C++ toolchain.
+- **CMake** and **Ninja** (`scoop install cmake ninja`).
+- **Vulkan SDK** (`scoop install vulkan`) — headers for the `ggml-vulkan`
+  backend.
+- A local clone of [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+  outside this repo. See
+  [`docs/reference--native-runtime--1.0.md`](docs/reference--native-runtime--1.0.md)
+  for the full recipe.
+
+#### Optional
+
+- **Ollama** for LLM rewrite (`winget install --id Ollama.Ollama -e`). Off
+  by default.
+- **GitHub CLI** for auth and PR workflows
+  (`winget install --id GitHub.cli -e`).
 
 ### Fresh clone — first run
 
-For a brand new clone, in this order :
+1. Run `scripts/bootstrap-dev-env.ps1` (installs prerequisites + provisions
+   `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models).
+2. Open a **new terminal** (environment variables set by the bootstrap are
+   only visible in new sessions).
+3. Build & run via `scripts/launcher.ps1` (interactive picker), or directly:
+   ```powershell
+   scripts/build-run.ps1 -Configuration Release
+   ```
+4. Alternatively, open the solution in Visual Studio 2026 and press F5.
 
-1. Install the prerequisites above (Windows 11, .NET 10 SDK, Visual Studio
-   2026 with the WinUI workload, MinGW via Scoop, optionally Vulkan SDK
-   and Ollama).
-2. Clone whisper.cpp **next to this repo** and build it with the Vulkan
-   backend, so its `build/bin/` contains the DLLs.
-3. From the repo root, run `scripts/setup-assets.ps1`. It copies the
-   whisper and MinGW DLLs into `%LOCALAPPDATA%\Deckle\native\` and
-   downloads `ggml-base.bin` + Silero VAD into `%LOCALAPPDATA%\Deckle\models\`.
-   Add `-WithLarge` to also fetch `ggml-large-v3.bin` (~3 GB).
-4. Build & run via `scripts/launcher.ps1` (interactive picker), or open
-   the solution in Visual Studio 2026 and press F5.
+### Scripts
 
-### Build & run
-
-The recommended entry point is `scripts/launcher.ps1` — interactive
-two-step picker (worktree → action). For direct CLI use,
-`scripts/build-run.ps1` resolves `MSBuild.exe` automatically (via
-`$env:DECKLE_MSBUILD` or `vswhere`), builds via VS MSBuild Framework
-(working around the `dotnet build` XamlCompiler bug), and launches the
-resulting exe.
-
-```powershell
-scripts/build-run.ps1 -Configuration Release
-```
-
-Output: `src/Deckle/bin/x64/Release/net10.0-windows10.0.26100.0/Deckle.exe`.
-
-See [`scripts/README.md`](scripts/README.md) for an overview of every
-script and module under `scripts/`.
+| Script | Purpose |
+|--------|---------|
+| `scripts/bootstrap-dev-env.ps1` | Probe + install dev dependencies (winget, Scoop, VS, .NET SDK). |
+| `scripts/setup-assets.ps1` | Provision `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. |
+| `scripts/launcher.ps1` | Interactive two-step picker: worktree → action (build, run, setup). |
+| `scripts/build-run.ps1` | Build via VS MSBuild + launch. Resolves MSBuild automatically. |
+| `scripts/publish-native-runtime.ps1` | Maintainer-only: zip + publish a `native-vX.Y.Z` GitHub release. |
 
 ---
 
 ## Run at startup
 
-Deckle can start automatically when you log into Windows. In the app,
-go to **Settings → General → Launch at startup** and toggle it on. Two
-related options shape the behaviour :
+In the app, go to **Settings → General → Launch at startup** and toggle it
+on. Two related options:
 
-- **Start minimized** keeps the main window hidden on launch — the app
-  lives in the system tray and only the HUD shows up when you press the
-  hotkey.
-- **Warm up on launch** runs a short dummy transcription right after
-  startup so the first real hotkey press does not pay the cold-start
-  cost (model load, Vulkan init).
+- **Start minimized** — the app lives in the system tray.
+- **Warm up on launch** — runs a short dummy transcription so the first
+  real hotkey press skips the cold-start cost.
 
-Under the hood this writes a single user-scope entry under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Deckle` pointing at
-the exe you launched the toggle from — no UAC, no service, nothing
-machine-wide. Toggle it off to remove the entry.
+Under the hood this writes a user-scope entry under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Deckle`. No UAC, no
+service, nothing machine-wide.
 
 ---
 
@@ -128,49 +156,58 @@ machine-wide. Toggle it off to remove the entry.
 
 ```
 <repo-root>/
-├── src/Deckle/        WinUI 3 app — single entry point. Per-subsystem
-│                       documentation in docs/reference--*.md.
-├── scripts/            build-run.ps1, publish-unpackaged.ps1, restore-assets.ps1
-├── benchmark/          Python benchmark suite for prompt tuning. Optional.
-├── docs/               Top-level docs (security review, etc.)
-├── native/             whisper.cpp + MinGW runtime DLLs (gitignored, see
-│                       the Building section above).
-├── models/             Whisper models (gitignored, large binary files).
-├── whisper.cpp/        whisper.cpp source clone, used to build the
-│                       native DLLs (gitignored).
+├── src/
+│   ├── Deckle/                 WinUI 3 app host — entry point, windows, tray
+│   ├── Deckle.Core/            Foundations (AppPaths, JsonSettingsStore, Win32 interop)
+│   ├── Deckle.Logging/         Central telemetry hub (TelemetryService + sinks)
+│   ├── Deckle.Localization/    ResourceLoader facade (x:Uid pattern)
+│   ├── Deckle.Audio/           Microphone capture (WASAPI, RMS, calibration)
+│   ├── Deckle.Chrono/          Timer primitive (no UI)
+│   ├── Deckle.Chrono.Hud/      UserControl for the stopwatch HUD
+│   ├── Deckle.Composition/     Direct2D + Composition primitives (ColorSpace, easing)
+│   ├── Deckle.Vision/          Screen capture (DXGI Output Duplication)
+│   ├── Deckle.Lighting/        LED driver abstraction (ILightOutput)
+│   ├── Deckle.Lighting.Ambient/ Ambient lighting consumer (Vision + Lighting → Hue)
+│   ├── Deckle.Shell/           System shell (tray, hotkeys, autostart, message-only host)
+│   ├── Deckle.Settings/        Settings UI shell + per-module persistence
+│   ├── Deckle.Llm/             LLM rewrite via Ollama
+│   └── Deckle.Whisp/           Whisper transcription pipeline
+├── scripts/                    Build, publish, setup, launcher
+├── docs/                       Reference sheets and research notes
+├── benchmark/                  Python benchmark suite (optional, to be extracted)
 └── LICENSE, README.md, SECURITY.md, NOTICE.md
 ```
+
+Native DLLs and Whisper models do **not** live in the repository. They are
+provisioned at dev time by `scripts/setup-assets.ps1` into
+`%LOCALAPPDATA%\Deckle\` and at user time by the first-run wizard.
 
 ---
 
 ## Security & privacy
 
-This app uses several Windows surfaces that are worth knowing about :
-
 - A **global hotkey** (`RegisterHotKey`, not a low-level keyboard hook) is
   active while the app runs.
-- The clipboard is written and a `Ctrl+V` is **injected** via `SendInput`
-  on the foreground window after a UI Automation check (refuses to paste
-  if the focused element is not text-editable, refuses to paste into
-  whisp-ui itself).
-- An **autostart entry** (HKCU `\Software\Microsoft\Windows\CurrentVersion\Run`)
-  is written when the user enables the option. No UAC, user-scope only.
-- Telemetry is **strictly opt-in** — four explicit consent dialogs gate
-  application logs, audio corpus, microphone summaries, and corpus
-  collection. All artifacts stay local. Nothing is uploaded anywhere.
+- The clipboard is written and a `Ctrl+V` is injected via `SendInput` after
+  a UI Automation check (refuses if the focused element is not text-editable).
+- Screen capture via **DXGI Output Duplication** runs only while ambient
+  lighting is active. Frames are processed in GPU memory and never written
+  to disk.
+- An **autostart entry** (HKCU Run key) is written when the user enables it.
+  User-scope only.
+- Telemetry is **strictly opt-in** — explicit consent dialogs gate each
+  channel. All artifacts stay local.
 
-For the full security posture, see [SECURITY.md](SECURITY.md). For the
-audit that preceded the public release, see
-[docs/security-review--pre-publication--0.1.md](docs/security-review--pre-publication--0.1.md).
-
-To report a security issue, see [SECURITY.md](SECURITY.md).
+For the full security posture, see [SECURITY.md](SECURITY.md). For the audit
+that preceded the public release, see
+[`docs/security-review--pre-publication--0.1.md`](docs/security-review--pre-publication--0.1.md).
 
 ---
 
 ## Acknowledgements
 
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) by Georgi Gerganov
-  and contributors — the speech recognition engine.
+  and contributors — speech recognition engine.
 - [Windows App SDK](https://github.com/microsoft/WindowsAppSDK) and
   [WinUI 3](https://github.com/microsoft/microsoft-ui-xaml) by Microsoft.
 - [Windows Community Toolkit](https://github.com/CommunityToolkit/Windows)
@@ -179,6 +216,8 @@ To report a security issue, see [SECURITY.md](SECURITY.md).
   graphics.
 - [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) by LunarG for GPU
   inference.
+- [Philips Hue](https://developers.meethue.com/) Entertainment API for
+  ambient light streaming.
 
 See [NOTICE.md](NOTICE.md) for full third-party attributions.
 
