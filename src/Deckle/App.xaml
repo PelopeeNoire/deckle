@@ -22,17 +22,17 @@
             </Style>
 
             <!-- CriticalAccentButtonStyle : destructive action style for
-                 Forget / Delete / Remove buttons. WinUI 3 ships no such
-                 style natively (only AccentButtonStyle and
-                 DefaultButtonStyle) — Microsoft's official guidance is
-                 "use a confirmation dialog instead of colouring the
-                 button red", but the visual cue still matters when a
-                 modal is overkill.
-                 Full ControlTemplate with explicit VisualStates rather
-                 than Setter overrides on AccentButtonStyle, because the
-                 base template's PointerOver / Pressed states pull from
-                 AccentButton* theme resource keys we can't scope-
-                 override cleanly per-button in WinUI 3. -->
+                 Forget / Delete / Remove buttons. WinUI 3 ships
+                 SystemFillColorCriticalBrush but NOT Secondary /
+                 Tertiary variants of it (those keys exist only for
+                 AccentFill, not Critical). We define our own
+                 pointer-over / pressed brushes with the Windows 11
+                 critical red at progressively darker values, so the
+                 destructive signal persists across every interaction
+                 state. -->
+            <SolidColorBrush x:Key="CriticalButtonBackground"            Color="#C42B1C" />
+            <SolidColorBrush x:Key="CriticalButtonBackgroundPointerOver" Color="#B92619" />
+            <SolidColorBrush x:Key="CriticalButtonBackgroundPressed"     Color="#A4140A" />
             <Style x:Key="CriticalAccentButtonStyle" TargetType="Button">
                 <Setter Property="Foreground"      Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
                 <Setter Property="HorizontalAlignment"            Value="Left" />
@@ -50,8 +50,8 @@
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
                             <Grid x:Name="RootGrid"
-                                  Background="{ThemeResource SystemFillColorCriticalBrush}"
-                                  BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
+                                  Background="{StaticResource CriticalButtonBackground}"
+                                  BorderBrush="{StaticResource CriticalButtonBackground}"
                                   BorderThickness="{ThemeResource ButtonBorderThemeThickness}"
                                   CornerRadius="{ThemeResource ControlCornerRadius}">
                                 <VisualStateManager.VisualStateGroups>
@@ -59,23 +59,18 @@
                                         <VisualState x:Name="Normal" />
                                         <VisualState x:Name="PointerOver">
                                             <VisualState.Setters>
-                                                <!-- Hover : darker critical via Tertiary
-                                                     (the system's reserved "darker red"
-                                                     for interactive critical surfaces). -->
                                                 <Setter Target="RootGrid.Background"
-                                                        Value="{ThemeResource SystemFillColorCriticalTertiaryBrush}" />
+                                                        Value="{StaticResource CriticalButtonBackgroundPointerOver}" />
                                                 <Setter Target="RootGrid.BorderBrush"
-                                                        Value="{ThemeResource SystemFillColorCriticalTertiaryBrush}" />
+                                                        Value="{StaticResource CriticalButtonBackgroundPointerOver}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Pressed">
                                             <VisualState.Setters>
                                                 <Setter Target="RootGrid.Background"
-                                                        Value="{ThemeResource SystemFillColorCriticalSecondaryBrush}" />
+                                                        Value="{StaticResource CriticalButtonBackgroundPressed}" />
                                                 <Setter Target="RootGrid.BorderBrush"
-                                                        Value="{ThemeResource SystemFillColorCriticalSecondaryBrush}" />
-                                                <Setter Target="ContentPresenter.Foreground"
-                                                        Value="{ThemeResource TextOnAccentFillColorSecondaryBrush}" />
+                                                        Value="{StaticResource CriticalButtonBackgroundPressed}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Disabled">

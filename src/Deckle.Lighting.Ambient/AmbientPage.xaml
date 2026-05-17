@@ -97,19 +97,14 @@
                 <TextBlock x:Uid="AmbientTuningSectionHeader"
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
-                <!-- Slider cards use a Grid * + Auto so the slider stretches
-                     to fill the content area instead of being pinned right
-                     at a fixed 220 px — the previous Width hack made the
-                     three sliders look glued to the right edge with awkward
-                     dead space between description and slider. -->
+                <!-- Sliders are fixed-width and right-aligned (Louis : the
+                     slider should read as visually smaller than the
+                     title + description column to its left, not stretched
+                     across the whole content area). -->
                 <controls:SettingsCard x:Uid="AmbientExposureCard">
-                    <Grid ColumnSpacing="12" MinWidth="320">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
                         <Slider x:Name="ExposureSlider"
-                                Grid.Column="0"
+                                Width="200"
                                 Minimum="-2.0" Maximum="2.0"
                                 StepFrequency="0.1"
                                 SmallChange="0.1" LargeChange="0.5"
@@ -117,22 +112,17 @@
                                 TickPlacement="Outside"
                                 ValueChanged="ExposureSlider_ValueChanged" />
                         <TextBlock x:Name="ExposureValueText"
-                                   Grid.Column="1"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    MinWidth="56"
                                    TextAlignment="End" />
-                    </Grid>
+                    </StackPanel>
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="AmbientSaturationCard">
-                    <Grid ColumnSpacing="12" MinWidth="320">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
                         <Slider x:Name="SaturationSlider"
-                                Grid.Column="0"
+                                Width="200"
                                 Minimum="0" Maximum="200"
                                 StepFrequency="5"
                                 SmallChange="5" LargeChange="25"
@@ -140,22 +130,17 @@
                                 TickPlacement="Outside"
                                 ValueChanged="SaturationSlider_ValueChanged" />
                         <TextBlock x:Name="SaturationValueText"
-                                   Grid.Column="1"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    MinWidth="56"
                                    TextAlignment="End" />
-                    </Grid>
+                    </StackPanel>
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="AmbientMinBrightnessCard">
-                    <Grid ColumnSpacing="12" MinWidth="320">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
                         <Slider x:Name="MinBrightnessSlider"
-                                Grid.Column="0"
+                                Width="200"
                                 Minimum="0" Maximum="254"
                                 StepFrequency="2"
                                 SmallChange="2" LargeChange="20"
@@ -163,54 +148,62 @@
                                 TickPlacement="Outside"
                                 ValueChanged="MinBrightnessSlider_ValueChanged" />
                         <TextBlock x:Name="MinBrightnessValueText"
-                                   Grid.Column="1"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    MinWidth="56"
                                    TextAlignment="End" />
-                    </Grid>
-                </controls:SettingsCard>
-
-                <!-- Brightness curve : slider row on top, canvas viz
-                     centered below. Vertical stack means the slider keeps
-                     the same width as the other three sliders (Grid * +
-                     Auto), and the canvas sits as a visual reference
-                     below without compressing the controls sideways. -->
-                <controls:SettingsCard x:Uid="AmbientGammaCard">
-                    <StackPanel Spacing="12" MinWidth="320">
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Slider x:Name="GammaSlider"
-                                    Grid.Column="0"
-                                    StepFrequency="0.05"
-                                    SmallChange="0.05" LargeChange="0.25"
-                                    TickFrequency="0.5"
-                                    TickPlacement="Outside"
-                                    ValueChanged="GammaSlider_ValueChanged" />
-                            <TextBlock x:Name="GammaValueText"
-                                       Grid.Column="1"
-                                       VerticalAlignment="Center"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       MinWidth="56"
-                                       TextAlignment="End" />
-                        </Grid>
-                        <ambientControls:BrightnessCurveCanvas
-                            x:Name="GammaCurveCanvas"
-                            HorizontalAlignment="Center" />
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <!-- Pointer to the Playground where the same knobs sit
-                     next to a live preview grid + lamp connection — easier
-                     to tune empirically there than from this page. -->
-                <TextBlock x:Uid="AmbientTuningPlaygroundHint"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                           Margin="0,4,0,12"
-                           TextWrapping="Wrap" />
+                <!-- Brightness curve : same slider/value pattern as the
+                     three knobs above, in a SettingsExpander Header so the
+                     row reads identical to the others. The canvas viz
+                     reveals on expand — Louis preference : nice-to-have
+                     reference, not always-visible clutter. -->
+                <controls:SettingsExpander x:Uid="AmbientGammaExpander">
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                        <Slider x:Name="GammaSlider"
+                                Width="200"
+                                StepFrequency="0.05"
+                                SmallChange="0.05" LargeChange="0.25"
+                                TickFrequency="0.5"
+                                TickPlacement="Outside"
+                                ValueChanged="GammaSlider_ValueChanged" />
+                        <TextBlock x:Name="GammaValueText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   MinWidth="56"
+                                   TextAlignment="End" />
+                    </StackPanel>
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard>
+                            <ambientControls:BrightnessCurveCanvas
+                                x:Name="GammaCurveCanvas"
+                                HorizontalAlignment="Center" />
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+
+                <!-- Pointer to the Playground + reset all defaults. The
+                     reset is a plain right-aligned button (not Critical —
+                     it reverts to documented defaults, not a destructive
+                     forget). -->
+                <Grid Margin="0,8,0,12" ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               x:Uid="AmbientTuningPlaygroundHint"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <Button Grid.Column="1"
+                            x:Name="ResetTuningButton"
+                            x:Uid="AmbientResetTuningButton"
+                            Click="ResetTuningButton_Click" />
+                </Grid>
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--

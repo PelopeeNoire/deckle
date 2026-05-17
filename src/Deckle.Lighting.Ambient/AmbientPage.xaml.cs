@@ -231,6 +231,30 @@ public sealed partial class AmbientPage : Page
         AmbientSettingsService.Instance.Save();
     }
 
+    private void ResetTuningButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Defaults documented in AmbientSettings.cs (Exposure 0.0 EV,
+        // Saturation 1.0×, Min brightness 180/254, γ 1.8). Wrapping in
+        // _loading suppresses the ValueChanged re-fire that would
+        // otherwise save four times for one user action.
+        bool prev = _loading;
+        _loading = true;
+        try
+        {
+            var s = AmbientSettingsService.Instance.Current;
+            s.ExposureEv            = 0.0;
+            s.SaturationBoost       = 1.0;
+            s.MinBrightness         = 180;
+            s.BrightnessCurveGamma  = 1.8;
+            AmbientSettingsService.Instance.Save();
+            ResyncFromSettings();
+        }
+        finally
+        {
+            _loading = prev;
+        }
+    }
+
     private void ConfigureBridgeButton_Click(object sender, RoutedEventArgs e)
     {
         // Expand the Hue bridge expander and scroll it into view so the
