@@ -536,7 +536,7 @@
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="HDR tuning (live)"
                                                    Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                        <TextBlock Text="Same four knobs as Settings → Ambient lighting, exposed inline so you can tune while the preview grid is live next to you. Values persist across restarts and apply on the next push tick."
+                                        <TextBlock Text="Tune the four ambient knobs live with the preview grid right next to you. Values persist and apply on the next push tick."
                                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                    TextWrapping="Wrap"
@@ -584,14 +584,14 @@
                                                            MinWidth="56"
                                                            TextAlignment="End" />
                                             </Grid>
-                                            <TextBlock Text="γ 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows"
+                                            <TextBlock Text="Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights. 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows."
                                                        Style="{ThemeResource CaptionTextBlockStyle}"
                                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Grid>
 
-                                    <!-- Exposure (EV) — single slider row. -->
+                                    <!-- Exposure (EV) — single slider row + caption. -->
                                     <StackPanel Spacing="6">
                                         <TextBlock Text="Exposure (EV)"
                                                    Style="{ThemeResource BodyStrongTextBlockStyle}" />
@@ -615,6 +615,10 @@
                                                        MinWidth="56"
                                                        TextAlignment="End" />
                                         </Grid>
+                                        <TextBlock Text="Brightness bias in stops. +1 EV roughly doubles the lamp ; use it when HDR content tone-maps too dim."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   TextWrapping="Wrap" />
                                     </StackPanel>
 
                                     <!-- Saturation — stored 0.0–2.0, displayed 0–200 %. -->
@@ -641,6 +645,10 @@
                                                        MinWidth="56"
                                                        TextAlignment="End" />
                                         </Grid>
+                                        <TextBlock Text="Chroma boost in OKLCh. 100% is neutral, 150–180% restores Hue Sync–like vividness after spatial averaging desaturates the frame."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   TextWrapping="Wrap" />
                                     </StackPanel>
 
                                     <!-- Min brightness — bridge bri 0–254. -->
@@ -667,6 +675,10 @@
                                                        MinWidth="56"
                                                        TextAlignment="End" />
                                         </Grid>
+                                        <TextBlock Text="Floor on the bulb brightness when on. Stops the diffuser swallowing mid-tone scenes."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   TextWrapping="Wrap" />
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

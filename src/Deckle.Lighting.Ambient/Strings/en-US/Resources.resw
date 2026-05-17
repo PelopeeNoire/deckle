@@ -166,41 +166,26 @@
   </data>
 
   <!-- ── HDR tuning ────────────────────────────────────────── -->
+  <!-- Flat SettingsCards (no SettingsExpander wrapper). Headers
+       only — the per-knob rationale lives in the Playground HDR
+       tuning card where a live preview makes experimentation cheap. -->
   <data name="AmbientTuningSectionHeader.Text" xml:space="preserve">
     <value>HDR tuning</value>
-  </data>
-  <data name="AmbientTuningExpander.Header" xml:space="preserve">
-    <value>Tuning</value>
-  </data>
-  <data name="AmbientTuningExpander.Description" xml:space="preserve">
-    <value>Tweak how the screen is mapped to your lights. Changes apply live.</value>
   </data>
   <data name="AmbientExposureCard.Header" xml:space="preserve">
     <value>Exposure</value>
   </data>
-  <data name="AmbientExposureCard.Description" xml:space="preserve">
-    <value>Brightness bias in stops (EV). Increase if the lights look dim on HDR content, decrease if they wash out.</value>
-  </data>
   <data name="AmbientSaturationCard.Header" xml:space="preserve">
     <value>Saturation</value>
-  </data>
-  <data name="AmbientSaturationCard.Description" xml:space="preserve">
-    <value>Compensate for the de-saturation introduced by averaging. 100% is neutral, 150–180% restores Hue Sync-like vividness.</value>
   </data>
   <data name="AmbientMinBrightnessCard.Header" xml:space="preserve">
     <value>Minimum brightness</value>
   </data>
-  <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
-    <value>Floor on the bulb brightness when the lamp is on. Keeps mid-tone scenes readable through the diffuser.</value>
-  </data>
   <data name="AmbientGammaCard.Header" xml:space="preserve">
     <value>Brightness curve</value>
   </data>
-  <data name="AmbientGammaCard.Description" xml:space="preserve">
-    <value>How dim scenes map to lamp brightness. Higher γ pulls dim scenes further down without dimming bright ones. Compare the accent curve to the dashed linear reference.</value>
-  </data>
-  <data name="AmbientGammaCaption.Text" xml:space="preserve">
-    <value>γ 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows</value>
+  <data name="AmbientTuningPlaygroundHint.Text" xml:space="preserve">
+    <value>Open the Playground to tune these values with a live preview.</value>
   </data>
 
   <!-- ── Configuration : Hue bridge pairing ────────────────── -->
@@ -211,13 +196,10 @@
     <value>Hue bridge</value>
   </data>
   <data name="HueBridgeExpander.Description" xml:space="preserve">
-    <value>Pair with your Philips Hue bridge and pick the room or zone the Ambient pipeline drives. Discover finds the bridge on your network ; the link button on top of the bridge must be pressed during the pair window.</value>
+    <value>Pair with your Philips Hue bridge and pick the room the pipeline drives.</value>
   </data>
   <data name="HueBridgeAddressCard.Header" xml:space="preserve">
     <value>Bridge address</value>
-  </data>
-  <data name="HueBridgeAddressCard.Description" xml:space="preserve">
-    <value>LAN IP of your bridge. Discover queries Philips's directory ; type manually if discovery returns nothing.</value>
   </data>
   <data name="HueDiscoverButton.Content" xml:space="preserve">
     <value>Discover</value>
@@ -225,17 +207,11 @@
   <data name="HueBridgeGroupCard.Header" xml:space="preserve">
     <value>Group</value>
   </data>
-  <data name="HueBridgeGroupCard.Description" xml:space="preserve">
-    <value>The room, zone or entertainment area the Ambient pipeline drives. List groups fetches the catalog from the bridge.</value>
-  </data>
   <data name="HueListGroupsButton.Content" xml:space="preserve">
     <value>List groups</value>
   </data>
   <data name="HueBridgeForgetCard.Header" xml:space="preserve">
     <value>Forget bridge</value>
-  </data>
-  <data name="HueBridgeForgetCard.Description" xml:space="preserve">
-    <value>Clears the stored credentials locally. The username remains valid on the bridge until you remove it from the Hue mobile app.</value>
   </data>
   <data name="HueForgetButton.Content" xml:space="preserve">
     <value>Forget</value>

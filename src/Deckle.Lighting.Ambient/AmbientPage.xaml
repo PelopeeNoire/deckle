@@ -85,153 +85,105 @@
 
                 <!-- ── HDR tuning ─────────────────────────────────────────── -->
                 <!--
-                    Three user-tunable sliders applied live on the next push
-                    tick (no engine restart). Defaults aim at a "Hue Sync
-                    presence" out of the box on HDR displays ; the user dials
-                    back if it's too aggressive. See AmbientSettings for the
-                    underlying field semantics.
+                    Four user-tunable sliders applied live on the next push
+                    tick (no engine restart). Flat SettingsCards instead of
+                    a SettingsExpander so the values are visible at a glance
+                    (Louis preference : less click-to-reveal on knobs the
+                    user touches often). Descriptions are intentionally
+                    short — the dense per-knob rationale lives in the
+                    Playground HDR tuning card where the live preview
+                    makes experimentation cheap.
                 -->
                 <TextBlock x:Uid="AmbientTuningSectionHeader"
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
-                <controls:SettingsExpander x:Uid="AmbientTuningExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE793;}">
-                    <controls:SettingsExpander.Items>
-                        <controls:SettingsCard x:Uid="AmbientExposureCard"
-                                               ContentAlignment="Vertical">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="ExposureSlider"
-                                        Grid.Column="0"
-                                        Minimum="-2.0" Maximum="2.0"
-                                        StepFrequency="0.1"
-                                        SmallChange="0.1" LargeChange="0.5"
-                                        TickFrequency="0.5"
-                                        TickPlacement="Outside"
-                                        ValueChanged="ExposureSlider_ValueChanged" />
-                                <TextBlock x:Name="ExposureValueText"
-                                           Grid.Column="1"
-                                           VerticalAlignment="Center"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           MinWidth="48"
-                                           TextAlignment="End" />
-                            </Grid>
-                        </controls:SettingsCard>
+                <controls:SettingsCard x:Uid="AmbientExposureCard">
+                    <StackPanel Orientation="Horizontal" Spacing="12" MinWidth="280">
+                        <Slider x:Name="ExposureSlider"
+                                Width="220"
+                                Minimum="-2.0" Maximum="2.0"
+                                StepFrequency="0.1"
+                                SmallChange="0.1" LargeChange="0.5"
+                                TickFrequency="0.5"
+                                TickPlacement="Outside"
+                                ValueChanged="ExposureSlider_ValueChanged" />
+                        <TextBlock x:Name="ExposureValueText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   MinWidth="56"
+                                   TextAlignment="End" />
+                    </StackPanel>
+                </controls:SettingsCard>
 
-                        <controls:SettingsCard x:Uid="AmbientSaturationCard"
-                                               ContentAlignment="Vertical">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="SaturationSlider"
-                                        Grid.Column="0"
-                                        Minimum="0" Maximum="200"
-                                        StepFrequency="5"
-                                        SmallChange="5" LargeChange="25"
-                                        TickFrequency="25"
-                                        TickPlacement="Outside"
-                                        ValueChanged="SaturationSlider_ValueChanged" />
-                                <TextBlock x:Name="SaturationValueText"
-                                           Grid.Column="1"
-                                           VerticalAlignment="Center"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           MinWidth="48"
-                                           TextAlignment="End" />
-                            </Grid>
-                        </controls:SettingsCard>
+                <controls:SettingsCard x:Uid="AmbientSaturationCard">
+                    <StackPanel Orientation="Horizontal" Spacing="12" MinWidth="280">
+                        <Slider x:Name="SaturationSlider"
+                                Width="220"
+                                Minimum="0" Maximum="200"
+                                StepFrequency="5"
+                                SmallChange="5" LargeChange="25"
+                                TickFrequency="25"
+                                TickPlacement="Outside"
+                                ValueChanged="SaturationSlider_ValueChanged" />
+                        <TextBlock x:Name="SaturationValueText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   MinWidth="56"
+                                   TextAlignment="End" />
+                    </StackPanel>
+                </controls:SettingsCard>
 
-                        <controls:SettingsCard x:Uid="AmbientMinBrightnessCard"
-                                               ContentAlignment="Vertical">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="MinBrightnessSlider"
-                                        Grid.Column="0"
-                                        Minimum="0" Maximum="254"
-                                        StepFrequency="2"
-                                        SmallChange="2" LargeChange="20"
-                                        TickFrequency="50"
-                                        TickPlacement="Outside"
-                                        ValueChanged="MinBrightnessSlider_ValueChanged" />
-                                <TextBlock x:Name="MinBrightnessValueText"
-                                           Grid.Column="1"
-                                           VerticalAlignment="Center"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           MinWidth="48"
-                                           TextAlignment="End" />
-                            </Grid>
-                        </controls:SettingsCard>
+                <controls:SettingsCard x:Uid="AmbientMinBrightnessCard">
+                    <StackPanel Orientation="Horizontal" Spacing="12" MinWidth="280">
+                        <Slider x:Name="MinBrightnessSlider"
+                                Width="220"
+                                Minimum="0" Maximum="254"
+                                StepFrequency="2"
+                                SmallChange="2" LargeChange="20"
+                                TickFrequency="50"
+                                TickPlacement="Outside"
+                                ValueChanged="MinBrightnessSlider_ValueChanged" />
+                        <TextBlock x:Name="MinBrightnessValueText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   MinWidth="56"
+                                   TextAlignment="End" />
+                    </StackPanel>
+                </controls:SettingsCard>
 
-                        <!-- Brightness response curve : the only HDR
-                             knob that benefits from a visual reference,
-                             because intuition breaks down on power-law
-                             curves. The widget lives left of the slider
-                             so the eye reads "this is what the curve
-                             looks like" before "this is where the slider
-                             sits". Caption summarises the practical
-                             range so the user knows what's reasonable
-                             without trial-and-error. -->
-                        <controls:SettingsCard x:Uid="AmbientGammaCard"
-                                               ContentAlignment="Vertical">
-                            <Grid ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <ambientControls:BrightnessCurveCanvas
-                                    x:Name="GammaCurveCanvas"
-                                    Grid.Column="0"
-                                    VerticalAlignment="Top" />
-                                <Grid Grid.Column="1"
-                                      VerticalAlignment="Center"
-                                      RowSpacing="8">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Grid Grid.Row="0" ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <!-- Range/Value set in code-behind (Loaded
-                                             handler → InitGammaSliderRange) because
-                                             the WinUI 3 Slider parser rejects every
-                                             XML attribute order with a non-zero
-                                             Minimum + a Value in that range. Stays
-                                             unbounded in XAML so the parse never
-                                             touches the RangeBase invariants. -->
-                                        <Slider x:Name="GammaSlider"
-                                                Grid.Column="0"
-                                                StepFrequency="0.05"
-                                                SmallChange="0.05" LargeChange="0.25"
-                                                TickFrequency="0.5"
-                                                TickPlacement="Outside"
-                                                ValueChanged="GammaSlider_ValueChanged" />
-                                        <TextBlock x:Name="GammaValueText"
-                                                   Grid.Column="1"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                   MinWidth="48"
-                                                   TextAlignment="End" />
-                                    </Grid>
-                                    <TextBlock x:Uid="AmbientGammaCaption"
-                                               Grid.Row="1"
-                                               Style="{StaticResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                               TextWrapping="Wrap" />
-                                </Grid>
-                            </Grid>
-                        </controls:SettingsCard>
-                    </controls:SettingsExpander.Items>
-                </controls:SettingsExpander>
+                <!-- Brightness curve : same flat card pattern but with the
+                     curve viz alongside the slider — γ is hard to intuit
+                     from a number alone. Range/Value set in code-behind
+                     (see WinUI 3 Slider parser limitation in
+                     AmbientPage_Loaded). -->
+                <controls:SettingsCard x:Uid="AmbientGammaCard">
+                    <StackPanel Orientation="Horizontal" Spacing="12" MinWidth="280">
+                        <ambientControls:BrightnessCurveCanvas
+                            x:Name="GammaCurveCanvas"
+                            VerticalAlignment="Center" />
+                        <Slider x:Name="GammaSlider"
+                                Width="220"
+                                StepFrequency="0.05"
+                                SmallChange="0.05" LargeChange="0.25"
+                                TickFrequency="0.5"
+                                TickPlacement="Outside"
+                                ValueChanged="GammaSlider_ValueChanged" />
+                        <TextBlock x:Name="GammaValueText"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   MinWidth="56"
+                                   TextAlignment="End" />
+                    </StackPanel>
+                </controls:SettingsCard>
+
+                <!-- Pointer to the Playground where the same knobs sit
+                     next to a live preview grid + lamp connection — easier
+                     to tune empirically there than from this page. -->
+                <TextBlock x:Uid="AmbientTuningPlaygroundHint"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                           Margin="0,4,0,12"
+                           TextWrapping="Wrap" />
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--
@@ -330,16 +282,20 @@
                             </Grid>
                         </controls:SettingsCard>
 
-                        <!-- Forget : clears the persisted credentials and
-                             disposes the bridge client via the service. The
-                             username on the bridge itself is NOT revoked —
-                             the user pairs again later without re-pressing
-                             the link button if the bridge still recognises
-                             the username. -->
+                        <!-- Forget : critical destructive action — styled
+                             with the system Critical fill colour so the eye
+                             reads "this clears the pairing" before the user
+                             clicks. The username on the bridge itself is
+                             NOT revoked — the user can pair again later
+                             without re-pressing the link button if the
+                             bridge still recognises the username. -->
                         <controls:SettingsCard x:Uid="HueBridgeForgetCard">
                             <Button x:Name="HueForgetButton"
                                     x:Uid="HueForgetButton"
                                     IsEnabled="False"
+                                    Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
+                                    BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
+                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                     Click="OnHueForgetClick" />
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
