@@ -69,6 +69,14 @@ public sealed partial class AmbientPage : Page
         GammaSlider.Value   = 1.8;
         GammaSlider.Minimum = 1.0;
 
+        // Per-knob reset buttons fade in on hover over each parent
+        // card. The Expander hosts its slider in the header so we hook
+        // the expander itself rather than a child SettingsCard.
+        WireHover(ExposureCard,      ExposureReset);
+        WireHover(SaturationCard,    SaturationReset);
+        WireHover(MinBrightnessCard, MinBrightnessReset);
+        WireHover(GammaExpander,     GammaReset);
+
         ResyncFromSettings();
         SyncHueBridgeUi();
         ApplyEngineState(AmbientEngine.Current?.State ?? AmbientEngineState.Off);
@@ -231,12 +239,16 @@ public sealed partial class AmbientPage : Page
         AmbientSettingsService.Instance.Save();
     }
 
-    private void ResetTuningButton_Click(object sender, RoutedEventArgs e)
+    // ── HDR tuning resets (per-knob + whole section) ────────────────
+    //
+    // Pattern Whisper / GeneralPage : a HyperlinkButton next to the
+    // section header reverts every knob in the section, a SubtleButton
+    // with the &#xE777; reset glyph next to each slider reverts just
+    // that knob. Both write through _loading guards so the
+    // ValueChanged re-fires don't bounce the save loop.
+
+    private void ResetTuningSection_Click(object sender, RoutedEventArgs e)
     {
-        // Defaults documented in AmbientSettings.cs (Exposure 0.0 EV,
-        // Saturation 1.0×, Min brightness 180/254, γ 1.8). Wrapping in
-        // _loading suppresses the ValueChanged re-fire that would
-        // otherwise save four times for one user action.
         bool prev = _loading;
         _loading = true;
         try
@@ -249,10 +261,41 @@ public sealed partial class AmbientPage : Page
             AmbientSettingsService.Instance.Save();
             ResyncFromSettings();
         }
-        finally
+        finally { _loading = prev; }
+    }
+
+    private void ExposureReset_Click(object sender, RoutedEventArgs e)
+        => ResetOne(s => s.ExposureEv = 0.0);
+
+    private void SaturationReset_Click(object sender, RoutedEventArgs e)
+        => ResetOne(s => s.SaturationBoost = 1.0);
+
+    private void MinBrightnessReset_Click(object sender, RoutedEventArgs e)
+        => ResetOne(s => s.MinBrightness = 180);
+
+    private void GammaReset_Click(object sender, RoutedEventArgs e)
+        => ResetOne(s => s.BrightnessCurveGamma = 1.8);
+
+    private void ResetOne(Action<AmbientSettings> mutate)
+    {
+        bool prev = _loading;
+        _loading = true;
+        try
         {
-            _loading = prev;
+            mutate(AmbientSettingsService.Instance.Current);
+            AmbientSettingsService.Instance.Save();
+            ResyncFromSettings();
         }
+        finally { _loading = prev; }
+    }
+
+    // Calque WhisperPage : fade the reset button in on PointerEntered
+    // of the parent card, out on PointerExited. Opacity 0 at rest
+    // (set by the ResetButtonStyle).
+    private static void WireHover(Microsoft.UI.Xaml.Controls.Control card, Button resetButton)
+    {
+        card.PointerEntered += (_, _) => resetButton.Opacity = 1;
+        card.PointerExited  += (_, _) => resetButton.Opacity = 0;
     }
 
     private void ConfigureBridgeButton_Click(object sender, RoutedEventArgs e)

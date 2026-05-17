@@ -199,8 +199,11 @@
   <data name="AmbientTuningPlaygroundHint.Text" xml:space="preserve">
     <value>Open the Playground to tune these values with a live preview.</value>
   </data>
-  <data name="AmbientResetTuningButton.Content" xml:space="preserve">
-    <value>Reset to defaults</value>
+  <data name="Settings_SectionResetLink.Content" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Settings_SectionResetLink.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Reset this section to defaults</value>
   </data>
 
   <!-- ── Configuration : Hue bridge pairing ────────────────── -->

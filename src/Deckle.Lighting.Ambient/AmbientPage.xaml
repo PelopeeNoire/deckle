@@ -9,7 +9,7 @@
     <!-- Pattern canonique Microsoft Learn (SettingsExpander sample
          "Settings page example") : StackPanel max 1000 dans un Grid,
          Spacing=4 entre cards, Margin="1,30,0,6" sur les headers de
-         section. Calque exact de GeneralPage. -->
+         section. Calque exact de GeneralPage / WhisperPage. -->
     <Page.Resources>
         <x:Double x:Key="SettingsCardSpacing">4</x:Double>
         <Style x:Key="SettingsSectionHeaderTextBlockStyle"
@@ -18,6 +18,40 @@
             <Style.Setters>
                 <Setter Property="Margin" Value="1,30,0,6" />
             </Style.Setters>
+        </Style>
+
+        <!-- Slider / value / reset triplet styles — calque exact de
+             WhisperPage.xaml so the HDR tuning cards read identical to
+             the Whisper decoding cards (compact slider, value text
+             right, subtle reset button that fades in at hover). -->
+        <Style x:Key="SettingSliderStyle"
+               TargetType="Slider">
+            <Setter Property="MinWidth" Value="180" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsThumbToolTipEnabled" Value="True" />
+        </Style>
+
+        <Style x:Key="SliderValueTextStyle"
+               BasedOn="{StaticResource BodyTextBlockStyle}"
+               TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinWidth" Value="40" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <!-- Per-setting reset button. Opacity 0 by default, lifted to 1
+             on PointerEntered of the parent SettingsCard (code-behind
+             WireHover helper). -->
+        <Style x:Key="ResetButtonStyle"
+               BasedOn="{StaticResource SubtleButtonStyle}"
+               TargetType="Button">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="ToolTipService.ToolTip" Value="Reset to default" />
         </Style>
     </Page.Resources>
 
@@ -94,17 +128,39 @@
                     Playground HDR tuning card where the live preview
                     makes experimentation cheap.
                 -->
-                <TextBlock x:Uid="AmbientTuningSectionHeader"
-                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                <!-- Section header with the HyperlinkButton-style reset
+                     to the right — calque exact de GeneralPage /
+                     WhisperPage. The HyperlinkButton reverts every knob
+                     in the section to its documented default ; the per-
+                     knob reset (icon at the right of each slider) lives
+                     inside each SettingsCard below. -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Uid="AmbientTuningSectionHeader"
+                               Grid.Column="0"
+                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
+                                     Grid.Column="1"
+                                     VerticalAlignment="Bottom"
+                                     Margin="0,0,0,2"
+                                     Click="ResetTuningSection_Click" />
+                </Grid>
 
-                <!-- Sliders are fixed-width and right-aligned (Louis : the
-                     slider should read as visually smaller than the
-                     title + description column to its left, not stretched
-                     across the whole content area). -->
-                <controls:SettingsCard x:Uid="AmbientExposureCard">
-                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                <!-- HDR slider cards. Pattern Whisper :
+                     ContentAlignment="Vertical" so the slider full-width
+                     can breathe under the description, slider + value +
+                     reset triplet inside the card. Reset opacity 0 at
+                     rest, lifted to 1 on PointerEntered of the card
+                     (WireHover in code-behind). -->
+                <controls:SettingsCard x:Name="ExposureCard"
+                                       x:Uid="AmbientExposureCard"
+                                       ContentAlignment="Vertical">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="ExposureSlider"
-                                Width="200"
+                                Style="{StaticResource SettingSliderStyle}"
                                 Minimum="-2.0" Maximum="2.0"
                                 StepFrequency="0.1"
                                 SmallChange="0.1" LargeChange="0.5"
@@ -112,17 +168,21 @@
                                 TickPlacement="Outside"
                                 ValueChanged="ExposureSlider_ValueChanged" />
                         <TextBlock x:Name="ExposureValueText"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   MinWidth="56"
-                                   TextAlignment="End" />
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="ExposureReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="ExposureReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <controls:SettingsCard x:Uid="AmbientSaturationCard">
-                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                <controls:SettingsCard x:Name="SaturationCard"
+                                       x:Uid="AmbientSaturationCard"
+                                       ContentAlignment="Vertical">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="SaturationSlider"
-                                Width="200"
+                                Style="{StaticResource SettingSliderStyle}"
                                 Minimum="0" Maximum="200"
                                 StepFrequency="5"
                                 SmallChange="5" LargeChange="25"
@@ -130,17 +190,21 @@
                                 TickPlacement="Outside"
                                 ValueChanged="SaturationSlider_ValueChanged" />
                         <TextBlock x:Name="SaturationValueText"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   MinWidth="56"
-                                   TextAlignment="End" />
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="SaturationReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="SaturationReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <controls:SettingsCard x:Uid="AmbientMinBrightnessCard">
-                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                <controls:SettingsCard x:Name="MinBrightnessCard"
+                                       x:Uid="AmbientMinBrightnessCard"
+                                       ContentAlignment="Vertical">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="MinBrightnessSlider"
-                                Width="200"
+                                Style="{StaticResource SettingSliderStyle}"
                                 Minimum="0" Maximum="254"
                                 StepFrequency="2"
                                 SmallChange="2" LargeChange="20"
@@ -148,32 +212,34 @@
                                 TickPlacement="Outside"
                                 ValueChanged="MinBrightnessSlider_ValueChanged" />
                         <TextBlock x:Name="MinBrightnessValueText"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   MinWidth="56"
-                                   TextAlignment="End" />
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="MinBrightnessReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="MinBrightnessReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
-                <!-- Brightness curve : same slider/value pattern as the
-                     three knobs above, in a SettingsExpander Header so the
-                     row reads identical to the others. The canvas viz
-                     reveals on expand — Louis preference : nice-to-have
-                     reference, not always-visible clutter. -->
-                <controls:SettingsExpander x:Uid="AmbientGammaExpander">
-                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+                <!-- Brightness curve : same slider triplet in the
+                     Expander header, canvas viz reveals on expand. -->
+                <controls:SettingsExpander x:Name="GammaExpander"
+                                           x:Uid="AmbientGammaExpander">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
                         <Slider x:Name="GammaSlider"
-                                Width="200"
+                                Style="{StaticResource SettingSliderStyle}"
                                 StepFrequency="0.05"
                                 SmallChange="0.05" LargeChange="0.25"
                                 TickFrequency="0.5"
                                 TickPlacement="Outside"
                                 ValueChanged="GammaSlider_ValueChanged" />
                         <TextBlock x:Name="GammaValueText"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   MinWidth="56"
-                                   TextAlignment="End" />
+                                   Style="{StaticResource SliderValueTextStyle}" />
+                        <Button x:Name="GammaReset"
+                                Style="{StaticResource ResetButtonStyle}"
+                                Click="GammaReset_Click">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        </Button>
                     </StackPanel>
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard>
@@ -184,26 +250,13 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
-                <!-- Pointer to the Playground + reset all defaults. The
-                     reset is a plain right-aligned button (not Critical —
-                     it reverts to documented defaults, not a destructive
-                     forget). -->
-                <Grid Margin="0,8,0,12" ColumnSpacing="12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               x:Uid="AmbientTuningPlaygroundHint"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                               VerticalAlignment="Center"
-                               TextWrapping="Wrap" />
-                    <Button Grid.Column="1"
-                            x:Name="ResetTuningButton"
-                            x:Uid="AmbientResetTuningButton"
-                            Click="ResetTuningButton_Click" />
-                </Grid>
+                <!-- Pointer to the Playground — empirical tuning sits
+                     better there next to the live preview. -->
+                <TextBlock x:Uid="AmbientTuningPlaygroundHint"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                           Margin="0,4,0,12"
+                           TextWrapping="Wrap" />
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--
