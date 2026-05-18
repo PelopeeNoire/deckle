@@ -1,7 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Logging;
 using Deckle.Whisp.Setup;
 
@@ -100,8 +100,7 @@ internal sealed partial class SummaryPage : Page
 
         var icon = new FontIcon
         {
-            // E73E = CheckMark, E711 = CrossMark, both in Segoe Fluent Icons.
-            Glyph = r.Success ? "" : "",
+            Glyph = r.Success ? Glyphs.Badge.Success : Glyphs.Cancel,
             VerticalAlignment = VerticalAlignment.Center,
         };
         Grid.SetColumn(icon, 0);

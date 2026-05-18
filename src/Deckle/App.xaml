@@ -6,6 +6,11 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                <!-- Deckle.Catalog ships the centralized Segoe Fluent Icons
+                     ResourceDictionary. Keys are consumed everywhere via
+                     {StaticResource Icon.Microphone} etc. The matching
+                     constants live in Deckle.Catalog.Glyphs for code-behind. -->
+                <ResourceDictionary Source="ms-appx:///Deckle.Catalog/Themes/Icons.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Ressources partagées par toutes les Settings pages et leurs UserControls.

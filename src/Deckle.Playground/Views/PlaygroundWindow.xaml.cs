@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT.Interop;
 using Deckle.Audio;
+using Deckle.Catalog;
 using Deckle.Chrono.Hud;
 using Deckle.Composition;
 using Deckle.Interop;
@@ -782,14 +783,14 @@ public sealed partial class PlaygroundWindow : Window
         // so screen readers stay aligned with the visual.
         if (_isPlaying)
         {
-            PlayPauseIcon.Glyph = "";
+            PlayPauseIcon.Glyph = Glyphs.Transport.Pause;
             PlayPauseLabel.Text = "Pause";
             ToolTipService.SetToolTip(PlayPauseButton, "Pause");
             AutomationProperties.SetName(PlayPauseButton, "Pause");
         }
         else
         {
-            PlayPauseIcon.Glyph = "";
+            PlayPauseIcon.Glyph = Glyphs.Transport.Play;
             PlayPauseLabel.Text = "Play";
             ToolTipService.SetToolTip(PlayPauseButton, "Play");
             AutomationProperties.SetName(PlayPauseButton, "Play");
@@ -1697,13 +1698,11 @@ public sealed partial class PlaygroundWindow : Window
     // the delta over the sample interval (low jitter, no per-frame
     // DispatcherQueue marshaling).
 
-    // Segoe Fluent Icons glyphs swapped on the toggle button. E768 (Play)
-    // when stopped — the action triggered by clicking. E71A (Stop, the
-    // solid square) when running. Mirrors the Play/Pause RadioButton
-    // pattern used for the HUD preview row: the icon names what the next
-    // click does, not the current state.
-    private const string ScreenCaptureGlyphStart = "\uE768";
-    private const string ScreenCaptureGlyphStop  = "\uE71A";
+    // Toggle button glyph follows the action the next click will trigger,
+    // not the current state — Play when stopped, Stop when running.
+    // Mirrors the Play/Pause RadioButton pattern used for the HUD preview row.
+    private const string ScreenCaptureGlyphStart = Glyphs.Transport.Play;
+    private const string ScreenCaptureGlyphStop  = Glyphs.Transport.Stop;
 
     private void OnScreenCaptureToggleClick(object sender, RoutedEventArgs e)
     {
@@ -2944,7 +2943,7 @@ public sealed partial class PlaygroundWindow : Window
                     {
                         // Lightbulb glyph (Segoe Fluent Icons E7E8) —
                         // reads as "tell me which lamp this is".
-                        new FontIcon { Glyph = "", FontSize = 14 },
+                        new FontIcon { Glyph = Glyphs.LightbulbFilled, FontSize = 14 },
                         new TextBlock { Text = "Identify" },
                     },
                 },

@@ -46,7 +46,7 @@ Leaves first, app host last. Arrows mean "depends on".
 ```
 Deckle.Core
 Deckle.Logging          → Core
-Deckle.Localization     → Core
+Deckle.Catalog     → Core
 Deckle.Audio            → Core, Logging
 Deckle.Chrono           (standalone)
 Deckle.Composition      (standalone)

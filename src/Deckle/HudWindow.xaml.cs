@@ -6,7 +6,7 @@ using WinRT.Interop;
 using Deckle.Chrono.Hud;
 using Deckle.Controls;
 using Deckle.Interop;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Logging;
 using Deckle.Shell;
 

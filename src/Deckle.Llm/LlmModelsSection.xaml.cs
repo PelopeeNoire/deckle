@@ -4,7 +4,7 @@ using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Deckle.Llm;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Llm.GgufImport;
 
 namespace Deckle.Llm;
@@ -103,7 +103,7 @@ public sealed partial class LlmModelsSection : UserControl
                     Spacing = 6,
                     Children =
                     {
-                        new FontIcon { Glyph = "\uE74D", FontSize = 14 },
+                        new FontIcon { Glyph = Glyphs.Delete, FontSize = 14 },
                         new TextBlock { Text = Loc.Get("Settings_RemoveLabel") }
                     }
                 }

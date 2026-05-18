@@ -160,7 +160,7 @@ service, nothing machine-wide.
 │   ├── Deckle/                 WinUI 3 app host — entry point, windows, tray
 │   ├── Deckle.Core/            Foundations (AppPaths, JsonSettingsStore, Win32 interop)
 │   ├── Deckle.Logging/         Central telemetry hub (TelemetryService + sinks)
-│   ├── Deckle.Localization/    ResourceLoader facade (x:Uid pattern)
+│   ├── Deckle.Catalog/    ResourceLoader facade (x:Uid pattern)
 │   ├── Deckle.Audio/           Microphone capture (WASAPI, RMS, calibration)
 │   ├── Deckle.Chrono/          Timer primitive (no UI)
 │   ├── Deckle.Chrono.Hud/      UserControl for the stopwatch HUD

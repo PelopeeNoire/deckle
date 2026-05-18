@@ -25,6 +25,15 @@ Version `1.0` : 15 surfaces user-facing migrées en `.resw` + `Loc.Get` /
 inclus (clés `Setup_Native_*`, `Setup_Install_Step{1,2,3}Of3_Format`,
 `SetupInstallNativeLabel.Text`).
 
+Le module hôte `Deckle.Catalog` couvre aujourd'hui une seconde famille
+de ressources nommées par clé sémantique : les glyphes Segoe Fluent
+Icons centralisés dans `Themes/Icons.xaml` (consommé en XAML via
+`{StaticResource Icon.X}`) et `Glyphs.cs` (consommé en C# via
+`Glyphs.X`). Le pattern est documenté en commentaire de tête dans
+les deux fichiers ; le périmètre actuel couvre une cinquantaine de
+clés, organisées en groupes thématiques (génériques, actions, Whisper,
+Diagnostics, Ambient, badges HUD, transport).
+
 ---
 
 ## Architecture
@@ -63,7 +72,7 @@ diverge. La balise verrouille `en-US` comme fallback inconditionnel.
   `Strings/<lang>/Resources.resw` au runtime et applique les valeurs
   trouvées à l'élément. Mécanisme zero-code côté XAML.
 - `Loc.Get("Key")` et `Loc.Format("Key", args...)` en C# — wrapper
-  statique défini dans `src/Deckle/Localization/Loc.cs`. Utilisé pour
+  statique défini dans `src/Deckle.Catalog/Loc.cs`. Utilisé pour
   tout ce qui est construit programmatiquement : ConsentDialogs, status
   moteur, `UserFeedback`, HUD, tray, status dynamiques du setup wizard.
 
@@ -198,7 +207,7 @@ Tout autre texte visible par l'utilisateur passe par le `.resw`.
      valeur littérale de l'attribut concerné.
    - C# : remplacer le littéral par `Loc.Get("<key>")` ou
      `Loc.Format("<key>_Format", args...)`. Importer
-     `Deckle.Localization`.
+     `Deckle.Catalog`.
 5. Builder via `MSBuild.exe` (cf. CLAUDE.md projet — `dotnet build` est
    cassé). Vérifier au runtime que la string s'affiche bien (en DEBUG,
    une clé manquante apparaît comme `[!key]` à l'écran — assez voyant

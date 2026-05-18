@@ -37,37 +37,37 @@
                 <NavigationViewItem x:Uid="SettingsNavGeneral"
                                     Tag="Deckle.Settings.GeneralPage">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE80F;" />
+                        <FontIcon Glyph="{StaticResource Icon.Home}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavRecording"
                                     Tag="Deckle.Settings.RecordingPage">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE720;" />
+                        <FontIcon Glyph="{StaticResource Icon.Microphone}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavTranscription"
                                     Tag="Deckle.Whisp.WhisperPage, Deckle.Whisp">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xF61F;" />
+                        <FontIcon Glyph="{StaticResource Icon.Speech}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavRewriting"
                                     Tag="Deckle.Llm.LlmPage, Deckle.Llm">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xF6C7;" />
+                        <FontIcon Glyph="{StaticResource Icon.Sparkle}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavAmbient"
                                     Tag="Deckle.Lighting.Ambient.AmbientPage, Deckle.Lighting.Ambient">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xEA80;" />
+                        <FontIcon Glyph="{StaticResource Icon.Lightbulb}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Uid="SettingsNavDiagnostics"
                                     Tag="Deckle.Settings.DiagnosticsPage">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE9D9;" />
+                        <FontIcon Glyph="{StaticResource Icon.Diagnostics}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
@@ -81,7 +81,7 @@
                                     Tag="logs"
                                     SelectsOnInvoked="False">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xEC7A;" />
+                        <FontIcon Glyph="{StaticResource Icon.Logs}" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>

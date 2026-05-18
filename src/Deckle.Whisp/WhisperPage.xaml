@@ -78,7 +78,7 @@
                             Style="{StaticResource SubtleButtonStyle}"
                             Click="ResetAll_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                             <TextBlock x:Uid="WhisperPageResetAllLabel" />
                         </StackPanel>
                     </Button>
@@ -103,7 +103,7 @@
 
                 <controls:SettingsCard x:Name="LanguageCard"
                                        x:Uid="WhisperLanguageCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xF2B7;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Language}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ComboBox x:Name="LanguageCombo"
                                   MinWidth="160"
@@ -124,18 +124,18 @@
                         <Button x:Name="LanguageReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="LanguageReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
                 <controls:SettingsExpander x:Name="InitialPromptCard"
                                            x:Uid="WhisperInitialPromptCard"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE932;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Prompt}}">
                     <Button x:Name="InitialPromptReset"
                             Style="{StaticResource ResetButtonStyle}"
                             Click="InitialPromptReset_Click">
-                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                        <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                     </Button>
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard ContentAlignment="Vertical">
@@ -153,14 +153,14 @@
 
                 <controls:SettingsCard x:Name="UseGpuCard"
                                        x:Uid="WhisperUseGpuCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE950;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Gpu}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="UseGpuToggle"
                                       IsOn="{x:Bind ViewModel.UseGpu, Mode=TwoWay}" />
                         <Button x:Name="UseGpuReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="UseGpuReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
@@ -174,7 +174,7 @@
                      it points to. -->
                 <controls:SettingsExpander x:Name="ModelCard"
                                            x:Uid="WhisperModelCard"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE7F4;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Model}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <AutoSuggestBox x:Name="ModelSuggest"
                                         x:Uid="WhisperModelSuggest"
@@ -186,7 +186,7 @@
                         <Button x:Name="ModelReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="ModelReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                     <controls:SettingsExpander.Items>
@@ -198,7 +198,7 @@
                                     <Button x:Name="ModelsDirectoryReset"
                                             Style="{StaticResource ResetButtonStyle}"
                                             Click="ModelsDirectoryReset_Click">
-                                        <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                        <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                     </Button>
                                 </settings:FolderPickerEditableCard.RightContent>
                             </settings:FolderPickerEditableCard>
@@ -218,14 +218,14 @@
 
                 <controls:SettingsExpander x:Name="VadEnabledCard"
                                            x:Uid="WhisperVadEnabledCard"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Microphone}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="VadEnabledToggle"
                                       IsOn="{x:Bind ViewModel.VadEnabled, Mode=TwoWay}" />
                         <Button x:Name="VadEnabledReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="VadEnabledReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                     <controls:SettingsExpander.Items>
@@ -247,7 +247,7 @@
                                 <Button x:Name="VadThresholdReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadThresholdReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -267,7 +267,7 @@
                                 <Button x:Name="VadMinSpeechReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadMinSpeechReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -287,7 +287,7 @@
                                 <Button x:Name="VadMinSilenceReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadMinSilenceReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -319,7 +319,7 @@
                                 <Button x:Name="VadMaxSpeechReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadMaxSpeechReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -339,7 +339,7 @@
                                 <Button x:Name="VadSpeechPadReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadSpeechPadReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -361,7 +361,7 @@
                                 <Button x:Name="VadOverlapReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="VadOverlapReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -375,35 +375,35 @@
 
                 <controls:SettingsCard x:Name="SuppressNstCard"
                                        x:Uid="WhisperSuppressNstCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Filter}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="SuppressNstToggle"
                                       IsOn="{x:Bind ViewModel.SuppressNonSpeechTokens, Mode=TwoWay}" />
                         <Button x:Name="SuppressNstReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="SuppressNstReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Name="SuppressBlankCard"
                                        x:Uid="WhisperSuppressBlankCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE74F;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Filter}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="SuppressBlankToggle"
                                       IsOn="{x:Bind ViewModel.SuppressBlank, Mode=TwoWay}" />
                         <Button x:Name="SuppressBlankReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="SuppressBlankReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
                 <controls:SettingsExpander x:Name="SuppressRegexCard"
                                            x:Uid="WhisperSuppressRegexCard"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE71C;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Pattern}}">
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard ContentAlignment="Vertical">
                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -414,7 +414,7 @@
                                 <Button x:Name="SuppressRegexReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="SuppressRegexReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -427,21 +427,21 @@
 
                 <controls:SettingsCard x:Name="UseContextCard"
                                        x:Uid="WhisperUseContextCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE895;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Context}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleSwitch x:Name="UseContextToggle"
                                       IsOn="{x:Bind ViewModel.UseContext, Mode=TwoWay}" />
                         <Button x:Name="UseContextReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="UseContextReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Name="MaxTokensCard"
                                        x:Uid="WhisperMaxTokensCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE8B2;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Tokens}}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <!-- SpinButtonPlacementMode=Hidden : pas de flyout qui pousse
                              le layout ; saisie clavier + molette. -->
@@ -456,7 +456,7 @@
                         <Button x:Name="MaxTokensReset"
                                 Style="{StaticResource ResetButtonStyle}"
                                 Click="MaxTokensReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsCard>
@@ -472,7 +472,7 @@
                 -->
                 <controls:SettingsExpander x:Name="DecodingExpander"
                                            x:Uid="WhisperDecodingExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE9CA;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Tuning}}">
                     <controls:SettingsExpander.Items>
 
                         <controls:SettingsCard x:Name="TemperatureCard"
@@ -492,7 +492,7 @@
                                 <Button x:Name="TemperatureReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="TemperatureReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -514,7 +514,7 @@
                                 <Button x:Name="TemperatureIncrementReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="TemperatureIncrementReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -534,7 +534,7 @@
                 <!-- ── Confidence thresholds ───────────────────────────────── -->
                 <controls:SettingsExpander x:Name="ConfidenceExpander"
                                            x:Uid="WhisperConfidenceExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE9D9;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Diagnostics}}">
                     <controls:SettingsExpander.Items>
 
                         <controls:SettingsCard x:Name="EntropyCard"
@@ -553,7 +553,7 @@
                                 <Button x:Name="EntropyReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="EntropyReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -573,7 +573,7 @@
                                 <Button x:Name="LogprobReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="LogprobReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>
@@ -594,7 +594,7 @@
                                 <Button x:Name="NoSpeechReset"
                                         Style="{StaticResource ResetButtonStyle}"
                                         Click="NoSpeechReset_Click">
-                                    <FontIcon Glyph="&#xE777;" FontSize="14" />
+                                    <FontIcon Glyph="{StaticResource Icon.Reset}" FontSize="14" />
                                 </Button>
                             </StackPanel>
                         </controls:SettingsCard>

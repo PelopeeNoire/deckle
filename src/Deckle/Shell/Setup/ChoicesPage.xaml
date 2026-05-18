@@ -10,7 +10,7 @@
         <StackPanel Spacing="16" MaxWidth="640" HorizontalAlignment="Stretch">
 
             <controls:SettingsCard x:Uid="SetupChoicesInstallLocation"
-                                   HeaderIcon="{ui:FontIcon Glyph=&#xE8B7;}">
+                                   HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Folder}}">
                 <TextBlock x:Name="LocationPathText"
                            VerticalAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -19,7 +19,7 @@
             </controls:SettingsCard>
 
             <controls:SettingsCard x:Uid="SetupChoicesSpeechRuntime"
-                                   HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                                   HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Lightning}}">
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <TextBlock x:Name="NativeStatusText"
                                VerticalAlignment="Center"
@@ -30,7 +30,7 @@
             </controls:SettingsCard>
 
             <controls:SettingsCard x:Uid="SetupChoicesSpeechModel"
-                                   HeaderIcon="{ui:FontIcon Glyph=&#xE720;}"
+                                   HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Microphone}}"
                                    ContentAlignment="Vertical">
                 <RadioButtons x:Name="ModelRadio"
                               SelectionChanged="OnModelSelectionChanged" />

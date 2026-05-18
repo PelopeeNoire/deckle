@@ -5,7 +5,7 @@ using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Deckle.Llm;
-using Deckle.Localization;
+using Deckle.Catalog;
 
 namespace Deckle.Llm;
 
@@ -431,7 +431,7 @@ public sealed partial class LlmRulesSection : UserControl
         var btn = new Button { Tag = index };
         var stack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         // Segoe Fluent Icons — Delete glyph U+E74D (same as the previous XAML).
-        stack.Children.Add(new FontIcon { Glyph = "", FontSize = 14 });
+        stack.Children.Add(new FontIcon { Glyph = Glyphs.Delete, FontSize = 14 });
         stack.Children.Add(new TextBlock { Text = Loc.Get("Settings_RemoveLabel") });
         btn.Content = stack;
         return btn;

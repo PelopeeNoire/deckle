@@ -1493,7 +1493,7 @@
        in sync, silent failure mode when the mirror is missed —
        Loc.Get returns "" in Release and the UI goes blank). When
        the logging-to-EventSource refactor lands, revisit the
-       broader Deckle.Localization strategy : either expose a
+       broader Deckle.Catalog strategy : either expose a
        per-module ResourceLoader factory (new ResourceLoader(
        "Deckle.Lighting.Ambient/Resources") so each module's PRI
        resolves natively), or generate the mirror at build time

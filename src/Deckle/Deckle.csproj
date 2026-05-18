@@ -76,7 +76,7 @@
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
     <ProjectReference Include="..\Deckle.Lighting\Deckle.Lighting.csproj" />
     <ProjectReference Include="..\Deckle.Lighting.Ambient\Deckle.Lighting.Ambient.csproj" />
-    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
+    <ProjectReference Include="..\Deckle.Catalog\Deckle.Catalog.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
     <ProjectReference Include="..\Deckle.Playground\Deckle.Playground.csproj" />
