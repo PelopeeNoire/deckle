@@ -176,6 +176,14 @@ public sealed partial class PlaygroundWindow : Window
     private HueRestLightOutput? _hueLightOutput;
     private CancellationTokenSource? _hueRotationCts;
     private bool _hueGroupComboSuppress;
+    private bool _hueGroupsFetchInFlight;
+
+    // Native grid footprint (cols × rows) most recently built by
+    // BuildPreviewGrid. Used by LayoutLightZonesOverlayFromViewbox
+    // to compute the displayed (scaled) size without having to wait
+    // on AmbientPreviewGrid.ActualWidth/Height being valid.
+    private int _previewGridCols;
+    private int _previewGridRows;
 
     // ── Ambient lighting — end-to-end pipeline (J3) ────────────────────
     //
@@ -318,6 +326,14 @@ public sealed partial class PlaygroundWindow : Window
         };
 
         _screenCaptureFpsTimer.Tick += OnScreenCaptureFpsTick;
+
+        // Re-align the LightZonesOverlay Canvas (sibling of the
+        // Viewbox) with the displayed footprint of the scaled preview
+        // grid whenever the Viewbox resizes — keeps the overlay
+        // rectangles tracking the visible pixels at any window size,
+        // and keeps the stroke thickness in real DIP space (no
+        // scaling artifacts on wide / narrow windows).
+        AmbientPreviewViewbox.SizeChanged += (_, _) => LayoutLightZonesOverlayFromViewbox();
 
         _rebuildDebounce.Tick += (_, _) =>
         {
@@ -531,6 +547,19 @@ public sealed partial class PlaygroundWindow : Window
         HuePairStatusText.Text  = $"Paired ({creds.UsernameHead}, saved)";
         HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
         HueListGroupsButton.IsEnabled = true;
+
+        // Auto-populate the groups combo on Playground open / bridge
+        // change : the bridge is paired, the persisted last-group is
+        // remembered by the settings — there's no reason to force the
+        // user to click "List groups" every time just to see the combo
+        // come back to life. Fire-and-forget : RefreshHueGroupsAsync
+        // logs its own failures, re-enables the button in the finally,
+        // and self-guards via _hueGroupsFetchInFlight so cascaded calls
+        // don't stack concurrent fetches.
+        if (HueGroupComboBox.Items.Count == 0)
+        {
+            _ = RefreshHueGroupsAsync();
+        }
     }
 
     // ── Lifecycle surface (called by App) ───────────────────────────────
@@ -1928,8 +1957,20 @@ public sealed partial class PlaygroundWindow : Window
 
     private async void OnHueListGroupsClick(object sender, RoutedEventArgs e)
     {
-        if (!HuePairingService.Instance.IsPaired) return;
+        await RefreshHueGroupsAsync().ConfigureAwait(true);
+    }
 
+    // Fetches the bridge's group list and rebuilds the combo. Shared
+    // between the explicit "List groups" button and the auto-call that
+    // SyncHueUiFromService triggers on Playground open when the bridge
+    // is already paired — so the user doesn't have to re-click to
+    // populate the combo each time the window opens.
+    private async Task RefreshHueGroupsAsync()
+    {
+        if (!HuePairingService.Instance.IsPaired) return;
+        if (_hueGroupsFetchInFlight) return;
+
+        _hueGroupsFetchInFlight = true;
         HueListGroupsButton.IsEnabled = false;
         try
         {
@@ -1985,6 +2026,7 @@ public sealed partial class PlaygroundWindow : Window
         finally
         {
             HueListGroupsButton.IsEnabled = true;
+            _hueGroupsFetchInFlight = false;
         }
     }
 
@@ -2277,8 +2319,6 @@ public sealed partial class PlaygroundWindow : Window
         AmbientPreviewGrid.ColumnDefinitions.Clear();
         AmbientPreviewGrid.Children.Clear();
 
-        const double Gap = 1;
-
         for (int c = 0; c < cols; c++)
             AmbientPreviewGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(PreviewCellSize) });
         for (int r = 0; r < rows; r++)
@@ -2292,14 +2332,18 @@ public sealed partial class PlaygroundWindow : Window
         // taskbar — dark), which is what produced the "everything is dark
         // while the screen is white" symptom even though the FrameSampler
         // average (and the lamp push) were correct.
+        //
+        // Cells are flush (no margin) : the previous 1-dip gap was
+        // scaled by the parent Viewbox, which made it thick on wide
+        // windows and invisible on narrow ones. We keep the pixel
+        // grid as one continuous mosaic instead.
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
                 var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
                 {
-                    Fill   = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                    Margin = new Thickness(Gap),
+                    Fill = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 };
                 Grid.SetRow(rect, r);
                 Grid.SetColumn(rect, c);
@@ -2308,18 +2352,13 @@ public sealed partial class PlaygroundWindow : Window
             }
         }
 
-        // The Viewbox above scales the whole stage uniformly, so we
-        // size the stage to the grid's natural dip footprint here.
-        // Zone overlay rectangles get re-laid out so they keep
-        // tracking the right border bands when the sampler reports
-        // new grid dimensions.
-        double stageWidth  = cols * PreviewCellSize;
-        double stageHeight = rows * PreviewCellSize;
-        AmbientPreviewStage.Width  = stageWidth;
-        AmbientPreviewStage.Height = stageHeight;
-        LightZonesOverlay.Width    = stageWidth;
-        LightZonesOverlay.Height   = stageHeight;
-        LayoutLightZoneRects(stageWidth, stageHeight);
+        // Remember the grid footprint so the SizeChanged handler can
+        // size the (sibling) LightZonesOverlay to the visible scaled
+        // portion of the grid without having to wait on the inner
+        // ActualWidth/Height to be valid.
+        _previewGridCols = cols;
+        _previewGridRows = rows;
+        LayoutLightZonesOverlayFromViewbox();
 
         UpdatePreviewViewboxVisibility();
     }
@@ -2343,6 +2382,8 @@ public sealed partial class PlaygroundWindow : Window
             AmbientPreviewGrid.RowDefinitions.Clear();
             AmbientPreviewGrid.ColumnDefinitions.Clear();
             _previewCells = null;
+            _previewGridCols = 0;
+            _previewGridRows = 0;
         }
         // Clear the emitted-colour swatch strip when the pipeline
         // stops — without an active tick the visuals would otherwise
@@ -2352,9 +2393,7 @@ public sealed partial class PlaygroundWindow : Window
         {
             EmittedSwatches.Children.Clear();
             _swatchByLight.Clear();
-            LightsMenuFlyout.Items.Clear();
         }
-        LightsDropDown.Visibility = Visibility.Collapsed;
         // Keep the Viewbox visible if light markers are still around —
         // the user may want to keep placing while the pipeline is
         // stopped. UpdatePreviewViewboxVisibility flips to the empty
@@ -2499,9 +2538,9 @@ public sealed partial class PlaygroundWindow : Window
     // Reads AmbientEngine.Current.SnapshotEmittedColors() and either
     // mutates the existing swatch brushes (steady state) or rebuilds
     // the strip when the set of light ids has shifted (group ↔ multi
-    // switch, fixture (re-)pair). The Lights dropdown next to the
-    // swatches is kept in sync — it's the user's entry point to hide
-    // individual fixtures from the strip when there are too many.
+    // switch, fixture (re-)pair). Each swatch carries a native ToolTip
+    // with the fixture name — hover surfaces "which light is this?"
+    // without an extra control on the toolbar.
     private void UpdateEmittedSwatches()
     {
         var engine = AmbientEngine.Current;
@@ -2511,16 +2550,13 @@ public sealed partial class PlaygroundWindow : Window
             {
                 EmittedSwatches.Children.Clear();
                 _swatchByLight.Clear();
-                LightsMenuFlyout.Items.Clear();
             }
-            LightsDropDown.Visibility = Visibility.Collapsed;
             return;
         }
 
         var snapshot = engine.SnapshotEmittedColors();
         if (snapshot.Count == 0)
         {
-            LightsDropDown.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -2546,7 +2582,6 @@ public sealed partial class PlaygroundWindow : Window
                 _swatchByLight[id] = swatch;
                 EmittedSwatches.Children.Add(swatch.Container);
             }
-            RebuildLightsMenu();
         }
         else
         {
@@ -2558,41 +2593,13 @@ public sealed partial class PlaygroundWindow : Window
         }
     }
 
-    // Builds (or rebuilds) the Lights dropdown menu : one
-    // ToggleMenuFlyoutItem per fixture, each click flipping the
-    // visibility of the matching swatch chip on the toolbar. Hidden
-    // when there are 0 or 1 lights — at one swatch the menu has
-    // nothing to gate.
-    private void RebuildLightsMenu()
-    {
-        LightsMenuFlyout.Items.Clear();
-        foreach (var (id, entry) in _swatchByLight)
-        {
-            var item = new ToggleMenuFlyoutItem
-            {
-                Text = entry.DisplayName,
-                IsChecked = entry.Container.Visibility == Visibility.Visible,
-            };
-            var swatchRect = entry.Container; // captured for closure
-            item.Click += (_, _) =>
-            {
-                swatchRect.Visibility = item.IsChecked
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-            };
-            LightsMenuFlyout.Items.Add(item);
-        }
-        LightsDropDown.Visibility = _swatchByLight.Count > 1
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
-
     // Builds one swatch chip : a coloured square sized to match the
     // toolbar buttons it sits next to. Border radius and stroke
     // follow the theme so the chip reads as a sibling of the
-    // adjacent ToggleButton ("Zones") and DropDownButton ("Lights").
-    // No label under the swatch — the names live in the Lights menu
-    // next to the strip ; only the live colour matters here.
+    // adjacent ToggleButton ("Zones"). The fixture name lives in
+    // a native ToolTip surfaced on hover — keeps the toolbar lean
+    // (no labels under) while still answering "which light is this
+    // colour?" without a click.
     private (Microsoft.UI.Xaml.Shapes.Rectangle Container, SolidColorBrush Fill, string DisplayName) BuildSwatch(string displayName, LightColor color)
     {
         var fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B));
@@ -2606,6 +2613,7 @@ public sealed partial class PlaygroundWindow : Window
             Stroke = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             StrokeThickness = 1,
         };
+        ToolTipService.SetToolTip(swatchRect, displayName);
         return (swatchRect, fill, displayName);
     }
 
@@ -2829,18 +2837,13 @@ public sealed partial class PlaygroundWindow : Window
         // failure in earlier iterations.
         LightZonesCard.Visibility = Visibility.Visible;
 
-        // Stage dims may not be set yet if no pipeline run has
-        // happened ; fall back to the typical 30×17 footprint so the
-        // overlay rectangles have somewhere to land in the meantime.
-        // BuildPreviewGrid will overwrite the dims + call
-        // LayoutLightZoneRects on the first pipeline start.
-        double stageWidth  = AmbientPreviewStage.Width  > 0 ? AmbientPreviewStage.Width  : 30 * PreviewCellSize;
-        double stageHeight = AmbientPreviewStage.Height > 0 ? AmbientPreviewStage.Height : 17 * PreviewCellSize;
-        AmbientPreviewStage.Width  = stageWidth;
-        AmbientPreviewStage.Height = stageHeight;
-        LightZonesOverlay.Width    = stageWidth;
-        LightZonesOverlay.Height   = stageHeight;
-        LayoutLightZoneRects(stageWidth, stageHeight);
+        // Grid dims may not be set yet if no pipeline run has
+        // happened ; LayoutLightZonesOverlayFromViewbox falls back to
+        // the typical 30×17 footprint when _previewGridCols/Rows are
+        // still zero, so the overlay rectangles have somewhere to
+        // land in the meantime. BuildPreviewGrid will overwrite the
+        // dims + re-layout on the first pipeline start.
+        LayoutLightZonesOverlayFromViewbox();
 
         if (_placementLights is null || _placementLights.Count == 0)
         {
@@ -3079,6 +3082,41 @@ public sealed partial class PlaygroundWindow : Window
         ZoneLeftRect.Visibility   = Visibility.Collapsed;
         ZoneRightRect.Visibility  = Visibility.Collapsed;
         UpdatePreviewViewboxVisibility();
+    }
+
+    // Sizes the (sibling) LightZonesOverlay Canvas to the visible
+    // scaled footprint of the preview grid. Replaces the old "Canvas
+    // inside the Viewbox" approach, which made every stroke and gap
+    // scale with the window. Now the overlay lives outside the
+    // Viewbox, so its rectangle dimensions stay in DIP space and the
+    // stroke thickness (when re-added) reads identically at any
+    // window width. Called from BuildPreviewGrid (initial layout)
+    // and from the Viewbox's SizeChanged (live resize).
+    private void LayoutLightZonesOverlayFromViewbox()
+    {
+        // Native footprint = grid dims × cell size. Falls back to the
+        // typical 30×17 footprint while the sampler hasn't reported
+        // anything yet — same default the zones-card path used.
+        int cols = _previewGridCols > 0 ? _previewGridCols : 30;
+        int rows = _previewGridRows > 0 ? _previewGridRows : 17;
+        double nativeW = cols * PreviewCellSize;
+        double nativeH = rows * PreviewCellSize;
+
+        double viewboxW = AmbientPreviewViewbox.ActualWidth;
+        double viewboxH = AmbientPreviewViewbox.ActualHeight;
+        if (viewboxW <= 0 || viewboxH <= 0) return;
+
+        // Replicates Viewbox Stretch=Uniform : the limiting axis sets
+        // the scale, the other axis gets letterboxed (centered by
+        // default — which is what HorizontalAlignment/VerticalAlignment
+        // Center on the Canvas matches).
+        double scale = Math.Min(viewboxW / nativeW, viewboxH / nativeH);
+        double displayedW = nativeW * scale;
+        double displayedH = nativeH * scale;
+
+        LightZonesOverlay.Width  = displayedW;
+        LightZonesOverlay.Height = displayedH;
+        LayoutLightZoneRects(displayedW, displayedH);
     }
 
     // Computes the dip-space rectangle each zone covers on the preview

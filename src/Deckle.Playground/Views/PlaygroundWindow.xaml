@@ -449,31 +449,16 @@
                                  with the same ControlCornerRadius so
                                  they sit as siblings of the button on
                                  the toolbar baseline. No labels under
-                                 the squares — names are accessible
-                                 via the Lights dropdown to the right
-                                 of the strip when the user actually
-                                 wants them. -->
+                                 the squares — each chip carries a
+                                 native ToolTip with its fixture name
+                                 (built in code-behind, BuildSwatch),
+                                 so hover surfaces "which light is this
+                                 colour?" without extra controls. -->
                             <StackPanel x:Name="EmittedSwatches"
                                         Orientation="Horizontal"
                                         Spacing="6"
                                         VerticalAlignment="Center" />
 
-                            <!-- Lights dropdown : on click opens a menu
-                                 flyout that lists every fixture by
-                                 name, each line a ToggleMenuFlyoutItem
-                                 so the user can hide individual swatch
-                                 chips. Empty until the engine resolves
-                                 multi-light fixtures ; collapsed in
-                                 group mode where a single colour is
-                                 pushed. -->
-                            <DropDownButton x:Name="LightsDropDown"
-                                            Content="Lights"
-                                            Visibility="Collapsed"
-                                            ToolTipService.ToolTip="Show or hide individual light swatches">
-                                <DropDownButton.Flyout>
-                                    <MenuFlyout x:Name="LightsMenuFlyout" />
-                                </DropDownButton.Flyout>
-                            </DropDownButton>
                         </StackPanel>
 
                         <!-- Preview cadre. LayerFill so it reads as a
@@ -509,57 +494,48 @@
                                                TextAlignment="Center" />
                                 </StackPanel>
 
-                                <!-- Viewbox wraps the preview grid +
-                                     light overlay so the whole
-                                     composition scales uniformly to
-                                     fill the available area. The inner
-                                     Grid keeps a fixed coordinate space
-                                     built dynamically in code-behind
-                                     from the FrameSampler's reported
-                                     dimensions × CellSize. -->
+                                <!-- Viewbox wraps the preview grid so the
+                                     whole pixel composition scales
+                                     uniformly to fill the available area.
+                                     The grid keeps a fixed coordinate
+                                     space built dynamically in code-behind
+                                     from the FrameSampler's dimensions ×
+                                     CellSize. Cells are laid out flush
+                                     (no margins) so no gap is "visually
+                                     thickened" by the Viewbox scale —
+                                     gaps that scale read as garbage at
+                                     wide windows and disappear at narrow
+                                     ones. -->
                                 <Viewbox x:Name="AmbientPreviewViewbox"
                                          Stretch="Uniform"
                                          HorizontalAlignment="Stretch"
                                          VerticalAlignment="Stretch"
                                          Visibility="Collapsed">
-                                    <Grid x:Name="AmbientPreviewStage">
-                                        <Grid x:Name="AmbientPreviewGrid" />
-                                        <!-- LightZonesOverlay sits above
-                                             the preview grid in z-order
-                                             and renders the 4 border-zone
-                                             rectangles (Top / Bottom /
-                                             Left / Right) so the user
-                                             can see what each lamp
-                                             samples. Fills carry the
-                                             live emitted colour of the
-                                             zone with reduced opacity
-                                             so the preview cells stay
-                                             visible underneath. -->
-                                        <Canvas x:Name="LightZonesOverlay"
-                                                IsHitTestVisible="False">
-                                            <Rectangle x:Name="ZoneTopRect"
-                                                       Visibility="Collapsed"
-                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                       StrokeThickness="1.5"
-                                                       StrokeDashArray="3,2" />
-                                            <Rectangle x:Name="ZoneBottomRect"
-                                                       Visibility="Collapsed"
-                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                       StrokeThickness="1.5"
-                                                       StrokeDashArray="3,2" />
-                                            <Rectangle x:Name="ZoneLeftRect"
-                                                       Visibility="Collapsed"
-                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                       StrokeThickness="1.5"
-                                                       StrokeDashArray="3,2" />
-                                            <Rectangle x:Name="ZoneRightRect"
-                                                       Visibility="Collapsed"
-                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                       StrokeThickness="1.5"
-                                                       StrokeDashArray="3,2" />
-                                        </Canvas>
-                                    </Grid>
+                                    <Grid x:Name="AmbientPreviewGrid" />
                                 </Viewbox>
+
+                                <!-- LightZonesOverlay is a sibling of the
+                                     Viewbox, not a child : its Stretch=
+                                     Uniform parent would scale every
+                                     stroke and rectangle dimension with
+                                     the window size, which made the
+                                     overlay look "broken" on wide
+                                     windows. Sized + positioned in
+                                     code-behind on the Viewbox's
+                                     SizeChanged so it lines up exactly
+                                     with the displayed (scaled) grid
+                                     footprint. Centered alignment
+                                     matches Stretch=Uniform's default
+                                     centering. -->
+                                <Canvas x:Name="LightZonesOverlay"
+                                        IsHitTestVisible="False"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                    <Rectangle x:Name="ZoneTopRect"    Visibility="Collapsed" />
+                                    <Rectangle x:Name="ZoneBottomRect" Visibility="Collapsed" />
+                                    <Rectangle x:Name="ZoneLeftRect"   Visibility="Collapsed" />
+                                    <Rectangle x:Name="ZoneRightRect"  Visibility="Collapsed" />
+                                </Canvas>
                             </Grid>
                         </Border>
                     </Grid>
