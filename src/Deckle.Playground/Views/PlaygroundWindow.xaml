@@ -1,8 +1,7 @@
 <Window
-    x:Class="Deckle.PlaygroundWindow"
+    x:Class="Deckle.Playground.PlaygroundWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:Deckle.Controls"
     xmlns:chrono="using:Deckle.Chrono.Hud"
     xmlns:ambientControls="using:Deckle.Lighting.Ambient.Controls"
     Title="Deckle Playground">

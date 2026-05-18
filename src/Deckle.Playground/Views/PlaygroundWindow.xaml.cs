@@ -13,17 +13,15 @@ using WinRT.Interop;
 using Deckle.Audio;
 using Deckle.Chrono.Hud;
 using Deckle.Composition;
-using Deckle.Controls;
 using Deckle.Interop;
 using Deckle.Lighting;
 using Deckle.Lighting.Ambient;
 using Deckle.Lighting.Hue;
 using Deckle.Logging;
-using Deckle.Playground;
 using Deckle.Shell;
 using Deckle.Vision;
 
-namespace Deckle;
+namespace Deckle.Playground;
 
 // ─── HUD playground window ────────────────────────────────────────────────────
 //

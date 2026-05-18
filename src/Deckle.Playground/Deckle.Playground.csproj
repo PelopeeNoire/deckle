@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Deckle.Playground</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WinUI XAML compilation : the Playground ships PlaygroundWindow,
+         HomePage, HudPage, AmbientPage, and the PreviewGrid control.
+         Aligned on Deckle.Lighting.Ambient pattern. -->
+    <UseWinUI>true</UseWinUI>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <!-- Generates the lib's own .pri so x:Uid lookups resolve against
+         Deckle.Playground/Strings — same pattern as Deckle.Lighting.Ambient
+         and Deckle.Whisp. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Versions aligned on Deckle.csproj. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <!-- MVVM Toolkit — [ObservableProperty] / [RelayCommand] used by the
+         tuning view-models. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- SettingsCard / SettingsExpander — canonical Windows 11 pattern for
+         the tuning panels in HudPage and AmbientPage. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.250402" />
+    <!-- Win2D — used by the HUD preview surface (matches the host App's
+         dependency for the stroke conic gradient). -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Deckle.Audio\Deckle.Audio.csproj" />
+    <ProjectReference Include="..\Deckle.Chrono.Hud\Deckle.Chrono.Hud.csproj" />
+    <ProjectReference Include="..\Deckle.Composition\Deckle.Composition.csproj" />
+    <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
+    <ProjectReference Include="..\Deckle.Lighting\Deckle.Lighting.csproj" />
+    <ProjectReference Include="..\Deckle.Lighting.Ambient\Deckle.Lighting.Ambient.csproj" />
+    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
+    <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
+    <ProjectReference Include="..\Deckle.Settings\Deckle.Settings.csproj" />
+    <ProjectReference Include="..\Deckle.Shell\Deckle.Shell.csproj" />
+    <ProjectReference Include="..\Deckle.Vision\Deckle.Vision.csproj" />
+  </ItemGroup>
+</Project>
