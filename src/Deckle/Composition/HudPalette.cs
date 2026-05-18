@@ -1,3 +1,4 @@
+using Deckle.Catalog;
 using Deckle.Controls;
 
 namespace Deckle.Composition;
@@ -22,10 +23,10 @@ internal static class HudPalette
 
     internal static Entry Resolve(MessageKind kind) => kind switch
     {
-        MessageKind.Success       => new("BadgeSuccessBrush",  "\uE73E"), // CheckMark
-        MessageKind.Critical      => new("BadgeCriticalBrush", "\uE783"), // Error
-        MessageKind.Warning       => new("BadgeWarningBrush",  "\uE7BA"), // Warning
-        MessageKind.Informational => new("BadgeInfoBrush",     "\uE946"), // Info
+        MessageKind.Success       => new("BadgeSuccessBrush",  Glyphs.Badge.Success),
+        MessageKind.Critical      => new("BadgeCriticalBrush", Glyphs.Badge.Critical),
+        MessageKind.Warning       => new("BadgeWarningBrush",  Glyphs.Badge.Warning),
+        MessageKind.Informational => new("BadgeInfoBrush",     Glyphs.Badge.Info),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 }

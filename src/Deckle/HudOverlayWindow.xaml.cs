@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml;
 using WinRT.Interop;
 using Deckle.Controls;
 using Deckle.Interop;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Logging;
 using Deckle.Shell;
 

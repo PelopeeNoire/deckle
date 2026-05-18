@@ -36,7 +36,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Audio\Deckle.Audio.csproj" />
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
-    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
+    <ProjectReference Include="..\Deckle.Catalog\Deckle.Catalog.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <ProjectReference Include="..\Deckle.Llm\Deckle.Llm.csproj" />
     <!-- For SettingsHost.RestartApp — cross-assembly App-side hook called

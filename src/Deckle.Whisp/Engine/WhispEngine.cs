@@ -5,7 +5,7 @@ using Deckle.Audio;
 using Deckle.Audio.Telemetry;
 using Deckle.Interop;
 using Deckle.Llm;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Logging;
 using Deckle.Whisp.Pinvoke;
 using Deckle.Whisp.Setup;

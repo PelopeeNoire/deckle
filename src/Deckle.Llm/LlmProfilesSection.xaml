@@ -48,7 +48,7 @@
                         <Button Tag="{x:Bind}"
                                 Click="DeleteProfile_Click">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                <FontIcon Glyph="{StaticResource Icon.Delete}" FontSize="14" />
                                 <TextBlock Text="Remove" />
                             </StackPanel>
                         </Button>

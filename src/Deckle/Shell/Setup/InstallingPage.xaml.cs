@@ -7,7 +7,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Logging;
 using Deckle.Whisp.Setup;
 
@@ -423,7 +423,7 @@ internal sealed partial class InstallingPage : Page
 
     private void SetItemRunning(FontIcon icon, ProgressBar bar, TextBlock status, string text)
     {
-        icon.Glyph = "";   // FileDownload
+        icon.Glyph = Glyphs.Download;
         bar.Visibility = Visibility.Visible;
         bar.IsIndeterminate = true;
         status.Text = text;
@@ -431,7 +431,7 @@ internal sealed partial class InstallingPage : Page
 
     private void SetItemDone(FontIcon icon, ProgressBar bar, TextBlock status, string text)
     {
-        icon.Glyph = "";   // CheckMark
+        icon.Glyph = Glyphs.Badge.Success;
         bar.IsIndeterminate = false;
         bar.Maximum = 1;
         bar.Value = 1;
@@ -440,7 +440,7 @@ internal sealed partial class InstallingPage : Page
 
     private void SetItemFailed(FontIcon icon, ProgressBar bar, TextBlock status, string text)
     {
-        icon.Glyph = "";   // ErrorBadge
+        icon.Glyph = Glyphs.Badge.Critical;
         bar.IsIndeterminate = false;
         bar.Value = 0;
         status.Text = text;

@@ -22,14 +22,14 @@
         </Grid>
 
         <controls:SettingsCard x:Uid="LlmPrimarySlotCard"
-                               HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                               HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Shortcut}}">
             <ComboBox x:Name="PrimaryRewriteProfileCombo"
                       MinWidth="200"
                       SelectionChanged="PrimaryRewriteProfileCombo_SelectionChanged" />
         </controls:SettingsCard>
 
         <controls:SettingsCard x:Uid="LlmSecondarySlotCard"
-                               HeaderIcon="{ui:FontIcon Glyph=&#xE765;}">
+                               HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Shortcut}}">
             <ComboBox x:Name="SecondaryRewriteProfileCombo"
                       MinWidth="200"
                       SelectionChanged="SecondaryRewriteProfileCombo_SelectionChanged" />

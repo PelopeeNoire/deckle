@@ -1,0 +1,95 @@
+<!--
+    Icons.xaml — Deckle's centralized Segoe Fluent Icons catalog.
+
+    Merged into App.xaml so every page resolves these keys via StaticResource.
+    XAML usage : Glyph="{StaticResource Icon.Microphone}"
+    Inside a markup extension : HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Microphone}}"
+    C# usage   : Glyphs.Microphone (kept in sync manually in Glyphs.cs).
+
+    Naming convention :
+      - Generic concepts : Icon.<Concept> (PascalCase, single dot)
+      - Clusters         : Icon.<Cluster>.<Item> (Badge, Transport)
+      - Same glyph code may back several semantic keys when the same icon
+        is used in semantically distinct contexts (e.g. E7F4 → Overlay
+        and Model). Each key documents the design intent at its site.
+
+    Adding an icon : declare the key here AND mirror it in Glyphs.cs.
+    Never hardcode &#xE…; outside this file.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ─── Navigation / Section headers ─────────────────────────── -->
+    <x:String x:Key="Icon.Home">&#xE80F;</x:String>
+    <x:String x:Key="Icon.Microphone">&#xE720;</x:String>
+    <x:String x:Key="Icon.Speech">&#xF61F;</x:String>
+    <x:String x:Key="Icon.Sparkle">&#xF6C7;</x:String>
+    <x:String x:Key="Icon.Lightbulb">&#xEA80;</x:String>
+    <x:String x:Key="Icon.Diagnostics">&#xE9D9;</x:String>
+    <x:String x:Key="Icon.Logs">&#xEC7A;</x:String>
+
+    <!-- ─── Common semantic concepts ─────────────────────────────── -->
+    <x:String x:Key="Icon.Shortcut">&#xE765;</x:String>
+    <x:String x:Key="Icon.Theme">&#xE790;</x:String>
+    <x:String x:Key="Icon.Overlay">&#xE7F4;</x:String>
+    <x:String x:Key="Icon.Model">&#xE7F4;</x:String>
+    <x:String x:Key="Icon.Paste">&#xE77F;</x:String>
+    <x:String x:Key="Icon.Launch">&#xE7E8;</x:String>
+    <x:String x:Key="Icon.Lightning">&#xE945;</x:String>
+    <x:String x:Key="Icon.Setup">&#xE9F5;</x:String>
+    <x:String x:Key="Icon.Folder">&#xE8B7;</x:String>
+    <x:String x:Key="Icon.Speaker">&#xE916;</x:String>
+    <x:String x:Key="Icon.Latency">&#xE916;</x:String>
+
+    <!-- ─── Common actions ───────────────────────────────────────── -->
+    <x:String x:Key="Icon.Reset">&#xE777;</x:String>
+    <x:String x:Key="Icon.Search">&#xE721;</x:String>
+    <x:String x:Key="Icon.Copy">&#xE8C8;</x:String>
+    <x:String x:Key="Icon.Save">&#xE74E;</x:String>
+    <x:String x:Key="Icon.Delete">&#xE74D;</x:String>
+    <x:String x:Key="Icon.Export">&#xEC8F;</x:String>
+    <x:String x:Key="Icon.Close">&#xE751;</x:String>
+    <x:String x:Key="Icon.Download">&#xE7C3;</x:String>
+    <x:String x:Key="Icon.Refresh">&#xE72C;</x:String>
+    <x:String x:Key="Icon.OpenExternal">&#xE8A7;</x:String>
+    <x:String x:Key="Icon.Cancel">&#xE711;</x:String>
+
+    <!-- ─── Whisper transcription specifics ──────────────────────── -->
+    <x:String x:Key="Icon.Language">&#xF2B7;</x:String>
+    <x:String x:Key="Icon.Prompt">&#xE932;</x:String>
+    <x:String x:Key="Icon.Gpu">&#xE950;</x:String>
+    <x:String x:Key="Icon.Filter">&#xE74F;</x:String>
+    <x:String x:Key="Icon.Pattern">&#xE71C;</x:String>
+    <x:String x:Key="Icon.Context">&#xE895;</x:String>
+    <x:String x:Key="Icon.Tokens">&#xE8B2;</x:String>
+    <x:String x:Key="Icon.Tuning">&#xE9CA;</x:String>
+
+    <!-- ─── Diagnostics specifics ────────────────────────────────── -->
+    <x:String x:Key="Icon.AppLog">&#xE9A4;</x:String>
+    <x:String x:Key="Icon.AudioRecording">&#xEFA9;</x:String>
+    <x:String x:Key="Icon.VoiceLevel">&#xE993;</x:String>
+
+    <!-- ─── Ambient / Hue specifics ──────────────────────────────── -->
+    <x:String x:Key="Icon.Bridge">&#xE839;</x:String>
+    <x:String x:Key="Icon.Endpoint">&#xE968;</x:String>
+    <x:String x:Key="Icon.Link">&#xE71B;</x:String>
+    <x:String x:Key="Icon.List">&#xE71D;</x:String>
+
+    <!-- ─── Lightbulb variants ──────────────────────────────────── -->
+    <!-- E7E8 is Lightbulb (filled) ; used as autostart card glyph
+         (Icon.Launch alias) and as the Hue "Identify lamp" button. -->
+    <x:String x:Key="Icon.LightbulbFilled">&#xE7E8;</x:String>
+
+    <!-- ─── Transport cluster (Playground HUD page) ──────────────── -->
+    <x:String x:Key="Icon.Transport.Play">&#xE768;</x:String>
+    <x:String x:Key="Icon.Transport.Pause">&#xE769;</x:String>
+    <x:String x:Key="Icon.Transport.Stop">&#xE71A;</x:String>
+
+    <!-- ─── Badge cluster (HudPalette mirror, MessageKind) ───────── -->
+    <x:String x:Key="Icon.Badge.Success">&#xE73E;</x:String>
+    <x:String x:Key="Icon.Badge.Critical">&#xE783;</x:String>
+    <x:String x:Key="Icon.Badge.Warning">&#xE7BA;</x:String>
+    <x:String x:Key="Icon.Badge.Info">&#xE946;</x:String>
+
+</ResourceDictionary>

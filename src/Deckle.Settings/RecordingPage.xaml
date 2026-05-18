@@ -60,7 +60,7 @@
 
                 <controls:SettingsCard x:Name="AudioInputCard"
                                        x:Uid="GeneralMicrophoneCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Microphone}}">
                     <ComboBox x:Name="AudioInputCombo"
                               MinWidth="240"
                               SelectionChanged="AudioInputCombo_SelectionChanged" />
@@ -71,7 +71,7 @@
                      three sliders push live into AudioLevelMapper statics via
                      SettingsHost.ApplyLevelWindow. -->
                 <controls:SettingsExpander x:Uid="GeneralVoiceLevelExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE993;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.VoiceLevel}}">
                     <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                         <TextBlock x:Uid="GeneralVoiceLevelAutoLabel"
                                    VerticalAlignment="Center"

@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using Microsoft.Windows.ApplicationModel.Resources;
 
-namespace Deckle.Localization;
+namespace Deckle.Catalog;
 
 // ─── Loc ──────────────────────────────────────────────────────────
 //

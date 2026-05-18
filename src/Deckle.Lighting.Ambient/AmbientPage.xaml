@@ -91,7 +91,7 @@
                 </InfoBar>
 
                 <controls:SettingsCard x:Uid="AmbientEnabledCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xEA80;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Lightbulb}}">
                     <ToggleSwitch x:Name="EnabledToggle"
                                   Toggled="EnabledToggle_Toggled" />
                 </controls:SettingsCard>
@@ -101,7 +101,7 @@
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
                 <controls:SettingsCard x:Uid="AmbientModeCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE790;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Theme}}">
                     <ComboBox x:Name="ModeCombo"
                               MinWidth="160"
                               SelectionChanged="ModeCombo_SelectionChanged">
@@ -128,7 +128,7 @@
 
                 <controls:SettingsExpander x:Uid="HueBridgeExpander"
                                            x:Name="HueBridgeExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xE839;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Bridge}}">
                     <!-- Header right-side : compact status text + dot. The
                          expander shows / hides the per-section cards below
                          on click. -->
@@ -224,7 +224,7 @@
 
                 <controls:SettingsCard x:Uid="AmbientOpenPlaygroundCard"
                                        IsClickEnabled="True"
-                                       ActionIcon="{ui:FontIcon Glyph=&#xE8A7;}"
+                                       ActionIcon="{ui:FontIcon Glyph={StaticResource Icon.OpenExternal}}"
                                        Click="OpenPlaygroundCard_Click" />
             </StackPanel>
         </Grid>

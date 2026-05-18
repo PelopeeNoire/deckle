@@ -32,7 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Deckle.Core\Deckle.Core.csproj" />
-    <ProjectReference Include="..\Deckle.Localization\Deckle.Localization.csproj" />
+    <ProjectReference Include="..\Deckle.Catalog\Deckle.Catalog.csproj" />
     <ProjectReference Include="..\Deckle.Logging\Deckle.Logging.csproj" />
     <!-- For SettingsHost.GetSettingsWindow — cross-assembly App-side hook
          called from GgufImportView for the FileOpenPicker hwnd parent.

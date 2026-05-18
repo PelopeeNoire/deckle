@@ -30,7 +30,7 @@
 
             <FontIcon x:Name="NativeIcon"
                       Grid.Column="0" Grid.Row="0"
-                      Glyph="&#xE7C3;"
+                      Glyph="{StaticResource Icon.Download}"
                       VerticalAlignment="Center"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="NativeLabel"
@@ -59,7 +59,7 @@
 
             <FontIcon x:Name="WhisperIcon"
                       Grid.Column="0" Grid.Row="0"
-                      Glyph="&#xE7C3;"
+                      Glyph="{StaticResource Icon.Download}"
                       VerticalAlignment="Center"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="WhisperLabel"
@@ -87,7 +87,7 @@
 
             <FontIcon x:Name="VadIcon"
                       Grid.Column="0" Grid.Row="0"
-                      Glyph="&#xE7C3;"
+                      Glyph="{StaticResource Icon.Download}"
                       VerticalAlignment="Center"
                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <TextBlock x:Name="VadLabel"

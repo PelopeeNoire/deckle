@@ -3,7 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Deckle.Interop;
-using Deckle.Localization;
+using Deckle.Catalog;
 using Deckle.Logging;
 using Deckle.Settings.ViewModels;
 

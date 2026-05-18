@@ -69,7 +69,7 @@
                 </Grid>
 
                 <controls:SettingsCard x:Uid="LoggingAmbientCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xEA80;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Lightbulb}}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.LogAmbientCaptureActivity, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
@@ -92,26 +92,26 @@
                 <!-- Application log first (user request : the most asked-for
                      diagnostic when troubleshooting). -->
                 <controls:SettingsCard x:Uid="GeneralAppLogCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE9A4;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.AppLog}}">
                     <ToggleSwitch x:Name="ApplicationLogToggle"
                                   IsOn="{x:Bind ViewModel.ApplicationLogToDisk, Mode=TwoWay}"
                                   Toggled="ApplicationLogToggle_Toggled" />
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="GeneralLogMicrophoneCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE720;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Microphone}}">
                     <ToggleSwitch x:Name="MicrophoneTelemetryToggle"
                                   IsOn="{x:Bind ViewModel.MicrophoneTelemetry, Mode=TwoWay}"
                                   Toggled="MicrophoneTelemetryToggle_Toggled" />
                 </controls:SettingsCard>
 
                 <controls:SettingsCard x:Uid="GeneralLatencyCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE916;}">
+                                       HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Latency}}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.TelemetryLatencyEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
 
                 <controls:SettingsExpander x:Uid="GeneralCorpusExpander"
-                                           HeaderIcon="{ui:FontIcon Glyph=&#xEFA9;}">
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.AudioRecording}}">
                     <ToggleSwitch x:Name="CorpusLoggingToggle"
                                   IsOn="{x:Bind ViewModel.TelemetryCorpusEnabled, Mode=TwoWay}"
                                   Toggled="CorpusLoggingToggle_Toggled" />

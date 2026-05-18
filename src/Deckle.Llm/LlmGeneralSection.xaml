@@ -22,13 +22,13 @@
         </Grid>
 
         <controls:SettingsCard x:Uid="LlmEnableCard"
-                               HeaderIcon="{ui:FontIcon Glyph=&#xE945;}">
+                               HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Lightning}}">
             <ToggleSwitch x:Name="EnabledToggle"
                           Toggled="EnabledToggle_Toggled" />
         </controls:SettingsCard>
 
         <controls:SettingsExpander x:Uid="LlmEndpointExpander"
-                                   HeaderIcon="{ui:FontIcon Glyph=&#xE968;}"
+                                   HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Endpoint}}"
                                    IsEnabled="{x:Bind IsRewritingEnabled, Mode=OneWay}">
             <controls:SettingsExpander.Items>
                 <controls:SettingsCard ContentAlignment="Vertical">

@@ -198,7 +198,7 @@
                             MinWidth="36"
                             Padding="8,4"
                             Click="OnSearchIconClick">
-                        <FontIcon Glyph="&#xE721;" FontSize="16" />
+                        <FontIcon Glyph="{StaticResource Icon.Search}" FontSize="16" />
                     </Button>
                 </Grid>
             </TitleBar.Content>
@@ -235,19 +235,19 @@
                 <AppBarButton x:Name="CopyButton" x:Uid="LogWindowCopyButton"
                               Click="OnCopyClick">
                     <AppBarButton.Icon>
-                        <FontIcon Glyph="&#xE8C8;" />
+                        <FontIcon Glyph="{StaticResource Icon.Copy}" />
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton x:Name="SaveButton" x:Uid="LogWindowSaveButton"
                               Click="OnSaveClick">
                     <AppBarButton.Icon>
-                        <FontIcon Glyph="&#xE74E;" />
+                        <FontIcon Glyph="{StaticResource Icon.Save}" />
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton x:Name="ClearButton" x:Uid="LogWindowClearButton"
                               Click="OnClearClick">
                     <AppBarButton.Icon>
-                        <FontIcon Glyph="&#xE74D;" />
+                        <FontIcon Glyph="{StaticResource Icon.Delete}" />
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <CommandBar.SecondaryCommands>
@@ -255,7 +255,7 @@
                                         x:Uid="LogWindowAutoScrollToggle"
                                         IsChecked="True">
                         <AppBarToggleButton.Icon>
-                            <FontIcon Glyph="&#xEC8F;" />
+                            <FontIcon Glyph="{StaticResource Icon.Export}" />
                         </AppBarToggleButton.Icon>
                     </AppBarToggleButton>
                     <AppBarToggleButton x:Name="WrapToggle"
@@ -263,7 +263,7 @@
                                         IsChecked="False"
                                         Click="OnWrapToggleClick">
                         <AppBarToggleButton.Icon>
-                            <FontIcon Glyph="&#xE751;" />
+                            <FontIcon Glyph="{StaticResource Icon.Close}" />
                         </AppBarToggleButton.Icon>
                     </AppBarToggleButton>
                 </CommandBar.SecondaryCommands>

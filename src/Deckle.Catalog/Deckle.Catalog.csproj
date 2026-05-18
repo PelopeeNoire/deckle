@@ -2,10 +2,17 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
-    <RootNamespace>Deckle.Localization</RootNamespace>
+    <RootNamespace>Deckle.Catalog</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
+    <!-- UseWinUI compiles Themes/Icons.xaml as a XAML resource so the
+         host App.xaml can merge it via
+         ms-appx:///Deckle.Catalog/Themes/Icons.xaml. The module hosts
+         no Page or UserControl — only the icon ResourceDictionary plus
+         Loc.cs / Glyphs.cs façades. -->
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,5 +20,6 @@
          pinned identical à Deckle.csproj — un seul runtime WindowsAppSDK chargé
          par process. -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
   </ItemGroup>
 </Project>
