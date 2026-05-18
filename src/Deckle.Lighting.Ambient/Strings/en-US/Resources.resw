@@ -172,40 +172,19 @@
   </data>
 
   <!-- ── HDR tuning ────────────────────────────────────────── -->
-  <!-- Flat SettingsCards (no SettingsExpander wrapper) for the
-       three classic knobs ; Brightness curve hosts its viz in an
-       Expander. Descriptions kept short — the dense per-knob
-       rationale lives in the Playground HDR tuning card where a
-       live preview makes experimentation cheap. -->
+  <!-- The four HDR slider cards (Exposure, Saturation, MinBrightness,
+       BrightnessCurve) moved to the Playground in V0.3. The Settings
+       page keeps only a section header and a single card pointing to
+       the Playground for fine tuning ; the empirical knobs benefit
+       from the Playground's live preview. -->
   <data name="AmbientTuningSectionHeader.Text" xml:space="preserve">
-    <value>HDR tuning</value>
+    <value>Fine tuning</value>
   </data>
-  <data name="AmbientExposureCard.Header" xml:space="preserve">
-    <value>Exposure</value>
+  <data name="AmbientOpenPlaygroundCard.Header" xml:space="preserve">
+    <value>Open the Playground</value>
   </data>
-  <data name="AmbientExposureCard.Description" xml:space="preserve">
-    <value>Boost or dim the lamp overall. +1 doubles brightness — useful for dim HDR content.</value>
-  </data>
-  <data name="AmbientSaturationCard.Header" xml:space="preserve">
-    <value>Saturation</value>
-  </data>
-  <data name="AmbientSaturationCard.Description" xml:space="preserve">
-    <value>Colour intensity. 100% is neutral; 150–180% gives Hue Sync–like vividness.</value>
-  </data>
-  <data name="AmbientMinBrightnessCard.Header" xml:space="preserve">
-    <value>Minimum brightness</value>
-  </data>
-  <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
-    <value>Lowest brightness the lamp drops to. Prevents mid-tone scenes from looking washed out.</value>
-  </data>
-  <data name="AmbientGammaExpander.Header" xml:space="preserve">
-    <value>Brightness curve</value>
-  </data>
-  <data name="AmbientGammaExpander.Description" xml:space="preserve">
-    <value>Shapes how dim scenes map to the lamp. Higher values darken shadows without affecting bright areas. Expand to see the curve.</value>
-  </data>
-  <data name="AmbientTuningPlaygroundHint.Text" xml:space="preserve">
-    <value>Open the Playground to tune these values with a live preview.</value>
+  <data name="AmbientOpenPlaygroundCard.Description" xml:space="preserve">
+    <value>Adjust exposure, saturation, brightness curve, smoothing, and per-light settings with a live preview of the sampled grid.</value>
   </data>
   <data name="Settings_SectionResetLink.Content" xml:space="preserve">
     <value>Reset</value>
