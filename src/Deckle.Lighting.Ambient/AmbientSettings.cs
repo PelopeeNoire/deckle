@@ -77,8 +77,12 @@ public sealed class AmbientSettings
     // patch with no settings migration ; Game stays the default until
     // Louis tunes Realistic.
 
-    /// <summary>Active analysis mode. Defaults to <see cref="AmbientMode.Game"/>
-    /// — the V0 behaviour. J6 lights up <see cref="AmbientMode.Realistic"/>.</summary>
+    /// <summary>Active mode preset. Defaults to <see cref="AmbientMode.Game"/>.
+    /// Switching the mode (via the Playground or the Settings page)
+    /// invokes <see cref="AmbientSettingsService.ApplyPreset(AmbientMode)"/>
+    /// which copies the preset's tuning snapshot onto the other knobs.
+    /// Touching any tuning slider in the Playground silently switches
+    /// the mode to <see cref="AmbientMode.Custom"/>.</summary>
     public AmbientMode Mode { get; set; } = AmbientMode.Game;
 
     // ── Multi-light zones (J4) ─────────────────────────────────────
@@ -219,20 +223,33 @@ public sealed class AmbientSettings
 }
 
 /// <summary>How <see cref="AmbientEngine"/> derives the colour pushed
-/// to the lights. The active value lives in <see cref="AmbientSettings.Mode"/>
-/// and is observed at pipeline start (changes mid-run require a restart
-/// in V0 ; J9 polish may make it hot).</summary>
+/// to the lights. The active value lives in <see cref="AmbientSettings.Mode"/>.
+/// Game / Movie / Ambient carry preset tunings ; Custom is the
+/// implicit mode the user lands on as soon as they move a slider in
+/// the Playground, signalling "I'm tuning my own thing — don't
+/// overwrite my values when a preset changes".</summary>
 public enum AmbientMode
 {
-    /// <summary>Game / Ambilight — direct mapping of the analysed sRGB
-    /// average to the lamp. Full saturation, follows the screen palette.
-    /// V0 default and the only mode wired today.</summary>
+    /// <summary>Game / Ambilight — direct mapping with vivid saturation
+    /// and quick response. Default for desktop play sessions.</summary>
     Game,
 
-    /// <summary>Realistic — diegetic-light heuristic. Desaturates the
-    /// average and biases the hue toward the temperature dominating the
-    /// highlights of the scene. J6 lights this up.</summary>
-    Realistic,
+    /// <summary>Movie — softened saturation, longer smoothing, slight
+    /// negative EV. Reads as ambient mood lighting for cinematic
+    /// content where fast colour changes would distract.</summary>
+    Movie,
+
+    /// <summary>Ambient — heavy smoothing, low saturation, dark-friendly
+    /// curve. Tuned for general-purpose room lighting that follows
+    /// the screen without ever feeling like it competes with the
+    /// content.</summary>
+    Ambient,
+
+    /// <summary>Custom — every tuning knob lives where the user put it.
+    /// The Playground sets this implicitly the moment any slider is
+    /// touched, so a preset switch never silently overwrites a hand-
+    /// calibrated setup.</summary>
+    Custom,
 }
 
 /// <summary>Shape of the brightness response curve applied to the

@@ -200,8 +200,12 @@ public sealed partial class AmbientPage : Page
             && cbi.Tag is string tag
             && Enum.TryParse<AmbientMode>(tag, out var mode))
         {
-            AmbientSettingsService.Instance.Current.Mode = mode;
-            AmbientSettingsService.Instance.Save();
+            // ApplyPreset copies the preset's full tuning snapshot
+            // onto Current and saves in one shot. Custom is a special
+            // case : it just sets Mode = Custom without touching any
+            // other knob, so the Playground's hand-tuned values stay
+            // exactly where the user left them.
+            AmbientSettingsService.Instance.ApplyPreset(mode);
         }
     }
 

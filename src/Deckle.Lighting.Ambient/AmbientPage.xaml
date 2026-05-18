@@ -106,7 +106,9 @@
                               MinWidth="160"
                               SelectionChanged="ModeCombo_SelectionChanged">
                         <ComboBoxItem x:Uid="AmbientModeGame" Tag="Game" />
-                        <ComboBoxItem x:Uid="AmbientModeRealistic" Tag="Realistic" />
+                        <ComboBoxItem x:Uid="AmbientModeMovie" Tag="Movie" />
+                        <ComboBoxItem x:Uid="AmbientModeAmbient" Tag="Ambient" />
+                        <ComboBoxItem x:Uid="AmbientModeCustom" Tag="Custom" />
                     </ComboBox>
                 </controls:SettingsCard>
 

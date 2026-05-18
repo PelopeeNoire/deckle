@@ -580,11 +580,31 @@
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="HDR tuning (live)"
                                                    Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                        <TextBlock Text="Tune the four ambient knobs live with the preview grid right next to you. Values persist and apply on the next push tick."
+                                        <TextBlock Text="Tune the ambient knobs live with the preview grid right next to you. Values persist and apply on the next push tick. Touch any slider and the mode automatically switches to Custom — preset values won't overwrite your work."
                                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                    TextWrapping="Wrap"
                                                    MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <!-- Mode preset selector. Picking
+                                         Game / Movie / Ambient applies
+                                         the matching AmbientModePresets
+                                         snapshot onto every other knob ;
+                                         Custom is a no-op marker that
+                                         tracks the moment the user
+                                         starts tuning by hand. -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Mode"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <ComboBox x:Name="PlaygroundAmbientModeCombo"
+                                                  HorizontalAlignment="Stretch"
+                                                  SelectionChanged="OnPlaygroundAmbientModeChanged">
+                                            <ComboBoxItem Content="Game" Tag="Game" />
+                                            <ComboBoxItem Content="Movie" Tag="Movie" />
+                                            <ComboBoxItem Content="Ambient" Tag="Ambient" />
+                                            <ComboBoxItem Content="Custom" Tag="Custom" />
+                                        </ComboBox>
                                     </StackPanel>
 
                                     <!-- Brightness curve : type selector

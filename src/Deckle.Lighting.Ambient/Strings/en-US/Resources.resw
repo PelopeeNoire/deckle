@@ -156,13 +156,19 @@
     <value>Mode</value>
   </data>
   <data name="AmbientModeCard.Description" xml:space="preserve">
-    <value>Game mirrors the screen palette directly. Realistic favours the scene's actual light sources. Changing this restarts the pipeline.</value>
+    <value>Game is vivid and quick. Movie smooths colour changes for cinematic content. Ambient stays soft and slow as room mood lighting. Custom is what the Playground tunes when you touch a slider.</value>
   </data>
   <data name="AmbientModeGame.Content" xml:space="preserve">
     <value>Game</value>
   </data>
-  <data name="AmbientModeRealistic.Content" xml:space="preserve">
-    <value>Realistic</value>
+  <data name="AmbientModeMovie.Content" xml:space="preserve">
+    <value>Movie</value>
+  </data>
+  <data name="AmbientModeAmbient.Content" xml:space="preserve">
+    <value>Ambient</value>
+  </data>
+  <data name="AmbientModeCustom.Content" xml:space="preserve">
+    <value>Custom</value>
   </data>
 
   <!-- ── HDR tuning ────────────────────────────────────────── -->

@@ -3122,6 +3122,7 @@ public sealed partial class PlaygroundWindow : Window
             PlaygroundSmoothingSlider.Value        = s.SmoothingAlpha;
             PlaygroundChangeThresholdSlider.Value  = s.ChangeThreshold;
             SelectBrightnessCurveTypeInCombo(s.BrightnessCurveType);
+            SelectAmbientModeInCombo(s.Mode);
             UpdatePlaygroundBrightnessCurveDependentUi();
 
             UpdatePlaygroundExposureText();
@@ -3189,6 +3190,46 @@ public sealed partial class PlaygroundWindow : Window
         return BrightnessCurveType.Gamma;
     }
 
+    // Mode preset selector — synchronises the ComboBox with the
+    // currently active mode. Falls back to Custom (index 3) when the
+    // saved enum value is foreign — keeps the UI usable instead of
+    // empty.
+    private void SelectAmbientModeInCombo(AmbientMode mode)
+    {
+        string tag = mode.ToString();
+        foreach (var item in PlaygroundAmbientModeCombo.Items)
+        {
+            if (item is ComboBoxItem cbi && (cbi.Tag as string) == tag)
+            {
+                PlaygroundAmbientModeCombo.SelectedItem = cbi;
+                return;
+            }
+        }
+        PlaygroundAmbientModeCombo.SelectedIndex = 3;
+    }
+
+    // Switches Current.Mode to Custom and reflects the change in the
+    // ComboBox without retriggering the SelectionChanged handler.
+    // Caller is responsible for the Save() that follows the tuning
+    // mutation — this helper purposefully doesn't save so two calls
+    // in the same frame don't double-write the file.
+    private void EnterCustomMode()
+    {
+        var current = AmbientSettingsService.Instance.Current;
+        if (current.Mode == AmbientMode.Custom) return;
+        bool prev = _ambientTuningLoading;
+        _ambientTuningLoading = true;
+        try
+        {
+            current.Mode = AmbientMode.Custom;
+            SelectAmbientModeInCombo(AmbientMode.Custom);
+        }
+        finally
+        {
+            _ambientTuningLoading = prev;
+        }
+    }
+
     private void OnPlaygroundGammaSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         UpdatePlaygroundGammaText();
@@ -3196,6 +3237,7 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.BrightnessCurveParam = PlaygroundGammaSlider.Value;
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3204,6 +3246,7 @@ public sealed partial class PlaygroundWindow : Window
         UpdatePlaygroundExposureText();
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.ExposureEv = PlaygroundExposureSlider.Value;
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3212,6 +3255,7 @@ public sealed partial class PlaygroundWindow : Window
         UpdatePlaygroundSaturationText();
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.SaturationBoost = PlaygroundSaturationSlider.Value / 100.0;
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3221,6 +3265,7 @@ public sealed partial class PlaygroundWindow : Window
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.MinBrightness =
             (int)Math.Round(PlaygroundMinBrightnessSlider.Value);
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3255,12 +3300,14 @@ public sealed partial class PlaygroundWindow : Window
 
     // Smoothing α slider — persists into AmbientSettings.SmoothingAlpha.
     // The engine re-reads it on every push tick so the move applies
-    // within ~66 ms.
+    // within ~66 ms. Touching it counts as a tuning gesture — mode
+    // implicitly flips to Custom.
     private void OnPlaygroundSmoothingSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         UpdatePlaygroundSmoothingText();
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.SmoothingAlpha = PlaygroundSmoothingSlider.Value;
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3273,6 +3320,7 @@ public sealed partial class PlaygroundWindow : Window
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.ChangeThreshold =
             (int)Math.Round(PlaygroundChangeThresholdSlider.Value);
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3280,12 +3328,32 @@ public sealed partial class PlaygroundWindow : Window
     // refreshes the param slider's enabled state + caption. The param
     // value is preserved across type switches so a user toggling
     // between Gamma and SCurve doesn't lose their fine-tuning.
+    // Changing the curve counts as a tuning gesture so the mode
+    // implicitly switches to Custom (the user is no longer following
+    // a preset).
     private void OnPlaygroundBrightnessCurveTypeChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdatePlaygroundBrightnessCurveDependentUi();
         UpdatePlaygroundGammaText();
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.BrightnessCurveType = ReadBrightnessCurveTypeFromCombo();
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
+    }
+
+    // Mode preset selector. Picking Game / Movie / Ambient runs the
+    // matching AmbientModePresets snapshot through ApplyPreset (which
+    // also saves) and the Changed event re-syncs every slider via
+    // ResyncPlaygroundAmbientTuning. Picking Custom is a no-op — the
+    // user explicitly opting in to their own values.
+    private void OnPlaygroundAmbientModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ambientTuningLoading) return;
+        if (PlaygroundAmbientModeCombo.SelectedItem is ComboBoxItem cbi
+            && cbi.Tag is string tag
+            && Enum.TryParse<AmbientMode>(tag, out var mode))
+        {
+            AmbientSettingsService.Instance.ApplyPreset(mode);
+        }
     }
 }
