@@ -33,10 +33,12 @@ namespace Deckle.Lighting.Ambient;
 //     per-second PUT count within the Hue REST CLIP v1 comfort zone
 //     for a typical 3-5 light setup (3 lights × 10 Hz = 30 PUT/s).
 //     The four zones are sampled once per tick from a band of
-//     <see cref="BorderDepth"/> on the matching edge of the frame —
+//     <see cref="LateralBorderDepth"/> on the left / right edges and
+//     <see cref="VerticalBorderDepth"/> on the top / bottom edges —
 //     this mirrors HyperHDR's <c>horizontalDepth</c> / <c>verticalDepth</c>
-//     concept, collapsed to a single shared constant since V1 doesn't
-//     support sub-zone positioning.
+//     concept, with asymmetric defaults tuned for a 3-lamp setup
+//     where each lamp needs to summarise a sizeable slice of the
+//     frame, not just a bezel-LED strip.
 //
 // If multi-light is requested but the driver doesn't expose the
 // capability, the engine logs a warning and falls back to group mode
@@ -97,11 +99,13 @@ public sealed class AmbientEngine : IAsyncDisposable
     private const int MultiPushHz = 10;
 
     // Early-exit threshold — if |ΔR| + |ΔG| + |ΔB| < this, the push
-    // is skipped. 3 (out of 0-765 max) is conservative — it catches
-    // FrameSampler quantisation noise on a static screen but lets
-    // through anything the eye would notice. J5 will surface this
-    // value in the Playground tuning panel.
-    private const int ChangeThreshold = 3;
+    // is skipped. Default raised from 3 to 6 (out of 0-765 max) :
+    // 3 was too sensitive on scenes with small moving reflections in
+    // a globally dark frame, which kept the lamp flickering on the
+    // residue. 6 still passes anything the eye would notice while
+    // damping the quantisation noise of the sampler. J5 surfaces this
+    // in the Playground tuning panel.
+    private const int ChangeThreshold = 6;
 
     // Lights-out threshold — if every channel of the analysed average
     // is at or below this, we clamp the colour to (0,0,0) before the
@@ -115,15 +119,22 @@ public sealed class AmbientEngine : IAsyncDisposable
     private const int OffThreshold = 8;
 
     // Border-band depth used by the four zone-sampling helpers, as a
-    // fraction of the matching screen dimension. 0.20 ≈ HyperHDR's
-    // default `horizontalDepth` / `verticalDepth` range (15-25 %).
-    // The top zone reads pixels in y ∈ [0, BorderDepth], the bottom
-    // zone in y ∈ [1-BorderDepth, 1], the left in x ∈ [0, BorderDepth],
-    // the right in x ∈ [1-BorderDepth, 1]. Constants kept symmetric
-    // (one depth for both axes) since a typical user setup wraps
-    // around the screen symmetrically. J5 will expose this on the
-    // Playground panel for tuning.
-    public const double BorderDepth = 0.20;
+    // fraction of the matching screen dimension. Asymmetric defaults :
+    // lateral bands at 33 % and vertical bands at 40 %. The 3-lamp
+    // setup (Top + Left + Right) needs each lamp to summarise a much
+    // larger slice than a typical bezel-LED strip would — capturing
+    // a third of the screen on the sides, and the upper two-fifths on
+    // top so the lamp facing the user picks up the sky / dominant
+    // mood of the scene, not just the HUD overlay band. The top zone
+    // reads pixels in y ∈ [0, VerticalBorderDepth], the bottom zone
+    // in y ∈ [1-VerticalBorderDepth, 1], the left in
+    // x ∈ [0, LateralBorderDepth], the right in
+    // x ∈ [1-LateralBorderDepth, 1]. Hardcoded on purpose : the
+    // depths are a property of the room/lighting layout, not a
+    // per-scene tuning knob. Adjust here when the lamp arrangement
+    // changes.
+    public const double LateralBorderDepth = 0.33;
+    public const double VerticalBorderDepth = 0.40;
 
     // Heartbeat cadence for the push-loop telemetry. The per-tick
     // "push" log used to fire 10-15 times a second on a steady
@@ -1001,9 +1012,10 @@ public sealed class AmbientEngine : IAsyncDisposable
 
     // Averages all cells whose centre falls inside the matching border
     // rectangle, expressed in normalised [0,1]² coordinates on the
-    // frame grid. Top = y ∈ [0, BorderDepth] × x ∈ [0, 1] ; Bottom =
-    // y ∈ [1-BorderDepth, 1] × x ∈ [0, 1] ; Left = x ∈ [0, BorderDepth]
-    // × y ∈ [0, 1] ; Right = x ∈ [1-BorderDepth, 1] × y ∈ [0, 1]. The
+    // frame grid. Top = y ∈ [0, VerticalBorderDepth] × x ∈ [0, 1] ;
+    // Bottom = y ∈ [1-VerticalBorderDepth, 1] × x ∈ [0, 1] ;
+    // Left = x ∈ [0, LateralBorderDepth] × y ∈ [0, 1] ;
+    // Right = x ∈ [1-LateralBorderDepth, 1] × y ∈ [0, 1]. The
     // cell-index bounds are rounded inward via Floor / Ceiling so we
     // never read out-of-range. Returned colour is the gamma-correct
     // mean of the cells in the rectangle — sRGB bytes are linearised
@@ -1019,7 +1031,9 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         // Compute the cell-index bounding box for the zone. Inclusive
         // on both ends — at least one cell is always selected even on
-        // a tiny grid where BorderDepth × dim < 1.
+        // a tiny grid where the depth × dim < 1. Top/Bottom take the
+        // vertical depth (rows axis), Left/Right take the lateral
+        // depth (cols axis).
         int cMin, cMax, rMin, rMax;
         switch (zone)
         {
@@ -1027,22 +1041,22 @@ public sealed class AmbientEngine : IAsyncDisposable
                 cMin = 0;
                 cMax = cols - 1;
                 rMin = 0;
-                rMax = Math.Max(0, (int)Math.Floor(BorderDepth * rows) - 1);
+                rMax = Math.Max(0, (int)Math.Floor(VerticalBorderDepth * rows) - 1);
                 break;
             case LightZone.Bottom:
                 cMin = 0;
                 cMax = cols - 1;
-                rMin = Math.Min(rows - 1, (int)Math.Ceiling((1.0 - BorderDepth) * rows));
+                rMin = Math.Min(rows - 1, (int)Math.Ceiling((1.0 - VerticalBorderDepth) * rows));
                 rMax = rows - 1;
                 break;
             case LightZone.Left:
                 cMin = 0;
-                cMax = Math.Max(0, (int)Math.Floor(BorderDepth * cols) - 1);
+                cMax = Math.Max(0, (int)Math.Floor(LateralBorderDepth * cols) - 1);
                 rMin = 0;
                 rMax = rows - 1;
                 break;
             case LightZone.Right:
-                cMin = Math.Min(cols - 1, (int)Math.Ceiling((1.0 - BorderDepth) * cols));
+                cMin = Math.Min(cols - 1, (int)Math.Ceiling((1.0 - LateralBorderDepth) * cols));
                 cMax = cols - 1;
                 rMin = 0;
                 rMax = rows - 1;

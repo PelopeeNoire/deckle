@@ -2214,7 +2214,8 @@ public sealed partial class PlaygroundWindow : Window
     // connected output is queried for its fixture list, one ComboBox-
     // bearing row is appended to LightZonesPanel per light, and the
     // four border-zone rectangles in LightZonesOverlay are sized to
-    // match AmbientEngine.BorderDepth × stage dims.
+    // match AmbientEngine.LateralBorderDepth (left/right) and
+    // VerticalBorderDepth (top/bottom) × stage dims.
 
     // Display label for each LightZone enum value, in the order they
     // appear in the ComboBox. Kept in code-behind so the rest of the
@@ -2657,14 +2658,16 @@ public sealed partial class PlaygroundWindow : Window
     // Computes the dip-space rectangle each zone covers on the preview
     // stage and positions the matching overlay Rectangle accordingly.
     // The geometry mirrors the engine's SampleZone bounds : Top covers
-    // the upper BorderDepth band, Bottom the lower, Left and Right the
-    // matching vertical strips. We use the same BorderDepth constant
-    // exposed by AmbientEngine so the user-visible band matches what
-    // the engine actually samples.
+    // the upper VerticalBorderDepth band, Bottom the lower, Left and
+    // Right the matching lateral strips. We use the same depth
+    // constants exposed by AmbientEngine so the user-visible band
+    // matches what the engine actually samples — Top/Bottom share
+    // the vertical depth (40 % default), Left/Right the lateral
+    // depth (33 % default).
     private void LayoutLightZoneRects(double stageWidth, double stageHeight)
     {
-        double bandH = stageHeight * AmbientEngine.BorderDepth;
-        double bandV = stageWidth  * AmbientEngine.BorderDepth;
+        double bandH = stageHeight * AmbientEngine.VerticalBorderDepth;
+        double bandV = stageWidth  * AmbientEngine.LateralBorderDepth;
 
         Canvas.SetLeft(ZoneTopRect, 0);
         Canvas.SetTop (ZoneTopRect, 0);

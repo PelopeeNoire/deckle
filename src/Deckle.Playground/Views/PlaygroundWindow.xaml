@@ -373,8 +373,9 @@
                                          see what each lamp samples.
                                          Position / size of each rect
                                          is set in code-behind from
-                                         the AmbientEngine.BorderDepth
-                                         constant + the stage dims.
+                                         AmbientEngine.LateralBorderDepth
+                                         + VerticalBorderDepth × the
+                                         stage dims.
                                          IsHitTestVisible=False so the
                                          overlay never eats clicks
                                          intended for the preview

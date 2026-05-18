@@ -297,6 +297,15 @@ public sealed class FrameSampler : IAsyncDisposable
         Color[] grid,
         ref double sumRLin, ref double sumGLin, ref double sumBLin, ref int count)
     {
+        // Exposure compensation in linear light, mirroring ReadGridFP16
+        // semantics. Without this branch the SDR path used to ignore
+        // _exposureEv entirely — the AmbientPage slider had visible
+        // effect only on HDR displays. When _exposureEv = 0 the
+        // multiplier collapses to 1.0 and the inner loop is
+        // arithmetically equivalent to the legacy direct LUT lookup.
+        double exposureMultiplier = Math.Pow(2.0, _exposureEv);
+        bool exposed = _exposureEv != 0.0;
+
         unsafe
         {
             byte* basePtr = (byte*)mapped.pData;
@@ -311,10 +320,34 @@ public sealed class FrameSampler : IAsyncDisposable
                     byte b = p[0];
                     byte g = p[1];
                     byte r = p[2];
-                    grid[row * _gridCols + col] = Color.FromArgb(0xFF, r, g, b);
-                    sumRLin += ColorSpace.SrgbToLinear8Lut[r];
-                    sumGLin += ColorSpace.SrgbToLinear8Lut[g];
-                    sumBLin += ColorSpace.SrgbToLinear8Lut[b];
+
+                    if (exposed)
+                    {
+                        // Scale in linear light, then re-encode sRGB
+                        // for the per-cell display and feed the sum
+                        // with the post-exposure linear value so the
+                        // engine's downstream averaging respects the
+                        // user's EV choice.
+                        float rLin = (float)(ColorSpace.SrgbToLinear8Lut[r] * exposureMultiplier);
+                        float gLin = (float)(ColorSpace.SrgbToLinear8Lut[g] * exposureMultiplier);
+                        float bLin = (float)(ColorSpace.SrgbToLinear8Lut[b] * exposureMultiplier);
+
+                        byte rOut = (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(rLin) * 255f), 0, 255);
+                        byte gOut = (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(gLin) * 255f), 0, 255);
+                        byte bOut = (byte)Math.Clamp((int)MathF.Round(ColorSpace.LinearToSrgb(bLin) * 255f), 0, 255);
+
+                        grid[row * _gridCols + col] = Color.FromArgb(0xFF, rOut, gOut, bOut);
+                        sumRLin += rLin;
+                        sumGLin += gLin;
+                        sumBLin += bLin;
+                    }
+                    else
+                    {
+                        grid[row * _gridCols + col] = Color.FromArgb(0xFF, r, g, b);
+                        sumRLin += ColorSpace.SrgbToLinear8Lut[r];
+                        sumGLin += ColorSpace.SrgbToLinear8Lut[g];
+                        sumBLin += ColorSpace.SrgbToLinear8Lut[b];
+                    }
                     count++;
                 }
             }
