@@ -368,18 +368,27 @@ public sealed partial class PlaygroundWindow : Window
                 // Settings and just expected to flip the switch here.
                 ApplyPipelineReadiness();
 
-                // Engine state observer — drives the preview lifecycle :
-                // when the App's AmbientEngine starts, the Playground
-                // begins polling its LatestSample on the existing 200 ms
-                // tick ; on stop, the timer clears down and the swatches
-                // collapse via the same UpdateEmittedSwatches path.
+                // Engine state observer — kept around so other surfaces
+                // can react later, but the preview lifecycle no longer
+                // hangs off it : we just start the timer here and let
+                // OnPreviewTimerTick poll LatestSample. That way the
+                // grid lights up whether the engine was already running
+                // at open time, or starts later via the tray, Settings,
+                // or the Playground toggle itself — no race on the
+                // first StateChanged transition.
                 if (AmbientEngine.Current is { } engine)
                 {
                     engine.StateChanged += OnAmbientEngineStateChangedFromPlayground;
-                    // Catch up to the current state in case the engine
-                    // is already running when the Playground opens.
-                    if (engine.IsRunning) StartCanonicalPreviewIfNeeded();
                 }
+
+                // Timer runs for the lifetime of the Playground window.
+                // When AmbientEngine.LatestSample is null (engine off /
+                // not yet warm) OnPreviewTimerTick early-returns ; when
+                // it's non-null the grid lazy-builds and the cells
+                // animate. Cheap enough to leave running all the time,
+                // and immune to the StateChanged ordering bugs we hit
+                // by gating it on Running.
+                StartPreviewTimer();
 
                 // Populate the HDR tuning sandbox sliders from the live
                 // settings + flip the re-fire suppressor off so the
@@ -2147,36 +2156,16 @@ public sealed partial class PlaygroundWindow : Window
         else                    SetPipelineNotReady();
     }
 
-    // AmbientEngine.StateChanged observer. Drives the preview lifecycle :
-    // the Playground polls AmbientEngine.LatestSample on the same
-    // 200 ms tick that already drives the cell brushes, so the preview
-    // appears automatically when the engine starts (from the tray, the
-    // Settings page, the Playground itself — same code path) and
-    // disappears on stop. Marshalled to the UI thread because the
-    // engine fires on its own thread.
+    // AmbientEngine.StateChanged observer. No longer drives the
+    // preview lifecycle — the timer runs unconditionally while the
+    // Playground is open. Kept as a no-op for now so subscribe /
+    // unsubscribe stays symmetrical, and so future surfaces (status
+    // dot colour, button label tween) can hang here without another
+    // round-trip on the engine.
     private void OnAmbientEngineStateChangedFromPlayground(AmbientEngineState state)
     {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (state == AmbientEngineState.Running)
-            {
-                StartCanonicalPreviewIfNeeded();
-            }
-            else if (state == AmbientEngineState.Off || state == AmbientEngineState.Error)
-            {
-                // Tear down the preview cells when the engine goes
-                // quiet — leaving them frozen on the last frame reads
-                // as a live signal to the user. The Screen capture
-                // toggle path uses StopPreviewTimer too ; calling it
-                // here while a local capture is also running just
-                // collapses both, which matches the "engine is off"
-                // intent.
-                if (_pipelineStartedCapture == false)
-                {
-                    StopPreviewTimer();
-                }
-            }
-        });
+        // Intentionally empty. See StartPreviewTimer at Loaded for
+        // why we don't gate on state here anymore.
     }
 
     // Start the preview timer when the engine starts. If a local
