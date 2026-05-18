@@ -209,6 +209,15 @@ public sealed partial class PlaygroundWindow : Window
     private DispatcherTimer? _previewTimer;
     private Microsoft.UI.Xaml.Shapes.Rectangle[]? _previewCells;
 
+    // Cached swatch Border + brush per light id (or "group" sentinel
+    // in single-colour mode). Lets the 200 ms tick mutate the brush
+    // colour instead of rebuilding the visuals every frame, while
+    // still rebuilding the panel when the set of light ids changes
+    // (group ↔ multi switch, pairing change). Mirrors the rationale
+    // behind the per-cell brush refactor that resolved the black-
+    // preview-grid bug on 2026-05-15.
+    private readonly System.Collections.Generic.Dictionary<string, (Microsoft.UI.Xaml.Controls.Border Container, SolidColorBrush Fill, TextBlock Label)> _swatchByLight = new();
+
     // ── Ambient lighting — light zones (J4) ─────────────────────────
     //
     // _placementLights is the cached list of fixtures returned by the
@@ -2165,6 +2174,16 @@ public sealed partial class PlaygroundWindow : Window
             AmbientPreviewGrid.ColumnDefinitions.Clear();
             _previewCells = null;
         }
+        // Clear the emitted-colour swatch strip when the pipeline
+        // stops — without an active tick the visuals would otherwise
+        // freeze on the last seen colour, which reads as still-live
+        // to the user.
+        if (_swatchByLight.Count > 0)
+        {
+            EmittedSwatches.Children.Clear();
+            _swatchByLight.Clear();
+        }
+        EmittedSwatchesPanel.Visibility = Visibility.Collapsed;
         // Keep the Viewbox visible if light markers are still around —
         // the user may want to keep placing while the pipeline is
         // stopped. UpdatePreviewViewboxVisibility flips to the empty
@@ -2189,22 +2208,135 @@ public sealed partial class PlaygroundWindow : Window
     private void OnPreviewTimerTick(object? sender, object e)
     {
         var sample = _frameSampler?.LatestSample;
-        if (sample is null || _previewCells is null) return;
-
-        int total = Math.Min(sample.Grid.Length, _previewCells.Length);
-        for (int i = 0; i < total; i++)
+        if (sample is not null && _previewCells is not null)
         {
-            var c = sample.Grid[i];
-            var brush = _previewCells[i].Fill as SolidColorBrush;
-            if (brush is null)
+            int total = Math.Min(sample.Grid.Length, _previewCells.Length);
+            for (int i = 0; i < total; i++)
             {
-                _previewCells[i].Fill = new SolidColorBrush(c);
-            }
-            else
-            {
-                brush.Color = c;
+                var c = sample.Grid[i];
+                var brush = _previewCells[i].Fill as SolidColorBrush;
+                if (brush is null)
+                {
+                    _previewCells[i].Fill = new SolidColorBrush(c);
+                }
+                else
+                {
+                    brush.Color = c;
+                }
             }
         }
+
+        // Refresh the swatch strip from the engine's "intent" map.
+        // Pulled on the same 200 ms cadence as the preview grid so
+        // they stay visually in sync ; we don't subscribe to
+        // EmittedColorsChanged to avoid a per-tick cross-thread
+        // marshal that would buy nothing at this refresh rate.
+        UpdateEmittedSwatches();
+    }
+
+    // Reads AmbientEngine.Current.SnapshotEmittedColors() and either
+    // mutates the existing swatch brushes (steady state) or rebuilds
+    // the strip when the set of light ids has shifted (group ↔ multi
+    // switch, fixture (re-)pair). Visibility of the parent Border is
+    // driven by the presence of at least one entry — the panel
+    // disappears when the engine isn't running.
+    private void UpdateEmittedSwatches()
+    {
+        var engine = AmbientEngine.Current;
+        if (engine is null || !engine.IsRunning)
+        {
+            if (_swatchByLight.Count > 0)
+            {
+                EmittedSwatches.Children.Clear();
+                _swatchByLight.Clear();
+            }
+            EmittedSwatchesPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var snapshot = engine.SnapshotEmittedColors();
+        if (snapshot.Count == 0)
+        {
+            EmittedSwatchesPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // Detect set change : different ids or different count → wipe
+        // and rebuild. Otherwise mutate brushes in place.
+        bool setMatches = snapshot.Count == _swatchByLight.Count;
+        if (setMatches)
+        {
+            foreach (var key in snapshot.Keys)
+            {
+                if (!_swatchByLight.ContainsKey(key)) { setMatches = false; break; }
+            }
+        }
+
+        if (!setMatches)
+        {
+            EmittedSwatches.Children.Clear();
+            _swatchByLight.Clear();
+            foreach (var (id, color) in snapshot)
+            {
+                var swatch = BuildSwatch(id, color);
+                _swatchByLight[id] = swatch;
+                EmittedSwatches.Children.Add(swatch.Container);
+            }
+        }
+        else
+        {
+            foreach (var (id, color) in snapshot)
+            {
+                var entry = _swatchByLight[id];
+                entry.Fill.Color = Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B);
+            }
+        }
+
+        EmittedSwatchesPanel.Visibility = Visibility.Visible;
+    }
+
+    // Builds one swatch tile : a fixed-size coloured rectangle with
+    // the light id label on top of it. Uses theme resources for the
+    // border / corner so the tile follows light/dark + accent. The
+    // brush is held on a dedicated field so the tick can mutate
+    // Color without re-issuing a Fill (cf. the per-cell brush
+    // pattern proven on the preview grid).
+    private (Microsoft.UI.Xaml.Controls.Border Container, SolidColorBrush Fill, TextBlock Label) BuildSwatch(string id, LightColor color)
+    {
+        var fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B));
+        var swatchRect = new Microsoft.UI.Xaml.Shapes.Rectangle
+        {
+            Width = 32,
+            Height = 32,
+            RadiusX = 4,
+            RadiusY = 4,
+            Fill = fill,
+            Stroke = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            StrokeThickness = 1,
+        };
+        var label = new TextBlock
+        {
+            Text = id,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        };
+        var stack = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Spacing = 4,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        stack.Children.Add(swatchRect);
+        stack.Children.Add(label);
+        var container = new Microsoft.UI.Xaml.Controls.Border
+        {
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
+            CornerRadius = (CornerRadius)Application.Current.Resources["ControlCornerRadius"],
+            Child = stack,
+        };
+        return (container, fill, label);
     }
 
     // ── Light zones (J4) ────────────────────────────────────────────────

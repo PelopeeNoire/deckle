@@ -329,7 +329,50 @@
                             Padding="24">
                         <Grid HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch">
-                            <StackPanel x:Name="AmbientPreviewEmptyState"
+                            <Grid.RowDefinitions>
+                                <!-- Row 0 : strip of emitted-colour swatches,
+                                     one per active light. Refreshed every
+                                     push tick from AmbientEngine.SnapshotEmittedColors.
+                                     Visible only while the pipeline is running. -->
+                                <RowDefinition Height="Auto" />
+                                <!-- Row 1 : the preview itself (empty state
+                                     placeholder + Viewbox with the sampled
+                                     grid and the zone overlays). -->
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    x:Name="EmittedSwatchesPanel"
+                                    Margin="0,0,0,16"
+                                    Padding="12,8"
+                                    Background="{ThemeResource SubtleFillColorTransparentBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Stretch">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Emitted"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,12,0"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <StackPanel Grid.Column="1"
+                                                x:Name="EmittedSwatches"
+                                                Orientation="Horizontal"
+                                                Spacing="8"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Grid.Row="1"
+                                        x:Name="AmbientPreviewEmptyState"
                                         Spacing="8"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center">
@@ -358,7 +401,8 @@
                                  (light markers, J4) can use absolute
                                  positioning without fighting layout
                                  changes when the window resizes. -->
-                            <Viewbox x:Name="AmbientPreviewViewbox"
+                            <Viewbox Grid.Row="1"
+                                     x:Name="AmbientPreviewViewbox"
                                      Stretch="Uniform"
                                      HorizontalAlignment="Stretch"
                                      VerticalAlignment="Stretch"

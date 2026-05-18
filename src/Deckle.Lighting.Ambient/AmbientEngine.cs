@@ -236,6 +236,53 @@ public sealed class AmbientEngine : IAsyncDisposable
     private double _saturationBoost      = 1.0;
     private double _brightnessCurveGamma = 1.0;
     private int    _minBrightness        = 0;
+    // EMA factor snapshot. 1.0 = pass-through (no temporal smoothing).
+    // Refreshed at the top of each tick from _host.Ambient.SmoothingAlpha.
+    // The lamp jitter observed in dark scenes with small moving
+    // reflections was attributed to the absence of temporal damping ;
+    // this knob plus the per-tick state below close that gap.
+    private double _smoothingAlpha       = 1.0;
+
+    // EMA state — group mode. Float to preserve sub-byte precision so
+    // a slow ramp progresses each tick instead of getting clipped to
+    // the previous integer step. Sentinel -1f means "not yet seeded"
+    // — the first tick after Start adopts the raw value (effectively
+    // alpha = 1 for that single frame, no fade-in from black).
+    private float _smoothedR = -1f, _smoothedG = -1f, _smoothedB = -1f;
+
+    // EMA state — multi mode. One entry per fixture id, lazy-initialised
+    // the first time the light shows up post-Start. Cleared on every
+    // StartAsync so a re-pair doesn't carry over the previous setup's
+    // smoothing trail. Float for the same reason as the group state.
+    private readonly Dictionary<string, (float R, float G, float B)> _multiSmoothed = new();
+
+    // Most-recent "intent" colour after tuning + smoothing, even when
+    // the ChangeThreshold delta check drops the actual push. The
+    // Playground swatches read these via SnapshotEmittedColors() to
+    // visualise the colour the engine wants to send right now — what
+    // the user would see if the lamp were faster than the delta gate.
+    // Key "group" in group mode, fixture id in multi mode. The lock
+    // covers cross-thread reads from the UI poll timer.
+    private readonly Dictionary<string, LightColor> _emittedColors = new();
+    private readonly object _emittedLock = new();
+
+    /// <summary>Returns a snapshot of the colours the engine intended
+    /// to push on the latest tick, regardless of whether the delta
+    /// gate let them through. Keyed by "group" in group mode and by
+    /// fixture id in multi mode. Empty before the first tick. Safe to
+    /// call from any thread.</summary>
+    public IReadOnlyDictionary<string, LightColor> SnapshotEmittedColors()
+    {
+        lock (_emittedLock)
+        {
+            return new Dictionary<string, LightColor>(_emittedColors);
+        }
+    }
+
+    /// <summary>Raised after every push tick once the intent colours
+    /// have been refreshed. Subscribers run on the engine thread —
+    /// dispatch onto the UI queue before touching XAML.</summary>
+    public event Action? EmittedColorsChanged;
 
     // Last-constructed engine, exposed for the AmbientPage that lives
     // in Deckle.Lighting.Ambient and cannot reference App (circular).
@@ -484,6 +531,9 @@ public sealed class AmbientEngine : IAsyncDisposable
             _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
             _hbHttpDurationsMs.Clear();
             _lastR = _lastG = _lastB = -1;
+            _smoothedR = _smoothedG = _smoothedB = -1f;
+            _multiSmoothed.Clear();
+            lock (_emittedLock) _emittedColors.Clear();
 
             // Open the capture-active window AFTER the started
             // milestones (Info + Verbose mirror above) have flushed,
@@ -616,6 +666,7 @@ public sealed class AmbientEngine : IAsyncDisposable
                 _saturationBoost      = ambient.SaturationBoost;
                 _brightnessCurveGamma = ambient.BrightnessCurveGamma;
                 _minBrightness        = ambient.MinBrightness;
+                _smoothingAlpha       = ambient.SmoothingAlpha;
 
                 var sample = _sampler!.LatestSample;
                 if (sample is null)
@@ -673,6 +724,17 @@ public sealed class AmbientEngine : IAsyncDisposable
         byte targetR = tuned.R;
         byte targetG = tuned.G;
         byte targetB = tuned.B;
+
+        // Temporal smoothing on the tuned colour. See _smoothedR/G/B
+        // field doc — damps small per-frame jitter (moving highlights
+        // in a globally dark scene) without dulling real cuts. Applied
+        // before the delta gate so the gate compares the eye-relevant
+        // colour, not the raw sampler output.
+        (targetR, targetG, targetB) = ApplyGroupSmoothing(targetR, targetG, targetB);
+
+        // Publish the intent colour for the Playground swatch viewer
+        // even when the delta gate drops the actual push.
+        PublishGroupEmitted(targetR, targetG, targetB);
 
         int delta = Math.Abs(targetR - _lastR)
                   + Math.Abs(targetG - _lastG)
@@ -800,6 +862,16 @@ public sealed class AmbientEngine : IAsyncDisposable
             byte targetG = tuned.G;
             byte targetB = tuned.B;
 
+            // Per-light temporal smoothing on the tuned colour. State
+            // is keyed by fixture id so each lamp keeps its own EMA
+            // trail (a fast cut on the left side doesn't reset the
+            // right-side lamp's history).
+            (targetR, targetG, targetB) = ApplyMultiSmoothing(light.Id, targetR, targetG, targetB);
+
+            // Stash the intent colour for the Playground swatches —
+            // batched event fires once at the end of the loop.
+            PublishMultiEmitted(light.Id, targetR, targetG, targetB);
+
             var prev = _multiLastPushed.TryGetValue(light.Id, out var last) ? last : (-1, -1, -1);
             int delta = Math.Abs(targetR - prev.Item1)
                       + Math.Abs(targetG - prev.Item2)
@@ -820,6 +892,12 @@ public sealed class AmbientEngine : IAsyncDisposable
         // surfaces the user's "lights assigned to None" backlog
         // without us logging it every tick.
         _hbUnmappedLights += unmappedThisTick;
+
+        // Fire the observable event once per tick. Even when toPush is
+        // empty (every light dropped by the delta gate) the intent map
+        // has been refreshed by PublishMultiEmitted ; the Playground
+        // swatches want to reflect that.
+        EmittedColorsChanged?.Invoke();
 
         if (toPush.Count == 0)
         {
@@ -967,6 +1045,82 @@ public sealed class AmbientEngine : IAsyncDisposable
             (byte)Math.Min(255, Math.Round(r * scale)),
             (byte)Math.Min(255, Math.Round(g * scale)),
             (byte)Math.Min(255, Math.Round(b * scale)));
+    }
+
+    // EMA smoothing — group mode. State carried in _smoothedR/G/B as
+    // float so a slow ramp progresses each tick instead of being
+    // clipped to the previous integer step. Alpha is read from the
+    // tick-time snapshot _smoothingAlpha (refreshed at the top of
+    // PushLoopAsync). On first call (sentinel -1f) and on alpha ≥ 1
+    // the filter passes through without fading from black.
+    private (byte R, byte G, byte B) ApplyGroupSmoothing(byte r, byte g, byte b)
+    {
+        float alpha = (float)_smoothingAlpha;
+        if (_smoothedR < 0f || alpha >= 1f)
+        {
+            _smoothedR = r;
+            _smoothedG = g;
+            _smoothedB = b;
+        }
+        else
+        {
+            _smoothedR = alpha * r + (1f - alpha) * _smoothedR;
+            _smoothedG = alpha * g + (1f - alpha) * _smoothedG;
+            _smoothedB = alpha * b + (1f - alpha) * _smoothedB;
+        }
+        return (
+            (byte)Math.Clamp((int)MathF.Round(_smoothedR), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(_smoothedG), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(_smoothedB), 0, 255));
+    }
+
+    // EMA smoothing — multi-light mode. One EMA trail per fixture id ;
+    // a new id seen for the first time adopts its raw value (no
+    // fade-in from black). Same semantics as ApplyGroupSmoothing
+    // otherwise.
+    private (byte R, byte G, byte B) ApplyMultiSmoothing(string lightId, byte r, byte g, byte b)
+    {
+        float alpha = (float)_smoothingAlpha;
+        (float R, float G, float B) state;
+        bool seeded = _multiSmoothed.TryGetValue(lightId, out state);
+        if (!seeded || alpha >= 1f)
+        {
+            state = (r, g, b);
+        }
+        else
+        {
+            state = (
+                alpha * r + (1f - alpha) * state.R,
+                alpha * g + (1f - alpha) * state.G,
+                alpha * b + (1f - alpha) * state.B);
+        }
+        _multiSmoothed[lightId] = state;
+        return (
+            (byte)Math.Clamp((int)MathF.Round(state.R), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(state.G), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(state.B), 0, 255));
+    }
+
+    // Publish + notify in one shot for group mode. Always invokes the
+    // event — group ticks are atomic, no batching to wait for.
+    private void PublishGroupEmitted(byte r, byte g, byte b)
+    {
+        lock (_emittedLock)
+        {
+            _emittedColors["group"] = new LightColor(r, g, b);
+        }
+        EmittedColorsChanged?.Invoke();
+    }
+
+    // Stash the per-light intent without firing the event — the
+    // multi tick fires once at the end of its fan-out so subscribers
+    // get a coherent batch update instead of N rapid-fire callbacks.
+    private void PublishMultiEmitted(string lightId, byte r, byte g, byte b)
+    {
+        lock (_emittedLock)
+        {
+            _emittedColors[lightId] = new LightColor(r, g, b);
+        }
     }
 
     private void MaybeEmitHeartbeat()
