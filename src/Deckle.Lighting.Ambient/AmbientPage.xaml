@@ -91,7 +91,7 @@
                 </InfoBar>
 
                 <controls:SettingsCard x:Uid="AmbientEnabledCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xEA80;}">
                     <ToggleSwitch x:Name="EnabledToggle"
                                   Toggled="EnabledToggle_Toggled" />
                 </controls:SettingsCard>
@@ -111,31 +111,6 @@
                         <ComboBoxItem x:Uid="AmbientModeCustom" Tag="Custom" />
                     </ComboBox>
                 </controls:SettingsCard>
-
-                <!-- ── HDR tuning ─────────────────────────────────────────── -->
-                <!--
-                    Four user-tunable sliders applied live on the next push
-                    tick (no engine restart). Flat SettingsCards instead of
-                    a SettingsExpander so the values are visible at a glance
-                    (Louis preference : less click-to-reveal on knobs the
-                    user touches often). Descriptions are intentionally
-                    short — the dense per-knob rationale lives in the
-                    Playground HDR tuning card where the live preview
-                    makes experimentation cheap.
-                -->
-                <!-- Tuning lives in the Playground now. The Settings
-                     page keeps only the mode preset selector (above)
-                     and a clear pointer to the Playground for fine
-                     calibration — moving four near-identical slider
-                     cards into a single place where the live preview
-                     sits next to the user. -->
-                <TextBlock x:Uid="AmbientTuningSectionHeader"
-                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
-
-                <controls:SettingsCard x:Uid="AmbientOpenPlaygroundCard"
-                                       IsClickEnabled="True"
-                                       ActionIcon="{ui:FontIcon Glyph=&#xEA80;}"
-                                       Click="OpenPlaygroundCard_Click" />
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--
@@ -238,6 +213,19 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
+                <!-- Tuning lives in the Playground now. The Settings
+                     page keeps only the mode preset selector (above)
+                     and a clear pointer to the Playground for fine
+                     calibration — moving four near-identical slider
+                     cards into a single place where the live preview
+                     sits next to the user. -->
+                <TextBlock x:Uid="AmbientTuningSectionHeader"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="AmbientOpenPlaygroundCard"
+                                       IsClickEnabled="True"
+                                       ActionIcon="{ui:FontIcon Glyph=&#xE8A7;}"
+                                       Click="OpenPlaygroundCard_Click" />
             </StackPanel>
         </Grid>
     </ScrollViewer>

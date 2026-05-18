@@ -68,7 +68,7 @@
                                     Content="Ambient lighting"
                                     Tag="ambient">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE781;" />
+                        <FontIcon Glyph="&#xEA80;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
@@ -115,7 +115,7 @@
                                 <controls:SettingsCard x:Name="HomeAmbientCard"
                                                        Header="Ambient lighting"
                                                        Description="Screen capture, zone sampling, colour processing, Hue REST output. Live preview + per-light swatches."
-                                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}"
+                                                       HeaderIcon="{ui:FontIcon Glyph=&#xEA80;}"
                                                        IsClickEnabled="True"
                                                        Click="OnHomeAmbientCardClick" />
                             </StackPanel>
@@ -617,6 +617,84 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- Screen capture controls card. AccentButtonStyle
+                                 on the toggle so the primary action reads at a
+                                 glance ; the icon swaps Play (E768) ↔ Stop
+                                 (E71A) on state change. The status dot uses
+                                 SystemFillColor* theme brushes so it follows
+                                 light/dark/contrast accent without manual
+                                 colour management. -->
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Padding="24">
+                                <StackPanel Spacing="20">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Screen capture"
+                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="Pumps frames from the primary monitor through DXGI Output Duplication. Off by default ; click Start to begin."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="640" />
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                        <Button x:Name="ScreenCaptureToggleButton"
+                                                Style="{ThemeResource AccentButtonStyle}"
+                                                MinWidth="140"
+                                                Click="OnScreenCaptureToggleClick">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <FontIcon x:Name="ScreenCaptureToggleIcon"
+                                                          Glyph="&#xE768;"
+                                                          FontSize="14" />
+                                                <TextBlock x:Name="ScreenCaptureToggleLabel"
+                                                           Text="Start" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Ellipse x:Name="ScreenCaptureStatusDot"
+                                                 Width="10" Height="10"
+                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ScreenCaptureStatusText"
+                                                   Text="Stopped"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <!-- Metric pair. TitleTextBlockStyle on
+                                         the value so the numbers are the
+                                         visual anchor of the card. -->
+                                    <Grid ColumnSpacing="48">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" Spacing="2" MinWidth="160">
+                                            <TextBlock Text="Frames captured"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="ScreenCaptureFramesText"
+                                                       Text="0"
+                                                       Style="{ThemeResource TitleTextBlockStyle}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Spacing="2" MinWidth="160">
+                                            <TextBlock Text="FPS (1 s window)"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="ScreenCaptureFpsText"
+                                                       Text="—"
+                                                       Style="{ThemeResource TitleTextBlockStyle}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
                             <!-- HDR tuning (live) card. Same four user-tunable
                                  knobs as Settings → Ambient lighting, surfaced
                                  inline so the user can tune γ / exposure /
@@ -886,84 +964,6 @@
                                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Screen capture controls card. AccentButtonStyle
-                                 on the toggle so the primary action reads at a
-                                 glance ; the icon swaps Play (E768) ↔ Stop
-                                 (E71A) on state change. The status dot uses
-                                 SystemFillColor* theme brushes so it follows
-                                 light/dark/contrast accent without manual
-                                 colour management. -->
-                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{ThemeResource ControlCornerRadius}"
-                                    Padding="24">
-                                <StackPanel Spacing="20">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Screen capture"
-                                                   Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                        <TextBlock Text="Pumps frames from the primary monitor through DXGI Output Duplication. Off by default ; click Start to begin."
-                                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                   TextWrapping="Wrap"
-                                                   MaxWidth="640" />
-                                    </StackPanel>
-
-                                    <StackPanel Orientation="Horizontal"
-                                                Spacing="16"
-                                                VerticalAlignment="Center">
-                                        <Button x:Name="ScreenCaptureToggleButton"
-                                                Style="{ThemeResource AccentButtonStyle}"
-                                                MinWidth="140"
-                                                Click="OnScreenCaptureToggleClick">
-                                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <FontIcon x:Name="ScreenCaptureToggleIcon"
-                                                          Glyph="&#xE768;"
-                                                          FontSize="14" />
-                                                <TextBlock x:Name="ScreenCaptureToggleLabel"
-                                                           Text="Start" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Ellipse x:Name="ScreenCaptureStatusDot"
-                                                 Width="10" Height="10"
-                                                 Fill="{ThemeResource SystemFillColorNeutralBrush}"
-                                                 VerticalAlignment="Center" />
-                                        <TextBlock x:Name="ScreenCaptureStatusText"
-                                                   Text="Stopped"
-                                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
-                                                   VerticalAlignment="Center" />
-                                    </StackPanel>
-
-                                    <!-- Metric pair. TitleTextBlockStyle on
-                                         the value so the numbers are the
-                                         visual anchor of the card. -->
-                                    <Grid ColumnSpacing="48">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <StackPanel Grid.Column="0" Spacing="2" MinWidth="160">
-                                            <TextBlock Text="Frames captured"
-                                                       Style="{ThemeResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <TextBlock x:Name="ScreenCaptureFramesText"
-                                                       Text="0"
-                                                       Style="{ThemeResource TitleTextBlockStyle}" />
-                                        </StackPanel>
-
-                                        <StackPanel Grid.Column="1" Spacing="2" MinWidth="160">
-                                            <TextBlock Text="FPS (1 s window)"
-                                                       Style="{ThemeResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <TextBlock x:Name="ScreenCaptureFpsText"
-                                                       Text="—"
-                                                       Style="{ThemeResource TitleTextBlockStyle}" />
-                                        </StackPanel>
-                                    </Grid>
                                 </StackPanel>
                             </Border>
 
