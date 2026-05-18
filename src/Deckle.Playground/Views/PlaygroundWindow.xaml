@@ -404,187 +404,165 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- Col 0 — preview stage. Houses the FrameSampler
-                         output : a grid of small rectangles laid out
-                         in source-screen aspect ratio, each filled
-                         with the colour averaged over the corresponding
-                         downsampled cell. LayerFill so it reads as a
-                         recessed stage. The empty-state StackPanel is
-                         shown until the pipeline runs ; AmbientPreview-
-                         Grid is built and populated in code-behind once
-                         the sampler reports its dimensions. -->
-                    <Border Grid.Column="0"
-                            x:Name="AmbientPreviewBorder"
-                            Background="{ThemeResource LayerFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{ThemeResource ControlCornerRadius}"
-                            Margin="32,24,16,32"
-                            Padding="24">
-                        <Grid HorizontalAlignment="Stretch"
-                              VerticalAlignment="Stretch">
-                            <Grid.RowDefinitions>
-                                <!-- Row 0 : preview options strip. A small
-                                     toggle row that always shows, lets the
-                                     user hide the zone overlays so they
-                                     can see the raw sampled cells without
-                                     the dashed rectangles on top. Stays
-                                     visible regardless of pipeline state. -->
-                                <RowDefinition Height="Auto" />
-                                <!-- Row 1 : strip of emitted-colour swatches,
-                                     one per active light. Refreshed every
-                                     push tick from AmbientEngine.SnapshotEmittedColors.
-                                     Visible only while the pipeline is running. -->
-                                <RowDefinition Height="Auto" />
-                                <!-- Row 2 : the preview itself (empty state
-                                     placeholder + Viewbox with the sampled
-                                     grid and the zone overlays). -->
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
+                    <!-- Col 0 — preview stage. The toolbar of preview
+                         options (Zones toggle + emitted-colour swatches
+                         + Lights menu) lives ABOVE the preview frame —
+                         mirrors the convention of the HUD page where
+                         the State / Primitive picker + Play/Pause sit
+                         on top of the preview substrate, not inside it.
+                         The cadre below is purely the visual stage. -->
+                    <Grid Grid.Column="0">
+                        <Grid.RowDefinitions>
+                            <!-- Row 0 : preview options bar. Always
+                                 visible (lives outside the preview
+                                 frame), so the user can toggle zones /
+                                 individual lights even when the
+                                 pipeline is off. -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Row 1 : the preview frame itself,
+                                 housing the empty state + Viewbox. -->
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0"
+                        <StackPanel Grid.Row="0"
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Margin="32,24,16,12"
+                                    VerticalAlignment="Center">
+                            <!-- Compact ToggleButton, not a ToggleSwitch :
+                                 the label stays the static word "Zones"
+                                 regardless of state, the checked /
+                                 unchecked visual carries the on / off
+                                 signal. No leading icon — Louis tested
+                                 it and reads cleaner as a plain text
+                                 toggle in this dense toolbar. -->
+                            <ToggleButton x:Name="ShowZoneOverlaysToggle"
+                                          Content="Zones"
+                                          MinWidth="0"
+                                          IsChecked="True"
+                                          Checked="OnShowZoneOverlaysToggled"
+                                          Unchecked="OnShowZoneOverlaysToggled"
+                                          ToolTipService.ToolTip="Toggle the light-zone overlay on the preview" />
+
+                            <!-- Emitted-colour swatches : square chips
+                                 sized to match the toggle's MinHeight
+                                 with the same ControlCornerRadius so
+                                 they sit as siblings of the button on
+                                 the toolbar baseline. No labels under
+                                 the squares — names are accessible
+                                 via the Lights dropdown to the right
+                                 of the strip when the user actually
+                                 wants them. -->
+                            <StackPanel x:Name="EmittedSwatches"
                                         Orientation="Horizontal"
-                                        Spacing="8"
-                                        Margin="0,0,0,12"
-                                        VerticalAlignment="Center">
-                                <!-- Compact ToggleButton on purpose, not a
-                                     ToggleSwitch : the label stays the
-                                     static word "Zones" regardless of
-                                     state, and the checked-state of the
-                                     button (filled vs subtle background)
-                                     carries the on/off signal. A
-                                     ToggleSwitch with a label that swaps
-                                     ("Light zones shown" ↔ "hidden") is
-                                     an anti-pattern — the user reads the
-                                     label searching for state and finds
-                                     a description of the same thing
-                                     twice. -->
-                                <ToggleButton x:Name="ShowZoneOverlaysToggle"
-                                              IsChecked="True"
-                                              Checked="OnShowZoneOverlaysToggled"
-                                              Unchecked="OnShowZoneOverlaysToggled"
-                                              ToolTipService.ToolTip="Show light-zone overlays on the preview">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon Glyph="&#xE8B9;" FontSize="14" />
-                                        <TextBlock Text="Zones" />
-                                    </StackPanel>
-                                </ToggleButton>
-                            </StackPanel>
+                                        Spacing="6"
+                                        VerticalAlignment="Center" />
 
-                            <Border Grid.Row="1"
-                                    x:Name="EmittedSwatchesPanel"
-                                    Margin="0,0,0,16"
-                                    Padding="12,8"
-                                    Background="{ThemeResource SubtleFillColorTransparentBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{ThemeResource ControlCornerRadius}"
-                                    Visibility="Collapsed"
-                                    HorizontalAlignment="Stretch">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"
-                                               Text="Emitted"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,12,0"
+                            <!-- Lights dropdown : on click opens a menu
+                                 flyout that lists every fixture by
+                                 name, each line a ToggleMenuFlyoutItem
+                                 so the user can hide individual swatch
+                                 chips. Empty until the engine resolves
+                                 multi-light fixtures ; collapsed in
+                                 group mode where a single colour is
+                                 pushed. -->
+                            <DropDownButton x:Name="LightsDropDown"
+                                            Content="Lights"
+                                            Visibility="Collapsed"
+                                            ToolTipService.ToolTip="Show or hide individual light swatches">
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout x:Name="LightsMenuFlyout" />
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </StackPanel>
+
+                        <!-- Preview cadre. LayerFill so it reads as a
+                             recessed stage. The empty-state stack
+                             panel is shown until the pipeline runs ;
+                             AmbientPreviewGrid is built and populated
+                             in code-behind once the sampler reports
+                             its dimensions. -->
+                        <Border Grid.Row="1"
+                                x:Name="AmbientPreviewBorder"
+                                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{ThemeResource ControlCornerRadius}"
+                                Margin="32,0,16,32"
+                                Padding="24">
+                            <Grid HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch">
+                                <StackPanel x:Name="AmbientPreviewEmptyState"
+                                            Spacing="8"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="Capture preview"
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                               HorizontalAlignment="Center" />
+                                    <TextBlock Text="Start the pipeline to see the sampled grid of pixels mirroring the screen."
                                                Style="{ThemeResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    <StackPanel Grid.Column="1"
-                                                x:Name="EmittedSwatches"
-                                                Orientation="Horizontal"
-                                                Spacing="8"
-                                                HorizontalAlignment="Left"
-                                                VerticalAlignment="Center" />
-                                </Grid>
-                            </Border>
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                               HorizontalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               MaxWidth="440"
+                                               TextAlignment="Center" />
+                                </StackPanel>
 
-                            <StackPanel Grid.Row="2"
-                                        x:Name="AmbientPreviewEmptyState"
-                                        Spacing="8"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center">
-                                <TextBlock Text="Capture preview"
-                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="Start the pipeline to see the sampled grid of pixels mirroring the screen."
-                                           Style="{ThemeResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                           HorizontalAlignment="Center"
-                                           TextWrapping="Wrap"
-                                           MaxWidth="440"
-                                           TextAlignment="Center" />
-                            </StackPanel>
-
-                            <!-- Viewbox wraps the preview grid + light
-                                 overlay so the whole composition scales
-                                 uniformly to fill the available area
-                                 (Stretch="Uniform" preserves the source
-                                 16:9-ish aspect). The inner Grid keeps
-                                 a fixed coordinate space at 480×272 dip
-                                 (built dynamically in code-behind from
-                                 the FrameSampler's reported dimensions
-                                 × CellSize) so Canvas-based overlays
-                                 (light markers, J4) can use absolute
-                                 positioning without fighting layout
-                                 changes when the window resizes. -->
-                            <Viewbox Grid.Row="2"
-                                     x:Name="AmbientPreviewViewbox"
-                                     Stretch="Uniform"
-                                     HorizontalAlignment="Stretch"
-                                     VerticalAlignment="Stretch"
-                                     Visibility="Collapsed">
-                                <Grid x:Name="AmbientPreviewStage">
-                                    <Grid x:Name="AmbientPreviewGrid" />
-                                    <!-- LightZonesOverlay sits above
-                                         the preview grid in z-order
-                                         and renders the 4 border-zone
-                                         rectangles (Top / Bottom /
-                                         Left / Right) so the user can
-                                         see what each lamp samples.
-                                         Position / size of each rect
-                                         is set in code-behind from
-                                         AmbientEngine.LateralBorderDepth
-                                         + VerticalBorderDepth × the
-                                         stage dims.
-                                         IsHitTestVisible=False so the
-                                         overlay never eats clicks
-                                         intended for the preview
-                                         cells or future widgets. -->
-                                    <Canvas x:Name="LightZonesOverlay"
-                                            IsHitTestVisible="False">
-                                        <Rectangle x:Name="ZoneTopRect"
-                                                   Visibility="Collapsed"
-                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                   StrokeThickness="1.5"
-                                                   StrokeDashArray="3,2"
-                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
-                                        <Rectangle x:Name="ZoneBottomRect"
-                                                   Visibility="Collapsed"
-                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                   StrokeThickness="1.5"
-                                                   StrokeDashArray="3,2"
-                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
-                                        <Rectangle x:Name="ZoneLeftRect"
-                                                   Visibility="Collapsed"
-                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                   StrokeThickness="1.5"
-                                                   StrokeDashArray="3,2"
-                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
-                                        <Rectangle x:Name="ZoneRightRect"
-                                                   Visibility="Collapsed"
-                                                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
-                                                   StrokeThickness="1.5"
-                                                   StrokeDashArray="3,2"
-                                                   Fill="{ThemeResource AccentFillColorTertiaryBrush}" />
-                                    </Canvas>
-                                </Grid>
-                            </Viewbox>
-                        </Grid>
-                    </Border>
+                                <!-- Viewbox wraps the preview grid +
+                                     light overlay so the whole
+                                     composition scales uniformly to
+                                     fill the available area. The inner
+                                     Grid keeps a fixed coordinate space
+                                     built dynamically in code-behind
+                                     from the FrameSampler's reported
+                                     dimensions × CellSize. -->
+                                <Viewbox x:Name="AmbientPreviewViewbox"
+                                         Stretch="Uniform"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Stretch"
+                                         Visibility="Collapsed">
+                                    <Grid x:Name="AmbientPreviewStage">
+                                        <Grid x:Name="AmbientPreviewGrid" />
+                                        <!-- LightZonesOverlay sits above
+                                             the preview grid in z-order
+                                             and renders the 4 border-zone
+                                             rectangles (Top / Bottom /
+                                             Left / Right) so the user
+                                             can see what each lamp
+                                             samples. Fills carry the
+                                             live emitted colour of the
+                                             zone with reduced opacity
+                                             so the preview cells stay
+                                             visible underneath. -->
+                                        <Canvas x:Name="LightZonesOverlay"
+                                                IsHitTestVisible="False">
+                                            <Rectangle x:Name="ZoneTopRect"
+                                                       Visibility="Collapsed"
+                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                       StrokeThickness="1.5"
+                                                       StrokeDashArray="3,2" />
+                                            <Rectangle x:Name="ZoneBottomRect"
+                                                       Visibility="Collapsed"
+                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                       StrokeThickness="1.5"
+                                                       StrokeDashArray="3,2" />
+                                            <Rectangle x:Name="ZoneLeftRect"
+                                                       Visibility="Collapsed"
+                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                       StrokeThickness="1.5"
+                                                       StrokeDashArray="3,2" />
+                                            <Rectangle x:Name="ZoneRightRect"
+                                                       Visibility="Collapsed"
+                                                       Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                                                       StrokeThickness="1.5"
+                                                       StrokeDashArray="3,2" />
+                                        </Canvas>
+                                    </Grid>
+                                </Viewbox>
+                            </Grid>
+                        </Border>
+                    </Grid>
 
                     <!-- Col 1 — controls. ScrollViewer keeps the cards
                          reachable on short windows ; MaxWidth caps the

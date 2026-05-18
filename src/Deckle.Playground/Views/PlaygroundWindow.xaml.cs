@@ -209,14 +209,23 @@ public sealed partial class PlaygroundWindow : Window
     private DispatcherTimer? _previewTimer;
     private Microsoft.UI.Xaml.Shapes.Rectangle[]? _previewCells;
 
-    // Cached swatch Border + brush per light id (or "group" sentinel
-    // in single-colour mode). Lets the 200 ms tick mutate the brush
-    // colour instead of rebuilding the visuals every frame, while
-    // still rebuilding the panel when the set of light ids changes
-    // (group ↔ multi switch, pairing change). Mirrors the rationale
-    // behind the per-cell brush refactor that resolved the black-
-    // preview-grid bug on 2026-05-15.
-    private readonly System.Collections.Generic.Dictionary<string, (Microsoft.UI.Xaml.Controls.Border Container, SolidColorBrush Fill, TextBlock Label)> _swatchByLight = new();
+    // Cached swatch chip per light id (or "group" sentinel in
+    // single-colour mode). The chip is just a coloured Rectangle —
+    // no labels under it (the Lights dropdown carries the names).
+    // The brush is mutated in place each tick to avoid rebuilding
+    // visuals every frame. DisplayName is kept around so the Lights
+    // menu can render its ToggleMenuFlyoutItem labels without
+    // re-resolving against AmbientEngine.MultiLights every refresh.
+    private readonly System.Collections.Generic.Dictionary<string, (Microsoft.UI.Xaml.Shapes.Rectangle Container, SolidColorBrush Fill, string DisplayName)> _swatchByLight = new();
+
+    // Per-zone fill brush for the overlay rectangles on the preview
+    // (LightZonesOverlay's ZoneTopRect / ZoneBottomRect / ZoneLeftRect
+    // / ZoneRightRect). Brushes carry the live emitted colour the
+    // engine sends to whichever light is assigned to that zone, at
+    // reduced opacity so the underlying preview cells stay visible.
+    // Lazily created on the first frame so the rectangles' Fill
+    // property is only touched when there's a real colour to display.
+    private readonly System.Collections.Generic.Dictionary<LightZone, SolidColorBrush> _zoneFillBrushes = new();
 
     // ── Ambient lighting — light zones (J4) ─────────────────────────
     //
@@ -2343,8 +2352,9 @@ public sealed partial class PlaygroundWindow : Window
         {
             EmittedSwatches.Children.Clear();
             _swatchByLight.Clear();
+            LightsMenuFlyout.Items.Clear();
         }
-        EmittedSwatchesPanel.Visibility = Visibility.Collapsed;
+        LightsDropDown.Visibility = Visibility.Collapsed;
         // Keep the Viewbox visible if light markers are still around —
         // the user may want to keep placing while the pipeline is
         // stopped. UpdatePreviewViewboxVisibility flips to the empty
@@ -2409,14 +2419,89 @@ public sealed partial class PlaygroundWindow : Window
         // EmittedColorsChanged to avoid a per-tick cross-thread
         // marshal that would buy nothing at this refresh rate.
         UpdateEmittedSwatches();
+
+        // Same cadence for the zone overlay fills — each rect picks
+        // up the live emitted colour of the light assigned to it
+        // (group mode : all four share the single group colour) at
+        // reduced opacity so the cells stay visible underneath.
+        UpdateZoneOverlayColors();
+    }
+
+    // Pushes the live emitted colour from the engine into each zone
+    // rectangle's fill brush, with a soft opacity so the preview
+    // cells below stay readable. In group mode all four zones share
+    // the same colour ; in multi mode each zone looks up its
+    // assigned light via AmbientSettings.LightZones and uses that
+    // colour.
+    private void UpdateZoneOverlayColors()
+    {
+        var engine = AmbientEngine.Current;
+        if (engine is null || !engine.IsRunning) return;
+
+        var snapshot = engine.SnapshotEmittedColors();
+        if (snapshot.Count == 0) return;
+
+        var settings = AmbientSettingsService.Instance.Current;
+
+        ApplyZoneOverlayColor(LightZone.Top,    ZoneTopRect,    snapshot, settings);
+        ApplyZoneOverlayColor(LightZone.Bottom, ZoneBottomRect, snapshot, settings);
+        ApplyZoneOverlayColor(LightZone.Left,   ZoneLeftRect,   snapshot, settings);
+        ApplyZoneOverlayColor(LightZone.Right,  ZoneRightRect,  snapshot, settings);
+    }
+
+    private void ApplyZoneOverlayColor(
+        LightZone zone,
+        Microsoft.UI.Xaml.Shapes.Rectangle rect,
+        IReadOnlyDictionary<string, LightColor> emitted,
+        AmbientSettings settings)
+    {
+        var color = ResolveZoneEmittedColor(emitted, settings, zone);
+        if (color is null) return;
+
+        if (!_zoneFillBrushes.TryGetValue(zone, out var brush))
+        {
+            // Soft fill so the underlying preview cells remain
+            // readable through the overlay. Opacity on the Brush
+            // (not on the Rectangle) so the dashed stroke stays
+            // full-opacity for legibility.
+            brush = new SolidColorBrush
+            {
+                Opacity = 0.4,
+            };
+            _zoneFillBrushes[zone] = brush;
+            rect.Fill = brush;
+        }
+        brush.Color = Windows.UI.Color.FromArgb(0xFF, color.Value.R, color.Value.G, color.Value.B);
+    }
+
+    // Resolves the colour of the light assigned to a given zone via
+    // AmbientSettings.LightZones. Group mode collapses to the
+    // sentinel "group" key. Returns null when no light is assigned
+    // (the rect overlay keeps whatever fill it had — typically the
+    // theme accent placeholder).
+    private static LightColor? ResolveZoneEmittedColor(
+        IReadOnlyDictionary<string, LightColor> emitted,
+        AmbientSettings settings,
+        LightZone zone)
+    {
+        if (!settings.UseMultiLight)
+        {
+            return emitted.TryGetValue("group", out var c) ? c : null;
+        }
+        foreach (var (id, assignedZone) in settings.LightZones)
+        {
+            if (assignedZone == zone && emitted.TryGetValue(id, out var c))
+                return c;
+        }
+        return null;
     }
 
     // Reads AmbientEngine.Current.SnapshotEmittedColors() and either
     // mutates the existing swatch brushes (steady state) or rebuilds
     // the strip when the set of light ids has shifted (group ↔ multi
-    // switch, fixture (re-)pair). Visibility of the parent Border is
-    // driven by the presence of at least one entry — the panel
-    // disappears when the engine isn't running.
+    // switch, fixture (re-)pair). The Lights dropdown next to the
+    // swatches is kept in sync — it's the user's entry point to hide
+    // individual fixtures from the strip when there are too many.
     private void UpdateEmittedSwatches()
     {
         var engine = AmbientEngine.Current;
@@ -2426,15 +2511,16 @@ public sealed partial class PlaygroundWindow : Window
             {
                 EmittedSwatches.Children.Clear();
                 _swatchByLight.Clear();
+                LightsMenuFlyout.Items.Clear();
             }
-            EmittedSwatchesPanel.Visibility = Visibility.Collapsed;
+            LightsDropDown.Visibility = Visibility.Collapsed;
             return;
         }
 
         var snapshot = engine.SnapshotEmittedColors();
         if (snapshot.Count == 0)
         {
-            EmittedSwatchesPanel.Visibility = Visibility.Collapsed;
+            LightsDropDown.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -2456,10 +2542,11 @@ public sealed partial class PlaygroundWindow : Window
             foreach (var (id, color) in snapshot)
             {
                 var displayName = ResolveLightDisplayName(engine, id);
-                var swatch = BuildSwatch(id, displayName, color);
+                var swatch = BuildSwatch(displayName, color);
                 _swatchByLight[id] = swatch;
                 EmittedSwatches.Children.Add(swatch.Container);
             }
+            RebuildLightsMenu();
         }
         else
         {
@@ -2467,26 +2554,46 @@ public sealed partial class PlaygroundWindow : Window
             {
                 var entry = _swatchByLight[id];
                 entry.Fill.Color = Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B);
-                // Refresh the label too in case the user re-paired
-                // and the bridge serves a renamed fixture (same id,
-                // new Name). Cheap — one string compare per tick.
-                var displayName = ResolveLightDisplayName(engine, id);
-                if (entry.Label.Text != displayName)
-                    entry.Label.Text = displayName;
             }
         }
-
-        EmittedSwatchesPanel.Visibility = Visibility.Visible;
     }
 
-    // Builds one swatch tile : a fixed-size coloured rectangle with
-    // a human-readable label below. The label is the bridge-reported
-    // fixture name when available — "Falcom", "Wilhelm", "Bjorn" —
-    // rather than the opaque numeric id ("4", "5", "6") that the
-    // Hue CLIP v1 API surfaces. Falls back to the raw id when the
-    // engine hasn't published MultiLights yet (group mode, mid-Start,
-    // or the user picked a group the bridge couldn't enumerate).
-    private (Microsoft.UI.Xaml.Controls.Border Container, SolidColorBrush Fill, TextBlock Label) BuildSwatch(string id, string displayName, LightColor color)
+    // Builds (or rebuilds) the Lights dropdown menu : one
+    // ToggleMenuFlyoutItem per fixture, each click flipping the
+    // visibility of the matching swatch chip on the toolbar. Hidden
+    // when there are 0 or 1 lights — at one swatch the menu has
+    // nothing to gate.
+    private void RebuildLightsMenu()
+    {
+        LightsMenuFlyout.Items.Clear();
+        foreach (var (id, entry) in _swatchByLight)
+        {
+            var item = new ToggleMenuFlyoutItem
+            {
+                Text = entry.DisplayName,
+                IsChecked = entry.Container.Visibility == Visibility.Visible,
+            };
+            var swatchRect = entry.Container; // captured for closure
+            item.Click += (_, _) =>
+            {
+                swatchRect.Visibility = item.IsChecked
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            };
+            LightsMenuFlyout.Items.Add(item);
+        }
+        LightsDropDown.Visibility = _swatchByLight.Count > 1
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    // Builds one swatch chip : a coloured square sized to match the
+    // toolbar buttons it sits next to. Border radius and stroke
+    // follow the theme so the chip reads as a sibling of the
+    // adjacent ToggleButton ("Zones") and DropDownButton ("Lights").
+    // No label under the swatch — the names live in the Lights menu
+    // next to the strip ; only the live colour matters here.
+    private (Microsoft.UI.Xaml.Shapes.Rectangle Container, SolidColorBrush Fill, string DisplayName) BuildSwatch(string displayName, LightColor color)
     {
         var fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B));
         var swatchRect = new Microsoft.UI.Xaml.Shapes.Rectangle
@@ -2499,29 +2606,7 @@ public sealed partial class PlaygroundWindow : Window
             Stroke = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             StrokeThickness = 1,
         };
-        var label = new TextBlock
-        {
-            Text = displayName,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-        };
-        var stack = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            Spacing = 4,
-            HorizontalAlignment = HorizontalAlignment.Center,
-        };
-        stack.Children.Add(swatchRect);
-        stack.Children.Add(label);
-        var container = new Microsoft.UI.Xaml.Controls.Border
-        {
-            Padding = new Thickness(6, 4, 6, 4),
-            Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
-            CornerRadius = (CornerRadius)Application.Current.Resources["ControlCornerRadius"],
-            Child = stack,
-        };
-        return (container, fill, label);
+        return (swatchRect, fill, displayName);
     }
 
     // Resolves a swatch's display name. "group" is the engine's
