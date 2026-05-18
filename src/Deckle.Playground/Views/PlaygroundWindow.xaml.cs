@@ -635,12 +635,26 @@ public sealed partial class PlaygroundWindow : Window
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
-        if (HudPage is null || AmbientPage is null) return;
+        if (HudPage is null || AmbientPage is null || HomePage is null) return;
         if (args.SelectedItem is not NavigationViewItem item) return;
 
-        bool ambient = (item.Tag as string) == "ambient";
-        HudPage.Visibility     = ambient ? Visibility.Collapsed : Visibility.Visible;
-        AmbientPage.Visibility = ambient ? Visibility.Visible   : Visibility.Collapsed;
+        string tag = (item.Tag as string) ?? "home";
+        HomePage.Visibility    = tag == "home"    ? Visibility.Visible : Visibility.Collapsed;
+        HudPage.Visibility     = tag == "hud"     ? Visibility.Visible : Visibility.Collapsed;
+        AmbientPage.Visibility = tag == "ambient" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // Home-card click handlers : route to the matching NavView item
+    // so the existing OnPlaygroundNavSelectionChanged centralises the
+    // visibility toggle. Keeps a single state-transition path.
+    private void OnHomeHudCardClick(object sender, RoutedEventArgs e)
+    {
+        PlaygroundNav.SelectedItem = NavItemHud;
+    }
+
+    private void OnHomeAmbientCardClick(object sender, RoutedEventArgs e)
+    {
+        PlaygroundNav.SelectedItem = NavItemAmbient;
     }
 
     private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)

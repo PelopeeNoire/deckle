@@ -47,10 +47,17 @@
                         PaneDisplayMode="LeftCompact"
                         SelectionChanged="OnPlaygroundNavSelectionChanged">
             <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="NavItemHome"
+                                    Content="Home"
+                                    Tag="home"
+                                    IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE80F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="NavItemHud"
                                     Content="HUD"
-                                    Tag="hud"
-                                    IsSelected="True">
+                                    Tag="hud">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE916;" />
                     </NavigationViewItem.Icon>
@@ -65,6 +72,87 @@
             </NavigationView.MenuItems>
 
             <Grid x:Name="PageContent">
+
+                <!-- ── Home page ─────────────────────────────────────────
+                     Minimal landing surface : a short hello and a couple
+                     of large cards that navigate the user to the two
+                     other Playground sections. Kept light on purpose —
+                     the home is just a doorway, the real surface is the
+                     tuning page the user came for. -->
+                <Grid x:Name="HomePage"
+                      Visibility="Visible"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      MaxWidth="720">
+                    <StackPanel Spacing="32">
+                        <StackPanel Spacing="8" HorizontalAlignment="Center">
+                            <TextBlock Text="Deckle Playground"
+                                       Style="{ThemeResource TitleTextBlockStyle}"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="Tuning surface for the running pipelines. Pick a section below to start adjusting — values apply live, no restart needed."
+                                       Style="{ThemeResource BodyTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       HorizontalAlignment="Center"
+                                       TextAlignment="Center"
+                                       MaxWidth="560"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="20"
+                                    HorizontalAlignment="Center">
+                            <!-- HUD card. Tap navigates into the HUD
+                                 tuning page via OnHomeCardClick on
+                                 the code-behind. -->
+                            <Button x:Name="HomeHudCard"
+                                    Click="OnHomeHudCardClick"
+                                    Padding="24"
+                                    MinWidth="240"
+                                    HorizontalContentAlignment="Stretch"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource OverlayCornerRadius}">
+                                <StackPanel Spacing="12">
+                                    <FontIcon Glyph="&#xE916;"
+                                              FontSize="32"
+                                              HorizontalAlignment="Left"
+                                              Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                                    <TextBlock Text="HUD stroke"
+                                               Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="Tune the conic gradient stroke that wraps the chrono. Colour, easing, arc fade, per-state variants."
+                                               Style="{ThemeResource BodyTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Button>
+
+                            <!-- Ambient card — twin layout. -->
+                            <Button x:Name="HomeAmbientCard"
+                                    Click="OnHomeAmbientCardClick"
+                                    Padding="24"
+                                    MinWidth="240"
+                                    HorizontalContentAlignment="Stretch"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{ThemeResource OverlayCornerRadius}">
+                                <StackPanel Spacing="12">
+                                    <FontIcon Glyph="&#xE781;"
+                                              FontSize="32"
+                                              HorizontalAlignment="Left"
+                                              Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                                    <TextBlock Text="Ambient lighting"
+                                               Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="Screen capture, zone sampling, colour processing, Hue REST output. Live preview + per-light swatches."
+                                               Style="{ThemeResource BodyTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
 
                 <!-- ── HUD page ──────────────────────────────────────────
                      Existing two-column layout: preview (Col 0) + tuning
@@ -84,7 +172,7 @@
                                       MaxWidth=920 (≥900 wastes whitespace,
                                       ≤700 cramps). Col 0 picks up the
                                       slack past the cap. -->
-                <Grid x:Name="HudPage" Visibility="Visible">
+                <Grid x:Name="HudPage" Visibility="Collapsed">
                     <!-- Col 0 has no MinWidth so the preview/cards stage
                          shrinks aggressively when the window narrows ;
                          Tunables (Col 1) keeps its 480-920 dip envelope.
