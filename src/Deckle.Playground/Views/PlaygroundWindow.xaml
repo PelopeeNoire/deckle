@@ -767,9 +767,14 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
+                                            <!-- Range / Value seeded in code-behind
+                                                 (InitPlaygroundAmbientTuning) because the
+                                                 WinUI 3 Slider parser rejects a non-zero
+                                                 Minimum when the default Value (0) sits
+                                                 below it — same constraint as the gamma
+                                                 slider above. -->
                                             <Slider x:Name="PlaygroundSmoothingSlider"
                                                     Grid.Column="0"
-                                                    Minimum="0.05" Maximum="1.0"
                                                     StepFrequency="0.05"
                                                     SmallChange="0.05" LargeChange="0.10"
                                                     TickFrequency="0.10"

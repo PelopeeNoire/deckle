@@ -3099,17 +3099,28 @@ public sealed partial class PlaygroundWindow : Window
 
     private void InitPlaygroundAmbientTuning()
     {
-        // Set the curve param slider range here rather than in XAML :
-        // the WinUI 3 XAML parser rejected every attribute order with
-        // a non-zero Minimum (see AmbientPage GammaSlider rationale).
-        // Order matters at runtime too — Maximum first, then Value,
-        // then Minimum — so the RangeBase invariant holds at each
-        // assignment step. Max 5.0 covers the SCurve steepness range ;
+        // Set non-zero-Minimum slider ranges here rather than in XAML :
+        // the WinUI 3 Slider parser rejects every attribute order
+        // when the default Value (0) sits below the declared Minimum,
+        // crashing the page with a XamlParseException at runtime.
+        // Order matters here too — Maximum first, then Value, then
+        // Minimum — so the RangeBase invariant holds at each step.
+
+        // Curve param. Max 5.0 covers the SCurve steepness range ;
         // Gamma stays below 3 in practice, the rest of the slider is
         // just unused real estate when Gamma is the active type.
         PlaygroundGammaSlider.Maximum = 5.0;
         PlaygroundGammaSlider.Value   = 1.8;
         PlaygroundGammaSlider.Minimum = 1.0;
+
+        // Smoothing α. Defaults seed the slider with the same value
+        // the engine will read after ResyncPlaygroundAmbientTuning
+        // overwrites Value from settings on the next line, so the
+        // brief window between InitializeComponent and Resync still
+        // has a coherent state.
+        PlaygroundSmoothingSlider.Maximum = 1.0;
+        PlaygroundSmoothingSlider.Value   = 0.30;
+        PlaygroundSmoothingSlider.Minimum = 0.05;
 
         // Subscription to AmbientSettingsService.Changed already lives
         // in the main Loaded handler (OnAmbientSettingsChangedFromPlayground
