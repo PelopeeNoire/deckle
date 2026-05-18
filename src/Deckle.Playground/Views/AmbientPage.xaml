@@ -1,0 +1,651 @@
+<!-- Ambient lighting playground page. Two columns : preview stage on
+     the left (toolbar + Viewbox-scaled sampled grid + zone overlay),
+     control cards on the right (Pipeline / Screen capture / HDR tuning
+     / Hue / Light zones). Persists every tunable into AmbientSettings
+     via AmbientViewModel ; live engine state mirrors through the
+     AmbientSettingsService.Changed observer wired in code-behind. -->
+<Page
+    x:Class="Deckle.Playground.AmbientPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ambientControls="using:Deckle.Lighting.Ambient.Controls">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="480" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Col 0 — preview stage ──────────────────────────────── -->
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Row 0 : preview-options toolbar. Lives outside the
+                 preview frame so the user can toggle zones / inspect
+                 swatches even when the pipeline is off. -->
+            <StackPanel Grid.Row="0"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Margin="32,24,16,12"
+                        VerticalAlignment="Center">
+                <!-- Zones default OFF — the preview area shows the
+                     placeholder until the user explicitly opts in.
+                     LightZonesOverlay below mirrors that default
+                     (Visibility=Collapsed) so the visuals match the
+                     toggle state without firing Checked on Loaded. -->
+                <ToggleButton x:Name="ShowZoneOverlaysToggle"
+                              Content="Zones"
+                              MinWidth="0"
+                              IsChecked="False"
+                              Checked="OnShowZoneOverlaysToggled"
+                              Unchecked="OnShowZoneOverlaysToggled"
+                              ToolTipService.ToolTip="Toggle the light-zone overlay on the preview" />
+                <StackPanel x:Name="EmittedSwatches"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center" />
+            </StackPanel>
+
+            <!-- Preview cadre. LayerFill so it reads as a recessed
+                 stage. Empty-state shows until the pipeline runs ;
+                 AmbientPreviewGrid is populated in code-behind on
+                 the first frame. -->
+            <Border Grid.Row="1"
+                    x:Name="AmbientPreviewBorder"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                    Margin="32,0,16,32"
+                    Padding="24">
+                <Grid HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch">
+                    <StackPanel x:Name="AmbientPreviewEmptyState"
+                                Spacing="8"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Capture preview"
+                                   Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="Start the pipeline to see the sampled grid of pixels mirroring the screen."
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="440"
+                                   TextAlignment="Center" />
+                    </StackPanel>
+
+                    <Viewbox x:Name="AmbientPreviewViewbox"
+                             Stretch="Uniform"
+                             HorizontalAlignment="Stretch"
+                             VerticalAlignment="Stretch"
+                             Visibility="Collapsed">
+                        <Grid x:Name="AmbientPreviewGrid" />
+                    </Viewbox>
+
+                    <Canvas x:Name="LightZonesOverlay"
+                            IsHitTestVisible="False"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <Rectangle x:Name="ZoneTopRect"    Visibility="Collapsed" />
+                        <Rectangle x:Name="ZoneBottomRect" Visibility="Collapsed" />
+                        <Rectangle x:Name="ZoneLeftRect"   Visibility="Collapsed" />
+                        <Rectangle x:Name="ZoneRightRect"  Visibility="Collapsed" />
+                    </Canvas>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ── Col 1 — controls ────────────────────────────────────── -->
+        <ScrollViewer Grid.Column="1"
+                      MinWidth="380"
+                      MaxWidth="480"
+                      Padding="0,24,32,32"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="20">
+
+                <!-- Page title block — H1 + supporting paragraph. -->
+                <StackPanel Spacing="4">
+                    <TextBlock x:Uid="PlaygroundAmbientHeader"
+                               Style="{ThemeResource TitleLargeTextBlockStyle}" />
+                    <TextBlock x:Uid="PlaygroundAmbientSubheader"
+                               Style="{ThemeResource BodyTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- Pipeline card. -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Pipeline (capture → analysis → lights)"
+                                       Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Wires the screen capture to the selected Hue group via the AmbientEngine. Per-pixel analysis at 15 Hz (group) or 10 Hz (per-light zones)."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="640" />
+                        </StackPanel>
+
+                        <RadioButtons x:Name="PipelineModeRadios"
+                                      Header="Pipeline mode"
+                                      SelectionChanged="OnPipelineModeSelectionChanged">
+                            <x:String>One colour pushed to the whole group</x:String>
+                            <x:String>One colour per border zone (top / bottom / left / right)</x:String>
+                        </RadioButtons>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="16"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="PipelineToggleButton"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    MinWidth="180"
+                                    IsEnabled="False"
+                                    Click="OnPipelineToggleClick">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <FontIcon x:Name="PipelineToggleIcon"
+                                              Glyph="{StaticResource Icon.Transport.Play}"
+                                              FontSize="14" />
+                                    <TextBlock x:Name="PipelineToggleLabel"
+                                               Text="Start pipeline" />
+                                </StackPanel>
+                            </Button>
+                            <Ellipse x:Name="PipelineStatusDot"
+                                     Width="10" Height="10"
+                                     Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                     VerticalAlignment="Center" />
+                            <TextBlock x:Name="PipelineStatusText"
+                                       Text="Pair a bridge and pick a group first"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Screen capture card. -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Screen capture"
+                                       Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Pumps frames from the primary monitor through DXGI Output Duplication. Off by default ; click Start to begin."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="640" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="16"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="ScreenCaptureToggleButton"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    MinWidth="140"
+                                    Click="OnScreenCaptureToggleClick">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <FontIcon x:Name="ScreenCaptureToggleIcon"
+                                              Glyph="{StaticResource Icon.Transport.Play}"
+                                              FontSize="14" />
+                                    <TextBlock x:Name="ScreenCaptureToggleLabel"
+                                               Text="Start" />
+                                </StackPanel>
+                            </Button>
+                            <Ellipse x:Name="ScreenCaptureStatusDot"
+                                     Width="10" Height="10"
+                                     Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                     VerticalAlignment="Center" />
+                            <TextBlock x:Name="ScreenCaptureStatusText"
+                                       Text="Stopped"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="48">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Spacing="2" MinWidth="160">
+                                <TextBlock Text="Frames captured"
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock x:Name="ScreenCaptureFramesText"
+                                           Text="0"
+                                           Style="{ThemeResource TitleTextBlockStyle}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Spacing="2" MinWidth="160">
+                                <TextBlock Text="FPS (1 s window)"
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock x:Name="ScreenCaptureFpsText"
+                                           Text="—"
+                                           Style="{ThemeResource TitleTextBlockStyle}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- HDR tuning card. -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="HDR tuning (live)"
+                                       Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Tune the ambient knobs live with the preview grid right next to you. Values persist and apply on the next push tick. Touch any slider and the mode automatically switches to Custom — preset values won't overwrite your work."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="640" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Mode"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                            <ComboBox x:Name="PlaygroundAmbientModeCombo"
+                                      HorizontalAlignment="Stretch"
+                                      SelectionChanged="OnPlaygroundAmbientModeChanged">
+                                <ComboBoxItem Content="Game" Tag="Game" />
+                                <ComboBoxItem Content="Movie" Tag="Movie" />
+                                <ComboBoxItem Content="Ambient" Tag="Ambient" />
+                                <ComboBoxItem Content="Custom" Tag="Custom" />
+                            </ComboBox>
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ambientControls:BrightnessCurveCanvas
+                                x:Name="PlaygroundGammaCanvas"
+                                Grid.Column="0"
+                                VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Spacing="6">
+                                <TextBlock Text="Brightness curve"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                <ComboBox x:Name="PlaygroundBrightnessCurveCombo"
+                                          HorizontalAlignment="Stretch"
+                                          SelectionChanged="OnPlaygroundBrightnessCurveTypeChanged">
+                                    <ComboBoxItem Content="Linear (pass-through)" Tag="Linear" />
+                                    <ComboBoxItem Content="Gamma (power law)" Tag="Gamma" />
+                                    <ComboBoxItem Content="S-Curve (logistic)" Tag="SCurve" />
+                                    <ComboBoxItem Content="Logarithmic" Tag="Logarithmic" />
+                                </ComboBox>
+                                <Grid x:Name="PlaygroundGammaSliderRow"
+                                      ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="PlaygroundGammaSlider"
+                                            Grid.Column="0"
+                                            StepFrequency="0.1"
+                                            SmallChange="0.1" LargeChange="0.5"
+                                            TickFrequency="0.5"
+                                            TickPlacement="Outside"
+                                            ValueChanged="OnPlaygroundGammaSliderChanged" />
+                                    <TextBlock x:Name="PlaygroundGammaValueText"
+                                               Grid.Column="1"
+                                               VerticalAlignment="Center"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               MinWidth="56"
+                                               TextAlignment="End" />
+                                </Grid>
+                                <TextBlock x:Name="PlaygroundGammaCaption"
+                                           Text="Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights."
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Smoothing"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="PlaygroundSmoothingSlider"
+                                        Grid.Column="0"
+                                        StepFrequency="0.05"
+                                        SmallChange="0.05" LargeChange="0.10"
+                                        TickFrequency="0.10"
+                                        TickPlacement="Outside"
+                                        ValueChanged="OnPlaygroundSmoothingSliderChanged" />
+                                <TextBlock x:Name="PlaygroundSmoothingValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="56"
+                                           TextAlignment="End" />
+                            </Grid>
+                            <TextBlock Text="Damps frame-to-frame jitter from small moving reflections in a globally dark scene. 1.0 — instant response · 0.3 — moderate smoothing · 0.1 — heavy smoothing (cinematic)."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Change threshold"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="PlaygroundChangeThresholdSlider"
+                                        Grid.Column="0"
+                                        Minimum="0" Maximum="30"
+                                        StepFrequency="1"
+                                        SmallChange="1" LargeChange="5"
+                                        TickFrequency="5"
+                                        TickPlacement="Outside"
+                                        ValueChanged="OnPlaygroundChangeThresholdSliderChanged" />
+                                <TextBlock x:Name="PlaygroundChangeThresholdValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="56"
+                                           TextAlignment="End" />
+                            </Grid>
+                            <TextBlock Text="Minimum |ΔR|+|ΔG|+|ΔB| across two ticks for a push to fire. Higher values mute residual jitter, lower values track every change."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Exposure (EV)"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="PlaygroundExposureSlider"
+                                        Grid.Column="0"
+                                        Minimum="-2.0" Maximum="2.0"
+                                        StepFrequency="0.5"
+                                        SmallChange="0.5" LargeChange="1.0"
+                                        TickFrequency="0.5"
+                                        TickPlacement="Outside"
+                                        ValueChanged="OnPlaygroundExposureSliderChanged" />
+                                <TextBlock x:Name="PlaygroundExposureValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="56"
+                                           TextAlignment="End" />
+                            </Grid>
+                            <TextBlock Text="Brightness bias in stops. +1 EV roughly doubles the lamp ; use it when HDR content tone-maps too dim."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Saturation"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="PlaygroundSaturationSlider"
+                                        Grid.Column="0"
+                                        Minimum="0" Maximum="200"
+                                        StepFrequency="10"
+                                        SmallChange="10" LargeChange="25"
+                                        TickFrequency="25"
+                                        TickPlacement="Outside"
+                                        ValueChanged="OnPlaygroundSaturationSliderChanged" />
+                                <TextBlock x:Name="PlaygroundSaturationValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="56"
+                                           TextAlignment="End" />
+                            </Grid>
+                            <TextBlock Text="Chroma boost in OKLCh. 100% is neutral, 150–180% restores Hue Sync–like vividness after spatial averaging desaturates the frame."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Minimum brightness"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="PlaygroundMinBrightnessSlider"
+                                        Grid.Column="0"
+                                        Minimum="0" Maximum="254"
+                                        StepFrequency="5"
+                                        SmallChange="5" LargeChange="25"
+                                        TickFrequency="50"
+                                        TickPlacement="Outside"
+                                        ValueChanged="OnPlaygroundMinBrightnessSliderChanged" />
+                                <TextBlock x:Name="PlaygroundMinBrightnessValueText"
+                                           Grid.Column="1"
+                                           VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           MinWidth="56"
+                                           TextAlignment="End" />
+                            </Grid>
+                            <TextBlock Text="Floor on the bulb brightness when on. Stops the diffuser swallowing mid-tone scenes."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Hue (REST direct) card. -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Padding="24">
+                    <StackPanel Spacing="20">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Hue (REST direct)"
+                                       Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Talks straight to a Philips Hue bridge over its CLIP v1 REST API. No Home Assistant in the loop, no DTLS — capped at ~10-20 Hz but plenty for an ambient pipeline with smoothing on top."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="640" />
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0"
+                                     x:Name="HueBridgeIpTextBox"
+                                     PlaceholderText="192.168.1.5"
+                                     Header="Bridge IP" />
+                            <Button Grid.Column="1"
+                                    x:Name="HueDiscoverButton"
+                                    VerticalAlignment="Bottom"
+                                    Click="OnHueDiscoverClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="{StaticResource Icon.Search}" FontSize="14" />
+                                    <TextBlock Text="Discover" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="16"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="HuePairButton"
+                                    Style="{ThemeResource AccentButtonStyle}"
+                                    MinWidth="200"
+                                    Click="OnHuePairClick">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <FontIcon Glyph="{StaticResource Icon.Link}" FontSize="14" />
+                                    <TextBlock x:Name="HuePairLabel" Text="Pair (press link button)" />
+                                </StackPanel>
+                            </Button>
+                            <Ellipse x:Name="HuePairStatusDot"
+                                     Width="10" Height="10"
+                                     Fill="{ThemeResource SystemFillColorNeutralBrush}"
+                                     VerticalAlignment="Center" />
+                            <TextBlock x:Name="HuePairStatusText"
+                                       Text="Not paired"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0"
+                                    x:Name="HueListGroupsButton"
+                                    IsEnabled="False"
+                                    VerticalAlignment="Bottom"
+                                    Click="OnHueListGroupsClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="{StaticResource Icon.List}" FontSize="14" />
+                                    <TextBlock Text="List groups" />
+                                </StackPanel>
+                            </Button>
+                            <ComboBox Grid.Column="1"
+                                      x:Name="HueGroupComboBox"
+                                      Header="Group"
+                                      IsEnabled="False"
+                                      PlaceholderText="No groups loaded yet"
+                                      HorizontalAlignment="Stretch"
+                                      SelectionChanged="OnHueGroupSelectionChanged" />
+                        </Grid>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="8"
+                                    x:Name="HueColorButtonsPanel">
+                            <Button x:Name="HueTestRedButton"
+                                    Tag="red"
+                                    IsEnabled="False"
+                                    Click="OnHueTestColorClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="10" Height="10" Fill="#FF3030" />
+                                    <TextBlock Text="Red" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="HueTestGreenButton"
+                                    Tag="green"
+                                    IsEnabled="False"
+                                    Click="OnHueTestColorClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="10" Height="10" Fill="#30C030" />
+                                    <TextBlock Text="Green" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="HueTestBlueButton"
+                                    Tag="blue"
+                                    IsEnabled="False"
+                                    Click="OnHueTestColorClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="10" Height="10" Fill="#3070F0" />
+                                    <TextBlock Text="Blue" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="HueTestWhiteButton"
+                                    Tag="white"
+                                    IsEnabled="False"
+                                    Click="OnHueTestColorClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="10" Height="10" Fill="#F0F0F0" />
+                                    <TextBlock Text="White" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="HueTestOffButton"
+                                    Tag="off"
+                                    IsEnabled="False"
+                                    Click="OnHueTestColorClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Ellipse Width="10" Height="10"
+                                             Stroke="{ThemeResource TextFillColorTertiaryBrush}"
+                                             StrokeThickness="1"
+                                             Fill="Transparent" />
+                                    <TextBlock Text="Off" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="HueTestRotationButton"
+                                    IsEnabled="False"
+                                    Click="OnHueTestRotationClick">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="{StaticResource Icon.Refresh}" FontSize="14" />
+                                    <TextBlock Text="Rotation" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Light zones card. -->
+                <Border x:Name="LightZonesCard"
+                        Visibility="Collapsed"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                        Padding="24">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Light zones"
+                                       Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock x:Name="LightZonesSubtitle"
+                                       Text="Assign each lamp to a border zone. The engine samples one colour per zone (top / bottom / left / right band of the screen) and pushes it to every lamp mapped to that zone."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       MaxWidth="440" />
+                        </StackPanel>
+                        <TextBlock x:Name="LightZonesEmptyState"
+                                   Visibility="Collapsed"
+                                   Text="No lights returned for this group. If this is an Entertainment Area, try selecting the matching Room/Zone instead, or check the Hue app."
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="440" />
+                        <StackPanel x:Name="LightZonesPanel"
+                                    Spacing="8" />
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

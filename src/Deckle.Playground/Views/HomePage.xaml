@@ -1,0 +1,57 @@
+<!-- Landing page : two SettingsCards routing to the HUD and Ambient
+     pages. Pattern mirrors Dev Home / Settings hub : a centred,
+     readable column with an H1 and a stack of cards. Routing goes
+     through PlaygroundShell.NavigateTo so the page doesn't hold a
+     reference to the parent Window's NavigationView. -->
+<Page
+    x:Class="Deckle.Playground.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI">
+
+    <ScrollViewer HorizontalScrollMode="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <Grid HorizontalAlignment="Center"
+              VerticalAlignment="Top"
+              MaxWidth="720"
+              Margin="32,32,32,32">
+            <StackPanel Spacing="32">
+
+                <!-- Header block : H1 + one-line description.
+                     TitleLargeTextBlockStyle matches the Settings pages'
+                     header convention so the visual hierarchy stays
+                     consistent across the app's tuning surfaces. -->
+                <StackPanel Spacing="8">
+                    <TextBlock x:Uid="PlaygroundHomeHeader"
+                               Style="{ThemeResource TitleLargeTextBlockStyle}" />
+                    <TextBlock x:Uid="PlaygroundHomeSubheader"
+                               Style="{ThemeResource BodyTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- Two routing cards. IsClickEnabled + Click handler
+                     follows the SettingsCard "actionable row" pattern :
+                     the whole card is a hit target, the chevron glyph
+                     on the right is added automatically. Glyphs match
+                     the NavigationView item icons in PlaygroundWindow
+                     so the user reads "this card goes to the HUD nav
+                     item" without further explanation. -->
+                <StackPanel Spacing="8">
+                    <controls:SettingsCard x:Name="HomeHudCard"
+                                           x:Uid="PlaygroundHomeHudCard"
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Speaker}}"
+                                           IsClickEnabled="True"
+                                           Click="OnHudCardClick" />
+                    <controls:SettingsCard x:Name="HomeAmbientCard"
+                                           x:Uid="PlaygroundHomeAmbientCard"
+                                           HeaderIcon="{ui:FontIcon Glyph={StaticResource Icon.Lightbulb}}"
+                                           IsClickEnabled="True"
+                                           Click="OnAmbientCardClick" />
+                </StackPanel>
+
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Page>
