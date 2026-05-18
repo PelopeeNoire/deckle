@@ -1,0 +1,229 @@
+<!-- HUD playground page. Two columns : preview on the left (target
+     picker + transport toolbar + Win2D composition surface), tuning
+     expanders on the right. The tuning panel is built programmatically
+     in code-behind from the active target's section list (see
+     HudViewModel.ActiveTuningSections), so the user only sees the
+     knobs that actually affect the current preview ; the "Parked"
+     expander is appended unconditionally (collapsed by default) so
+     transition-only defaults stay reachable for tweaking. -->
+<Page
+    x:Class="Deckle.Playground.HudPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:chrono="using:Deckle.Chrono.Hud">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <!-- Col 0 absorbs slack ; min 320 keeps the preview
+                 substrate visible even when the window narrows to
+                 1280 (NavView strip + tuning column already eats
+                 ~960). -->
+            <ColumnDefinition Width="*" MinWidth="320" />
+            <!-- Col 1 sized by the inner ScrollViewer (480-920). -->
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Col 0 — preview ────────────────────────────────────── -->
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <!-- Row 0 : toolbar (target + transport). -->
+                <RowDefinition Height="Auto" />
+                <!-- Row 1 : preview substrate. -->
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Toolbar : DropDownButton target picker on the left, a
+                 spacer in the middle (lets the transport stay right-
+                 anchored when the toolbar grows wider), transport
+                 buttons on the right. Replaces the previous flat
+                 ItemsRepeater + Play/Pause single toggle. The
+                 DropDownButton MenuFlyout groups the 7 targets under
+                 two subitems (States × 4, Primitives × 3) — same
+                 semantic grouping as the previous two-row picker,
+                 collapsed into one always-visible affordance.
+
+                 Transport pattern : three explicit buttons (Play /
+                 Pause / Stop), each enable-bound to a derived flag
+                 on the ViewModel (IsPlayEnabled / IsPauseEnabled /
+                 IsStopEnabled). The user sees the action they can
+                 take at any moment without the icon swapping under
+                 the cursor. Stop forces the preview back to its idle
+                 frame regardless of where the play state was. -->
+            <Grid Margin="24,24,24,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <DropDownButton Grid.Column="0"
+                                x:Name="TargetDropDownButton"
+                                MinWidth="200"
+                                HorizontalContentAlignment="Left"
+                                ToolTipService.ToolTip="Pick the HUD state or primitive to preview">
+                    <DropDownButton.Content>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="Target:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{x:Bind ViewModel.CurrentTargetLabel, Mode=OneWay}"
+                                       Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DropDownButton.Content>
+
+                    <!-- Flat MenuFlyout : every target is one click away
+                         (the prior sub-menu shape made switching from
+                         Transcribing to Conic a two-hop trip). The
+                         MenuFlyoutSeparator marks the semantic seam
+                         between HUD states and underlying primitives ;
+                         WinUI 3 has no native section-header in
+                         MenuFlyout and going custom for this isn't
+                         worth the maintenance cost. -->
+                    <DropDownButton.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                            <MenuFlyoutItem Text="Charging"
+                                            Tag="Charging"
+                                            Click="OnTargetMenuItemClick" />
+                            <MenuFlyoutItem Text="Recording"
+                                            Tag="Recording"
+                                            Click="OnTargetMenuItemClick" />
+                            <MenuFlyoutItem Text="Transcribing"
+                                            Tag="Transcribing"
+                                            Click="OnTargetMenuItemClick" />
+                            <MenuFlyoutItem Text="Rewriting"
+                                            Tag="Rewriting"
+                                            Click="OnTargetMenuItemClick" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="Conic"
+                                            Tag="Conic"
+                                            Click="OnTargetMenuItemClick" />
+                            <MenuFlyoutItem Text="ArcMask"
+                                            Tag="ArcMask"
+                                            Click="OnTargetMenuItemClick" />
+                            <MenuFlyoutItem Text="Combined"
+                                            Tag="Combined"
+                                            Click="OnTargetMenuItemClick" />
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+
+                <!-- Transport : Start / Stop with icon + label. Same
+                     wording as the rest of the app (Settings + tray
+                     menu use Start / Stop for the recording verb).
+                     IsEnabled bound to the VM flags so the inactive
+                     side reads as greyed out instead of hidden ; the
+                     user always sees both affordances. Glyphs Segoe
+                     Fluent : E768 Play, E71A Stop. -->
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center">
+                    <Button x:Name="PlayButton"
+                            IsEnabled="{x:Bind ViewModel.IsPlayEnabled, Mode=OneWay}"
+                            Click="OnPlayClick"
+                            ToolTipService.ToolTip="Start"
+                            AutomationProperties.Name="Start">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                            <TextBlock Text="Start" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="StopButton"
+                            IsEnabled="{x:Bind ViewModel.IsStopEnabled, Mode=OneWay}"
+                            Click="OnStopClick"
+                            ToolTipService.ToolTip="Stop"
+                            AutomationProperties.Name="Stop">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE71A;" FontSize="14" />
+                            <TextBlock Text="Stop" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Preview substrate : Layer fill + ControlCornerRadius,
+                 stretches to fill the column. HudChrono 272×78 and
+                 the naked 300×300 host live centered inside ;
+                 ApplyTarget collapses both on Pause so the substrate
+                 reads as empty. -->
+            <Border Grid.Row="1"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                    Margin="24,0,24,24">
+                <Grid HorizontalAlignment="Center"
+                      VerticalAlignment="Center">
+                    <chrono:HudChrono x:Name="ChronoPreview"
+                                      Width="272"
+                                      Height="78" />
+                    <Grid x:Name="NakedPreviewHost"
+                          Width="300"
+                          Height="300"
+                          Visibility="Collapsed">
+                        <Border Width="272" Height="78"
+                                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ── Col 1 — tuning Expanders (built programmatically) ───── -->
+        <ScrollViewer Grid.Column="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="24"
+                      MinWidth="480"
+                      MaxWidth="920">
+            <StackPanel x:Name="TuningStack" Spacing="6">
+
+                <!-- Header : "Tunables" title + one-line description +
+                     "Reset all" button. The Playground is non-persistent
+                     by design — values live in memory for the current
+                     process, the next launch returns to compiled
+                     defaults. Reset all is the mid-session "snap
+                     back to defaults" shortcut. -->
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Column="0" Grid.Row="0"
+                               x:Uid="PlaygroundHudTunablesHeader"
+                               Style="{ThemeResource TitleTextBlockStyle}"
+                               VerticalAlignment="Center" />
+
+                    <Button Grid.Column="1" Grid.Row="0"
+                            x:Name="ResetAllButton"
+                            Style="{ThemeResource SubtleButtonStyle}"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Reset every section to the shipping defaults"
+                            Click="OnResetAllClick">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE777;" FontSize="14" />
+                            <TextBlock x:Uid="PlaygroundHudResetAllLabel" />
+                        </StackPanel>
+                    </Button>
+
+                    <TextBlock Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2"
+                               x:Uid="PlaygroundHudTunablesDescription"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               MaxWidth="400"
+                               HorizontalAlignment="Left"
+                               Margin="0,4,0,0" />
+                </Grid>
+                <!-- Expanders appended programmatically below the
+                     header by BuildTuningPanel(). -->
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

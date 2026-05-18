@@ -58,4 +58,54 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+
+  <data name="PlaygroundTitleBar.Title" xml:space="preserve">
+    <value>Deckle Playground</value>
+  </data>
+
+  <data name="PlaygroundNavHome.Content" xml:space="preserve">
+    <value>Home</value>
+  </data>
+  <data name="PlaygroundNavHud.Content" xml:space="preserve">
+    <value>HUD</value>
+  </data>
+  <data name="PlaygroundNavAmbient.Content" xml:space="preserve">
+    <value>Ambient lighting</value>
+  </data>
+
+  <data name="PlaygroundHomeHeader.Text" xml:space="preserve">
+    <value>Deckle Playground</value>
+  </data>
+  <data name="PlaygroundHomeSubheader.Text" xml:space="preserve">
+    <value>Tuning surface for the running pipelines. Pick a section below to start adjusting — values apply live, no restart needed.</value>
+  </data>
+  <data name="PlaygroundHomeHudCard.Header" xml:space="preserve">
+    <value>HUD stroke</value>
+  </data>
+  <data name="PlaygroundHomeHudCard.Description" xml:space="preserve">
+    <value>Tune the conic gradient stroke that wraps the chrono. Colour, easing, arc fade, per-state variants.</value>
+  </data>
+  <data name="PlaygroundHomeAmbientCard.Header" xml:space="preserve">
+    <value>Ambient lighting</value>
+  </data>
+  <data name="PlaygroundHomeAmbientCard.Description" xml:space="preserve">
+    <value>Screen capture, zone sampling, colour processing, Hue REST output. Live preview + per-light swatches.</value>
+  </data>
+
+  <data name="PlaygroundHudTunablesHeader.Text" xml:space="preserve">
+    <value>Tunables</value>
+  </data>
+  <data name="PlaygroundHudTunablesDescription.Text" xml:space="preserve">
+    <value>Tweak values live for the current session — nothing is saved. Restart Deckle to reset to defaults.</value>
+  </data>
+  <data name="PlaygroundHudResetAllLabel.Text" xml:space="preserve">
+    <value>Reset all</value>
+  </data>
+
+  <data name="PlaygroundAmbientHeader.Text" xml:space="preserve">
+    <value>Ambient lighting</value>
+  </data>
+  <data name="PlaygroundAmbientSubheader.Text" xml:space="preserve">
+    <value>Screen capture, Hue bridge, and the analysis pipeline that pushes the averaged screen colour to your lights.</value>
+  </data>
 </root>

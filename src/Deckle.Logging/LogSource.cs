@@ -39,9 +39,14 @@ public static class LogSource
     public const string SetLlm     = "SET.LLM";
 
     // ── UI windows ───────────────────────────────────────────────────────────
-    public const string LogWin = "LOGWIN";
-    public const string Hud    = "HUD";
-    public const string Tray   = "TRAY";
+    public const string LogWin     = "LOGWIN";
+    public const string Hud        = "HUD";
+    public const string Tray       = "TRAY";
+    // Playground shell — navigation routing, page lifecycle (the per-page
+    // tuning events stay under their semantic tag : HUD work emits to
+    // HUD, ambient capture / hue / engine work emits to SCREEN / HUE /
+    // AMBIENT, etc.).
+    public const string Playground = "PLAYGROUND";
 
     // ── Shell infrastructure ────────────────────────────────────────────────
     public const string MsgHost = "MSGHOST";

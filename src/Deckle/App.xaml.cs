@@ -586,6 +586,16 @@ public partial class App : Microsoft.UI.Xaml.Application
         if (_playgroundWindow is null)
         {
             _playgroundWindow = new PlaygroundWindow();
+            // Real destruction on close — the Playground holds heavy
+            // runtime resources (Win2D composition, screen capture,
+            // frame sampler, Hue REST client, preview timers) and the
+            // user wants those gone when they dismiss the window.
+            // Nullifying here lets the next ShowPlaygroundLazy build a
+            // fresh instance from the persisted AmbientSettings without
+            // in-memory carry-over. Diverges intentionally from
+            // ShowSettingsLazy and ShowLogWindowLazy which Cancel→Hide
+            // to preserve state.
+            _playgroundWindow.Closed += (_, _) => _playgroundWindow = null;
             _playgroundWindow.SetRecordingState(_lastRecordingState);
             ApplyThemeToSingle(_playgroundWindow);
         }
