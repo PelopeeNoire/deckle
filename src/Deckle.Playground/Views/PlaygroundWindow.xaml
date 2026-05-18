@@ -3,6 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:chrono="using:Deckle.Chrono.Hud"
+    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:CommunityToolkit.WinUI"
     xmlns:ambientControls="using:Deckle.Lighting.Ambient.Controls"
     Title="Deckle Playground">
 
@@ -74,85 +76,52 @@
             <Grid x:Name="PageContent">
 
                 <!-- ── Home page ─────────────────────────────────────────
-                     Minimal landing surface : a short hello and a couple
-                     of large cards that navigate the user to the two
-                     other Playground sections. Kept light on purpose —
-                     the home is just a doorway, the real surface is the
-                     tuning page the user came for. -->
-                <Grid x:Name="HomePage"
-                      Visibility="Visible"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="Center"
-                      MaxWidth="720">
-                    <StackPanel Spacing="32">
-                        <StackPanel Spacing="8" HorizontalAlignment="Center">
-                            <TextBlock Text="Deckle Playground"
-                                       Style="{ThemeResource TitleTextBlockStyle}"
-                                       HorizontalAlignment="Center" />
-                            <TextBlock Text="Tuning surface for the running pipelines. Pick a section below to start adjusting — values apply live, no restart needed."
-                                       Style="{ThemeResource BodyTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       HorizontalAlignment="Center"
-                                       TextAlignment="Center"
-                                       MaxWidth="560"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
+                     Minimal landing surface : a short hello and a stack
+                     of full-width SettingsCard rows pointing at the two
+                     other Playground sections. SettingsCard reuses the
+                     canonical Windows 11 pattern (icon + header +
+                     description + action chevron) and adapts the layout
+                     gracefully on narrow widths, instead of fighting
+                     viewport size like a fixed-width horizontal pair. -->
+                <ScrollViewer x:Name="HomePage"
+                              Visibility="Visible"
+                              HorizontalScrollMode="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid HorizontalAlignment="Center"
+                          VerticalAlignment="Top"
+                          MaxWidth="720"
+                          Margin="32,48,32,32">
+                        <StackPanel Spacing="32">
+                            <StackPanel Spacing="8" HorizontalAlignment="Center">
+                                <TextBlock Text="Deckle Playground"
+                                           Style="{ThemeResource TitleTextBlockStyle}"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="Tuning surface for the running pipelines. Pick a section below to start adjusting — values apply live, no restart needed."
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center"
+                                           MaxWidth="560"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
 
-                        <StackPanel Orientation="Horizontal"
-                                    Spacing="20"
-                                    HorizontalAlignment="Center">
-                            <!-- HUD card. Tap navigates into the HUD
-                                 tuning page via OnHomeCardClick on
-                                 the code-behind. -->
-                            <Button x:Name="HomeHudCard"
-                                    Click="OnHomeHudCardClick"
-                                    Padding="24"
-                                    MinWidth="240"
-                                    HorizontalContentAlignment="Stretch"
-                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{ThemeResource OverlayCornerRadius}">
-                                <StackPanel Spacing="12">
-                                    <FontIcon Glyph="&#xE916;"
-                                              FontSize="32"
-                                              HorizontalAlignment="Left"
-                                              Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                                    <TextBlock Text="HUD stroke"
-                                               Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                    <TextBlock Text="Tune the conic gradient stroke that wraps the chrono. Colour, easing, arc fade, per-state variants."
-                                               Style="{ThemeResource BodyTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Button>
-
-                            <!-- Ambient card — twin layout. -->
-                            <Button x:Name="HomeAmbientCard"
-                                    Click="OnHomeAmbientCardClick"
-                                    Padding="24"
-                                    MinWidth="240"
-                                    HorizontalContentAlignment="Stretch"
-                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{ThemeResource OverlayCornerRadius}">
-                                <StackPanel Spacing="12">
-                                    <FontIcon Glyph="&#xE781;"
-                                              FontSize="32"
-                                              HorizontalAlignment="Left"
-                                              Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                                    <TextBlock Text="Ambient lighting"
-                                               Style="{ThemeResource SubtitleTextBlockStyle}" />
-                                    <TextBlock Text="Screen capture, zone sampling, colour processing, Hue REST output. Live preview + per-light swatches."
-                                               Style="{ThemeResource BodyTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Button>
+                            <StackPanel Spacing="8">
+                                <controls:SettingsCard x:Name="HomeHudCard"
+                                                       Header="HUD stroke"
+                                                       Description="Tune the conic gradient stroke that wraps the chrono. Colour, easing, arc fade, per-state variants."
+                                                       HeaderIcon="{ui:FontIcon Glyph=&#xE916;}"
+                                                       IsClickEnabled="True"
+                                                       Click="OnHomeHudCardClick" />
+                                <controls:SettingsCard x:Name="HomeAmbientCard"
+                                                       Header="Ambient lighting"
+                                                       Description="Screen capture, zone sampling, colour processing, Hue REST output. Live preview + per-light swatches."
+                                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}"
+                                                       IsClickEnabled="True"
+                                                       Click="OnHomeAmbientCardClick" />
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                </Grid>
+                    </Grid>
+                </ScrollViewer>
 
                 <!-- ── HUD page ──────────────────────────────────────────
                      Existing two-column layout: preview (Col 0) + tuning

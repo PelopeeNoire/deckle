@@ -133,12 +133,9 @@
                            Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
 
                 <controls:SettingsCard x:Uid="AmbientOpenPlaygroundCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE80F;}"
                                        IsClickEnabled="True"
-                                       Click="OpenPlaygroundCard_Click">
-                    <FontIcon Glyph="&#xE76C;"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                </controls:SettingsCard>
+                                       ActionIcon="{ui:FontIcon Glyph=&#xEA80;}"
+                                       Click="OpenPlaygroundCard_Click" />
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--
