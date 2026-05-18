@@ -444,15 +444,31 @@
 
                             <StackPanel Grid.Row="0"
                                         Orientation="Horizontal"
-                                        Spacing="12"
+                                        Spacing="8"
                                         Margin="0,0,0,12"
                                         VerticalAlignment="Center">
-                                <ToggleSwitch x:Name="ShowZoneOverlaysToggle"
-                                              IsOn="True"
-                                              OnContent="Light zones shown"
-                                              OffContent="Light zones hidden"
-                                              MinWidth="0"
-                                              Toggled="OnShowZoneOverlaysToggled" />
+                                <!-- Compact ToggleButton on purpose, not a
+                                     ToggleSwitch : the label stays the
+                                     static word "Zones" regardless of
+                                     state, and the checked-state of the
+                                     button (filled vs subtle background)
+                                     carries the on/off signal. A
+                                     ToggleSwitch with a label that swaps
+                                     ("Light zones shown" ↔ "hidden") is
+                                     an anti-pattern — the user reads the
+                                     label searching for state and finds
+                                     a description of the same thing
+                                     twice. -->
+                                <ToggleButton x:Name="ShowZoneOverlaysToggle"
+                                              IsChecked="True"
+                                              Checked="OnShowZoneOverlaysToggled"
+                                              Unchecked="OnShowZoneOverlaysToggled"
+                                              ToolTipService.ToolTip="Show light-zone overlays on the preview">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE8B9;" FontSize="14" />
+                                        <TextBlock Text="Zones" />
+                                    </StackPanel>
+                                </ToggleButton>
                             </StackPanel>
 
                             <Border Grid.Row="1"

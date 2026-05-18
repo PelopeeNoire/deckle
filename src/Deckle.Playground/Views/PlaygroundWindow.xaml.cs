@@ -703,16 +703,15 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundNav.SelectedItem = NavItemHud;
     }
 
-    // "Show light zones" toggle on the Ambient preview options row.
-    // Hides / shows the LightZonesOverlay Canvas inside the Viewbox
-    // — the dashed border rectangles drawn over the sampled grid.
-    // Off lets the user see the raw cells without the overlay on top,
-    // useful when comparing the engine's sampled mean to what the
-    // screen actually shows.
+    // "Zones" ToggleButton on the Ambient preview options row.
+    // Hides / shows the LightZonesOverlay Canvas — the rectangles
+    // drawn over the sampled grid that materialise each light's
+    // capture band. Wired to both Checked and Unchecked because the
+    // ToggleButton is a single control, not a paired state-switch.
     private void OnShowZoneOverlaysToggled(object sender, RoutedEventArgs e)
     {
         if (LightZonesOverlay is null) return;
-        LightZonesOverlay.Visibility = ShowZoneOverlaysToggle.IsOn
+        LightZonesOverlay.Visibility = (ShowZoneOverlaysToggle.IsChecked == true)
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
@@ -2456,7 +2455,8 @@ public sealed partial class PlaygroundWindow : Window
             _swatchByLight.Clear();
             foreach (var (id, color) in snapshot)
             {
-                var swatch = BuildSwatch(id, color);
+                var displayName = ResolveLightDisplayName(engine, id);
+                var swatch = BuildSwatch(id, displayName, color);
                 _swatchByLight[id] = swatch;
                 EmittedSwatches.Children.Add(swatch.Container);
             }
@@ -2467,6 +2467,12 @@ public sealed partial class PlaygroundWindow : Window
             {
                 var entry = _swatchByLight[id];
                 entry.Fill.Color = Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B);
+                // Refresh the label too in case the user re-paired
+                // and the bridge serves a renamed fixture (same id,
+                // new Name). Cheap — one string compare per tick.
+                var displayName = ResolveLightDisplayName(engine, id);
+                if (entry.Label.Text != displayName)
+                    entry.Label.Text = displayName;
             }
         }
 
@@ -2474,12 +2480,13 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     // Builds one swatch tile : a fixed-size coloured rectangle with
-    // the light id label on top of it. Uses theme resources for the
-    // border / corner so the tile follows light/dark + accent. The
-    // brush is held on a dedicated field so the tick can mutate
-    // Color without re-issuing a Fill (cf. the per-cell brush
-    // pattern proven on the preview grid).
-    private (Microsoft.UI.Xaml.Controls.Border Container, SolidColorBrush Fill, TextBlock Label) BuildSwatch(string id, LightColor color)
+    // a human-readable label below. The label is the bridge-reported
+    // fixture name when available — "Falcom", "Wilhelm", "Bjorn" —
+    // rather than the opaque numeric id ("4", "5", "6") that the
+    // Hue CLIP v1 API surfaces. Falls back to the raw id when the
+    // engine hasn't published MultiLights yet (group mode, mid-Start,
+    // or the user picked a group the bridge couldn't enumerate).
+    private (Microsoft.UI.Xaml.Controls.Border Container, SolidColorBrush Fill, TextBlock Label) BuildSwatch(string id, string displayName, LightColor color)
     {
         var fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B));
         var swatchRect = new Microsoft.UI.Xaml.Shapes.Rectangle
@@ -2494,7 +2501,7 @@ public sealed partial class PlaygroundWindow : Window
         };
         var label = new TextBlock
         {
-            Text = id,
+            Text = displayName,
             HorizontalAlignment = HorizontalAlignment.Center,
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
@@ -2515,6 +2522,30 @@ public sealed partial class PlaygroundWindow : Window
             Child = stack,
         };
         return (container, fill, label);
+    }
+
+    // Resolves a swatch's display name. "group" is the engine's
+    // sentinel for the single-colour mode (one swatch standing in
+    // for the whole group push). For per-light ids we look up the
+    // descriptor the engine published when it resolved multi-light
+    // mode — the bridge-reported name reads as a real fixture
+    // ("Falcom" / "Wilhelm" / "Bjorn") instead of an integer id.
+    private static string ResolveLightDisplayName(AmbientEngine engine, string lightKey)
+    {
+        if (lightKey == "group") return "Group";
+
+        var multi = engine.MultiLights;
+        if (multi is not null)
+        {
+            foreach (var descriptor in multi)
+            {
+                if (descriptor.Id == lightKey)
+                {
+                    return string.IsNullOrWhiteSpace(descriptor.Name) ? lightKey : descriptor.Name;
+                }
+            }
+        }
+        return lightKey;
     }
 
     // ── Light zones (J4) ────────────────────────────────────────────────
@@ -3270,10 +3301,12 @@ public sealed partial class PlaygroundWindow : Window
         // Order matters here too — Maximum first, then Value, then
         // Minimum — so the RangeBase invariant holds at each step.
 
-        // Curve param. Max 5.0 covers the SCurve steepness range ;
-        // Gamma stays below 3 in practice, the rest of the slider is
-        // just unused real estate when Gamma is the active type.
-        PlaygroundGammaSlider.Maximum = 5.0;
+        // Curve param. Max seeded high enough to host any SCurve
+        // steepness (up to 15) the user might have persisted from a
+        // previous session — UpdatePlaygroundBrightnessCurveDependentUi
+        // narrows Max back down to Gamma's 3.0 when the active type
+        // is Gamma, on Resync.
+        PlaygroundGammaSlider.Maximum = 15.0;
         PlaygroundGammaSlider.Value   = 1.8;
         PlaygroundGammaSlider.Minimum = 1.0;
 
@@ -3306,21 +3339,27 @@ public sealed partial class PlaygroundWindow : Window
             PlaygroundExposureSlider.Value         = s.ExposureEv;
             PlaygroundSaturationSlider.Value       = s.SaturationBoost * 100.0;
             PlaygroundMinBrightnessSlider.Value    = s.MinBrightness;
+            // ComboBoxes first : SelectBrightnessCurveTypeInCombo
+            // drives the curve type that UpdatePlayground...DependentUi
+            // reads to rescale Max. Then Max is set. Only then can the
+            // Value safely take any SCurve k up to 15 without being
+            // clamped by a stale Gamma 3.0 ceiling.
+            SelectBrightnessCurveTypeInCombo(s.BrightnessCurveType);
+            SelectAmbientModeInCombo(s.Mode);
+            UpdatePlaygroundBrightnessCurveDependentUi();
             // Curve param slider mirrors the value of the *active*
             // curve's dedicated parameter. SCurve stores its steepness
             // separately so the slider doesn't carry Gamma's 1.8 over
             // when the user picks SCurve (where 1.8 is nearly invisible).
-            PlaygroundGammaSlider.Value            = SelectCurveParamForType(s.BrightnessCurveType, s);
+            double curveParam = SelectCurveParamForType(s.BrightnessCurveType, s);
+            PlaygroundGammaSlider.Value            = curveParam;
             // Canvas needs both the param matching the active curve
             // (so SCurve renders with its steepness, not Gamma's
-            // exponent) and the type itself (forwarded by
-            // UpdatePlaygroundBrightnessCurveDependentUi below).
-            PlaygroundGammaCanvas.Gamma            = SelectCurveParamForType(s.BrightnessCurveType, s);
+            // exponent) and the type — the type was forwarded by
+            // UpdatePlaygroundBrightnessCurveDependentUi above.
+            PlaygroundGammaCanvas.Gamma            = curveParam;
             PlaygroundSmoothingSlider.Value        = s.SmoothingAlpha;
             PlaygroundChangeThresholdSlider.Value  = s.ChangeThreshold;
-            SelectBrightnessCurveTypeInCombo(s.BrightnessCurveType);
-            SelectAmbientModeInCombo(s.Mode);
-            UpdatePlaygroundBrightnessCurveDependentUi();
 
             UpdatePlaygroundExposureText();
             UpdatePlaygroundSaturationText();
@@ -3367,6 +3406,30 @@ public sealed partial class PlaygroundWindow : Window
         bool paramHasEffect = type == BrightnessCurveType.Gamma
                            || type == BrightnessCurveType.SCurve;
         PlaygroundGammaSlider.IsEnabled = paramHasEffect;
+
+        // Slider range follows the active curve : Gamma stays close
+        // to its practical interval [1.0, 3.0] where the effect lands
+        // ; SCurve goes all the way to 15 because anything below 5
+        // reads as barely-contrast and the user wants the option to
+        // push the curve into hard near-step territory for "explosion
+        // / door-opening flash" stuff. Order matters when shrinking
+        // (Max < current Value clamps Value) so we always set Max
+        // before Value is re-projected in OnPlaygroundBrightnessCurveTypeChanged.
+        switch (type)
+        {
+            case BrightnessCurveType.Gamma:
+                PlaygroundGammaSlider.Maximum = 3.0;
+                break;
+            case BrightnessCurveType.SCurve:
+                PlaygroundGammaSlider.Maximum = 15.0;
+                break;
+            default:
+                // Linear / Logarithmic : slider is collapsed below ;
+                // a large Max keeps the range invariant intact while
+                // covering any leftover value previously persisted.
+                PlaygroundGammaSlider.Maximum = 15.0;
+                break;
+        }
 
         // Push the type onto the canvas so it draws the right shape.
         // Gamma / param are forwarded by the slider handler ; that one
@@ -3584,10 +3647,13 @@ public sealed partial class PlaygroundWindow : Window
     {
         var type = ReadBrightnessCurveTypeFromCombo();
 
-        // Bring the slider in line with the curve's own param before
-        // we refresh the dependent UI — the suppressor avoids the
-        // ValueChanged handler interpreting our re-projection as a
-        // user tuning gesture (and re-persisting the value).
+        // Order matters when the slider range is shrinking : Max must
+        // be set before Value so we don't transiently clamp a valid
+        // SCurve k=15 onto Gamma's 3.0 ceiling and lose the user's
+        // intent. UpdatePlaygroundBrightnessCurveDependentUi rewrites
+        // PlaygroundGammaSlider.Maximum for us ; do that first, then
+        // re-project the slider Value from the curve's own parameter.
+        UpdatePlaygroundBrightnessCurveDependentUi();
         bool prev = _ambientTuningLoading;
         _ambientTuningLoading = true;
         try
@@ -3600,7 +3666,6 @@ public sealed partial class PlaygroundWindow : Window
             _ambientTuningLoading = prev;
         }
 
-        UpdatePlaygroundBrightnessCurveDependentUi();
         UpdatePlaygroundGammaText();
 
         if (_ambientTuningLoading) return;
