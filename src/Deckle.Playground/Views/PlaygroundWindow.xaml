@@ -162,63 +162,100 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- 7 targets: 4 HUD states + 3 naked diagnostic masks.
-                     Grid of cards (replaces the prior SelectorBar tabs) so
-                     the cards reflow into multiple rows as the column
-                     narrows — preview area keeps breathing instead of being
-                     pushed off-screen by a horizontal tab strip. Uniform
-                     min-width based on the longest label ("Transcribing"),
-                     stretching to consume the remaining horizontal space.
-                     Mutual exclusion + Target dispatch lives in code-behind
-                     via OnTargetCardPrepared (one-time per cell) +
-                     OnTargetCardChecked / Unchecked. -->
-                <ItemsRepeater Grid.Row="0"
-                               x:Name="TargetCardsRepeater"
-                               HorizontalAlignment="Center"
-                               Margin="16,24,16,8"
-                               ElementPrepared="OnTargetCardPrepared">
-                    <!-- ItemsStretch="None" keeps every card at its
-                         MinItemWidth so the row visuals stay uniform
-                         even when the last row has fewer items.
-                         ItemsJustification="Center" centers the grid
-                         horizontally inside the column and, more
-                         importantly, centers the partial last row
-                         (3 cards under 4 → 3 cards centered). 160 dip
-                         min width covers the longest label
-                         ("Transcribing") with comfortable padding. -->
-                    <ItemsRepeater.Layout>
-                        <UniformGridLayout MinItemWidth="160"
-                                           MinItemHeight="44"
-                                           MinColumnSpacing="8"
-                                           MinRowSpacing="8"
-                                           ItemsStretch="None"
-                                           ItemsJustification="Center"
-                                           Orientation="Horizontal" />
-                    </ItemsRepeater.Layout>
-                    <ItemsRepeater.ItemTemplate>
-                        <DataTemplate x:DataType="x:String">
-                            <ToggleButton Content="{x:Bind}"
-                                          HorizontalAlignment="Stretch"
-                                          HorizontalContentAlignment="Center"
-                                          MinHeight="44" />
-                        </DataTemplate>
-                    </ItemsRepeater.ItemTemplate>
-                </ItemsRepeater>
+                <!-- Two sections, left-aligned with a small caption above
+                     each : "States" (the 4 HUD states that drive the
+                     chrono visual) and "Primitive" (the 3 naked masks
+                     used for diagnostic inspection). Replaces a flat
+                     7-cell strip — the user reads the picker as two
+                     distinct concepts instead of an unordered list.
+                     Each ItemsRepeater keeps the UniformGridLayout +
+                     ToggleButton template from the previous pass so the
+                     mutual-exclusion / Target dispatch code-behind
+                     keeps working unchanged (OnTargetCardPrepared
+                     handles both repeaters' cells). -->
+                <StackPanel Grid.Row="0"
+                            Spacing="6"
+                            HorizontalAlignment="Stretch"
+                            Margin="24,24,24,8">
+                    <TextBlock Text="States"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Left" />
+                    <ItemsRepeater x:Name="TargetStatesRepeater"
+                                   ElementPrepared="OnTargetCardPrepared">
+                        <ItemsRepeater.Layout>
+                            <UniformGridLayout MinItemWidth="160"
+                                               MinItemHeight="44"
+                                               MinColumnSpacing="8"
+                                               MinRowSpacing="8"
+                                               ItemsStretch="None"
+                                               ItemsJustification="Start"
+                                               Orientation="Horizontal" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <ToggleButton Content="{x:Bind}"
+                                              HorizontalAlignment="Stretch"
+                                              HorizontalContentAlignment="Center"
+                                              MinHeight="44" />
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
 
-                <!-- Play / Pause = two mutually-exclusive RadioButton. Button
-                     labels name the action triggered, not the current state —
-                     a label-swap ToggleButton (Playing / Paused) is a UX
-                     trap we want to avoid. -->
-                <RadioButtons Grid.Row="1"
-                              x:Name="PlayPauseGroup"
-                              SelectedIndex="1"
-                              SelectionChanged="OnPlayPauseSelectionChanged"
-                              MaxColumns="2"
-                              HorizontalAlignment="Center"
-                              Margin="0,8,0,12">
-                    <RadioButton Content="Play" />
-                    <RadioButton Content="Pause" />
-                </RadioButtons>
+                    <TextBlock Text="Primitive"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Left"
+                               Margin="0,8,0,0" />
+                    <ItemsRepeater x:Name="TargetPrimitivesRepeater"
+                                   ElementPrepared="OnTargetCardPrepared">
+                        <ItemsRepeater.Layout>
+                            <UniformGridLayout MinItemWidth="160"
+                                               MinItemHeight="44"
+                                               MinColumnSpacing="8"
+                                               MinRowSpacing="8"
+                                               ItemsStretch="None"
+                                               ItemsJustification="Start"
+                                               Orientation="Horizontal" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <ToggleButton Content="{x:Bind}"
+                                              HorizontalAlignment="Stretch"
+                                              HorizontalContentAlignment="Center"
+                                              MinHeight="44" />
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </StackPanel>
+
+                <!-- Play / Pause = single toggle Button with a swapping
+                     SymbolIcon. Pattern Microsoft Fluent transport
+                     control + NN/G state-switch guidance combined :
+                     the icon (and the tooltip / accessible name) names
+                     the ACTION the next click will perform, not the
+                     current state — paused screens show a Play glyph
+                     ("press this to play"), playing screens show a
+                     Pause glyph ("press this to pause"). One glyph,
+                     one affordance, no "label-swap" trap.
+                     References : NN/G "State-Switch Controls" and
+                     Microsoft Learn AppBarButton / MediaTransportControls
+                     play-pause guidance. -->
+                <Button Grid.Row="1"
+                        x:Name="PlayPauseButton"
+                        HorizontalAlignment="Center"
+                        Margin="0,8,0,12"
+                        MinWidth="120"
+                        Click="OnPlayPauseClick"
+                        ToolTipService.ToolTip="Play">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon x:Name="PlayPauseIcon"
+                                  Glyph="&#xE768;"
+                                  FontSize="14" />
+                        <TextBlock x:Name="PlayPauseLabel"
+                                   Text="Play" />
+                    </StackPanel>
+                </Button>
 
                 <!-- Preview surface. The Border is the "playground stage":
                      stretches horizontally to fill Col 0 (width matches

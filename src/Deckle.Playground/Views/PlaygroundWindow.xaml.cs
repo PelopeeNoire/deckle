@@ -333,7 +333,8 @@ public sealed partial class PlaygroundWindow : Window
                 // (not in the constructor) because ItemsRepeater isn't
                 // realised until the XAML tree finishes initialising —
                 // setting ItemsSource earlier silently no-ops.
-                TargetCardsRepeater.ItemsSource = _targetCardNames;
+                TargetStatesRepeater.ItemsSource     = _targetStateCards;
+                TargetPrimitivesRepeater.ItemsSource = _targetPrimitiveCards;
                 ApplyTarget();
                 // Project HuePairingService state into the row visuals.
                 // The service auto-restored its bridge from settings on
@@ -535,11 +536,14 @@ public sealed partial class PlaygroundWindow : Window
 
         // Reset to Pause systematically on each show — état connu et
         // prévisible à chaque réouverture, indépendant de ce que
-        // l'utilisateur a laissé en quittant. Le SelectionChanged
-        // déclenche OnPlayPauseSelectionChanged → _isPlaying = false →
-        // ApplyTarget() collapse la preview. Si déjà sur 1, no-op.
-        if (PlayPauseGroup.SelectedIndex != 1)
-            PlayPauseGroup.SelectedIndex = 1;
+        // l'utilisateur a laissé en quittant. ApplyTarget() collapse
+        // la preview en réponse à _isPlaying=false.
+        if (_isPlaying)
+        {
+            _isPlaying = false;
+            UpdatePlayPauseAffordance();
+            ApplyTarget();
+        }
 
         AppWindow.Show();
         this.Activate();
@@ -585,9 +589,17 @@ public sealed partial class PlaygroundWindow : Window
     // unchecks the previously-active, clicking the active card is a no-op
     // (the Unchecked handler re-checks it). _suppressTargetCardChange
     // guards against re-entrancy when we set IsChecked programmatically.
-    private static readonly string[] _targetCardNames =
+    // Two semantic groups so the user reads the picker as
+    // "what HUD state vs what underlying primitive" rather than a
+    // flat 7-cell strip. Order inside each group is unchanged so the
+    // muscle memory survives the regrouping.
+    private static readonly string[] _targetStateCards =
     {
-        "Charging", "Recording", "Transcribing", "Rewriting", "Conic", "ArcMask", "Combined"
+        "Charging", "Recording", "Transcribing", "Rewriting",
+    };
+    private static readonly string[] _targetPrimitiveCards =
+    {
+        "Conic", "ArcMask", "Combined",
     };
     private readonly List<ToggleButton> _targetCards = new();
     private bool _suppressTargetCardChange;
@@ -710,11 +722,41 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundNav.SelectedItem = NavItemAmbient;
     }
 
-    private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)
+    // Single-button toggle. Click flips _isPlaying and refreshes the
+    // affordance (icon + label + tooltip) so the button immediately
+    // shows what the *next* click will do — paused state shows Play,
+    // playing state shows Pause. Mirrors the NN/G "State-Switch
+    // Controls" guidance (the button names the action, not the state)
+    // applied to the Microsoft Fluent Symbol.Play / Symbol.Pause
+    // transport glyphs. References : nngroup.com/articles/state-switch-buttons,
+    // Microsoft Learn AppBarButton / MediaTransportControls.
+    private void OnPlayPauseClick(object sender, RoutedEventArgs e)
     {
-        // RadioButtons.SelectedIndex: 0 = Play, 1 = Pause (order in XAML).
-        _isPlaying = PlayPauseGroup.SelectedIndex == 0;
+        _isPlaying = !_isPlaying;
+        UpdatePlayPauseAffordance();
         ApplyTarget();
+    }
+
+    private void UpdatePlayPauseAffordance()
+    {
+        // Glyph follows the action that the next click will trigger,
+        // not the current state. Segoe Fluent Icons : E768 Play,
+        // E769 Pause. ToolTip + accessible name carry the same word
+        // so screen readers stay aligned with the visual.
+        if (_isPlaying)
+        {
+            PlayPauseIcon.Glyph = "";
+            PlayPauseLabel.Text = "Pause";
+            ToolTipService.SetToolTip(PlayPauseButton, "Pause");
+            AutomationProperties.SetName(PlayPauseButton, "Pause");
+        }
+        else
+        {
+            PlayPauseIcon.Glyph = "";
+            PlayPauseLabel.Text = "Play";
+            ToolTipService.SetToolTip(PlayPauseButton, "Play");
+            AutomationProperties.SetName(PlayPauseButton, "Play");
+        }
     }
 
     // ── Core: apply target + play state to the preview ──────────────────
