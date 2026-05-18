@@ -2,6 +2,7 @@ using Deckle.Interop;
 using Deckle.Lighting.Ambient;
 using Deckle.Logging;
 using Deckle.Logging.Sinks;
+using Deckle.Playground;
 using Deckle.Shell;
 using Deckle.Whisp;
 using Deckle.Whisp.Setup;

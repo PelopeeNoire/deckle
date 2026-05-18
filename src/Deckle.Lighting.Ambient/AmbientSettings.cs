@@ -77,8 +77,12 @@ public sealed class AmbientSettings
     // patch with no settings migration ; Game stays the default until
     // Louis tunes Realistic.
 
-    /// <summary>Active analysis mode. Defaults to <see cref="AmbientMode.Game"/>
-    /// — the V0 behaviour. J6 lights up <see cref="AmbientMode.Realistic"/>.</summary>
+    /// <summary>Active mode preset. Defaults to <see cref="AmbientMode.Game"/>.
+    /// Switching the mode (via the Playground or the Settings page)
+    /// invokes <see cref="AmbientSettingsService.ApplyPreset(AmbientMode)"/>
+    /// which copies the preset's tuning snapshot onto the other knobs.
+    /// Touching any tuning slider in the Playground silently switches
+    /// the mode to <see cref="AmbientMode.Custom"/>.</summary>
     public AmbientMode Mode { get; set; } = AmbientMode.Game;
 
     // ── Multi-light zones (J4) ─────────────────────────────────────
@@ -180,32 +184,117 @@ public sealed class AmbientSettings
     /// AmbientPage.</summary>
     public int MinBrightness { get; set; } = 180;
 
-    /// <summary>Power-law exponent applied to the brightness response
-    /// curve : <c>bri = (max/255)^γ × 254</c> instead of strictly
-    /// linear. γ = 1.0 disables the curve (baseline). γ &gt; 1 squashes
-    /// the bottom of the range — a scene with max = 25/255 pushes
-    /// bri ≈ 4 at γ = 1.8 instead of bri ≈ 25 linear, which reads as
-    /// dim in a dark room. Saturated highlights (max = 255) are
-    /// untouched at any γ. Range of practical interest [1.0, 3.0].
-    /// Default 1.8 — empirically the sweet spot for a typical living-
-    /// room setup ; bump higher for dimmer rooms. Tuned in
-    /// AmbientPage.</summary>
-    public double BrightnessCurveGamma { get; set; } = 1.8;
+    /// <summary>Shape of the brightness response curve applied to the
+    /// max-channel before deriving the Hue <c>bri</c> value. Lets the
+    /// user pick between four canonical responses without piling more
+    /// sliders — a single parameter (<see cref="BrightnessCurveParam"/>)
+    /// is reinterpreted by each curve. See the enum members for
+    /// details.</summary>
+    public BrightnessCurveType BrightnessCurveType { get; set; } = BrightnessCurveType.Gamma;
+
+    /// <summary>Gamma exponent for <see cref="BrightnessCurveType.Gamma"/>,
+    /// in [1.0, 3.0]. Default 1.8 (legacy shipping curve). 1.0
+    /// collapses to Linear ; higher values squash dim scenes harder
+    /// without touching saturated highlights. Ignored by every other
+    /// curve type — they have their own dedicated parameter so the
+    /// slider value stays meaningful when the user switches curves.</summary>
+    public double BrightnessCurveParam { get; set; } = 1.8;
+
+    /// <summary>Logistic steepness for <see cref="BrightnessCurveType.SCurve"/>,
+    /// in [1.0, 5.0]. Default 2.0 — a visible mid-tone contrast
+    /// without sliding into near-step territory. 1.0 reads almost
+    /// linear, 5.0 reads almost hard step. Stored separately from
+    /// <see cref="BrightnessCurveParam"/> so toggling between Gamma
+    /// and SCurve doesn't reinterpret one knob's value as another
+    /// curve's parameter (a Gamma 1.8 read as SCurve k = 1.8 is
+    /// nearly invisible, which is exactly the surprise we avoid).</summary>
+    public double BrightnessCurveSCurveSteepness { get; set; } = 2.0;
+
+    /// <summary>Sum-of-absolute-channel-deltas threshold that gates
+    /// pushes — if the new tuned-and-smoothed colour differs from the
+    /// last pushed one by less than this on the 0-765 scale, the
+    /// push is dropped. 0 disables the gate, useful when smoothing
+    /// already does the heavy lifting. Default 6 (raised from the
+    /// legacy 3) damps the residual quantisation noise without
+    /// killing perceptible motion. Tuned in the Playground.</summary>
+    public int ChangeThreshold { get; set; } = 6;
+
+    /// <summary>Exponential moving average factor applied to the colour
+    /// pushed to each light, in [0, 1]. 1.0 disables the filter
+    /// (instantaneous response, legacy behaviour). Lower values trade
+    /// reactivity for stability — 0.30 (the default) damps over
+    /// roughly 3-5 frames at 15 Hz, which is enough to swallow the
+    /// jitter of small moving reflections in a globally dark scene
+    /// without dulling real scene changes. Below ~0.10 the lamp lags
+    /// perceptibly during fast cuts. Applied per-light in multi
+    /// mode, on the single group colour in group mode. Range of
+    /// practical interest [0.05, 1.0]. Tuned in the Playground.</summary>
+    public double SmoothingAlpha { get; set; } = 0.30;
 }
 
 /// <summary>How <see cref="AmbientEngine"/> derives the colour pushed
-/// to the lights. The active value lives in <see cref="AmbientSettings.Mode"/>
-/// and is observed at pipeline start (changes mid-run require a restart
-/// in V0 ; J9 polish may make it hot).</summary>
+/// to the lights. The active value lives in <see cref="AmbientSettings.Mode"/>.
+/// Game / Movie / Ambient carry preset tunings ; Custom is the
+/// implicit mode the user lands on as soon as they move a slider in
+/// the Playground, signalling "I'm tuning my own thing — don't
+/// overwrite my values when a preset changes".</summary>
 public enum AmbientMode
 {
-    /// <summary>Game / Ambilight — direct mapping of the analysed sRGB
-    /// average to the lamp. Full saturation, follows the screen palette.
-    /// V0 default and the only mode wired today.</summary>
+    /// <summary>Game / Ambilight — direct mapping with vivid saturation
+    /// and quick response. Default for desktop play sessions.</summary>
     Game,
 
-    /// <summary>Realistic — diegetic-light heuristic. Desaturates the
-    /// average and biases the hue toward the temperature dominating the
-    /// highlights of the scene. J6 lights this up.</summary>
-    Realistic,
+    /// <summary>Movie — softened saturation, longer smoothing, slight
+    /// negative EV. Reads as ambient mood lighting for cinematic
+    /// content where fast colour changes would distract.</summary>
+    Movie,
+
+    /// <summary>Ambient — heavy smoothing, low saturation, dark-friendly
+    /// curve. Tuned for general-purpose room lighting that follows
+    /// the screen without ever feeling like it competes with the
+    /// content.</summary>
+    Ambient,
+
+    /// <summary>Custom — every tuning knob lives where the user put it.
+    /// The Playground sets this implicitly the moment any slider is
+    /// touched, so a preset switch never silently overwrites a hand-
+    /// calibrated setup.</summary>
+    Custom,
+}
+
+/// <summary>Shape of the brightness response curve applied to the
+/// max-channel of the tuned sRGB output before the Hue <c>bri</c>
+/// value is derived. Each shape reinterprets the auxiliary
+/// <see cref="AmbientSettings.BrightnessCurveParam"/> slider so the
+/// user can swap responses without losing the slider's footprint.</summary>
+public enum BrightnessCurveType
+{
+    /// <summary>Direct pass-through : <c>bri = max</c>. Param ignored.
+    /// Use when smoothing alone is enough to keep the lamp readable
+    /// on dim scenes and any non-linear squash would feel uneven.</summary>
+    Linear,
+
+    /// <summary>Power-law : <c>bri = (max/255)^γ × 254</c> with γ =
+    /// param. γ = 1.0 collapses to Linear. γ &gt; 1 squashes the
+    /// bottom of the range — a scene with max = 25/255 pushes bri
+    /// ≈ 4 at γ = 1.8 instead of bri ≈ 25 linear, which reads as
+    /// dim in a dark room. Saturated highlights are untouched.
+    /// Range of practical interest [1.0, 3.0]. Default shape.</summary>
+    Gamma,
+
+    /// <summary>Logistic S-curve centered on 0.5 with steepness = param :
+    /// <c>bri = 1 / (1 + exp(-k × (x - 0.5)))</c> remapped so the
+    /// endpoints stay at 0 and 254. Pushes mid-tones away from grey
+    /// in both directions — dim scenes get darker, bright scenes
+    /// brighter — useful when the screen content is high-contrast.
+    /// Param range [1.0, 5.0] ; 1.0 reads almost-linear, 5.0
+    /// reads almost-hard-step.</summary>
+    SCurve,
+
+    /// <summary>Logarithmic : <c>bri = log(1 + 9 × x) / log(10) × 254</c>.
+    /// Pushes the bottom of the range up — even very dim scenes
+    /// stay clearly lit. Param ignored. Use when the room is bright
+    /// enough that subtle scenes would otherwise read as "lamp
+    /// off".</summary>
+    Logarithmic,
 }

@@ -27,18 +27,18 @@ public enum LightZone
     None,
 
     /// <summary>The light reflects the top edge of the screen — the
-    /// engine averages pixels in the band [0,1]×[0, BorderDepth].</summary>
+    /// engine averages pixels in the band [0,1]×[0, VerticalBorderDepth].</summary>
     Top,
 
     /// <summary>The light reflects the bottom edge — the engine
-    /// averages pixels in the band [0,1]×[1-BorderDepth, 1].</summary>
+    /// averages pixels in the band [0,1]×[1-VerticalBorderDepth, 1].</summary>
     Bottom,
 
     /// <summary>The light reflects the left edge — the engine averages
-    /// pixels in the band [0, BorderDepth]×[0,1].</summary>
+    /// pixels in the band [0, LateralBorderDepth]×[0,1].</summary>
     Left,
 
     /// <summary>The light reflects the right edge — the engine averages
-    /// pixels in the band [1-BorderDepth, 1]×[0,1].</summary>
+    /// pixels in the band [1-LateralBorderDepth, 1]×[0,1].</summary>
     Right,
 }

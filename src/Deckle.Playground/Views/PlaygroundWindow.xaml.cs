@@ -13,17 +13,15 @@ using WinRT.Interop;
 using Deckle.Audio;
 using Deckle.Chrono.Hud;
 using Deckle.Composition;
-using Deckle.Controls;
 using Deckle.Interop;
 using Deckle.Lighting;
 using Deckle.Lighting.Ambient;
 using Deckle.Lighting.Hue;
 using Deckle.Logging;
-using Deckle.Playground;
 using Deckle.Shell;
 using Deckle.Vision;
 
-namespace Deckle;
+namespace Deckle.Playground;
 
 // ─── HUD playground window ────────────────────────────────────────────────────
 //
@@ -178,6 +176,14 @@ public sealed partial class PlaygroundWindow : Window
     private HueRestLightOutput? _hueLightOutput;
     private CancellationTokenSource? _hueRotationCts;
     private bool _hueGroupComboSuppress;
+    private bool _hueGroupsFetchInFlight;
+
+    // Native grid footprint (cols × rows) most recently built by
+    // BuildPreviewGrid. Used by LayoutLightZonesOverlayFromViewbox
+    // to compute the displayed (scaled) size without having to wait
+    // on AmbientPreviewGrid.ActualWidth/Height being valid.
+    private int _previewGridCols;
+    private int _previewGridRows;
 
     // ── Ambient lighting — end-to-end pipeline (J3) ────────────────────
     //
@@ -210,6 +216,24 @@ public sealed partial class PlaygroundWindow : Window
     private bool _pipelineStartedCapture;
     private DispatcherTimer? _previewTimer;
     private Microsoft.UI.Xaml.Shapes.Rectangle[]? _previewCells;
+
+    // Cached swatch chip per light id (or "group" sentinel in
+    // single-colour mode). The chip is just a coloured Rectangle —
+    // no labels under it (the Lights dropdown carries the names).
+    // The brush is mutated in place each tick to avoid rebuilding
+    // visuals every frame. DisplayName is kept around so the Lights
+    // menu can render its ToggleMenuFlyoutItem labels without
+    // re-resolving against AmbientEngine.MultiLights every refresh.
+    private readonly System.Collections.Generic.Dictionary<string, (Microsoft.UI.Xaml.Shapes.Rectangle Container, SolidColorBrush Fill, string DisplayName)> _swatchByLight = new();
+
+    // Per-zone fill brush for the overlay rectangles on the preview
+    // (LightZonesOverlay's ZoneTopRect / ZoneBottomRect / ZoneLeftRect
+    // / ZoneRightRect). Brushes carry the live emitted colour the
+    // engine sends to whichever light is assigned to that zone, at
+    // reduced opacity so the underlying preview cells stay visible.
+    // Lazily created on the first frame so the rectangles' Fill
+    // property is only touched when there's a real colour to display.
+    private readonly System.Collections.Generic.Dictionary<LightZone, SolidColorBrush> _zoneFillBrushes = new();
 
     // ── Ambient lighting — light zones (J4) ─────────────────────────
     //
@@ -303,6 +327,14 @@ public sealed partial class PlaygroundWindow : Window
 
         _screenCaptureFpsTimer.Tick += OnScreenCaptureFpsTick;
 
+        // Re-align the LightZonesOverlay Canvas (sibling of the
+        // Viewbox) with the displayed footprint of the scaled preview
+        // grid whenever the Viewbox resizes — keeps the overlay
+        // rectangles tracking the visible pixels at any window size,
+        // and keeps the stroke thickness in real DIP space (no
+        // scaling artifacts on wide / narrow windows).
+        AmbientPreviewViewbox.SizeChanged += (_, _) => LayoutLightZonesOverlayFromViewbox();
+
         _rebuildDebounce.Tick += (_, _) =>
         {
             _rebuildDebounce.Stop();
@@ -326,7 +358,8 @@ public sealed partial class PlaygroundWindow : Window
                 // (not in the constructor) because ItemsRepeater isn't
                 // realised until the XAML tree finishes initialising —
                 // setting ItemsSource earlier silently no-ops.
-                TargetCardsRepeater.ItemsSource = _targetCardNames;
+                TargetStatesRepeater.ItemsSource     = _targetStateCards;
+                TargetPrimitivesRepeater.ItemsSource = _targetPrimitiveCards;
                 ApplyTarget();
                 // Project HuePairingService state into the row visuals.
                 // The service auto-restored its bridge from settings on
@@ -350,6 +383,38 @@ public sealed partial class PlaygroundWindow : Window
                 // toggle, and stay in sync with subsequent flips made
                 // from the tray menu or the AmbientPage.
                 SyncPipelineUiFromSettings();
+
+                // Free the Turn-on button as soon as the persisted
+                // pair state is enough to let the App-side engine
+                // start (bridge paired + a group id saved). The
+                // Playground used to gate the button on a local
+                // ConnectAsync that only ran after the user clicked
+                // through Hue → List groups → pick, leaving the
+                // button greyed forever for someone who paired from
+                // Settings and just expected to flip the switch here.
+                ApplyPipelineReadiness();
+
+                // Engine state observer — kept around so other surfaces
+                // can react later, but the preview lifecycle no longer
+                // hangs off it : we just start the timer here and let
+                // OnPreviewTimerTick poll LatestSample. That way the
+                // grid lights up whether the engine was already running
+                // at open time, or starts later via the tray, Settings,
+                // or the Playground toggle itself — no race on the
+                // first StateChanged transition.
+                if (AmbientEngine.Current is { } engine)
+                {
+                    engine.StateChanged += OnAmbientEngineStateChangedFromPlayground;
+                }
+
+                // Timer runs for the lifetime of the Playground window.
+                // When AmbientEngine.LatestSample is null (engine off /
+                // not yet warm) OnPreviewTimerTick early-returns ; when
+                // it's non-null the grid lazy-builds and the cells
+                // animate. Cheap enough to leave running all the time,
+                // and immune to the StateChanged ordering bugs we hit
+                // by gating it on Running.
+                StartPreviewTimer();
 
                 // Populate the HDR tuning sandbox sliders from the live
                 // settings + flip the re-fire suppressor off so the
@@ -410,6 +475,8 @@ public sealed partial class PlaygroundWindow : Window
             StopScreenCaptureIfRunning();
             TeardownHueIfActive();
             HuePairingService.Instance.BridgeChanged -= OnHueBridgeChangedFromPlayground;
+            if (AmbientEngine.Current is { } engine)
+                engine.StateChanged -= OnAmbientEngineStateChangedFromPlayground;
             // Detach the composition child first so the compositor stops
             // referencing the bundle's visual tree, then dispose. In the
             // singleton-hidden pattern (Closing→Hide) Closed only fires at
@@ -429,10 +496,15 @@ public sealed partial class PlaygroundWindow : Window
         if (DispatcherQueue.HasThreadAccess)
         {
             SyncHueUiFromService();
+            ApplyPipelineReadiness();
         }
         else
         {
-            DispatcherQueue.TryEnqueue(SyncHueUiFromService);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                SyncHueUiFromService();
+                ApplyPipelineReadiness();
+            });
         }
     }
 
@@ -475,6 +547,19 @@ public sealed partial class PlaygroundWindow : Window
         HuePairStatusText.Text  = $"Paired ({creds.UsernameHead}, saved)";
         HuePairStatusDot.Fill   = GetThemeBrush("SystemFillColorSuccessBrush");
         HueListGroupsButton.IsEnabled = true;
+
+        // Auto-populate the groups combo on Playground open / bridge
+        // change : the bridge is paired, the persisted last-group is
+        // remembered by the settings — there's no reason to force the
+        // user to click "List groups" every time just to see the combo
+        // come back to life. Fire-and-forget : RefreshHueGroupsAsync
+        // logs its own failures, re-enables the button in the finally,
+        // and self-guards via _hueGroupsFetchInFlight so cascaded calls
+        // don't stack concurrent fetches.
+        if (HueGroupComboBox.Items.Count == 0)
+        {
+            _ = RefreshHueGroupsAsync();
+        }
     }
 
     // ── Lifecycle surface (called by App) ───────────────────────────────
@@ -489,11 +574,14 @@ public sealed partial class PlaygroundWindow : Window
 
         // Reset to Pause systematically on each show — état connu et
         // prévisible à chaque réouverture, indépendant de ce que
-        // l'utilisateur a laissé en quittant. Le SelectionChanged
-        // déclenche OnPlayPauseSelectionChanged → _isPlaying = false →
-        // ApplyTarget() collapse la preview. Si déjà sur 1, no-op.
-        if (PlayPauseGroup.SelectedIndex != 1)
-            PlayPauseGroup.SelectedIndex = 1;
+        // l'utilisateur a laissé en quittant. ApplyTarget() collapse
+        // la preview en réponse à _isPlaying=false.
+        if (_isPlaying)
+        {
+            _isPlaying = false;
+            UpdatePlayPauseAffordance();
+            ApplyTarget();
+        }
 
         AppWindow.Show();
         this.Activate();
@@ -539,9 +627,17 @@ public sealed partial class PlaygroundWindow : Window
     // unchecks the previously-active, clicking the active card is a no-op
     // (the Unchecked handler re-checks it). _suppressTargetCardChange
     // guards against re-entrancy when we set IsChecked programmatically.
-    private static readonly string[] _targetCardNames =
+    // Two semantic groups so the user reads the picker as
+    // "what HUD state vs what underlying primitive" rather than a
+    // flat 7-cell strip. Order inside each group is unchanged so the
+    // muscle memory survives the regrouping.
+    private static readonly string[] _targetStateCards =
     {
-        "Charging", "Recording", "Transcribing", "Rewriting", "Conic", "ArcMask", "Combined"
+        "Charging", "Recording", "Transcribing", "Rewriting",
+    };
+    private static readonly string[] _targetPrimitiveCards =
+    {
+        "Conic", "ArcMask", "Combined",
     };
     private readonly List<ToggleButton> _targetCards = new();
     private bool _suppressTargetCardChange;
@@ -628,19 +724,76 @@ public sealed partial class PlaygroundWindow : Window
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
-        if (HudPage is null || AmbientPage is null) return;
+        if (HudPage is null || AmbientPage is null || HomePage is null) return;
         if (args.SelectedItem is not NavigationViewItem item) return;
 
-        bool ambient = (item.Tag as string) == "ambient";
-        HudPage.Visibility     = ambient ? Visibility.Collapsed : Visibility.Visible;
-        AmbientPage.Visibility = ambient ? Visibility.Visible   : Visibility.Collapsed;
+        string tag = (item.Tag as string) ?? "home";
+        HomePage.Visibility    = tag == "home"    ? Visibility.Visible : Visibility.Collapsed;
+        HudPage.Visibility     = tag == "hud"     ? Visibility.Visible : Visibility.Collapsed;
+        AmbientPage.Visibility = tag == "ambient" ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void OnPlayPauseSelectionChanged(object sender, SelectionChangedEventArgs e)
+    // Home-card click handlers : route to the matching NavView item
+    // so the existing OnPlaygroundNavSelectionChanged centralises the
+    // visibility toggle. Keeps a single state-transition path.
+    private void OnHomeHudCardClick(object sender, RoutedEventArgs e)
     {
-        // RadioButtons.SelectedIndex: 0 = Play, 1 = Pause (order in XAML).
-        _isPlaying = PlayPauseGroup.SelectedIndex == 0;
+        PlaygroundNav.SelectedItem = NavItemHud;
+    }
+
+    // "Zones" ToggleButton on the Ambient preview options row.
+    // Hides / shows the LightZonesOverlay Canvas — the rectangles
+    // drawn over the sampled grid that materialise each light's
+    // capture band. Wired to both Checked and Unchecked because the
+    // ToggleButton is a single control, not a paired state-switch.
+    private void OnShowZoneOverlaysToggled(object sender, RoutedEventArgs e)
+    {
+        if (LightZonesOverlay is null) return;
+        LightZonesOverlay.Visibility = (ShowZoneOverlaysToggle.IsChecked == true)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void OnHomeAmbientCardClick(object sender, RoutedEventArgs e)
+    {
+        PlaygroundNav.SelectedItem = NavItemAmbient;
+    }
+
+    // Single-button toggle. Click flips _isPlaying and refreshes the
+    // affordance (icon + label + tooltip) so the button immediately
+    // shows what the *next* click will do — paused state shows Play,
+    // playing state shows Pause. Mirrors the NN/G "State-Switch
+    // Controls" guidance (the button names the action, not the state)
+    // applied to the Microsoft Fluent Symbol.Play / Symbol.Pause
+    // transport glyphs. References : nngroup.com/articles/state-switch-buttons,
+    // Microsoft Learn AppBarButton / MediaTransportControls.
+    private void OnPlayPauseClick(object sender, RoutedEventArgs e)
+    {
+        _isPlaying = !_isPlaying;
+        UpdatePlayPauseAffordance();
         ApplyTarget();
+    }
+
+    private void UpdatePlayPauseAffordance()
+    {
+        // Glyph follows the action that the next click will trigger,
+        // not the current state. Segoe Fluent Icons : E768 Play,
+        // E769 Pause. ToolTip + accessible name carry the same word
+        // so screen readers stay aligned with the visual.
+        if (_isPlaying)
+        {
+            PlayPauseIcon.Glyph = "";
+            PlayPauseLabel.Text = "Pause";
+            ToolTipService.SetToolTip(PlayPauseButton, "Pause");
+            AutomationProperties.SetName(PlayPauseButton, "Pause");
+        }
+        else
+        {
+            PlayPauseIcon.Glyph = "";
+            PlayPauseLabel.Text = "Play";
+            ToolTipService.SetToolTip(PlayPauseButton, "Play");
+            AutomationProperties.SetName(PlayPauseButton, "Play");
+        }
     }
 
     // ── Core: apply target + play state to the preview ──────────────────
@@ -1804,8 +1957,20 @@ public sealed partial class PlaygroundWindow : Window
 
     private async void OnHueListGroupsClick(object sender, RoutedEventArgs e)
     {
-        if (!HuePairingService.Instance.IsPaired) return;
+        await RefreshHueGroupsAsync().ConfigureAwait(true);
+    }
 
+    // Fetches the bridge's group list and rebuilds the combo. Shared
+    // between the explicit "List groups" button and the auto-call that
+    // SyncHueUiFromService triggers on Playground open when the bridge
+    // is already paired — so the user doesn't have to re-click to
+    // populate the combo each time the window opens.
+    private async Task RefreshHueGroupsAsync()
+    {
+        if (!HuePairingService.Instance.IsPaired) return;
+        if (_hueGroupsFetchInFlight) return;
+
+        _hueGroupsFetchInFlight = true;
         HueListGroupsButton.IsEnabled = false;
         try
         {
@@ -1861,6 +2026,7 @@ public sealed partial class PlaygroundWindow : Window
         finally
         {
             HueListGroupsButton.IsEnabled = true;
+            _hueGroupsFetchInFlight = false;
         }
     }
 
@@ -2073,8 +2239,61 @@ public sealed partial class PlaygroundWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             SyncPipelineUiFromSettings();
+            ApplyPipelineReadiness();
             ResyncPlaygroundAmbientTuning();
         });
+    }
+
+    // Single source of truth for "can the user flip the Pipeline
+    // toggle right now ?". The button used to be gated on a local
+    // ConnectAsync that only ran once the user clicked through Hue →
+    // List groups → pick a group inside the Playground. With the
+    // canonical App-side AmbientEngine, the persisted Hue pair state
+    // plus a saved group id is enough — the engine builds its own
+    // ConnectAsync on Start. Re-evaluated on Loaded, on
+    // BridgeChanged, and on AmbientSettings.Changed.
+    private void ApplyPipelineReadiness()
+    {
+        if (PipelineToggleButton is null) return;
+        var s = AmbientSettingsService.Instance.Current;
+        bool paired = HuePairingService.Instance.Bridge?.IsPaired == true;
+        bool hasGroup = !string.IsNullOrEmpty(s.HueLastGroupId);
+        if (paired && hasGroup) SetPipelineReady();
+        else                    SetPipelineNotReady();
+    }
+
+    // AmbientEngine.StateChanged observer. No longer drives the
+    // preview lifecycle — the timer runs unconditionally while the
+    // Playground is open. Kept as a no-op for now so subscribe /
+    // unsubscribe stays symmetrical, and so future surfaces (status
+    // dot colour, button label tween) can hang here without another
+    // round-trip on the engine.
+    private void OnAmbientEngineStateChangedFromPlayground(AmbientEngineState state)
+    {
+        // Intentionally empty. See StartPreviewTimer at Loaded for
+        // why we don't gate on state here anymore.
+    }
+
+    // Start the preview timer when the engine starts. If a local
+    // Screen capture session is already running, the timer is already
+    // ticking and the OnPreviewTimerTick path prefers the engine's
+    // LatestSample anyway, so this is a no-op in that case.
+    private void StartCanonicalPreviewIfNeeded()
+    {
+        var engine = AmbientEngine.Current;
+        if (engine is null || !engine.IsRunning) return;
+
+        // Lazily build the preview grid the first time we see a sample
+        // from the engine — its sampler dims are owned by the engine,
+        // not the Playground.
+        var sample = engine.LatestSample;
+        if (sample is not null && _previewCells is null)
+        {
+            BuildPreviewGrid(sample.Cols, sample.Rows);
+        }
+
+        StartPreviewTimer();
+        UpdatePreviewViewboxVisibility();
     }
 
     // FrameArrived handler that hands the frame to the FrameSampler.
@@ -2100,8 +2319,6 @@ public sealed partial class PlaygroundWindow : Window
         AmbientPreviewGrid.ColumnDefinitions.Clear();
         AmbientPreviewGrid.Children.Clear();
 
-        const double Gap = 1;
-
         for (int c = 0; c < cols; c++)
             AmbientPreviewGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(PreviewCellSize) });
         for (int r = 0; r < rows; r++)
@@ -2115,14 +2332,18 @@ public sealed partial class PlaygroundWindow : Window
         // taskbar — dark), which is what produced the "everything is dark
         // while the screen is white" symptom even though the FrameSampler
         // average (and the lamp push) were correct.
+        //
+        // Cells are flush (no margin) : the previous 1-dip gap was
+        // scaled by the parent Viewbox, which made it thick on wide
+        // windows and invisible on narrow ones. We keep the pixel
+        // grid as one continuous mosaic instead.
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
                 var rect = new Microsoft.UI.Xaml.Shapes.Rectangle
                 {
-                    Fill   = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                    Margin = new Thickness(Gap),
+                    Fill = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 };
                 Grid.SetRow(rect, r);
                 Grid.SetColumn(rect, c);
@@ -2131,18 +2352,13 @@ public sealed partial class PlaygroundWindow : Window
             }
         }
 
-        // The Viewbox above scales the whole stage uniformly, so we
-        // size the stage to the grid's natural dip footprint here.
-        // Zone overlay rectangles get re-laid out so they keep
-        // tracking the right border bands when the sampler reports
-        // new grid dimensions.
-        double stageWidth  = cols * PreviewCellSize;
-        double stageHeight = rows * PreviewCellSize;
-        AmbientPreviewStage.Width  = stageWidth;
-        AmbientPreviewStage.Height = stageHeight;
-        LightZonesOverlay.Width    = stageWidth;
-        LightZonesOverlay.Height   = stageHeight;
-        LayoutLightZoneRects(stageWidth, stageHeight);
+        // Remember the grid footprint so the SizeChanged handler can
+        // size the (sibling) LightZonesOverlay to the visible scaled
+        // portion of the grid without having to wait on the inner
+        // ActualWidth/Height to be valid.
+        _previewGridCols = cols;
+        _previewGridRows = rows;
+        LayoutLightZonesOverlayFromViewbox();
 
         UpdatePreviewViewboxVisibility();
     }
@@ -2166,6 +2382,17 @@ public sealed partial class PlaygroundWindow : Window
             AmbientPreviewGrid.RowDefinitions.Clear();
             AmbientPreviewGrid.ColumnDefinitions.Clear();
             _previewCells = null;
+            _previewGridCols = 0;
+            _previewGridRows = 0;
+        }
+        // Clear the emitted-colour swatch strip when the pipeline
+        // stops — without an active tick the visuals would otherwise
+        // freeze on the last seen colour, which reads as still-live
+        // to the user.
+        if (_swatchByLight.Count > 0)
+        {
+            EmittedSwatches.Children.Clear();
+            _swatchByLight.Clear();
         }
         // Keep the Viewbox visible if light markers are still around —
         // the user may want to keep placing while the pipeline is
@@ -2190,23 +2417,228 @@ public sealed partial class PlaygroundWindow : Window
 
     private void OnPreviewTimerTick(object? sender, object e)
     {
-        var sample = _frameSampler?.LatestSample;
-        if (sample is null || _previewCells is null) return;
+        // Prefer the canonical App-side AmbientEngine sample : it's
+        // the live pipeline the user actually drives from the tray /
+        // Settings / Playground toggles. Fall back to the Playground's
+        // own _frameSampler only when the engine isn't running but
+        // the user explicitly started the local Screen capture for
+        // sampler-isolated testing.
+        var sample = AmbientEngine.Current?.LatestSample ?? _frameSampler?.LatestSample;
 
-        int total = Math.Min(sample.Grid.Length, _previewCells.Length);
-        for (int i = 0; i < total; i++)
+        // Lazy-build the preview grid the first time we see a sample
+        // from the engine (the local capture path builds it earlier
+        // from its own sampler dims).
+        if (sample is not null && _previewCells is null)
         {
-            var c = sample.Grid[i];
-            var brush = _previewCells[i].Fill as SolidColorBrush;
-            if (brush is null)
+            BuildPreviewGrid(sample.Cols, sample.Rows);
+            UpdatePreviewViewboxVisibility();
+        }
+
+        if (sample is not null && _previewCells is not null)
+        {
+            int total = Math.Min(sample.Grid.Length, _previewCells.Length);
+            for (int i = 0; i < total; i++)
             {
-                _previewCells[i].Fill = new SolidColorBrush(c);
-            }
-            else
-            {
-                brush.Color = c;
+                var c = sample.Grid[i];
+                var brush = _previewCells[i].Fill as SolidColorBrush;
+                if (brush is null)
+                {
+                    _previewCells[i].Fill = new SolidColorBrush(c);
+                }
+                else
+                {
+                    brush.Color = c;
+                }
             }
         }
+
+        // Refresh the swatch strip from the engine's "intent" map.
+        // Pulled on the same 200 ms cadence as the preview grid so
+        // they stay visually in sync ; we don't subscribe to
+        // EmittedColorsChanged to avoid a per-tick cross-thread
+        // marshal that would buy nothing at this refresh rate.
+        UpdateEmittedSwatches();
+
+        // Same cadence for the zone overlay fills — each rect picks
+        // up the live emitted colour of the light assigned to it
+        // (group mode : all four share the single group colour) at
+        // reduced opacity so the cells stay visible underneath.
+        UpdateZoneOverlayColors();
+    }
+
+    // Pushes the live emitted colour from the engine into each zone
+    // rectangle's fill brush, with a soft opacity so the preview
+    // cells below stay readable. In group mode all four zones share
+    // the same colour ; in multi mode each zone looks up its
+    // assigned light via AmbientSettings.LightZones and uses that
+    // colour.
+    private void UpdateZoneOverlayColors()
+    {
+        var engine = AmbientEngine.Current;
+        if (engine is null || !engine.IsRunning) return;
+
+        var snapshot = engine.SnapshotEmittedColors();
+        if (snapshot.Count == 0) return;
+
+        var settings = AmbientSettingsService.Instance.Current;
+
+        ApplyZoneOverlayColor(LightZone.Top,    ZoneTopRect,    snapshot, settings);
+        ApplyZoneOverlayColor(LightZone.Bottom, ZoneBottomRect, snapshot, settings);
+        ApplyZoneOverlayColor(LightZone.Left,   ZoneLeftRect,   snapshot, settings);
+        ApplyZoneOverlayColor(LightZone.Right,  ZoneRightRect,  snapshot, settings);
+    }
+
+    private void ApplyZoneOverlayColor(
+        LightZone zone,
+        Microsoft.UI.Xaml.Shapes.Rectangle rect,
+        IReadOnlyDictionary<string, LightColor> emitted,
+        AmbientSettings settings)
+    {
+        var color = ResolveZoneEmittedColor(emitted, settings, zone);
+        if (color is null) return;
+
+        if (!_zoneFillBrushes.TryGetValue(zone, out var brush))
+        {
+            // Soft fill so the underlying preview cells remain
+            // readable through the overlay. Opacity on the Brush
+            // (not on the Rectangle) so the dashed stroke stays
+            // full-opacity for legibility.
+            brush = new SolidColorBrush
+            {
+                Opacity = 0.4,
+            };
+            _zoneFillBrushes[zone] = brush;
+            rect.Fill = brush;
+        }
+        brush.Color = Windows.UI.Color.FromArgb(0xFF, color.Value.R, color.Value.G, color.Value.B);
+    }
+
+    // Resolves the colour of the light assigned to a given zone via
+    // AmbientSettings.LightZones. Group mode collapses to the
+    // sentinel "group" key. Returns null when no light is assigned
+    // (the rect overlay keeps whatever fill it had — typically the
+    // theme accent placeholder).
+    private static LightColor? ResolveZoneEmittedColor(
+        IReadOnlyDictionary<string, LightColor> emitted,
+        AmbientSettings settings,
+        LightZone zone)
+    {
+        if (!settings.UseMultiLight)
+        {
+            return emitted.TryGetValue("group", out var c) ? c : null;
+        }
+        foreach (var (id, assignedZone) in settings.LightZones)
+        {
+            if (assignedZone == zone && emitted.TryGetValue(id, out var c))
+                return c;
+        }
+        return null;
+    }
+
+    // Reads AmbientEngine.Current.SnapshotEmittedColors() and either
+    // mutates the existing swatch brushes (steady state) or rebuilds
+    // the strip when the set of light ids has shifted (group ↔ multi
+    // switch, fixture (re-)pair). Each swatch carries a native ToolTip
+    // with the fixture name — hover surfaces "which light is this?"
+    // without an extra control on the toolbar.
+    private void UpdateEmittedSwatches()
+    {
+        var engine = AmbientEngine.Current;
+        if (engine is null || !engine.IsRunning)
+        {
+            if (_swatchByLight.Count > 0)
+            {
+                EmittedSwatches.Children.Clear();
+                _swatchByLight.Clear();
+            }
+            return;
+        }
+
+        var snapshot = engine.SnapshotEmittedColors();
+        if (snapshot.Count == 0)
+        {
+            return;
+        }
+
+        // Detect set change : different ids or different count → wipe
+        // and rebuild. Otherwise mutate brushes in place.
+        bool setMatches = snapshot.Count == _swatchByLight.Count;
+        if (setMatches)
+        {
+            foreach (var key in snapshot.Keys)
+            {
+                if (!_swatchByLight.ContainsKey(key)) { setMatches = false; break; }
+            }
+        }
+
+        if (!setMatches)
+        {
+            EmittedSwatches.Children.Clear();
+            _swatchByLight.Clear();
+            foreach (var (id, color) in snapshot)
+            {
+                var displayName = ResolveLightDisplayName(engine, id);
+                var swatch = BuildSwatch(displayName, color);
+                _swatchByLight[id] = swatch;
+                EmittedSwatches.Children.Add(swatch.Container);
+            }
+        }
+        else
+        {
+            foreach (var (id, color) in snapshot)
+            {
+                var entry = _swatchByLight[id];
+                entry.Fill.Color = Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B);
+            }
+        }
+    }
+
+    // Builds one swatch chip : a coloured square sized to match the
+    // toolbar buttons it sits next to. Border radius and stroke
+    // follow the theme so the chip reads as a sibling of the
+    // adjacent ToggleButton ("Zones"). The fixture name lives in
+    // a native ToolTip surfaced on hover — keeps the toolbar lean
+    // (no labels under) while still answering "which light is this
+    // colour?" without a click.
+    private (Microsoft.UI.Xaml.Shapes.Rectangle Container, SolidColorBrush Fill, string DisplayName) BuildSwatch(string displayName, LightColor color)
+    {
+        var fill = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, color.R, color.G, color.B));
+        var swatchRect = new Microsoft.UI.Xaml.Shapes.Rectangle
+        {
+            Width = 32,
+            Height = 32,
+            RadiusX = 4,
+            RadiusY = 4,
+            Fill = fill,
+            Stroke = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            StrokeThickness = 1,
+        };
+        ToolTipService.SetToolTip(swatchRect, displayName);
+        return (swatchRect, fill, displayName);
+    }
+
+    // Resolves a swatch's display name. "group" is the engine's
+    // sentinel for the single-colour mode (one swatch standing in
+    // for the whole group push). For per-light ids we look up the
+    // descriptor the engine published when it resolved multi-light
+    // mode — the bridge-reported name reads as a real fixture
+    // ("Falcom" / "Wilhelm" / "Bjorn") instead of an integer id.
+    private static string ResolveLightDisplayName(AmbientEngine engine, string lightKey)
+    {
+        if (lightKey == "group") return "Group";
+
+        var multi = engine.MultiLights;
+        if (multi is not null)
+        {
+            foreach (var descriptor in multi)
+            {
+                if (descriptor.Id == lightKey)
+                {
+                    return string.IsNullOrWhiteSpace(descriptor.Name) ? lightKey : descriptor.Name;
+                }
+            }
+        }
+        return lightKey;
     }
 
     // ── Light zones (J4) ────────────────────────────────────────────────
@@ -2216,7 +2648,8 @@ public sealed partial class PlaygroundWindow : Window
     // connected output is queried for its fixture list, one ComboBox-
     // bearing row is appended to LightZonesPanel per light, and the
     // four border-zone rectangles in LightZonesOverlay are sized to
-    // match AmbientEngine.BorderDepth × stage dims.
+    // match AmbientEngine.LateralBorderDepth (left/right) and
+    // VerticalBorderDepth (top/bottom) × stage dims.
 
     // Display label for each LightZone enum value, in the order they
     // appear in the ComboBox. Kept in code-behind so the rest of the
@@ -2404,18 +2837,13 @@ public sealed partial class PlaygroundWindow : Window
         // failure in earlier iterations.
         LightZonesCard.Visibility = Visibility.Visible;
 
-        // Stage dims may not be set yet if no pipeline run has
-        // happened ; fall back to the typical 30×17 footprint so the
-        // overlay rectangles have somewhere to land in the meantime.
-        // BuildPreviewGrid will overwrite the dims + call
-        // LayoutLightZoneRects on the first pipeline start.
-        double stageWidth  = AmbientPreviewStage.Width  > 0 ? AmbientPreviewStage.Width  : 30 * PreviewCellSize;
-        double stageHeight = AmbientPreviewStage.Height > 0 ? AmbientPreviewStage.Height : 17 * PreviewCellSize;
-        AmbientPreviewStage.Width  = stageWidth;
-        AmbientPreviewStage.Height = stageHeight;
-        LightZonesOverlay.Width    = stageWidth;
-        LightZonesOverlay.Height   = stageHeight;
-        LayoutLightZoneRects(stageWidth, stageHeight);
+        // Grid dims may not be set yet if no pipeline run has
+        // happened ; LayoutLightZonesOverlayFromViewbox falls back to
+        // the typical 30×17 footprint when _previewGridCols/Rows are
+        // still zero, so the overlay rectangles have somewhere to
+        // land in the meantime. BuildPreviewGrid will overwrite the
+        // dims + re-layout on the first pipeline start.
+        LayoutLightZonesOverlayFromViewbox();
 
         if (_placementLights is null || _placementLights.Count == 0)
         {
@@ -2656,17 +3084,54 @@ public sealed partial class PlaygroundWindow : Window
         UpdatePreviewViewboxVisibility();
     }
 
+    // Sizes the (sibling) LightZonesOverlay Canvas to the visible
+    // scaled footprint of the preview grid. Replaces the old "Canvas
+    // inside the Viewbox" approach, which made every stroke and gap
+    // scale with the window. Now the overlay lives outside the
+    // Viewbox, so its rectangle dimensions stay in DIP space and the
+    // stroke thickness (when re-added) reads identically at any
+    // window width. Called from BuildPreviewGrid (initial layout)
+    // and from the Viewbox's SizeChanged (live resize).
+    private void LayoutLightZonesOverlayFromViewbox()
+    {
+        // Native footprint = grid dims × cell size. Falls back to the
+        // typical 30×17 footprint while the sampler hasn't reported
+        // anything yet — same default the zones-card path used.
+        int cols = _previewGridCols > 0 ? _previewGridCols : 30;
+        int rows = _previewGridRows > 0 ? _previewGridRows : 17;
+        double nativeW = cols * PreviewCellSize;
+        double nativeH = rows * PreviewCellSize;
+
+        double viewboxW = AmbientPreviewViewbox.ActualWidth;
+        double viewboxH = AmbientPreviewViewbox.ActualHeight;
+        if (viewboxW <= 0 || viewboxH <= 0) return;
+
+        // Replicates Viewbox Stretch=Uniform : the limiting axis sets
+        // the scale, the other axis gets letterboxed (centered by
+        // default — which is what HorizontalAlignment/VerticalAlignment
+        // Center on the Canvas matches).
+        double scale = Math.Min(viewboxW / nativeW, viewboxH / nativeH);
+        double displayedW = nativeW * scale;
+        double displayedH = nativeH * scale;
+
+        LightZonesOverlay.Width  = displayedW;
+        LightZonesOverlay.Height = displayedH;
+        LayoutLightZoneRects(displayedW, displayedH);
+    }
+
     // Computes the dip-space rectangle each zone covers on the preview
     // stage and positions the matching overlay Rectangle accordingly.
     // The geometry mirrors the engine's SampleZone bounds : Top covers
-    // the upper BorderDepth band, Bottom the lower, Left and Right the
-    // matching vertical strips. We use the same BorderDepth constant
-    // exposed by AmbientEngine so the user-visible band matches what
-    // the engine actually samples.
+    // the upper VerticalBorderDepth band, Bottom the lower, Left and
+    // Right the matching lateral strips. We use the same depth
+    // constants exposed by AmbientEngine so the user-visible band
+    // matches what the engine actually samples — Top/Bottom share
+    // the vertical depth (40 % default), Left/Right the lateral
+    // depth (33 % default).
     private void LayoutLightZoneRects(double stageWidth, double stageHeight)
     {
-        double bandH = stageHeight * AmbientEngine.BorderDepth;
-        double bandV = stageWidth  * AmbientEngine.BorderDepth;
+        double bandH = stageHeight * AmbientEngine.VerticalBorderDepth;
+        double bandV = stageWidth  * AmbientEngine.LateralBorderDepth;
 
         Canvas.SetLeft(ZoneTopRect, 0);
         Canvas.SetTop (ZoneTopRect, 0);
@@ -2952,15 +3417,30 @@ public sealed partial class PlaygroundWindow : Window
 
     private void InitPlaygroundAmbientTuning()
     {
-        // Set the gamma slider range here rather than in XAML : the
-        // WinUI 3 XAML parser rejected every attribute order with a
-        // non-zero Minimum (see AmbientPage GammaSlider rationale).
-        // Order matters at runtime too — Maximum first, then Value,
-        // then Minimum — so the RangeBase invariant holds at each
-        // assignment step.
-        PlaygroundGammaSlider.Maximum = 3.0;
+        // Set non-zero-Minimum slider ranges here rather than in XAML :
+        // the WinUI 3 Slider parser rejects every attribute order
+        // when the default Value (0) sits below the declared Minimum,
+        // crashing the page with a XamlParseException at runtime.
+        // Order matters here too — Maximum first, then Value, then
+        // Minimum — so the RangeBase invariant holds at each step.
+
+        // Curve param. Max seeded high enough to host any SCurve
+        // steepness (up to 15) the user might have persisted from a
+        // previous session — UpdatePlaygroundBrightnessCurveDependentUi
+        // narrows Max back down to Gamma's 3.0 when the active type
+        // is Gamma, on Resync.
+        PlaygroundGammaSlider.Maximum = 15.0;
         PlaygroundGammaSlider.Value   = 1.8;
         PlaygroundGammaSlider.Minimum = 1.0;
+
+        // Smoothing α. Defaults seed the slider with the same value
+        // the engine will read after ResyncPlaygroundAmbientTuning
+        // overwrites Value from settings on the next line, so the
+        // brief window between InitializeComponent and Resync still
+        // has a coherent state.
+        PlaygroundSmoothingSlider.Maximum = 1.0;
+        PlaygroundSmoothingSlider.Value   = 0.30;
+        PlaygroundSmoothingSlider.Minimum = 0.05;
 
         // Subscription to AmbientSettingsService.Changed already lives
         // in the main Loaded handler (OnAmbientSettingsChangedFromPlayground
@@ -2979,16 +3459,187 @@ public sealed partial class PlaygroundWindow : Window
         {
             var s = AmbientSettingsService.Instance.Current;
 
-            PlaygroundExposureSlider.Value      = s.ExposureEv;
-            PlaygroundSaturationSlider.Value    = s.SaturationBoost * 100.0;
-            PlaygroundMinBrightnessSlider.Value = s.MinBrightness;
-            PlaygroundGammaSlider.Value         = s.BrightnessCurveGamma;
-            PlaygroundGammaCanvas.Gamma         = s.BrightnessCurveGamma;
+            PlaygroundExposureSlider.Value         = s.ExposureEv;
+            PlaygroundSaturationSlider.Value       = s.SaturationBoost * 100.0;
+            PlaygroundMinBrightnessSlider.Value    = s.MinBrightness;
+            // ComboBoxes first : SelectBrightnessCurveTypeInCombo
+            // drives the curve type that UpdatePlayground...DependentUi
+            // reads to rescale Max. Then Max is set. Only then can the
+            // Value safely take any SCurve k up to 15 without being
+            // clamped by a stale Gamma 3.0 ceiling.
+            SelectBrightnessCurveTypeInCombo(s.BrightnessCurveType);
+            SelectAmbientModeInCombo(s.Mode);
+            UpdatePlaygroundBrightnessCurveDependentUi();
+            // Curve param slider mirrors the value of the *active*
+            // curve's dedicated parameter. SCurve stores its steepness
+            // separately so the slider doesn't carry Gamma's 1.8 over
+            // when the user picks SCurve (where 1.8 is nearly invisible).
+            double curveParam = SelectCurveParamForType(s.BrightnessCurveType, s);
+            PlaygroundGammaSlider.Value            = curveParam;
+            // Canvas needs both the param matching the active curve
+            // (so SCurve renders with its steepness, not Gamma's
+            // exponent) and the type — the type was forwarded by
+            // UpdatePlaygroundBrightnessCurveDependentUi above.
+            PlaygroundGammaCanvas.Gamma            = curveParam;
+            PlaygroundSmoothingSlider.Value        = s.SmoothingAlpha;
+            PlaygroundChangeThresholdSlider.Value  = s.ChangeThreshold;
 
             UpdatePlaygroundExposureText();
             UpdatePlaygroundSaturationText();
             UpdatePlaygroundMinBrightnessText();
             UpdatePlaygroundGammaText();
+            UpdatePlaygroundSmoothingText();
+            UpdatePlaygroundChangeThresholdText();
+        }
+        finally
+        {
+            _ambientTuningLoading = prev;
+        }
+    }
+
+    // Maps the persisted enum into the ComboBox by Tag. Falls back to
+    // Gamma (first non-Linear entry) if a future settings.json carries
+    // an unknown value — keeps the UI usable instead of leaving the
+    // selection empty.
+    private void SelectBrightnessCurveTypeInCombo(BrightnessCurveType type)
+    {
+        string tag = type.ToString();
+        foreach (var item in PlaygroundBrightnessCurveCombo.Items)
+        {
+            if (item is ComboBoxItem cbi && (cbi.Tag as string) == tag)
+            {
+                PlaygroundBrightnessCurveCombo.SelectedItem = cbi;
+                return;
+            }
+        }
+        // Unknown / future enum value : pick Gamma (index 1).
+        PlaygroundBrightnessCurveCombo.SelectedIndex = 1;
+    }
+
+    // Refreshes the curve section UI after a curve type change. The
+    // canvas now supports all four shapes natively (BrightnessCurveCanvas
+    // dispatches on its CurveType DP), so we keep it visible
+    // unconditionally — only its opacity drops on Linear / Logarithmic
+    // where the user can't tune anything. The slider row is fully
+    // hidden when the active curve has no parameter (Linear, Log) so
+    // the user isn't tempted to drag a no-op slider.
+    private void UpdatePlaygroundBrightnessCurveDependentUi()
+    {
+        var type = ReadBrightnessCurveTypeFromCombo();
+        bool paramHasEffect = type == BrightnessCurveType.Gamma
+                           || type == BrightnessCurveType.SCurve;
+        PlaygroundGammaSlider.IsEnabled = paramHasEffect;
+
+        // Slider range follows the active curve : Gamma stays close
+        // to its practical interval [1.0, 3.0] where the effect lands
+        // ; SCurve goes all the way to 15 because anything below 5
+        // reads as barely-contrast and the user wants the option to
+        // push the curve into hard near-step territory for "explosion
+        // / door-opening flash" stuff. Order matters when shrinking
+        // (Max < current Value clamps Value) so we always set Max
+        // before Value is re-projected in OnPlaygroundBrightnessCurveTypeChanged.
+        switch (type)
+        {
+            case BrightnessCurveType.Gamma:
+                PlaygroundGammaSlider.Maximum = 3.0;
+                break;
+            case BrightnessCurveType.SCurve:
+                PlaygroundGammaSlider.Maximum = 15.0;
+                break;
+            default:
+                // Linear / Logarithmic : slider is collapsed below ;
+                // a large Max keeps the range invariant intact while
+                // covering any leftover value previously persisted.
+                PlaygroundGammaSlider.Maximum = 15.0;
+                break;
+        }
+
+        // Push the type onto the canvas so it draws the right shape.
+        // Gamma / param are forwarded by the slider handler ; that one
+        // already calls Canvas.Gamma = slider.Value live.
+        PlaygroundGammaCanvas.CurveType = type;
+
+        // Always reserve the canvas footprint so toggling curve types
+        // doesn't reflow the rest of the section. Mute the curve when
+        // it isn't a knob the user can tune — Linear is identical to
+        // the reference dashed diagonal anyway, Logarithmic carries no
+        // param. Gamma and SCurve stay full-opacity since the user is
+        // actively shaping them.
+        PlaygroundGammaCanvas.Opacity = paramHasEffect ? 1.0 : 0.4;
+
+        // Hide the slider row entirely on Linear / Logarithmic — these
+        // shapes have no tunable parameter so a slider would just sit
+        // there confusing. The caption text below keeps explaining
+        // the active curve in plain language.
+        PlaygroundGammaSliderRow.Visibility = paramHasEffect
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        PlaygroundGammaCaption.Text = type switch
+        {
+            BrightnessCurveType.Linear      => "Direct pass-through — input max channel is sent to the lamp as-is. No parameter to tune ; rely on smoothing and min brightness for fine control.",
+            BrightnessCurveType.Gamma       => "Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights. 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows.",
+            BrightnessCurveType.SCurve      => "Logistic S-curve pushed mid-tones away from grey in both directions. Higher steepness = harder contrast. 1.0 — almost linear · 2.0 — default · 5.0 — near-step.",
+            BrightnessCurveType.Logarithmic => "Lifts the bottom of the range so even very dim scenes stay clearly lit. No parameter to tune — the curve is fixed.",
+            _ => string.Empty,
+        };
+    }
+
+    // Pick the right persisted parameter for the active curve : Gamma
+    // and SCurve each store their own value (exponent vs steepness),
+    // Linear and Logarithmic don't consume the param at all.
+    private static double SelectCurveParamForType(BrightnessCurveType type, AmbientSettings s)
+        => type switch
+        {
+            BrightnessCurveType.Gamma  => s.BrightnessCurveParam,
+            BrightnessCurveType.SCurve => s.BrightnessCurveSCurveSteepness,
+            _                          => s.BrightnessCurveParam,
+        };
+
+    private BrightnessCurveType ReadBrightnessCurveTypeFromCombo()
+    {
+        if (PlaygroundBrightnessCurveCombo.SelectedItem is ComboBoxItem cbi
+         && cbi.Tag is string tag
+         && Enum.TryParse<BrightnessCurveType>(tag, out var parsed))
+        {
+            return parsed;
+        }
+        return BrightnessCurveType.Gamma;
+    }
+
+    // Mode preset selector — synchronises the ComboBox with the
+    // currently active mode. Falls back to Custom (index 3) when the
+    // saved enum value is foreign — keeps the UI usable instead of
+    // empty.
+    private void SelectAmbientModeInCombo(AmbientMode mode)
+    {
+        string tag = mode.ToString();
+        foreach (var item in PlaygroundAmbientModeCombo.Items)
+        {
+            if (item is ComboBoxItem cbi && (cbi.Tag as string) == tag)
+            {
+                PlaygroundAmbientModeCombo.SelectedItem = cbi;
+                return;
+            }
+        }
+        PlaygroundAmbientModeCombo.SelectedIndex = 3;
+    }
+
+    // Switches Current.Mode to Custom and reflects the change in the
+    // ComboBox without retriggering the SelectionChanged handler.
+    // Caller is responsible for the Save() that follows the tuning
+    // mutation — this helper purposefully doesn't save so two calls
+    // in the same frame don't double-write the file.
+    private void EnterCustomMode()
+    {
+        var current = AmbientSettingsService.Instance.Current;
+        if (current.Mode == AmbientMode.Custom) return;
+        bool prev = _ambientTuningLoading;
+        _ambientTuningLoading = true;
+        try
+        {
+            current.Mode = AmbientMode.Custom;
+            SelectAmbientModeInCombo(AmbientMode.Custom);
         }
         finally
         {
@@ -2999,10 +3650,30 @@ public sealed partial class PlaygroundWindow : Window
     private void OnPlaygroundGammaSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         UpdatePlaygroundGammaText();
-        // Update the canvas even during the load pass — purely visual.
+        var type = ReadBrightnessCurveTypeFromCombo();
+        // Canvas dispatches on CurveType internally — push the live
+        // slider value as the generic param for both Gamma and SCurve
+        // so the shape follows the drag in real time.
         PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
+
         if (_ambientTuningLoading) return;
-        AmbientSettingsService.Instance.Current.BrightnessCurveGamma = PlaygroundGammaSlider.Value;
+
+        // Persist into the parameter that belongs to the active
+        // curve, leaving the other curves' parameters untouched.
+        // Linear / Logarithmic ignore the slider but we still write
+        // through into the Gamma slot so the value is preserved if
+        // the user switches back to Gamma later.
+        var s = AmbientSettingsService.Instance.Current;
+        switch (type)
+        {
+            case BrightnessCurveType.SCurve:
+                s.BrightnessCurveSCurveSteepness = PlaygroundGammaSlider.Value;
+                break;
+            default:
+                s.BrightnessCurveParam = PlaygroundGammaSlider.Value;
+                break;
+        }
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3011,6 +3682,7 @@ public sealed partial class PlaygroundWindow : Window
         UpdatePlaygroundExposureText();
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.ExposureEv = PlaygroundExposureSlider.Value;
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3019,6 +3691,7 @@ public sealed partial class PlaygroundWindow : Window
         UpdatePlaygroundSaturationText();
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.SaturationBoost = PlaygroundSaturationSlider.Value / 100.0;
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3028,11 +3701,20 @@ public sealed partial class PlaygroundWindow : Window
         if (_ambientTuningLoading) return;
         AmbientSettingsService.Instance.Current.MinBrightness =
             (int)Math.Round(PlaygroundMinBrightnessSlider.Value);
+        EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
 
     private void UpdatePlaygroundGammaText()
-        => PlaygroundGammaValueText.Text = $"γ {PlaygroundGammaSlider.Value:F2}";
+    {
+        var type = ReadBrightnessCurveTypeFromCombo();
+        PlaygroundGammaValueText.Text = type switch
+        {
+            BrightnessCurveType.Gamma  => $"γ {PlaygroundGammaSlider.Value:F2}",
+            BrightnessCurveType.SCurve => $"k {PlaygroundGammaSlider.Value:F2}",
+            _                          => "—",
+        };
+    }
 
     private void UpdatePlaygroundExposureText()
     {
@@ -3045,4 +3727,89 @@ public sealed partial class PlaygroundWindow : Window
 
     private void UpdatePlaygroundMinBrightnessText()
         => PlaygroundMinBrightnessValueText.Text = $"{(int)Math.Round(PlaygroundMinBrightnessSlider.Value)}";
+
+    private void UpdatePlaygroundSmoothingText()
+        => PlaygroundSmoothingValueText.Text = $"α {PlaygroundSmoothingSlider.Value:F2}";
+
+    private void UpdatePlaygroundChangeThresholdText()
+        => PlaygroundChangeThresholdValueText.Text = $"{(int)Math.Round(PlaygroundChangeThresholdSlider.Value)}";
+
+    // Smoothing α slider — persists into AmbientSettings.SmoothingAlpha.
+    // The engine re-reads it on every push tick so the move applies
+    // within ~66 ms. Touching it counts as a tuning gesture — mode
+    // implicitly flips to Custom.
+    private void OnPlaygroundSmoothingSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundSmoothingText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.SmoothingAlpha = PlaygroundSmoothingSlider.Value;
+        EnterCustomMode();
+        AmbientSettingsService.Instance.Save();
+    }
+
+    // Change threshold slider — persists into AmbientSettings.ChangeThreshold.
+    // 0 disables the gate ; higher values let smoothing absorb more
+    // before any push is allowed through.
+    private void OnPlaygroundChangeThresholdSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundChangeThresholdText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.ChangeThreshold =
+            (int)Math.Round(PlaygroundChangeThresholdSlider.Value);
+        EnterCustomMode();
+        AmbientSettingsService.Instance.Save();
+    }
+
+    // Curve type ComboBox — persists the enum into settings, refreshes
+    // the param slider's enabled state + caption + canvas visibility,
+    // and re-projects the slider Value from the dedicated parameter
+    // of the newly-selected curve so the slider position stays
+    // semantically meaningful. Changing the curve counts as a tuning
+    // gesture so the mode implicitly switches to Custom.
+    private void OnPlaygroundBrightnessCurveTypeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var type = ReadBrightnessCurveTypeFromCombo();
+
+        // Order matters when the slider range is shrinking : Max must
+        // be set before Value so we don't transiently clamp a valid
+        // SCurve k=15 onto Gamma's 3.0 ceiling and lose the user's
+        // intent. UpdatePlaygroundBrightnessCurveDependentUi rewrites
+        // PlaygroundGammaSlider.Maximum for us ; do that first, then
+        // re-project the slider Value from the curve's own parameter.
+        UpdatePlaygroundBrightnessCurveDependentUi();
+        bool prev = _ambientTuningLoading;
+        _ambientTuningLoading = true;
+        try
+        {
+            var s = AmbientSettingsService.Instance.Current;
+            PlaygroundGammaSlider.Value = SelectCurveParamForType(type, s);
+        }
+        finally
+        {
+            _ambientTuningLoading = prev;
+        }
+
+        UpdatePlaygroundGammaText();
+
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.BrightnessCurveType = type;
+        EnterCustomMode();
+        AmbientSettingsService.Instance.Save();
+    }
+
+    // Mode preset selector. Picking Game / Movie / Ambient runs the
+    // matching AmbientModePresets snapshot through ApplyPreset (which
+    // also saves) and the Changed event re-syncs every slider via
+    // ResyncPlaygroundAmbientTuning. Picking Custom is a no-op — the
+    // user explicitly opting in to their own values.
+    private void OnPlaygroundAmbientModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ambientTuningLoading) return;
+        if (PlaygroundAmbientModeCombo.SelectedItem is ComboBoxItem cbi
+            && cbi.Tag is string tag
+            && Enum.TryParse<AmbientMode>(tag, out var mode))
+        {
+            AmbientSettingsService.Instance.ApplyPreset(mode);
+        }
+    }
 }

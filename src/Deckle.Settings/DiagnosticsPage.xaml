@@ -69,7 +69,7 @@
                 </Grid>
 
                 <controls:SettingsCard x:Uid="LoggingAmbientCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xEA80;}">
                     <ToggleSwitch IsOn="{x:Bind ViewModel.LogAmbientCaptureActivity, Mode=TwoWay}" />
                 </controls:SettingsCard>
 

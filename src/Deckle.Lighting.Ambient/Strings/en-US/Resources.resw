@@ -156,50 +156,35 @@
     <value>Mode</value>
   </data>
   <data name="AmbientModeCard.Description" xml:space="preserve">
-    <value>Game mirrors the screen palette directly. Realistic favours the scene's actual light sources. Changing this restarts the pipeline.</value>
+    <value>Game is vivid and quick. Movie smooths colour changes for cinematic content. Ambient stays soft and slow as room mood lighting. Custom is what the Playground tunes when you touch a slider.</value>
   </data>
   <data name="AmbientModeGame.Content" xml:space="preserve">
     <value>Game</value>
   </data>
-  <data name="AmbientModeRealistic.Content" xml:space="preserve">
-    <value>Realistic</value>
+  <data name="AmbientModeMovie.Content" xml:space="preserve">
+    <value>Movie</value>
+  </data>
+  <data name="AmbientModeAmbient.Content" xml:space="preserve">
+    <value>Ambient</value>
+  </data>
+  <data name="AmbientModeCustom.Content" xml:space="preserve">
+    <value>Custom</value>
   </data>
 
   <!-- ── HDR tuning ────────────────────────────────────────── -->
-  <!-- Flat SettingsCards (no SettingsExpander wrapper) for the
-       three classic knobs ; Brightness curve hosts its viz in an
-       Expander. Descriptions kept short — the dense per-knob
-       rationale lives in the Playground HDR tuning card where a
-       live preview makes experimentation cheap. -->
+  <!-- The four HDR slider cards (Exposure, Saturation, MinBrightness,
+       BrightnessCurve) moved to the Playground in V0.3. The Settings
+       page keeps only a section header and a single card pointing to
+       the Playground for fine tuning ; the empirical knobs benefit
+       from the Playground's live preview. -->
   <data name="AmbientTuningSectionHeader.Text" xml:space="preserve">
-    <value>HDR tuning</value>
+    <value>Fine tuning</value>
   </data>
-  <data name="AmbientExposureCard.Header" xml:space="preserve">
-    <value>Exposure</value>
+  <data name="AmbientOpenPlaygroundCard.Header" xml:space="preserve">
+    <value>Open the Playground</value>
   </data>
-  <data name="AmbientExposureCard.Description" xml:space="preserve">
-    <value>Boost or dim the lamp overall. +1 doubles brightness — useful for dim HDR content.</value>
-  </data>
-  <data name="AmbientSaturationCard.Header" xml:space="preserve">
-    <value>Saturation</value>
-  </data>
-  <data name="AmbientSaturationCard.Description" xml:space="preserve">
-    <value>Colour intensity. 100% is neutral; 150–180% gives Hue Sync–like vividness.</value>
-  </data>
-  <data name="AmbientMinBrightnessCard.Header" xml:space="preserve">
-    <value>Minimum brightness</value>
-  </data>
-  <data name="AmbientMinBrightnessCard.Description" xml:space="preserve">
-    <value>Lowest brightness the lamp drops to. Prevents mid-tone scenes from looking washed out.</value>
-  </data>
-  <data name="AmbientGammaExpander.Header" xml:space="preserve">
-    <value>Brightness curve</value>
-  </data>
-  <data name="AmbientGammaExpander.Description" xml:space="preserve">
-    <value>Shapes how dim scenes map to the lamp. Higher values darken shadows without affecting bright areas. Expand to see the curve.</value>
-  </data>
-  <data name="AmbientTuningPlaygroundHint.Text" xml:space="preserve">
-    <value>Open the Playground to tune these values with a live preview.</value>
+  <data name="AmbientOpenPlaygroundCard.Description" xml:space="preserve">
+    <value>Adjust exposure, saturation, brightness curve, smoothing, and per-light settings with a live preview of the sampled grid.</value>
   </data>
   <data name="Settings_SectionResetLink.Content" xml:space="preserve">
     <value>Reset</value>

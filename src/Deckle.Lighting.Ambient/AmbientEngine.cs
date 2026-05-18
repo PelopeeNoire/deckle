@@ -33,10 +33,12 @@ namespace Deckle.Lighting.Ambient;
 //     per-second PUT count within the Hue REST CLIP v1 comfort zone
 //     for a typical 3-5 light setup (3 lights × 10 Hz = 30 PUT/s).
 //     The four zones are sampled once per tick from a band of
-//     <see cref="BorderDepth"/> on the matching edge of the frame —
+//     <see cref="LateralBorderDepth"/> on the left / right edges and
+//     <see cref="VerticalBorderDepth"/> on the top / bottom edges —
 //     this mirrors HyperHDR's <c>horizontalDepth</c> / <c>verticalDepth</c>
-//     concept, collapsed to a single shared constant since V1 doesn't
-//     support sub-zone positioning.
+//     concept, with asymmetric defaults tuned for a 3-lamp setup
+//     where each lamp needs to summarise a sizeable slice of the
+//     frame, not just a bezel-LED strip.
 //
 // If multi-light is requested but the driver doesn't expose the
 // capability, the engine logs a warning and falls back to group mode
@@ -97,11 +99,10 @@ public sealed class AmbientEngine : IAsyncDisposable
     private const int MultiPushHz = 10;
 
     // Early-exit threshold — if |ΔR| + |ΔG| + |ΔB| < this, the push
-    // is skipped. 3 (out of 0-765 max) is conservative — it catches
-    // FrameSampler quantisation noise on a static screen but lets
-    // through anything the eye would notice. J5 will surface this
-    // value in the Playground tuning panel.
-    private const int ChangeThreshold = 3;
+    // is skipped. Now sourced from AmbientSettings.ChangeThreshold
+    // (default 6), refreshed at the top of each tick. Effective
+    // value seen by GroupTickAsync / MultiLightTickAsync via the
+    // _changeThreshold field below.
 
     // Lights-out threshold — if every channel of the analysed average
     // is at or below this, we clamp the colour to (0,0,0) before the
@@ -115,15 +116,22 @@ public sealed class AmbientEngine : IAsyncDisposable
     private const int OffThreshold = 8;
 
     // Border-band depth used by the four zone-sampling helpers, as a
-    // fraction of the matching screen dimension. 0.20 ≈ HyperHDR's
-    // default `horizontalDepth` / `verticalDepth` range (15-25 %).
-    // The top zone reads pixels in y ∈ [0, BorderDepth], the bottom
-    // zone in y ∈ [1-BorderDepth, 1], the left in x ∈ [0, BorderDepth],
-    // the right in x ∈ [1-BorderDepth, 1]. Constants kept symmetric
-    // (one depth for both axes) since a typical user setup wraps
-    // around the screen symmetrically. J5 will expose this on the
-    // Playground panel for tuning.
-    public const double BorderDepth = 0.20;
+    // fraction of the matching screen dimension. Asymmetric defaults :
+    // lateral bands at 33 % and vertical bands at 40 %. The 3-lamp
+    // setup (Top + Left + Right) needs each lamp to summarise a much
+    // larger slice than a typical bezel-LED strip would — capturing
+    // a third of the screen on the sides, and the upper two-fifths on
+    // top so the lamp facing the user picks up the sky / dominant
+    // mood of the scene, not just the HUD overlay band. The top zone
+    // reads pixels in y ∈ [0, VerticalBorderDepth], the bottom zone
+    // in y ∈ [1-VerticalBorderDepth, 1], the left in
+    // x ∈ [0, LateralBorderDepth], the right in
+    // x ∈ [1-LateralBorderDepth, 1]. Hardcoded on purpose : the
+    // depths are a property of the room/lighting layout, not a
+    // per-scene tuning knob. Adjust here when the lamp arrangement
+    // changes.
+    public const double LateralBorderDepth = 0.33;
+    public const double VerticalBorderDepth = 0.40;
 
     // Heartbeat cadence for the push-loop telemetry. The per-tick
     // "push" log used to fire 10-15 times a second on a steady
@@ -206,7 +214,7 @@ public sealed class AmbientEngine : IAsyncDisposable
     // _host.Ambient. Live-reload — the AmbientPage sliders apply on
     // the next tick without restarting the pipeline. See
     // AmbientSettings.ExposureEv / SaturationBoost / MinBrightness /
-    // BrightnessCurveGamma for the user-facing semantics. The snapshot
+    // BrightnessCurveParam for the user-facing semantics. The snapshot
     // avoids re-reading the host on every pixel inside the helpers.
     //   - Exposure is forwarded to FrameSampler (applied in linear
     //     light before the tone-map, mathematically correct).
@@ -222,9 +230,59 @@ public sealed class AmbientEngine : IAsyncDisposable
     //     the max channel to the floor while preserving chromaticity).
     //     Comes after the curve so the effective floor matches the
     //     value the user set, not the curve-attenuated version of it.
-    private double _saturationBoost      = 1.0;
-    private double _brightnessCurveGamma = 1.0;
-    private int    _minBrightness        = 0;
+    private double _saturationBoost               = 1.0;
+    private double _brightnessCurveParam          = 1.0;
+    private double _brightnessCurveSCurveSteepness = 2.0;
+    private BrightnessCurveType _brightnessCurveType = BrightnessCurveType.Linear;
+    private int    _minBrightness         = 0;
+    private int    _changeThreshold       = 6;
+    // EMA factor snapshot. 1.0 = pass-through (no temporal smoothing).
+    // Refreshed at the top of each tick from _host.Ambient.SmoothingAlpha.
+    // The lamp jitter observed in dark scenes with small moving
+    // reflections was attributed to the absence of temporal damping ;
+    // this knob plus the per-tick state below close that gap.
+    private double _smoothingAlpha       = 1.0;
+
+    // EMA state — group mode. Float to preserve sub-byte precision so
+    // a slow ramp progresses each tick instead of getting clipped to
+    // the previous integer step. Sentinel -1f means "not yet seeded"
+    // — the first tick after Start adopts the raw value (effectively
+    // alpha = 1 for that single frame, no fade-in from black).
+    private float _smoothedR = -1f, _smoothedG = -1f, _smoothedB = -1f;
+
+    // EMA state — multi mode. One entry per fixture id, lazy-initialised
+    // the first time the light shows up post-Start. Cleared on every
+    // StartAsync so a re-pair doesn't carry over the previous setup's
+    // smoothing trail. Float for the same reason as the group state.
+    private readonly Dictionary<string, (float R, float G, float B)> _multiSmoothed = new();
+
+    // Most-recent "intent" colour after tuning + smoothing, even when
+    // the ChangeThreshold delta check drops the actual push. The
+    // Playground swatches read these via SnapshotEmittedColors() to
+    // visualise the colour the engine wants to send right now — what
+    // the user would see if the lamp were faster than the delta gate.
+    // Key "group" in group mode, fixture id in multi mode. The lock
+    // covers cross-thread reads from the UI poll timer.
+    private readonly Dictionary<string, LightColor> _emittedColors = new();
+    private readonly object _emittedLock = new();
+
+    /// <summary>Returns a snapshot of the colours the engine intended
+    /// to push on the latest tick, regardless of whether the delta
+    /// gate let them through. Keyed by "group" in group mode and by
+    /// fixture id in multi mode. Empty before the first tick. Safe to
+    /// call from any thread.</summary>
+    public IReadOnlyDictionary<string, LightColor> SnapshotEmittedColors()
+    {
+        lock (_emittedLock)
+        {
+            return new Dictionary<string, LightColor>(_emittedColors);
+        }
+    }
+
+    /// <summary>Raised after every push tick once the intent colours
+    /// have been refreshed. Subscribers run on the engine thread —
+    /// dispatch onto the UI queue before touching XAML.</summary>
+    public event Action? EmittedColorsChanged;
 
     // Last-constructed engine, exposed for the AmbientPage that lives
     // in Deckle.Lighting.Ambient and cannot reference App (circular).
@@ -473,6 +531,9 @@ public sealed class AmbientEngine : IAsyncDisposable
             _hbTicks = _hbPushed = _hbDropped = _hbUnmappedLights = 0;
             _hbHttpDurationsMs.Clear();
             _lastR = _lastG = _lastB = -1;
+            _smoothedR = _smoothedG = _smoothedB = -1f;
+            _multiSmoothed.Clear();
+            lock (_emittedLock) _emittedColors.Clear();
 
             // Open the capture-active window AFTER the started
             // milestones (Info + Verbose mirror above) have flushed,
@@ -602,9 +663,13 @@ public sealed class AmbientEngine : IAsyncDisposable
                 // window without a restart.
                 var ambient = _host.Ambient;
                 _sampler!.SetExposureEv(ambient.ExposureEv);
-                _saturationBoost      = ambient.SaturationBoost;
-                _brightnessCurveGamma = ambient.BrightnessCurveGamma;
-                _minBrightness        = ambient.MinBrightness;
+                _saturationBoost                = ambient.SaturationBoost;
+                _brightnessCurveType            = ambient.BrightnessCurveType;
+                _brightnessCurveParam           = ambient.BrightnessCurveParam;
+                _brightnessCurveSCurveSteepness = ambient.BrightnessCurveSCurveSteepness;
+                _minBrightness                  = ambient.MinBrightness;
+                _changeThreshold                = ambient.ChangeThreshold;
+                _smoothingAlpha                 = ambient.SmoothingAlpha;
 
                 var sample = _sampler!.LatestSample;
                 if (sample is null)
@@ -663,10 +728,21 @@ public sealed class AmbientEngine : IAsyncDisposable
         byte targetG = tuned.G;
         byte targetB = tuned.B;
 
+        // Temporal smoothing on the tuned colour. See _smoothedR/G/B
+        // field doc — damps small per-frame jitter (moving highlights
+        // in a globally dark scene) without dulling real cuts. Applied
+        // before the delta gate so the gate compares the eye-relevant
+        // colour, not the raw sampler output.
+        (targetR, targetG, targetB) = ApplyGroupSmoothing(targetR, targetG, targetB);
+
+        // Publish the intent colour for the Playground swatch viewer
+        // even when the delta gate drops the actual push.
+        PublishGroupEmitted(targetR, targetG, targetB);
+
         int delta = Math.Abs(targetR - _lastR)
                   + Math.Abs(targetG - _lastG)
                   + Math.Abs(targetB - _lastB);
-        bool dropped = _lastR >= 0 && delta < ChangeThreshold;
+        bool dropped = _lastR >= 0 && delta < _changeThreshold;
 
         if (dropped)
         {
@@ -789,11 +865,21 @@ public sealed class AmbientEngine : IAsyncDisposable
             byte targetG = tuned.G;
             byte targetB = tuned.B;
 
+            // Per-light temporal smoothing on the tuned colour. State
+            // is keyed by fixture id so each lamp keeps its own EMA
+            // trail (a fast cut on the left side doesn't reset the
+            // right-side lamp's history).
+            (targetR, targetG, targetB) = ApplyMultiSmoothing(light.Id, targetR, targetG, targetB);
+
+            // Stash the intent colour for the Playground swatches —
+            // batched event fires once at the end of the loop.
+            PublishMultiEmitted(light.Id, targetR, targetG, targetB);
+
             var prev = _multiLastPushed.TryGetValue(light.Id, out var last) ? last : (-1, -1, -1);
             int delta = Math.Abs(targetR - prev.Item1)
                       + Math.Abs(targetG - prev.Item2)
                       + Math.Abs(targetB - prev.Item3);
-            bool dropped = prev.Item1 >= 0 && delta < ChangeThreshold;
+            bool dropped = prev.Item1 >= 0 && delta < _changeThreshold;
 
             if (dropped)
             {
@@ -809,6 +895,12 @@ public sealed class AmbientEngine : IAsyncDisposable
         // surfaces the user's "lights assigned to None" backlog
         // without us logging it every tick.
         _hbUnmappedLights += unmappedThisTick;
+
+        // Fire the observable event once per tick. Even when toPush is
+        // empty (every light dropped by the delta gate) the intent map
+        // has been refreshed by PublishMultiEmitted ; the Playground
+        // swatches want to reflect that.
+        EmittedColorsChanged?.Invoke();
 
         if (toPush.Count == 0)
         {
@@ -871,7 +963,16 @@ public sealed class AmbientEngine : IAsyncDisposable
         if (isDark) return (0, 0, 0);
 
         (byte sR, byte sG, byte sB) = ApplySaturationBoost(r, g, b, _saturationBoost);
-        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveGamma);
+        // Select the parameter that matches the active curve so
+        // toggling between curves never reuses the previous curve's
+        // value as if it were the new curve's parameter.
+        double param = _brightnessCurveType switch
+        {
+            BrightnessCurveType.Gamma  => _brightnessCurveParam,
+            BrightnessCurveType.SCurve => _brightnessCurveSCurveSteepness,
+            _                          => 0.0,
+        };
+        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveType, param);
         return ApplyMinBrightness(cR, cG, cB, _minBrightness);
     }
 
@@ -919,18 +1020,52 @@ public sealed class AmbientEngine : IAsyncDisposable
     //
     // Kept ambient-only (not in HueColorMath) so manual swatch pushes
     // still honour the "this colour at full power" contract. See
-    // AmbientSettings.BrightnessCurveGamma for the user-facing
-    // semantics and tuning rationale.
-    private static (byte R, byte G, byte B) ApplyBrightnessCurve(byte r, byte g, byte b, double gamma)
+    // AmbientSettings.BrightnessCurveType for the user-facing
+    // semantics and tuning rationale. Each curve maps max ∈ [0, 255]
+    // to a new max' ∈ [0, 255] then scales (R, G, B) by max'/max so
+    // chromaticity is preserved — only the lamp's bri changes.
+    private static (byte R, byte G, byte B) ApplyBrightnessCurve(byte r, byte g, byte b, BrightnessCurveType type, double param)
     {
-        if (Math.Abs(gamma - 1.0) < 0.001) return (r, g, b);
-
         int max = Math.Max(r, Math.Max(g, b));
         if (max == 0) return (r, g, b);
 
-        double ratio = max / 255.0;
-        double scale = Math.Pow(ratio, gamma - 1.0);
+        double ratio = max / 255.0; // x ∈ [0, 1]
+        double y;
+        switch (type)
+        {
+            case BrightnessCurveType.Linear:
+                return (r, g, b);
 
+            case BrightnessCurveType.Gamma:
+                if (Math.Abs(param - 1.0) < 0.001) return (r, g, b);
+                y = Math.Pow(ratio, param);
+                break;
+
+            case BrightnessCurveType.SCurve:
+                // Logistic centered on 0.5, normalised so f(0)=0 and
+                // f(1)=1. Steepness k = param. k = 1 reads almost
+                // linear, k = 5 reads almost step.
+                double k = Math.Max(0.01, param);
+                double a = 1.0 / (1.0 + Math.Exp(0.5 * k));
+                double bN = 1.0 / (1.0 + Math.Exp(-0.5 * k));
+                double raw = 1.0 / (1.0 + Math.Exp(-k * (ratio - 0.5)));
+                y = (raw - a) / (bN - a);
+                break;
+
+            case BrightnessCurveType.Logarithmic:
+                // y = log10(1 + 9x), endpoints anchored at (0, 0)
+                // and (1, 1). Lifts the bottom of the range hard.
+                y = Math.Log10(1.0 + 9.0 * ratio);
+                break;
+
+            default:
+                return (r, g, b);
+        }
+
+        // Convert the curved max' back to a multiplicative scale that
+        // applies to the full (R, G, B) triplet — chromaticity stays
+        // invariant, only the perceived brightness drifts.
+        double scale = y / ratio;
         return (
             (byte)Math.Clamp((int)Math.Round(r * scale), 0, 255),
             (byte)Math.Clamp((int)Math.Round(g * scale), 0, 255),
@@ -956,6 +1091,82 @@ public sealed class AmbientEngine : IAsyncDisposable
             (byte)Math.Min(255, Math.Round(r * scale)),
             (byte)Math.Min(255, Math.Round(g * scale)),
             (byte)Math.Min(255, Math.Round(b * scale)));
+    }
+
+    // EMA smoothing — group mode. State carried in _smoothedR/G/B as
+    // float so a slow ramp progresses each tick instead of being
+    // clipped to the previous integer step. Alpha is read from the
+    // tick-time snapshot _smoothingAlpha (refreshed at the top of
+    // PushLoopAsync). On first call (sentinel -1f) and on alpha ≥ 1
+    // the filter passes through without fading from black.
+    private (byte R, byte G, byte B) ApplyGroupSmoothing(byte r, byte g, byte b)
+    {
+        float alpha = (float)_smoothingAlpha;
+        if (_smoothedR < 0f || alpha >= 1f)
+        {
+            _smoothedR = r;
+            _smoothedG = g;
+            _smoothedB = b;
+        }
+        else
+        {
+            _smoothedR = alpha * r + (1f - alpha) * _smoothedR;
+            _smoothedG = alpha * g + (1f - alpha) * _smoothedG;
+            _smoothedB = alpha * b + (1f - alpha) * _smoothedB;
+        }
+        return (
+            (byte)Math.Clamp((int)MathF.Round(_smoothedR), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(_smoothedG), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(_smoothedB), 0, 255));
+    }
+
+    // EMA smoothing — multi-light mode. One EMA trail per fixture id ;
+    // a new id seen for the first time adopts its raw value (no
+    // fade-in from black). Same semantics as ApplyGroupSmoothing
+    // otherwise.
+    private (byte R, byte G, byte B) ApplyMultiSmoothing(string lightId, byte r, byte g, byte b)
+    {
+        float alpha = (float)_smoothingAlpha;
+        (float R, float G, float B) state;
+        bool seeded = _multiSmoothed.TryGetValue(lightId, out state);
+        if (!seeded || alpha >= 1f)
+        {
+            state = (r, g, b);
+        }
+        else
+        {
+            state = (
+                alpha * r + (1f - alpha) * state.R,
+                alpha * g + (1f - alpha) * state.G,
+                alpha * b + (1f - alpha) * state.B);
+        }
+        _multiSmoothed[lightId] = state;
+        return (
+            (byte)Math.Clamp((int)MathF.Round(state.R), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(state.G), 0, 255),
+            (byte)Math.Clamp((int)MathF.Round(state.B), 0, 255));
+    }
+
+    // Publish + notify in one shot for group mode. Always invokes the
+    // event — group ticks are atomic, no batching to wait for.
+    private void PublishGroupEmitted(byte r, byte g, byte b)
+    {
+        lock (_emittedLock)
+        {
+            _emittedColors["group"] = new LightColor(r, g, b);
+        }
+        EmittedColorsChanged?.Invoke();
+    }
+
+    // Stash the per-light intent without firing the event — the
+    // multi tick fires once at the end of its fan-out so subscribers
+    // get a coherent batch update instead of N rapid-fire callbacks.
+    private void PublishMultiEmitted(string lightId, byte r, byte g, byte b)
+    {
+        lock (_emittedLock)
+        {
+            _emittedColors[lightId] = new LightColor(r, g, b);
+        }
     }
 
     private void MaybeEmitHeartbeat()
@@ -1001,9 +1212,10 @@ public sealed class AmbientEngine : IAsyncDisposable
 
     // Averages all cells whose centre falls inside the matching border
     // rectangle, expressed in normalised [0,1]² coordinates on the
-    // frame grid. Top = y ∈ [0, BorderDepth] × x ∈ [0, 1] ; Bottom =
-    // y ∈ [1-BorderDepth, 1] × x ∈ [0, 1] ; Left = x ∈ [0, BorderDepth]
-    // × y ∈ [0, 1] ; Right = x ∈ [1-BorderDepth, 1] × y ∈ [0, 1]. The
+    // frame grid. Top = y ∈ [0, VerticalBorderDepth] × x ∈ [0, 1] ;
+    // Bottom = y ∈ [1-VerticalBorderDepth, 1] × x ∈ [0, 1] ;
+    // Left = x ∈ [0, LateralBorderDepth] × y ∈ [0, 1] ;
+    // Right = x ∈ [1-LateralBorderDepth, 1] × y ∈ [0, 1]. The
     // cell-index bounds are rounded inward via Floor / Ceiling so we
     // never read out-of-range. Returned colour is the gamma-correct
     // mean of the cells in the rectangle — sRGB bytes are linearised
@@ -1019,7 +1231,9 @@ public sealed class AmbientEngine : IAsyncDisposable
 
         // Compute the cell-index bounding box for the zone. Inclusive
         // on both ends — at least one cell is always selected even on
-        // a tiny grid where BorderDepth × dim < 1.
+        // a tiny grid where the depth × dim < 1. Top/Bottom take the
+        // vertical depth (rows axis), Left/Right take the lateral
+        // depth (cols axis).
         int cMin, cMax, rMin, rMax;
         switch (zone)
         {
@@ -1027,22 +1241,22 @@ public sealed class AmbientEngine : IAsyncDisposable
                 cMin = 0;
                 cMax = cols - 1;
                 rMin = 0;
-                rMax = Math.Max(0, (int)Math.Floor(BorderDepth * rows) - 1);
+                rMax = Math.Max(0, (int)Math.Floor(VerticalBorderDepth * rows) - 1);
                 break;
             case LightZone.Bottom:
                 cMin = 0;
                 cMax = cols - 1;
-                rMin = Math.Min(rows - 1, (int)Math.Ceiling((1.0 - BorderDepth) * rows));
+                rMin = Math.Min(rows - 1, (int)Math.Ceiling((1.0 - VerticalBorderDepth) * rows));
                 rMax = rows - 1;
                 break;
             case LightZone.Left:
                 cMin = 0;
-                cMax = Math.Max(0, (int)Math.Floor(BorderDepth * cols) - 1);
+                cMax = Math.Max(0, (int)Math.Floor(LateralBorderDepth * cols) - 1);
                 rMin = 0;
                 rMax = rows - 1;
                 break;
             case LightZone.Right:
-                cMin = Math.Min(cols - 1, (int)Math.Ceiling((1.0 - BorderDepth) * cols));
+                cMin = Math.Min(cols - 1, (int)Math.Ceiling((1.0 - LateralBorderDepth) * cols));
                 cMax = cols - 1;
                 rMin = 0;
                 rMax = rows - 1;

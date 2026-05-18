@@ -59,25 +59,6 @@ public sealed partial class AmbientPage : Page
 
     private void AmbientPage_Loaded(object sender, RoutedEventArgs e)
     {
-        // Set the gamma slider range here rather than in XAML : the
-        // WinUI 3 XAML parser rejected every attribute order that put
-        // Minimum=1.0 with the default Value=0, and putting Value=1.8
-        // before Minimum still failed. Setting them post-construction
-        // bypasses the parse-time invariant check entirely. Order
-        // matters here too — Maximum first, then Value, then Minimum
-        // — so the runtime invariant holds at each step.
-        GammaSlider.Maximum = 3.0;
-        GammaSlider.Value   = 1.8;
-        GammaSlider.Minimum = 1.0;
-
-        // Per-knob reset buttons fade in on hover over each parent
-        // card. The Expander hosts its slider in the header so we hook
-        // the expander itself rather than a child SettingsCard.
-        WireHover(ExposureCard,      ExposureReset);
-        WireHover(SaturationCard,    SaturationReset);
-        WireHover(MinBrightnessCard, MinBrightnessReset);
-        WireHover(GammaExpander,     GammaReset);
-
         ResyncFromSettings();
         SyncHueBridgeUi();
         ApplyEngineState(AmbientEngine.Current?.State ?? AmbientEngineState.Off);
@@ -134,17 +115,6 @@ public sealed partial class AmbientPage : Page
             }
             ModeCombo.SelectedItem = toSelect ?? ModeCombo.Items[0];
 
-            ExposureSlider.Value      = s.ExposureEv;
-            SaturationSlider.Value    = s.SaturationBoost * 100.0;
-            MinBrightnessSlider.Value = s.MinBrightness;
-            GammaSlider.Value         = s.BrightnessCurveGamma;
-            GammaCurveCanvas.Gamma    = s.BrightnessCurveGamma;
-
-            UpdateExposureText();
-            UpdateSaturationText();
-            UpdateMinBrightnessText();
-            UpdateGammaText();
-
             // Pair completeness drives the NotPaired InfoBar. The
             // criteria mirror AmbientEngine.StartAsync's validation
             // so a user who toggles ON in this state sees the InfoBar
@@ -200,103 +170,33 @@ public sealed partial class AmbientPage : Page
             && cbi.Tag is string tag
             && Enum.TryParse<AmbientMode>(tag, out var mode))
         {
-            AmbientSettingsService.Instance.Current.Mode = mode;
-            AmbientSettingsService.Instance.Save();
+            // ApplyPreset copies the preset's full tuning snapshot
+            // onto Current and saves in one shot. Custom is a special
+            // case : it just sets Mode = Custom without touching any
+            // other knob, so the Playground's hand-tuned values stay
+            // exactly where the user left them.
+            AmbientSettingsService.Instance.ApplyPreset(mode);
         }
     }
 
-    private void ExposureSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    // The four HDR slider handlers (ExposureSlider_ValueChanged et al.)
+    // and their per-knob / per-section reset companions used to live
+    // here. They moved out to the Playground in the V0.3 refactor —
+    // the live preview next to them makes empirical tuning so much
+    // cheaper that duplicating the controls in Settings was net
+    // negative. The Mode preset selector above is what carries the
+    // tuning intent in Settings now ; pick Game / Movie / Ambient
+    // to apply a snapshot, or open the Playground for the fine-grain
+    // knobs.
+
+    // Opens the Playground via the same callback the AmbientEngine
+    // uses for its NotPaired InfoBar action. The App wires this slot
+    // at boot to its lazy ShowPlaygroundLazy(), so picking the card
+    // here brings the Playground forward without forcing a reference
+    // from Lighting.Ambient back to the app host.
+    private void OpenPlaygroundCard_Click(object sender, RoutedEventArgs e)
     {
-        UpdateExposureText();
-        if (_loading) return;
-        AmbientSettingsService.Instance.Current.ExposureEv = ExposureSlider.Value;
-        AmbientSettingsService.Instance.Save();
-    }
-
-    private void SaturationSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-    {
-        UpdateSaturationText();
-        if (_loading) return;
-        AmbientSettingsService.Instance.Current.SaturationBoost = SaturationSlider.Value / 100.0;
-        AmbientSettingsService.Instance.Save();
-    }
-
-    private void MinBrightnessSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-    {
-        UpdateMinBrightnessText();
-        if (_loading) return;
-        AmbientSettingsService.Instance.Current.MinBrightness = (int)Math.Round(MinBrightnessSlider.Value);
-        AmbientSettingsService.Instance.Save();
-    }
-
-    private void GammaSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-    {
-        UpdateGammaText();
-        // Live-update the curve viz even during the load pass — the
-        // widget itself is purely visual, no persistence, no save loop.
-        GammaCurveCanvas.Gamma = GammaSlider.Value;
-        if (_loading) return;
-        AmbientSettingsService.Instance.Current.BrightnessCurveGamma = GammaSlider.Value;
-        AmbientSettingsService.Instance.Save();
-    }
-
-    // ── HDR tuning resets (per-knob + whole section) ────────────────
-    //
-    // Pattern Whisper / GeneralPage : a HyperlinkButton next to the
-    // section header reverts every knob in the section, a SubtleButton
-    // with the &#xE777; reset glyph next to each slider reverts just
-    // that knob. Both write through _loading guards so the
-    // ValueChanged re-fires don't bounce the save loop.
-
-    private void ResetTuningSection_Click(object sender, RoutedEventArgs e)
-    {
-        bool prev = _loading;
-        _loading = true;
-        try
-        {
-            var s = AmbientSettingsService.Instance.Current;
-            s.ExposureEv            = 0.0;
-            s.SaturationBoost       = 1.0;
-            s.MinBrightness         = 180;
-            s.BrightnessCurveGamma  = 1.8;
-            AmbientSettingsService.Instance.Save();
-            ResyncFromSettings();
-        }
-        finally { _loading = prev; }
-    }
-
-    private void ExposureReset_Click(object sender, RoutedEventArgs e)
-        => ResetOne(s => s.ExposureEv = 0.0);
-
-    private void SaturationReset_Click(object sender, RoutedEventArgs e)
-        => ResetOne(s => s.SaturationBoost = 1.0);
-
-    private void MinBrightnessReset_Click(object sender, RoutedEventArgs e)
-        => ResetOne(s => s.MinBrightness = 180);
-
-    private void GammaReset_Click(object sender, RoutedEventArgs e)
-        => ResetOne(s => s.BrightnessCurveGamma = 1.8);
-
-    private void ResetOne(Action<AmbientSettings> mutate)
-    {
-        bool prev = _loading;
-        _loading = true;
-        try
-        {
-            mutate(AmbientSettingsService.Instance.Current);
-            AmbientSettingsService.Instance.Save();
-            ResyncFromSettings();
-        }
-        finally { _loading = prev; }
-    }
-
-    // Calque WhisperPage : fade the reset button in on PointerEntered
-    // of the parent card, out on PointerExited. Opacity 0 at rest
-    // (set by the ResetButtonStyle).
-    private static void WireHover(Microsoft.UI.Xaml.Controls.Control card, Button resetButton)
-    {
-        card.PointerEntered += (_, _) => resetButton.Opacity = 1;
-        card.PointerExited  += (_, _) => resetButton.Opacity = 0;
+        AmbientEngine.OpenPlaygroundRequested?.Invoke();
     }
 
     private void ConfigureBridgeButton_Click(object sender, RoutedEventArgs e)
@@ -529,24 +429,4 @@ public sealed partial class AmbientPage : Page
         HueBridgeIpTextBox.Text = "";
     }
 
-    private void UpdateExposureText()
-    {
-        double v = ExposureSlider.Value;
-        ExposureValueText.Text = $"{(v >= 0 ? "+" : "")}{v:F1} EV";
-    }
-
-    private void UpdateSaturationText()
-    {
-        SaturationValueText.Text = $"{(int)Math.Round(SaturationSlider.Value)} %";
-    }
-
-    private void UpdateMinBrightnessText()
-    {
-        MinBrightnessValueText.Text = $"{(int)Math.Round(MinBrightnessSlider.Value)}";
-    }
-
-    private void UpdateGammaText()
-    {
-        GammaValueText.Text = $"γ {GammaSlider.Value:F2}";
-    }
 }

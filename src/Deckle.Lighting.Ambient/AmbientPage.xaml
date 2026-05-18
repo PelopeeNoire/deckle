@@ -91,7 +91,7 @@
                 </InfoBar>
 
                 <controls:SettingsCard x:Uid="AmbientEnabledCard"
-                                       HeaderIcon="{ui:FontIcon Glyph=&#xE781;}">
+                                       HeaderIcon="{ui:FontIcon Glyph=&#xEA80;}">
                     <ToggleSwitch x:Name="EnabledToggle"
                                   Toggled="EnabledToggle_Toggled" />
                 </controls:SettingsCard>
@@ -106,156 +106,11 @@
                               MinWidth="160"
                               SelectionChanged="ModeCombo_SelectionChanged">
                         <ComboBoxItem x:Uid="AmbientModeGame" Tag="Game" />
-                        <ComboBoxItem x:Uid="AmbientModeRealistic" Tag="Realistic" />
+                        <ComboBoxItem x:Uid="AmbientModeMovie" Tag="Movie" />
+                        <ComboBoxItem x:Uid="AmbientModeAmbient" Tag="Ambient" />
+                        <ComboBoxItem x:Uid="AmbientModeCustom" Tag="Custom" />
                     </ComboBox>
                 </controls:SettingsCard>
-
-                <!-- ── HDR tuning ─────────────────────────────────────────── -->
-                <!--
-                    Four user-tunable sliders applied live on the next push
-                    tick (no engine restart). Flat SettingsCards instead of
-                    a SettingsExpander so the values are visible at a glance
-                    (Louis preference : less click-to-reveal on knobs the
-                    user touches often). Descriptions are intentionally
-                    short — the dense per-knob rationale lives in the
-                    Playground HDR tuning card where the live preview
-                    makes experimentation cheap.
-                -->
-                <!-- Section header with the HyperlinkButton-style reset
-                     to the right — calque exact de GeneralPage /
-                     WhisperPage. The HyperlinkButton reverts every knob
-                     in the section to its documented default ; the per-
-                     knob reset (icon at the right of each slider) lives
-                     inside each SettingsCard below. -->
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Uid="AmbientTuningSectionHeader"
-                               Grid.Column="0"
-                               Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
-                    <HyperlinkButton x:Uid="Settings_SectionResetLink"
-                                     Grid.Column="1"
-                                     VerticalAlignment="Bottom"
-                                     Margin="0,0,0,2"
-                                     Click="ResetTuningSection_Click" />
-                </Grid>
-
-                <!-- HDR slider cards. SettingsCard default layout :
-                     Header (title + description) on the left, Content
-                     (slider triplet) on the right, same line. The
-                     fixed slider Width = 220 + value MinWidth = 56
-                     aligns the four sliders visually across the section.
-                     Reset opacity 0 at rest, lifted to 1 on
-                     PointerEntered of the card (WireHover code-behind). -->
-                <controls:SettingsCard x:Name="ExposureCard"
-                                       x:Uid="AmbientExposureCard">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBlock x:Name="ExposureValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Slider x:Name="ExposureSlider"
-                                Width="220"
-                                VerticalAlignment="Center"
-                                IsThumbToolTipEnabled="True"
-                                Minimum="-2.0" Maximum="2.0"
-                                StepFrequency="0.1"
-                                SmallChange="0.1" LargeChange="0.5"
-                                TickFrequency="0.5"
-                                TickPlacement="Outside"
-                                ValueChanged="ExposureSlider_ValueChanged" />
-                        <Button x:Name="ExposureReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="ExposureReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
-
-                <controls:SettingsCard x:Name="SaturationCard"
-                                       x:Uid="AmbientSaturationCard">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBlock x:Name="SaturationValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Slider x:Name="SaturationSlider"
-                                Width="220"
-                                VerticalAlignment="Center"
-                                IsThumbToolTipEnabled="True"
-                                Minimum="0" Maximum="200"
-                                StepFrequency="5"
-                                SmallChange="5" LargeChange="25"
-                                TickFrequency="25"
-                                TickPlacement="Outside"
-                                ValueChanged="SaturationSlider_ValueChanged" />
-                        <Button x:Name="SaturationReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="SaturationReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
-
-                <controls:SettingsCard x:Name="MinBrightnessCard"
-                                       x:Uid="AmbientMinBrightnessCard">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBlock x:Name="MinBrightnessValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Slider x:Name="MinBrightnessSlider"
-                                Width="220"
-                                VerticalAlignment="Center"
-                                IsThumbToolTipEnabled="True"
-                                Minimum="0" Maximum="254"
-                                StepFrequency="2"
-                                SmallChange="2" LargeChange="20"
-                                TickFrequency="50"
-                                TickPlacement="Outside"
-                                ValueChanged="MinBrightnessSlider_ValueChanged" />
-                        <Button x:Name="MinBrightnessReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="MinBrightnessReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                </controls:SettingsCard>
-
-                <!-- Brightness curve : same triplet in the Expander
-                     header, canvas viz reveals on expand. -->
-                <controls:SettingsExpander x:Name="GammaExpander"
-                                           x:Uid="AmbientGammaExpander">
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBlock x:Name="GammaValueText"
-                                   Style="{StaticResource SliderValueTextStyle}" />
-                        <Slider x:Name="GammaSlider"
-                                Width="220"
-                                VerticalAlignment="Center"
-                                IsThumbToolTipEnabled="True"
-                                StepFrequency="0.05"
-                                SmallChange="0.05" LargeChange="0.25"
-                                TickFrequency="0.5"
-                                TickPlacement="Outside"
-                                ValueChanged="GammaSlider_ValueChanged" />
-                        <Button x:Name="GammaReset"
-                                Style="{StaticResource ResetButtonStyle}"
-                                Click="GammaReset_Click">
-                            <FontIcon Glyph="&#xE777;" FontSize="14" />
-                        </Button>
-                    </StackPanel>
-                    <controls:SettingsExpander.Items>
-                        <controls:SettingsCard>
-                            <ambientControls:BrightnessCurveCanvas
-                                x:Name="GammaCurveCanvas"
-                                HorizontalAlignment="Center" />
-                        </controls:SettingsCard>
-                    </controls:SettingsExpander.Items>
-                </controls:SettingsExpander>
-
-                <!-- Pointer to the Playground — empirical tuning sits
-                     better there next to the live preview. -->
-                <TextBlock x:Uid="AmbientTuningPlaygroundHint"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                           Margin="0,4,0,12"
-                           TextWrapping="Wrap" />
 
                 <!-- ── Configuration ──────────────────────────────────────── -->
                 <!--
@@ -358,6 +213,19 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
+                <!-- Tuning lives in the Playground now. The Settings
+                     page keeps only the mode preset selector (above)
+                     and a clear pointer to the Playground for fine
+                     calibration — moving four near-identical slider
+                     cards into a single place where the live preview
+                     sits next to the user. -->
+                <TextBlock x:Uid="AmbientTuningSectionHeader"
+                           Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" />
+
+                <controls:SettingsCard x:Uid="AmbientOpenPlaygroundCard"
+                                       IsClickEnabled="True"
+                                       ActionIcon="{ui:FontIcon Glyph=&#xE8A7;}"
+                                       Click="OpenPlaygroundCard_Click" />
             </StackPanel>
         </Grid>
     </ScrollViewer>
