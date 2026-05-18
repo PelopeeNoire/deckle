@@ -283,6 +283,14 @@ public sealed class AmbientEngine : IAsyncDisposable
     /// dispatch onto the UI queue before touching XAML.</summary>
     public event Action? EmittedColorsChanged;
 
+    /// <summary>Latest gamma-correct mean + downsampled grid published
+    /// by the FrameSampler. Null between Stop and the first frame
+    /// after the next Start. The Playground reads this to render its
+    /// preview grid without spinning up a second capture pipeline ;
+    /// the AmbientEngine's own capture is the single source of truth
+    /// while the pipeline runs.</summary>
+    public SampledFrame? LatestSample => _sampler?.LatestSample;
+
     // Last-constructed engine, exposed for the AmbientPage that lives
     // in Deckle.Lighting.Ambient and cannot reference App (circular).
     // V0 assumes a single engine for the whole process ; multi-instance

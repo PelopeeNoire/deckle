@@ -358,6 +358,29 @@ public sealed partial class PlaygroundWindow : Window
                 // from the tray menu or the AmbientPage.
                 SyncPipelineUiFromSettings();
 
+                // Free the Turn-on button as soon as the persisted
+                // pair state is enough to let the App-side engine
+                // start (bridge paired + a group id saved). The
+                // Playground used to gate the button on a local
+                // ConnectAsync that only ran after the user clicked
+                // through Hue → List groups → pick, leaving the
+                // button greyed forever for someone who paired from
+                // Settings and just expected to flip the switch here.
+                ApplyPipelineReadiness();
+
+                // Engine state observer — drives the preview lifecycle :
+                // when the App's AmbientEngine starts, the Playground
+                // begins polling its LatestSample on the existing 200 ms
+                // tick ; on stop, the timer clears down and the swatches
+                // collapse via the same UpdateEmittedSwatches path.
+                if (AmbientEngine.Current is { } engine)
+                {
+                    engine.StateChanged += OnAmbientEngineStateChangedFromPlayground;
+                    // Catch up to the current state in case the engine
+                    // is already running when the Playground opens.
+                    if (engine.IsRunning) StartCanonicalPreviewIfNeeded();
+                }
+
                 // Populate the HDR tuning sandbox sliders from the live
                 // settings + flip the re-fire suppressor off so the
                 // user's slider drags write back through.
@@ -417,6 +440,8 @@ public sealed partial class PlaygroundWindow : Window
             StopScreenCaptureIfRunning();
             TeardownHueIfActive();
             HuePairingService.Instance.BridgeChanged -= OnHueBridgeChangedFromPlayground;
+            if (AmbientEngine.Current is { } engine)
+                engine.StateChanged -= OnAmbientEngineStateChangedFromPlayground;
             // Detach the composition child first so the compositor stops
             // referencing the bundle's visual tree, then dispose. In the
             // singleton-hidden pattern (Closing→Hide) Closed only fires at
@@ -436,10 +461,15 @@ public sealed partial class PlaygroundWindow : Window
         if (DispatcherQueue.HasThreadAccess)
         {
             SyncHueUiFromService();
+            ApplyPipelineReadiness();
         }
         else
         {
-            DispatcherQueue.TryEnqueue(SyncHueUiFromService);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                SyncHueUiFromService();
+                ApplyPipelineReadiness();
+            });
         }
     }
 
@@ -2094,8 +2124,81 @@ public sealed partial class PlaygroundWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             SyncPipelineUiFromSettings();
+            ApplyPipelineReadiness();
             ResyncPlaygroundAmbientTuning();
         });
+    }
+
+    // Single source of truth for "can the user flip the Pipeline
+    // toggle right now ?". The button used to be gated on a local
+    // ConnectAsync that only ran once the user clicked through Hue →
+    // List groups → pick a group inside the Playground. With the
+    // canonical App-side AmbientEngine, the persisted Hue pair state
+    // plus a saved group id is enough — the engine builds its own
+    // ConnectAsync on Start. Re-evaluated on Loaded, on
+    // BridgeChanged, and on AmbientSettings.Changed.
+    private void ApplyPipelineReadiness()
+    {
+        if (PipelineToggleButton is null) return;
+        var s = AmbientSettingsService.Instance.Current;
+        bool paired = HuePairingService.Instance.Bridge?.IsPaired == true;
+        bool hasGroup = !string.IsNullOrEmpty(s.HueLastGroupId);
+        if (paired && hasGroup) SetPipelineReady();
+        else                    SetPipelineNotReady();
+    }
+
+    // AmbientEngine.StateChanged observer. Drives the preview lifecycle :
+    // the Playground polls AmbientEngine.LatestSample on the same
+    // 200 ms tick that already drives the cell brushes, so the preview
+    // appears automatically when the engine starts (from the tray, the
+    // Settings page, the Playground itself — same code path) and
+    // disappears on stop. Marshalled to the UI thread because the
+    // engine fires on its own thread.
+    private void OnAmbientEngineStateChangedFromPlayground(AmbientEngineState state)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (state == AmbientEngineState.Running)
+            {
+                StartCanonicalPreviewIfNeeded();
+            }
+            else if (state == AmbientEngineState.Off || state == AmbientEngineState.Error)
+            {
+                // Tear down the preview cells when the engine goes
+                // quiet — leaving them frozen on the last frame reads
+                // as a live signal to the user. The Screen capture
+                // toggle path uses StopPreviewTimer too ; calling it
+                // here while a local capture is also running just
+                // collapses both, which matches the "engine is off"
+                // intent.
+                if (_pipelineStartedCapture == false)
+                {
+                    StopPreviewTimer();
+                }
+            }
+        });
+    }
+
+    // Start the preview timer when the engine starts. If a local
+    // Screen capture session is already running, the timer is already
+    // ticking and the OnPreviewTimerTick path prefers the engine's
+    // LatestSample anyway, so this is a no-op in that case.
+    private void StartCanonicalPreviewIfNeeded()
+    {
+        var engine = AmbientEngine.Current;
+        if (engine is null || !engine.IsRunning) return;
+
+        // Lazily build the preview grid the first time we see a sample
+        // from the engine — its sampler dims are owned by the engine,
+        // not the Playground.
+        var sample = engine.LatestSample;
+        if (sample is not null && _previewCells is null)
+        {
+            BuildPreviewGrid(sample.Cols, sample.Rows);
+        }
+
+        StartPreviewTimer();
+        UpdatePreviewViewboxVisibility();
     }
 
     // FrameArrived handler that hands the frame to the FrameSampler.
@@ -2221,7 +2324,23 @@ public sealed partial class PlaygroundWindow : Window
 
     private void OnPreviewTimerTick(object? sender, object e)
     {
-        var sample = _frameSampler?.LatestSample;
+        // Prefer the canonical App-side AmbientEngine sample : it's
+        // the live pipeline the user actually drives from the tray /
+        // Settings / Playground toggles. Fall back to the Playground's
+        // own _frameSampler only when the engine isn't running but
+        // the user explicitly started the local Screen capture for
+        // sampler-isolated testing.
+        var sample = AmbientEngine.Current?.LatestSample ?? _frameSampler?.LatestSample;
+
+        // Lazy-build the preview grid the first time we see a sample
+        // from the engine (the local capture path builds it earlier
+        // from its own sampler dims).
+        if (sample is not null && _previewCells is null)
+        {
+            BuildPreviewGrid(sample.Cols, sample.Rows);
+            UpdatePreviewViewboxVisibility();
+        }
+
         if (sample is not null && _previewCells is not null)
         {
             int total = Math.Min(sample.Grid.Length, _previewCells.Length);
