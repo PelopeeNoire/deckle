@@ -31,13 +31,13 @@ internal static class AmbientModePresets
 
             case AmbientMode.Movie:
                 // Softened, long damping — cinematic mood lighting.
-                target.ExposureEv            = 0.0;
-                target.SaturationBoost       = 0.9;
-                target.MinBrightness         = 60;
-                target.BrightnessCurveType   = BrightnessCurveType.SCurve;
-                target.BrightnessCurveParam  = 2.0;
-                target.SmoothingAlpha        = 0.15;
-                target.ChangeThreshold       = 8;
+                target.ExposureEv                       = 0.0;
+                target.SaturationBoost                  = 0.9;
+                target.MinBrightness                    = 60;
+                target.BrightnessCurveType              = BrightnessCurveType.SCurve;
+                target.BrightnessCurveSCurveSteepness   = 2.0;
+                target.SmoothingAlpha                   = 0.15;
+                target.ChangeThreshold                  = 8;
                 break;
 
             case AmbientMode.Ambient:

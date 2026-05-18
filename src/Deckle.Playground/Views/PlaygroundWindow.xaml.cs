@@ -3261,7 +3261,11 @@ public sealed partial class PlaygroundWindow : Window
             PlaygroundExposureSlider.Value         = s.ExposureEv;
             PlaygroundSaturationSlider.Value       = s.SaturationBoost * 100.0;
             PlaygroundMinBrightnessSlider.Value    = s.MinBrightness;
-            PlaygroundGammaSlider.Value            = s.BrightnessCurveParam;
+            // Curve param slider mirrors the value of the *active*
+            // curve's dedicated parameter. SCurve stores its steepness
+            // separately so the slider doesn't carry Gamma's 1.8 over
+            // when the user picks SCurve (where 1.8 is nearly invisible).
+            PlaygroundGammaSlider.Value            = SelectCurveParamForType(s.BrightnessCurveType, s);
             PlaygroundGammaCanvas.Gamma            = s.BrightnessCurveParam;
             PlaygroundSmoothingSlider.Value        = s.SmoothingAlpha;
             PlaygroundChangeThresholdSlider.Value  = s.ChangeThreshold;
@@ -3301,11 +3305,13 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundBrightnessCurveCombo.SelectedIndex = 1;
     }
 
-    // Toggles the param slider enabled state and refreshes the caption
-    // to match the active curve. Linear and Logarithmic ignore param,
-    // so the slider is disabled to make that obvious. Caption text
-    // adapts so the user always sees what the slider controls in the
-    // current mode.
+    // Toggles the param slider enabled state, refreshes the caption,
+    // and hides the BrightnessCurveCanvas visualisation for curves it
+    // can't represent (it draws a gamma power-law shape only). Linear
+    // and Logarithmic ignore param, so the slider is disabled to make
+    // that obvious ; SCurve hides the canvas too until a proper SCurve
+    // visualisation is implemented — drawing a gamma curve while the
+    // user is tuning an SCurve is actively misleading.
     private void UpdatePlaygroundBrightnessCurveDependentUi()
     {
         var type = ReadBrightnessCurveTypeFromCombo();
@@ -3313,15 +3319,35 @@ public sealed partial class PlaygroundWindow : Window
                            || type == BrightnessCurveType.SCurve;
         PlaygroundGammaSlider.IsEnabled = paramHasEffect;
 
+        // The Gamma canvas widget can only draw the power-law shape ;
+        // showing it while a different curve is active would lie about
+        // the response the engine actually applies. Cache for Gamma
+        // only, collapsed otherwise — an SCurve / Log visualisation is
+        // a separate palier.
+        PlaygroundGammaCanvas.Visibility = type == BrightnessCurveType.Gamma
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
         PlaygroundGammaCaption.Text = type switch
         {
             BrightnessCurveType.Linear      => "Direct pass-through. The brightness param slider has no effect in this mode — disable the curve and rely on smoothing + min brightness instead.",
             BrightnessCurveType.Gamma       => "Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights. 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows.",
-            BrightnessCurveType.SCurve      => "Logistic S-curve pushed mid-tones away from grey in both directions. Higher steepness = harder contrast. 1.0 — almost linear · 3.0 — visible contrast · 5.0 — near-step.",
+            BrightnessCurveType.SCurve      => "Logistic S-curve pushed mid-tones away from grey in both directions. Higher steepness = harder contrast. 1.0 — almost linear · 2.0 — default · 5.0 — near-step.",
             BrightnessCurveType.Logarithmic => "Lifts the bottom of the range so even very dim scenes stay clearly lit. No param to tune — the curve is fixed.",
             _ => string.Empty,
         };
     }
+
+    // Pick the right persisted parameter for the active curve : Gamma
+    // and SCurve each store their own value (exponent vs steepness),
+    // Linear and Logarithmic don't consume the param at all.
+    private static double SelectCurveParamForType(BrightnessCurveType type, AmbientSettings s)
+        => type switch
+        {
+            BrightnessCurveType.Gamma  => s.BrightnessCurveParam,
+            BrightnessCurveType.SCurve => s.BrightnessCurveSCurveSteepness,
+            _                          => s.BrightnessCurveParam,
+        };
 
     private BrightnessCurveType ReadBrightnessCurveTypeFromCombo()
     {
@@ -3377,10 +3403,31 @@ public sealed partial class PlaygroundWindow : Window
     private void OnPlaygroundGammaSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         UpdatePlaygroundGammaText();
-        // Update the canvas even during the load pass — purely visual.
-        PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
+        var type = ReadBrightnessCurveTypeFromCombo();
+        // Only the Gamma canvas reads BrightnessCurveParam directly ;
+        // mirror the slider value there so the shape follows the
+        // slider live. The canvas is hidden for other curves so the
+        // assignment is harmless.
+        if (type == BrightnessCurveType.Gamma)
+            PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
+
         if (_ambientTuningLoading) return;
-        AmbientSettingsService.Instance.Current.BrightnessCurveParam = PlaygroundGammaSlider.Value;
+
+        // Persist into the parameter that belongs to the active
+        // curve, leaving the other curves' parameters untouched.
+        // Linear / Logarithmic ignore the slider but we still write
+        // through into the Gamma slot so the value is preserved if
+        // the user switches back to Gamma later.
+        var s = AmbientSettingsService.Instance.Current;
+        switch (type)
+        {
+            case BrightnessCurveType.SCurve:
+                s.BrightnessCurveSCurveSteepness = PlaygroundGammaSlider.Value;
+                break;
+            default:
+                s.BrightnessCurveParam = PlaygroundGammaSlider.Value;
+                break;
+        }
         EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }
@@ -3468,19 +3515,37 @@ public sealed partial class PlaygroundWindow : Window
         AmbientSettingsService.Instance.Save();
     }
 
-    // Curve type ComboBox — persists the enum into settings and
-    // refreshes the param slider's enabled state + caption. The param
-    // value is preserved across type switches so a user toggling
-    // between Gamma and SCurve doesn't lose their fine-tuning.
-    // Changing the curve counts as a tuning gesture so the mode
-    // implicitly switches to Custom (the user is no longer following
-    // a preset).
+    // Curve type ComboBox — persists the enum into settings, refreshes
+    // the param slider's enabled state + caption + canvas visibility,
+    // and re-projects the slider Value from the dedicated parameter
+    // of the newly-selected curve so the slider position stays
+    // semantically meaningful. Changing the curve counts as a tuning
+    // gesture so the mode implicitly switches to Custom.
     private void OnPlaygroundBrightnessCurveTypeChanged(object sender, SelectionChangedEventArgs e)
     {
+        var type = ReadBrightnessCurveTypeFromCombo();
+
+        // Bring the slider in line with the curve's own param before
+        // we refresh the dependent UI — the suppressor avoids the
+        // ValueChanged handler interpreting our re-projection as a
+        // user tuning gesture (and re-persisting the value).
+        bool prev = _ambientTuningLoading;
+        _ambientTuningLoading = true;
+        try
+        {
+            var s = AmbientSettingsService.Instance.Current;
+            PlaygroundGammaSlider.Value = SelectCurveParamForType(type, s);
+        }
+        finally
+        {
+            _ambientTuningLoading = prev;
+        }
+
         UpdatePlaygroundBrightnessCurveDependentUi();
         UpdatePlaygroundGammaText();
+
         if (_ambientTuningLoading) return;
-        AmbientSettingsService.Instance.Current.BrightnessCurveType = ReadBrightnessCurveTypeFromCombo();
+        AmbientSettingsService.Instance.Current.BrightnessCurveType = type;
         EnterCustomMode();
         AmbientSettingsService.Instance.Save();
     }

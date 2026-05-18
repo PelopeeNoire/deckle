@@ -192,13 +192,23 @@ public sealed class AmbientSettings
     /// details.</summary>
     public BrightnessCurveType BrightnessCurveType { get; set; } = BrightnessCurveType.Gamma;
 
-    /// <summary>Auxiliary parameter for the active brightness curve.
-    /// Default 1.8 maps to a γ = 1.8 power law under
-    /// <see cref="BrightnessCurveType.Gamma"/>, which is the legacy
-    /// shipping curve. Range and meaning vary per curve type :
-    /// Gamma = exponent in [1.0, 3.0] ; SCurve = steepness in
-    /// [1.0, 5.0] ; Linear / Logarithmic ignore this value.</summary>
+    /// <summary>Gamma exponent for <see cref="BrightnessCurveType.Gamma"/>,
+    /// in [1.0, 3.0]. Default 1.8 (legacy shipping curve). 1.0
+    /// collapses to Linear ; higher values squash dim scenes harder
+    /// without touching saturated highlights. Ignored by every other
+    /// curve type — they have their own dedicated parameter so the
+    /// slider value stays meaningful when the user switches curves.</summary>
     public double BrightnessCurveParam { get; set; } = 1.8;
+
+    /// <summary>Logistic steepness for <see cref="BrightnessCurveType.SCurve"/>,
+    /// in [1.0, 5.0]. Default 2.0 — a visible mid-tone contrast
+    /// without sliding into near-step territory. 1.0 reads almost
+    /// linear, 5.0 reads almost hard step. Stored separately from
+    /// <see cref="BrightnessCurveParam"/> so toggling between Gamma
+    /// and SCurve doesn't reinterpret one knob's value as another
+    /// curve's parameter (a Gamma 1.8 read as SCurve k = 1.8 is
+    /// nearly invisible, which is exactly the surprise we avoid).</summary>
+    public double BrightnessCurveSCurveSteepness { get; set; } = 2.0;
 
     /// <summary>Sum-of-absolute-channel-deltas threshold that gates
     /// pushes — if the new tuned-and-smoothed colour differs from the

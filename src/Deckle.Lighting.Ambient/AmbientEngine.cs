@@ -230,8 +230,9 @@ public sealed class AmbientEngine : IAsyncDisposable
     //     the max channel to the floor while preserving chromaticity).
     //     Comes after the curve so the effective floor matches the
     //     value the user set, not the curve-attenuated version of it.
-    private double _saturationBoost       = 1.0;
-    private double _brightnessCurveParam  = 1.0;
+    private double _saturationBoost               = 1.0;
+    private double _brightnessCurveParam          = 1.0;
+    private double _brightnessCurveSCurveSteepness = 2.0;
     private BrightnessCurveType _brightnessCurveType = BrightnessCurveType.Linear;
     private int    _minBrightness         = 0;
     private int    _changeThreshold       = 6;
@@ -670,12 +671,13 @@ public sealed class AmbientEngine : IAsyncDisposable
                 // window without a restart.
                 var ambient = _host.Ambient;
                 _sampler!.SetExposureEv(ambient.ExposureEv);
-                _saturationBoost       = ambient.SaturationBoost;
-                _brightnessCurveType   = ambient.BrightnessCurveType;
-                _brightnessCurveParam  = ambient.BrightnessCurveParam;
-                _minBrightness         = ambient.MinBrightness;
-                _changeThreshold       = ambient.ChangeThreshold;
-                _smoothingAlpha        = ambient.SmoothingAlpha;
+                _saturationBoost                = ambient.SaturationBoost;
+                _brightnessCurveType            = ambient.BrightnessCurveType;
+                _brightnessCurveParam           = ambient.BrightnessCurveParam;
+                _brightnessCurveSCurveSteepness = ambient.BrightnessCurveSCurveSteepness;
+                _minBrightness                  = ambient.MinBrightness;
+                _changeThreshold                = ambient.ChangeThreshold;
+                _smoothingAlpha                 = ambient.SmoothingAlpha;
 
                 var sample = _sampler!.LatestSample;
                 if (sample is null)
@@ -969,7 +971,16 @@ public sealed class AmbientEngine : IAsyncDisposable
         if (isDark) return (0, 0, 0);
 
         (byte sR, byte sG, byte sB) = ApplySaturationBoost(r, g, b, _saturationBoost);
-        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveType, _brightnessCurveParam);
+        // Select the parameter that matches the active curve so
+        // toggling between curves never reuses the previous curve's
+        // value as if it were the new curve's parameter.
+        double param = _brightnessCurveType switch
+        {
+            BrightnessCurveType.Gamma  => _brightnessCurveParam,
+            BrightnessCurveType.SCurve => _brightnessCurveSCurveSteepness,
+            _                          => 0.0,
+        };
+        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveType, param);
         return ApplyMinBrightness(cR, cG, cB, _minBrightness);
     }
 
