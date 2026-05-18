@@ -387,18 +387,38 @@
                         <Grid HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch">
                             <Grid.RowDefinitions>
-                                <!-- Row 0 : strip of emitted-colour swatches,
+                                <!-- Row 0 : preview options strip. A small
+                                     toggle row that always shows, lets the
+                                     user hide the zone overlays so they
+                                     can see the raw sampled cells without
+                                     the dashed rectangles on top. Stays
+                                     visible regardless of pipeline state. -->
+                                <RowDefinition Height="Auto" />
+                                <!-- Row 1 : strip of emitted-colour swatches,
                                      one per active light. Refreshed every
                                      push tick from AmbientEngine.SnapshotEmittedColors.
                                      Visible only while the pipeline is running. -->
                                 <RowDefinition Height="Auto" />
-                                <!-- Row 1 : the preview itself (empty state
+                                <!-- Row 2 : the preview itself (empty state
                                      placeholder + Viewbox with the sampled
                                      grid and the zone overlays). -->
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
-                            <Border Grid.Row="0"
+                            <StackPanel Grid.Row="0"
+                                        Orientation="Horizontal"
+                                        Spacing="12"
+                                        Margin="0,0,0,12"
+                                        VerticalAlignment="Center">
+                                <ToggleSwitch x:Name="ShowZoneOverlaysToggle"
+                                              IsOn="True"
+                                              OnContent="Light zones shown"
+                                              OffContent="Light zones hidden"
+                                              MinWidth="0"
+                                              Toggled="OnShowZoneOverlaysToggled" />
+                            </StackPanel>
+
+                            <Border Grid.Row="1"
                                     x:Name="EmittedSwatchesPanel"
                                     Margin="0,0,0,16"
                                     Padding="12,8"
@@ -428,7 +448,7 @@
                                 </Grid>
                             </Border>
 
-                            <StackPanel Grid.Row="1"
+                            <StackPanel Grid.Row="2"
                                         x:Name="AmbientPreviewEmptyState"
                                         Spacing="8"
                                         HorizontalAlignment="Center"
@@ -458,7 +478,7 @@
                                  (light markers, J4) can use absolute
                                  positioning without fighting layout
                                  changes when the window resizes. -->
-                            <Viewbox Grid.Row="1"
+                            <Viewbox Grid.Row="2"
                                      x:Name="AmbientPreviewViewbox"
                                      Stretch="Uniform"
                                      HorizontalAlignment="Stretch"
@@ -773,7 +793,8 @@
                                                 <ComboBoxItem Content="S-Curve (logistic)" Tag="SCurve" />
                                                 <ComboBoxItem Content="Logarithmic" Tag="Logarithmic" />
                                             </ComboBox>
-                                            <Grid ColumnSpacing="12">
+                                            <Grid x:Name="PlaygroundGammaSliderRow"
+                                                  ColumnSpacing="12">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />

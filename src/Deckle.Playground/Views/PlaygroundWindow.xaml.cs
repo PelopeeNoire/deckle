@@ -691,6 +691,20 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundNav.SelectedItem = NavItemHud;
     }
 
+    // "Show light zones" toggle on the Ambient preview options row.
+    // Hides / shows the LightZonesOverlay Canvas inside the Viewbox
+    // — the dashed border rectangles drawn over the sampled grid.
+    // Off lets the user see the raw cells without the overlay on top,
+    // useful when comparing the engine's sampled mean to what the
+    // screen actually shows.
+    private void OnShowZoneOverlaysToggled(object sender, RoutedEventArgs e)
+    {
+        if (LightZonesOverlay is null) return;
+        LightZonesOverlay.Visibility = ShowZoneOverlaysToggle.IsOn
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     private void OnHomeAmbientCardClick(object sender, RoutedEventArgs e)
     {
         PlaygroundNav.SelectedItem = NavItemAmbient;
@@ -3255,7 +3269,11 @@ public sealed partial class PlaygroundWindow : Window
             // separately so the slider doesn't carry Gamma's 1.8 over
             // when the user picks SCurve (where 1.8 is nearly invisible).
             PlaygroundGammaSlider.Value            = SelectCurveParamForType(s.BrightnessCurveType, s);
-            PlaygroundGammaCanvas.Gamma            = s.BrightnessCurveParam;
+            // Canvas needs both the param matching the active curve
+            // (so SCurve renders with its steepness, not Gamma's
+            // exponent) and the type itself (forwarded by
+            // UpdatePlaygroundBrightnessCurveDependentUi below).
+            PlaygroundGammaCanvas.Gamma            = SelectCurveParamForType(s.BrightnessCurveType, s);
             PlaygroundSmoothingSlider.Value        = s.SmoothingAlpha;
             PlaygroundChangeThresholdSlider.Value  = s.ChangeThreshold;
             SelectBrightnessCurveTypeInCombo(s.BrightnessCurveType);
@@ -3294,13 +3312,13 @@ public sealed partial class PlaygroundWindow : Window
         PlaygroundBrightnessCurveCombo.SelectedIndex = 1;
     }
 
-    // Toggles the param slider enabled state, refreshes the caption,
-    // and hides the BrightnessCurveCanvas visualisation for curves it
-    // can't represent (it draws a gamma power-law shape only). Linear
-    // and Logarithmic ignore param, so the slider is disabled to make
-    // that obvious ; SCurve hides the canvas too until a proper SCurve
-    // visualisation is implemented — drawing a gamma curve while the
-    // user is tuning an SCurve is actively misleading.
+    // Refreshes the curve section UI after a curve type change. The
+    // canvas now supports all four shapes natively (BrightnessCurveCanvas
+    // dispatches on its CurveType DP), so we keep it visible
+    // unconditionally — only its opacity drops on Linear / Logarithmic
+    // where the user can't tune anything. The slider row is fully
+    // hidden when the active curve has no parameter (Linear, Log) so
+    // the user isn't tempted to drag a no-op slider.
     private void UpdatePlaygroundBrightnessCurveDependentUi()
     {
         var type = ReadBrightnessCurveTypeFromCombo();
@@ -3308,21 +3326,33 @@ public sealed partial class PlaygroundWindow : Window
                            || type == BrightnessCurveType.SCurve;
         PlaygroundGammaSlider.IsEnabled = paramHasEffect;
 
-        // The Gamma canvas widget can only draw the power-law shape ;
-        // showing it while a different curve is active would lie about
-        // the response the engine actually applies. Cache for Gamma
-        // only, collapsed otherwise — an SCurve / Log visualisation is
-        // a separate palier.
-        PlaygroundGammaCanvas.Visibility = type == BrightnessCurveType.Gamma
+        // Push the type onto the canvas so it draws the right shape.
+        // Gamma / param are forwarded by the slider handler ; that one
+        // already calls Canvas.Gamma = slider.Value live.
+        PlaygroundGammaCanvas.CurveType = type;
+
+        // Always reserve the canvas footprint so toggling curve types
+        // doesn't reflow the rest of the section. Mute the curve when
+        // it isn't a knob the user can tune — Linear is identical to
+        // the reference dashed diagonal anyway, Logarithmic carries no
+        // param. Gamma and SCurve stay full-opacity since the user is
+        // actively shaping them.
+        PlaygroundGammaCanvas.Opacity = paramHasEffect ? 1.0 : 0.4;
+
+        // Hide the slider row entirely on Linear / Logarithmic — these
+        // shapes have no tunable parameter so a slider would just sit
+        // there confusing. The caption text below keeps explaining
+        // the active curve in plain language.
+        PlaygroundGammaSliderRow.Visibility = paramHasEffect
             ? Visibility.Visible
             : Visibility.Collapsed;
 
         PlaygroundGammaCaption.Text = type switch
         {
-            BrightnessCurveType.Linear      => "Direct pass-through. The brightness param slider has no effect in this mode — disable the curve and rely on smoothing + min brightness instead.",
+            BrightnessCurveType.Linear      => "Direct pass-through — input max channel is sent to the lamp as-is. No parameter to tune ; rely on smoothing and min brightness for fine control.",
             BrightnessCurveType.Gamma       => "Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights. 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows.",
             BrightnessCurveType.SCurve      => "Logistic S-curve pushed mid-tones away from grey in both directions. Higher steepness = harder contrast. 1.0 — almost linear · 2.0 — default · 5.0 — near-step.",
-            BrightnessCurveType.Logarithmic => "Lifts the bottom of the range so even very dim scenes stay clearly lit. No param to tune — the curve is fixed.",
+            BrightnessCurveType.Logarithmic => "Lifts the bottom of the range so even very dim scenes stay clearly lit. No parameter to tune — the curve is fixed.",
             _ => string.Empty,
         };
     }
@@ -3393,12 +3423,10 @@ public sealed partial class PlaygroundWindow : Window
     {
         UpdatePlaygroundGammaText();
         var type = ReadBrightnessCurveTypeFromCombo();
-        // Only the Gamma canvas reads BrightnessCurveParam directly ;
-        // mirror the slider value there so the shape follows the
-        // slider live. The canvas is hidden for other curves so the
-        // assignment is harmless.
-        if (type == BrightnessCurveType.Gamma)
-            PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
+        // Canvas dispatches on CurveType internally — push the live
+        // slider value as the generic param for both Gamma and SCurve
+        // so the shape follows the drag in real time.
+        PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
 
         if (_ambientTuningLoading) return;
 
