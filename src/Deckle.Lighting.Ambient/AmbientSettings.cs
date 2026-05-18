@@ -180,17 +180,30 @@ public sealed class AmbientSettings
     /// AmbientPage.</summary>
     public int MinBrightness { get; set; } = 180;
 
-    /// <summary>Power-law exponent applied to the brightness response
-    /// curve : <c>bri = (max/255)^γ × 254</c> instead of strictly
-    /// linear. γ = 1.0 disables the curve (baseline). γ &gt; 1 squashes
-    /// the bottom of the range — a scene with max = 25/255 pushes
-    /// bri ≈ 4 at γ = 1.8 instead of bri ≈ 25 linear, which reads as
-    /// dim in a dark room. Saturated highlights (max = 255) are
-    /// untouched at any γ. Range of practical interest [1.0, 3.0].
-    /// Default 1.8 — empirically the sweet spot for a typical living-
-    /// room setup ; bump higher for dimmer rooms. Tuned in
-    /// AmbientPage.</summary>
-    public double BrightnessCurveGamma { get; set; } = 1.8;
+    /// <summary>Shape of the brightness response curve applied to the
+    /// max-channel before deriving the Hue <c>bri</c> value. Lets the
+    /// user pick between four canonical responses without piling more
+    /// sliders — a single parameter (<see cref="BrightnessCurveParam"/>)
+    /// is reinterpreted by each curve. See the enum members for
+    /// details.</summary>
+    public BrightnessCurveType BrightnessCurveType { get; set; } = BrightnessCurveType.Gamma;
+
+    /// <summary>Auxiliary parameter for the active brightness curve.
+    /// Default 1.8 maps to a γ = 1.8 power law under
+    /// <see cref="BrightnessCurveType.Gamma"/>, which is the legacy
+    /// shipping curve. Range and meaning vary per curve type :
+    /// Gamma = exponent in [1.0, 3.0] ; SCurve = steepness in
+    /// [1.0, 5.0] ; Linear / Logarithmic ignore this value.</summary>
+    public double BrightnessCurveParam { get; set; } = 1.8;
+
+    /// <summary>Sum-of-absolute-channel-deltas threshold that gates
+    /// pushes — if the new tuned-and-smoothed colour differs from the
+    /// last pushed one by less than this on the 0-765 scale, the
+    /// push is dropped. 0 disables the gate, useful when smoothing
+    /// already does the heavy lifting. Default 6 (raised from the
+    /// legacy 3) damps the residual quantisation noise without
+    /// killing perceptible motion. Tuned in the Playground.</summary>
+    public int ChangeThreshold { get; set; } = 6;
 
     /// <summary>Exponential moving average factor applied to the colour
     /// pushed to each light, in [0, 1]. 1.0 disables the filter
@@ -220,4 +233,41 @@ public enum AmbientMode
     /// average and biases the hue toward the temperature dominating the
     /// highlights of the scene. J6 lights this up.</summary>
     Realistic,
+}
+
+/// <summary>Shape of the brightness response curve applied to the
+/// max-channel of the tuned sRGB output before the Hue <c>bri</c>
+/// value is derived. Each shape reinterprets the auxiliary
+/// <see cref="AmbientSettings.BrightnessCurveParam"/> slider so the
+/// user can swap responses without losing the slider's footprint.</summary>
+public enum BrightnessCurveType
+{
+    /// <summary>Direct pass-through : <c>bri = max</c>. Param ignored.
+    /// Use when smoothing alone is enough to keep the lamp readable
+    /// on dim scenes and any non-linear squash would feel uneven.</summary>
+    Linear,
+
+    /// <summary>Power-law : <c>bri = (max/255)^γ × 254</c> with γ =
+    /// param. γ = 1.0 collapses to Linear. γ &gt; 1 squashes the
+    /// bottom of the range — a scene with max = 25/255 pushes bri
+    /// ≈ 4 at γ = 1.8 instead of bri ≈ 25 linear, which reads as
+    /// dim in a dark room. Saturated highlights are untouched.
+    /// Range of practical interest [1.0, 3.0]. Default shape.</summary>
+    Gamma,
+
+    /// <summary>Logistic S-curve centered on 0.5 with steepness = param :
+    /// <c>bri = 1 / (1 + exp(-k × (x - 0.5)))</c> remapped so the
+    /// endpoints stay at 0 and 254. Pushes mid-tones away from grey
+    /// in both directions — dim scenes get darker, bright scenes
+    /// brighter — useful when the screen content is high-contrast.
+    /// Param range [1.0, 5.0] ; 1.0 reads almost-linear, 5.0
+    /// reads almost-hard-step.</summary>
+    SCurve,
+
+    /// <summary>Logarithmic : <c>bri = log(1 + 9 × x) / log(10) × 254</c>.
+    /// Pushes the bottom of the range up — even very dim scenes
+    /// stay clearly lit. Param ignored. Use when the room is bright
+    /// enough that subtle scenes would otherwise read as "lamp
+    /// off".</summary>
+    Logarithmic,
 }

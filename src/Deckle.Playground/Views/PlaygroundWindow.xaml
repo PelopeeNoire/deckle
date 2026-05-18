@@ -587,8 +587,15 @@
                                                    MaxWidth="640" />
                                     </StackPanel>
 
-                                    <!-- Brightness curve (γ) — widget left,
-                                         slider right, value text far right. -->
+                                    <!-- Brightness curve : type selector
+                                         + parameter slider. The visual
+                                         preview canvas stays on the left,
+                                         the type ComboBox + param slider
+                                         on the right. The slider's
+                                         interpretation depends on the
+                                         selected type (Gamma exponent,
+                                         SCurve steepness, ignored for
+                                         Linear / Logarithmic). -->
                                     <Grid ColumnSpacing="16">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -601,23 +608,25 @@
                                         <StackPanel Grid.Column="1"
                                                     VerticalAlignment="Center"
                                                     Spacing="6">
-                                            <TextBlock Text="Brightness curve (γ)"
+                                            <TextBlock Text="Brightness curve"
                                                        Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <ComboBox x:Name="PlaygroundBrightnessCurveCombo"
+                                                      HorizontalAlignment="Stretch"
+                                                      SelectionChanged="OnPlaygroundBrightnessCurveTypeChanged">
+                                                <ComboBoxItem Content="Linear (pass-through)" Tag="Linear" />
+                                                <ComboBoxItem Content="Gamma (power law)" Tag="Gamma" />
+                                                <ComboBoxItem Content="S-Curve (logistic)" Tag="SCurve" />
+                                                <ComboBoxItem Content="Logarithmic" Tag="Logarithmic" />
+                                            </ComboBox>
                                             <Grid ColumnSpacing="12">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <!-- Range/Value set in code-behind
-                                                     (InitPlaygroundAmbientTuning) because
-                                                     the WinUI 3 Slider XAML parser rejects
-                                                     every attribute order with a non-zero
-                                                     Minimum. See AmbientPage GammaSlider
-                                                     for the rationale. -->
                                                 <Slider x:Name="PlaygroundGammaSlider"
                                                         Grid.Column="0"
-                                                        StepFrequency="0.05"
-                                                        SmallChange="0.05" LargeChange="0.25"
+                                                        StepFrequency="0.1"
+                                                        SmallChange="0.1" LargeChange="0.5"
                                                         TickFrequency="0.5"
                                                         TickPlacement="Outside"
                                                         ValueChanged="OnPlaygroundGammaSliderChanged" />
@@ -628,12 +637,83 @@
                                                            MinWidth="56"
                                                            TextAlignment="End" />
                                             </Grid>
-                                            <TextBlock Text="Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights. 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows."
+                                            <TextBlock x:Name="PlaygroundGammaCaption"
+                                                       Text="Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights."
                                                        Style="{ThemeResource CaptionTextBlockStyle}"
                                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Grid>
+
+                                    <!-- Smoothing α — temporal EMA factor.
+                                         1.0 disables smoothing, lower
+                                         values damp small jitter. The
+                                         caption is plain-language since
+                                         "EMA factor" doesn't read on its
+                                         own. -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Smoothing"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="PlaygroundSmoothingSlider"
+                                                    Grid.Column="0"
+                                                    Minimum="0.05" Maximum="1.0"
+                                                    StepFrequency="0.05"
+                                                    SmallChange="0.05" LargeChange="0.10"
+                                                    TickFrequency="0.10"
+                                                    TickPlacement="Outside"
+                                                    ValueChanged="OnPlaygroundSmoothingSliderChanged" />
+                                            <TextBlock x:Name="PlaygroundSmoothingValueText"
+                                                       Grid.Column="1"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       MinWidth="56"
+                                                       TextAlignment="End" />
+                                        </Grid>
+                                        <TextBlock Text="Damps frame-to-frame jitter from small moving reflections in a globally dark scene. 1.0 — instant response · 0.3 — moderate smoothing · 0.1 — heavy smoothing (cinematic)."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+
+                                    <!-- Change threshold — gate on the
+                                         per-tick delta sum. 0 disables
+                                         the gate (every tick pushes),
+                                         higher values let smoothing
+                                         absorb more before triggering
+                                         a push. -->
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Change threshold"
+                                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Slider x:Name="PlaygroundChangeThresholdSlider"
+                                                    Grid.Column="0"
+                                                    Minimum="0" Maximum="30"
+                                                    StepFrequency="1"
+                                                    SmallChange="1" LargeChange="5"
+                                                    TickFrequency="5"
+                                                    TickPlacement="Outside"
+                                                    ValueChanged="OnPlaygroundChangeThresholdSliderChanged" />
+                                            <TextBlock x:Name="PlaygroundChangeThresholdValueText"
+                                                       Grid.Column="1"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       MinWidth="56"
+                                                       TextAlignment="End" />
+                                        </Grid>
+                                        <TextBlock Text="Minimum |ΔR|+|ΔG|+|ΔB| across two ticks for a push to fire. Higher values mute residual jitter, lower values track every change."
+                                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
 
                                     <!-- Exposure (EV) — single slider row + caption. -->
                                     <StackPanel Spacing="6">
@@ -647,8 +727,8 @@
                                             <Slider x:Name="PlaygroundExposureSlider"
                                                     Grid.Column="0"
                                                     Minimum="-2.0" Maximum="2.0"
-                                                    StepFrequency="0.1"
-                                                    SmallChange="0.1" LargeChange="0.5"
+                                                    StepFrequency="0.5"
+                                                    SmallChange="0.5" LargeChange="1.0"
                                                     TickFrequency="0.5"
                                                     TickPlacement="Outside"
                                                     ValueChanged="OnPlaygroundExposureSliderChanged" />
@@ -677,8 +757,8 @@
                                             <Slider x:Name="PlaygroundSaturationSlider"
                                                     Grid.Column="0"
                                                     Minimum="0" Maximum="200"
-                                                    StepFrequency="5"
-                                                    SmallChange="5" LargeChange="25"
+                                                    StepFrequency="10"
+                                                    SmallChange="10" LargeChange="25"
                                                     TickFrequency="25"
                                                     TickPlacement="Outside"
                                                     ValueChanged="OnPlaygroundSaturationSliderChanged" />
@@ -707,8 +787,8 @@
                                             <Slider x:Name="PlaygroundMinBrightnessSlider"
                                                     Grid.Column="0"
                                                     Minimum="0" Maximum="254"
-                                                    StepFrequency="2"
-                                                    SmallChange="2" LargeChange="20"
+                                                    StepFrequency="5"
+                                                    SmallChange="5" LargeChange="25"
                                                     TickFrequency="50"
                                                     TickPlacement="Outside"
                                                     ValueChanged="OnPlaygroundMinBrightnessSliderChanged" />

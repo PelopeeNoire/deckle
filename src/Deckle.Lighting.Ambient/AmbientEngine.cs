@@ -99,13 +99,10 @@ public sealed class AmbientEngine : IAsyncDisposable
     private const int MultiPushHz = 10;
 
     // Early-exit threshold — if |ΔR| + |ΔG| + |ΔB| < this, the push
-    // is skipped. Default raised from 3 to 6 (out of 0-765 max) :
-    // 3 was too sensitive on scenes with small moving reflections in
-    // a globally dark frame, which kept the lamp flickering on the
-    // residue. 6 still passes anything the eye would notice while
-    // damping the quantisation noise of the sampler. J5 surfaces this
-    // in the Playground tuning panel.
-    private const int ChangeThreshold = 6;
+    // is skipped. Now sourced from AmbientSettings.ChangeThreshold
+    // (default 6), refreshed at the top of each tick. Effective
+    // value seen by GroupTickAsync / MultiLightTickAsync via the
+    // _changeThreshold field below.
 
     // Lights-out threshold — if every channel of the analysed average
     // is at or below this, we clamp the colour to (0,0,0) before the
@@ -217,7 +214,7 @@ public sealed class AmbientEngine : IAsyncDisposable
     // _host.Ambient. Live-reload — the AmbientPage sliders apply on
     // the next tick without restarting the pipeline. See
     // AmbientSettings.ExposureEv / SaturationBoost / MinBrightness /
-    // BrightnessCurveGamma for the user-facing semantics. The snapshot
+    // BrightnessCurveParam for the user-facing semantics. The snapshot
     // avoids re-reading the host on every pixel inside the helpers.
     //   - Exposure is forwarded to FrameSampler (applied in linear
     //     light before the tone-map, mathematically correct).
@@ -233,9 +230,11 @@ public sealed class AmbientEngine : IAsyncDisposable
     //     the max channel to the floor while preserving chromaticity).
     //     Comes after the curve so the effective floor matches the
     //     value the user set, not the curve-attenuated version of it.
-    private double _saturationBoost      = 1.0;
-    private double _brightnessCurveGamma = 1.0;
-    private int    _minBrightness        = 0;
+    private double _saturationBoost       = 1.0;
+    private double _brightnessCurveParam  = 1.0;
+    private BrightnessCurveType _brightnessCurveType = BrightnessCurveType.Linear;
+    private int    _minBrightness         = 0;
+    private int    _changeThreshold       = 6;
     // EMA factor snapshot. 1.0 = pass-through (no temporal smoothing).
     // Refreshed at the top of each tick from _host.Ambient.SmoothingAlpha.
     // The lamp jitter observed in dark scenes with small moving
@@ -663,10 +662,12 @@ public sealed class AmbientEngine : IAsyncDisposable
                 // window without a restart.
                 var ambient = _host.Ambient;
                 _sampler!.SetExposureEv(ambient.ExposureEv);
-                _saturationBoost      = ambient.SaturationBoost;
-                _brightnessCurveGamma = ambient.BrightnessCurveGamma;
-                _minBrightness        = ambient.MinBrightness;
-                _smoothingAlpha       = ambient.SmoothingAlpha;
+                _saturationBoost       = ambient.SaturationBoost;
+                _brightnessCurveType   = ambient.BrightnessCurveType;
+                _brightnessCurveParam  = ambient.BrightnessCurveParam;
+                _minBrightness         = ambient.MinBrightness;
+                _changeThreshold       = ambient.ChangeThreshold;
+                _smoothingAlpha        = ambient.SmoothingAlpha;
 
                 var sample = _sampler!.LatestSample;
                 if (sample is null)
@@ -739,7 +740,7 @@ public sealed class AmbientEngine : IAsyncDisposable
         int delta = Math.Abs(targetR - _lastR)
                   + Math.Abs(targetG - _lastG)
                   + Math.Abs(targetB - _lastB);
-        bool dropped = _lastR >= 0 && delta < ChangeThreshold;
+        bool dropped = _lastR >= 0 && delta < _changeThreshold;
 
         if (dropped)
         {
@@ -876,7 +877,7 @@ public sealed class AmbientEngine : IAsyncDisposable
             int delta = Math.Abs(targetR - prev.Item1)
                       + Math.Abs(targetG - prev.Item2)
                       + Math.Abs(targetB - prev.Item3);
-            bool dropped = prev.Item1 >= 0 && delta < ChangeThreshold;
+            bool dropped = prev.Item1 >= 0 && delta < _changeThreshold;
 
             if (dropped)
             {
@@ -960,7 +961,7 @@ public sealed class AmbientEngine : IAsyncDisposable
         if (isDark) return (0, 0, 0);
 
         (byte sR, byte sG, byte sB) = ApplySaturationBoost(r, g, b, _saturationBoost);
-        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveGamma);
+        (byte cR, byte cG, byte cB) = ApplyBrightnessCurve(sR, sG, sB, _brightnessCurveType, _brightnessCurveParam);
         return ApplyMinBrightness(cR, cG, cB, _minBrightness);
     }
 
@@ -1008,18 +1009,52 @@ public sealed class AmbientEngine : IAsyncDisposable
     //
     // Kept ambient-only (not in HueColorMath) so manual swatch pushes
     // still honour the "this colour at full power" contract. See
-    // AmbientSettings.BrightnessCurveGamma for the user-facing
-    // semantics and tuning rationale.
-    private static (byte R, byte G, byte B) ApplyBrightnessCurve(byte r, byte g, byte b, double gamma)
+    // AmbientSettings.BrightnessCurveType for the user-facing
+    // semantics and tuning rationale. Each curve maps max ∈ [0, 255]
+    // to a new max' ∈ [0, 255] then scales (R, G, B) by max'/max so
+    // chromaticity is preserved — only the lamp's bri changes.
+    private static (byte R, byte G, byte B) ApplyBrightnessCurve(byte r, byte g, byte b, BrightnessCurveType type, double param)
     {
-        if (Math.Abs(gamma - 1.0) < 0.001) return (r, g, b);
-
         int max = Math.Max(r, Math.Max(g, b));
         if (max == 0) return (r, g, b);
 
-        double ratio = max / 255.0;
-        double scale = Math.Pow(ratio, gamma - 1.0);
+        double ratio = max / 255.0; // x ∈ [0, 1]
+        double y;
+        switch (type)
+        {
+            case BrightnessCurveType.Linear:
+                return (r, g, b);
 
+            case BrightnessCurveType.Gamma:
+                if (Math.Abs(param - 1.0) < 0.001) return (r, g, b);
+                y = Math.Pow(ratio, param);
+                break;
+
+            case BrightnessCurveType.SCurve:
+                // Logistic centered on 0.5, normalised so f(0)=0 and
+                // f(1)=1. Steepness k = param. k = 1 reads almost
+                // linear, k = 5 reads almost step.
+                double k = Math.Max(0.01, param);
+                double a = 1.0 / (1.0 + Math.Exp(0.5 * k));
+                double bN = 1.0 / (1.0 + Math.Exp(-0.5 * k));
+                double raw = 1.0 / (1.0 + Math.Exp(-k * (ratio - 0.5)));
+                y = (raw - a) / (bN - a);
+                break;
+
+            case BrightnessCurveType.Logarithmic:
+                // y = log10(1 + 9x), endpoints anchored at (0, 0)
+                // and (1, 1). Lifts the bottom of the range hard.
+                y = Math.Log10(1.0 + 9.0 * ratio);
+                break;
+
+            default:
+                return (r, g, b);
+        }
+
+        // Convert the curved max' back to a multiplicative scale that
+        // applies to the full (R, G, B) triplet — chromaticity stays
+        // invariant, only the perceived brightness drifts.
+        double scale = y / ratio;
         return (
             (byte)Math.Clamp((int)Math.Round(r * scale), 0, 255),
             (byte)Math.Clamp((int)Math.Round(g * scale), 0, 255),

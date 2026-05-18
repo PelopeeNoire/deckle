@@ -137,8 +137,8 @@ public sealed partial class AmbientPage : Page
             ExposureSlider.Value      = s.ExposureEv;
             SaturationSlider.Value    = s.SaturationBoost * 100.0;
             MinBrightnessSlider.Value = s.MinBrightness;
-            GammaSlider.Value         = s.BrightnessCurveGamma;
-            GammaCurveCanvas.Gamma    = s.BrightnessCurveGamma;
+            GammaSlider.Value         = s.BrightnessCurveParam;
+            GammaCurveCanvas.Gamma    = s.BrightnessCurveParam;
 
             UpdateExposureText();
             UpdateSaturationText();
@@ -236,7 +236,7 @@ public sealed partial class AmbientPage : Page
         // widget itself is purely visual, no persistence, no save loop.
         GammaCurveCanvas.Gamma = GammaSlider.Value;
         if (_loading) return;
-        AmbientSettingsService.Instance.Current.BrightnessCurveGamma = GammaSlider.Value;
+        AmbientSettingsService.Instance.Current.BrightnessCurveParam = GammaSlider.Value;
         AmbientSettingsService.Instance.Save();
     }
 
@@ -258,7 +258,7 @@ public sealed partial class AmbientPage : Page
             s.ExposureEv            = 0.0;
             s.SaturationBoost       = 1.0;
             s.MinBrightness         = 180;
-            s.BrightnessCurveGamma  = 1.8;
+            s.BrightnessCurveParam  = 1.8;
             AmbientSettingsService.Instance.Save();
             ResyncFromSettings();
         }
@@ -275,7 +275,7 @@ public sealed partial class AmbientPage : Page
         => ResetOne(s => s.MinBrightness = 180);
 
     private void GammaReset_Click(object sender, RoutedEventArgs e)
-        => ResetOne(s => s.BrightnessCurveGamma = 1.8);
+        => ResetOne(s => s.BrightnessCurveParam = 1.8);
 
     private void ResetOne(Action<AmbientSettings> mutate)
     {

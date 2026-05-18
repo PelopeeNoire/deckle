@@ -3085,13 +3085,15 @@ public sealed partial class PlaygroundWindow : Window
 
     private void InitPlaygroundAmbientTuning()
     {
-        // Set the gamma slider range here rather than in XAML : the
-        // WinUI 3 XAML parser rejected every attribute order with a
-        // non-zero Minimum (see AmbientPage GammaSlider rationale).
+        // Set the curve param slider range here rather than in XAML :
+        // the WinUI 3 XAML parser rejected every attribute order with
+        // a non-zero Minimum (see AmbientPage GammaSlider rationale).
         // Order matters at runtime too — Maximum first, then Value,
         // then Minimum — so the RangeBase invariant holds at each
-        // assignment step.
-        PlaygroundGammaSlider.Maximum = 3.0;
+        // assignment step. Max 5.0 covers the SCurve steepness range ;
+        // Gamma stays below 3 in practice, the rest of the slider is
+        // just unused real estate when Gamma is the active type.
+        PlaygroundGammaSlider.Maximum = 5.0;
         PlaygroundGammaSlider.Value   = 1.8;
         PlaygroundGammaSlider.Minimum = 1.0;
 
@@ -3112,21 +3114,79 @@ public sealed partial class PlaygroundWindow : Window
         {
             var s = AmbientSettingsService.Instance.Current;
 
-            PlaygroundExposureSlider.Value      = s.ExposureEv;
-            PlaygroundSaturationSlider.Value    = s.SaturationBoost * 100.0;
-            PlaygroundMinBrightnessSlider.Value = s.MinBrightness;
-            PlaygroundGammaSlider.Value         = s.BrightnessCurveGamma;
-            PlaygroundGammaCanvas.Gamma         = s.BrightnessCurveGamma;
+            PlaygroundExposureSlider.Value         = s.ExposureEv;
+            PlaygroundSaturationSlider.Value       = s.SaturationBoost * 100.0;
+            PlaygroundMinBrightnessSlider.Value    = s.MinBrightness;
+            PlaygroundGammaSlider.Value            = s.BrightnessCurveParam;
+            PlaygroundGammaCanvas.Gamma            = s.BrightnessCurveParam;
+            PlaygroundSmoothingSlider.Value        = s.SmoothingAlpha;
+            PlaygroundChangeThresholdSlider.Value  = s.ChangeThreshold;
+            SelectBrightnessCurveTypeInCombo(s.BrightnessCurveType);
+            UpdatePlaygroundBrightnessCurveDependentUi();
 
             UpdatePlaygroundExposureText();
             UpdatePlaygroundSaturationText();
             UpdatePlaygroundMinBrightnessText();
             UpdatePlaygroundGammaText();
+            UpdatePlaygroundSmoothingText();
+            UpdatePlaygroundChangeThresholdText();
         }
         finally
         {
             _ambientTuningLoading = prev;
         }
+    }
+
+    // Maps the persisted enum into the ComboBox by Tag. Falls back to
+    // Gamma (first non-Linear entry) if a future settings.json carries
+    // an unknown value — keeps the UI usable instead of leaving the
+    // selection empty.
+    private void SelectBrightnessCurveTypeInCombo(BrightnessCurveType type)
+    {
+        string tag = type.ToString();
+        foreach (var item in PlaygroundBrightnessCurveCombo.Items)
+        {
+            if (item is ComboBoxItem cbi && (cbi.Tag as string) == tag)
+            {
+                PlaygroundBrightnessCurveCombo.SelectedItem = cbi;
+                return;
+            }
+        }
+        // Unknown / future enum value : pick Gamma (index 1).
+        PlaygroundBrightnessCurveCombo.SelectedIndex = 1;
+    }
+
+    // Toggles the param slider enabled state and refreshes the caption
+    // to match the active curve. Linear and Logarithmic ignore param,
+    // so the slider is disabled to make that obvious. Caption text
+    // adapts so the user always sees what the slider controls in the
+    // current mode.
+    private void UpdatePlaygroundBrightnessCurveDependentUi()
+    {
+        var type = ReadBrightnessCurveTypeFromCombo();
+        bool paramHasEffect = type == BrightnessCurveType.Gamma
+                           || type == BrightnessCurveType.SCurve;
+        PlaygroundGammaSlider.IsEnabled = paramHasEffect;
+
+        PlaygroundGammaCaption.Text = type switch
+        {
+            BrightnessCurveType.Linear      => "Direct pass-through. The brightness param slider has no effect in this mode — disable the curve and rely on smoothing + min brightness instead.",
+            BrightnessCurveType.Gamma       => "Power-law squash on the bottom of the bri range. Higher γ dims dim scenes harder without touching saturated highlights. 1.0 — linear · 1.8 — default · 2.5 — strongly dimmed shadows.",
+            BrightnessCurveType.SCurve      => "Logistic S-curve pushed mid-tones away from grey in both directions. Higher steepness = harder contrast. 1.0 — almost linear · 3.0 — visible contrast · 5.0 — near-step.",
+            BrightnessCurveType.Logarithmic => "Lifts the bottom of the range so even very dim scenes stay clearly lit. No param to tune — the curve is fixed.",
+            _ => string.Empty,
+        };
+    }
+
+    private BrightnessCurveType ReadBrightnessCurveTypeFromCombo()
+    {
+        if (PlaygroundBrightnessCurveCombo.SelectedItem is ComboBoxItem cbi
+         && cbi.Tag is string tag
+         && Enum.TryParse<BrightnessCurveType>(tag, out var parsed))
+        {
+            return parsed;
+        }
+        return BrightnessCurveType.Gamma;
     }
 
     private void OnPlaygroundGammaSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -3135,7 +3195,7 @@ public sealed partial class PlaygroundWindow : Window
         // Update the canvas even during the load pass — purely visual.
         PlaygroundGammaCanvas.Gamma = PlaygroundGammaSlider.Value;
         if (_ambientTuningLoading) return;
-        AmbientSettingsService.Instance.Current.BrightnessCurveGamma = PlaygroundGammaSlider.Value;
+        AmbientSettingsService.Instance.Current.BrightnessCurveParam = PlaygroundGammaSlider.Value;
         AmbientSettingsService.Instance.Save();
     }
 
@@ -3165,7 +3225,15 @@ public sealed partial class PlaygroundWindow : Window
     }
 
     private void UpdatePlaygroundGammaText()
-        => PlaygroundGammaValueText.Text = $"γ {PlaygroundGammaSlider.Value:F2}";
+    {
+        var type = ReadBrightnessCurveTypeFromCombo();
+        PlaygroundGammaValueText.Text = type switch
+        {
+            BrightnessCurveType.Gamma  => $"γ {PlaygroundGammaSlider.Value:F2}",
+            BrightnessCurveType.SCurve => $"k {PlaygroundGammaSlider.Value:F2}",
+            _                          => "—",
+        };
+    }
 
     private void UpdatePlaygroundExposureText()
     {
@@ -3178,4 +3246,46 @@ public sealed partial class PlaygroundWindow : Window
 
     private void UpdatePlaygroundMinBrightnessText()
         => PlaygroundMinBrightnessValueText.Text = $"{(int)Math.Round(PlaygroundMinBrightnessSlider.Value)}";
+
+    private void UpdatePlaygroundSmoothingText()
+        => PlaygroundSmoothingValueText.Text = $"α {PlaygroundSmoothingSlider.Value:F2}";
+
+    private void UpdatePlaygroundChangeThresholdText()
+        => PlaygroundChangeThresholdValueText.Text = $"{(int)Math.Round(PlaygroundChangeThresholdSlider.Value)}";
+
+    // Smoothing α slider — persists into AmbientSettings.SmoothingAlpha.
+    // The engine re-reads it on every push tick so the move applies
+    // within ~66 ms.
+    private void OnPlaygroundSmoothingSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundSmoothingText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.SmoothingAlpha = PlaygroundSmoothingSlider.Value;
+        AmbientSettingsService.Instance.Save();
+    }
+
+    // Change threshold slider — persists into AmbientSettings.ChangeThreshold.
+    // 0 disables the gate ; higher values let smoothing absorb more
+    // before any push is allowed through.
+    private void OnPlaygroundChangeThresholdSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePlaygroundChangeThresholdText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.ChangeThreshold =
+            (int)Math.Round(PlaygroundChangeThresholdSlider.Value);
+        AmbientSettingsService.Instance.Save();
+    }
+
+    // Curve type ComboBox — persists the enum into settings and
+    // refreshes the param slider's enabled state + caption. The param
+    // value is preserved across type switches so a user toggling
+    // between Gamma and SCurve doesn't lose their fine-tuning.
+    private void OnPlaygroundBrightnessCurveTypeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdatePlaygroundBrightnessCurveDependentUi();
+        UpdatePlaygroundGammaText();
+        if (_ambientTuningLoading) return;
+        AmbientSettingsService.Instance.Current.BrightnessCurveType = ReadBrightnessCurveTypeFromCombo();
+        AmbientSettingsService.Instance.Save();
+    }
 }
