@@ -62,7 +62,9 @@ function Test-SkippedPath {
     # Reject if any path segment between $RootForRelative and the file
     # matches a skipDirs entry, or if the filename matches generatedRegex.
     $rel = $Path.Substring($RootForRelative.Length).TrimStart('\','/')
-    foreach ($part in $rel.Split('\','/')) {
+    # -split with a regex char class — String.Split(char,char) overloads
+    # collide here (the second char is interpreted as a count int).
+    foreach ($part in ($rel -split '[\\/]')) {
         if ($skipDirs -contains $part) { return $true }
     }
     if ($Path -match $generatedRegex) { return $true }
