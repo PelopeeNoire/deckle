@@ -16,7 +16,7 @@ Pas pour l'utilisateur final.
 Le catalogue source de vérité côté C# est
 [NativeRuntime.RequiredDllNames](../Setup/NativeRuntime.cs). La même liste
 est dupliquée côté PowerShell dans
-[scripts/setup-assets.ps1](../../../scripts/setup-assets.ps1)
+[scripts/lib/setup-assets.ps1](../../../scripts/lib/setup-assets.ps1)
 (`$WhisperDlls` + `$MingwDlls`). Toute divergence est un bug.
 
 5 DLLs whisper.cpp Vulkan (sortie de `whisper.cpp/build/bin/`) :
@@ -109,13 +109,13 @@ scoop update mingw
 
 ## Production du bundle publié
 
-Le script `scripts/publish-native-runtime.ps1` automatise toute la
+Le script `scripts/lib/publish-native-runtime.ps1` automatise toute la
 suite : copie du catalogue (5 + 3), génération du `PROVENANCE.txt`,
 calcul des SHA256 par fichier dans `SHA256SUMS`, zip à plat, et
 optionnellement `gh release create native-v$Version`.
 
 ```powershell
-.\scripts\publish-native-runtime.ps1 `
+.\scripts\lib\publish-native-runtime.ps1 `
     -Version 1.0.0 `
     -WhisperRepo D:\workspace\whisper.cpp `
     -OutDir D:\tmp\deckle-native-1.0.0

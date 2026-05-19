@@ -273,7 +273,7 @@ considered ready to merge when :
    (post-rewrite).
 4. `LICENSE`, `README.md`, `SECURITY.md` are present at the repo root
    and render correctly on GitHub.
-5. Maintainer runs the app via `scripts/build-run.ps1` and confirms a
+5. Maintainer runs the app via `scripts/lib/build-run.ps1` and confirms a
    complete record→transcribe→clipboard→paste cycle works, plus an
    autostart toggle round-trip and an Ollama rewrite if a profile is
    configured.

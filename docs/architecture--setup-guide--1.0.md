@@ -253,7 +253,7 @@ méthodes publiques. Si demain on bascule sur une autre stack (Vulkan
 `SetDllImportResolver` — il connaît `"libwhisper"` comme identifiant
 P/Invoke mais c'est `NativeRuntime` qui orchestre l'install.
 
-Le bundle versionné est produit par `scripts/publish-native-runtime.ps1`
+Le bundle versionné est produit par `scripts/lib/publish-native-runtime.ps1`
 (maintainer-only) ; recette de recompilation dans
 [reference--native-runtime--1.0.md](reference--native-runtime--1.0.md).
 
@@ -328,7 +328,7 @@ Pas de `File.AppendAllText`, pas de `Console.WriteLine` parallèle.
 5. **`ContentDialog` sans `XamlRoot`** — crash WinUI 3.
 6. **`Frame.GoBack()` avec history visible** — Back doit annuler le commit de l'étape précédente, pas naviguer dans une stack.
 7. **UI Element créé hors thread UI** — `HttpClient` callbacks → `DispatcherQueue.TryEnqueue` pour toute mise à jour de Progress.
-8. **Hardcoder des noms de DLL ailleurs que dans `Setup/NativeRuntime`** — viole l'encapsulation native. Le catalogue est dupliqué côté PowerShell (`scripts/setup-assets.ps1`, `scripts/publish-native-runtime.ps1`) avec un commentaire de traçabilité ; toute autre duplication est un bug.
+8. **Hardcoder des noms de DLL ailleurs que dans `Setup/NativeRuntime`** — viole l'encapsulation native. Le catalogue est dupliqué côté PowerShell (`scripts/lib/setup-assets.ps1`, `scripts/lib/publish-native-runtime.ps1`) avec un commentaire de traçabilité ; toute autre duplication est un bug.
 9. **Hardcoder des `#xxxxxx` ou des `CornerRadius` numériques** dans la XAML. Theme resources only.
 10. **Bypass de `LogService` / `TelemetryService`** pour logger l'install — pas de `File.AppendAllText` parallèle.
 11. **Confondre `CopyFromFolder` et `InstallFromZipAsync`** — le premier est sync, lit un dossier dont l'utilisateur garantit le contenu (Browse) ; le second est async, lit un zip dont l'intégrité est garantie en amont par `Downloader.DownloadAsync` (SHA-256). Les deux convergent sur `NativeDirectory` mais ne sont pas interchangeables.

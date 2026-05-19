@@ -76,14 +76,16 @@ HDR support.
 The fastest path from a fresh Windows 11 machine is the bootstrap script:
 
 ```powershell
-scripts/bootstrap-dev-env.ps1           # Tier 1 (managed build)
-scripts/bootstrap-dev-env.ps1 -Full     # Tier 1 + native recompile + Ollama
+scripts/lib/bootstrap-dev-env.ps1           # Tier 1 (managed build)
+scripts/lib/bootstrap-dev-env.ps1 -Full     # Tier 1 + native recompile + Ollama
 ```
 
 It probes what is already installed, installs the missing pieces via winget
 and Scoop, sets the required environment variables, and invokes
 `setup-assets.ps1` to provision the runtime data. Run with `-DryRun` first
-to see the plan without installing anything.
+to see the plan without installing anything. The same flow is reachable
+via the interactive menu at `scripts/deckle.ps1` (Setup → Bootstrap dev
+environment).
 
 #### Tier 1 — build & run Deckle (sufficient for C# / XAML work)
 
@@ -115,25 +117,34 @@ to see the plan without installing anything.
 
 ### Fresh clone — first run
 
-1. Run `scripts/bootstrap-dev-env.ps1` (installs prerequisites + provisions
+1. Run `scripts/lib/bootstrap-dev-env.ps1` (installs prerequisites + provisions
    `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models).
 2. Open a **new terminal** (environment variables set by the bootstrap are
    only visible in new sessions).
-3. Build & run via `scripts/launcher.ps1` (interactive picker), or directly:
+3. Build & run via `scripts/deckle.ps1` (interactive menu), or directly:
    ```powershell
-   scripts/build-run.ps1 -Configuration Release
+   scripts/lib/build-run.ps1 -Configuration Release
    ```
 4. Alternatively, open the solution in Visual Studio 2026 and press F5.
 
 ### Scripts
 
+The single interactive entry point is `scripts/deckle.ps1` — F5 in
+VSCodium points there. Worker scripts live under `scripts/lib/` and
+stay callable on their own CLI:
+
 | Script | Purpose |
 |--------|---------|
-| `scripts/bootstrap-dev-env.ps1` | Probe + install dev dependencies (winget, Scoop, VS, .NET SDK). |
-| `scripts/setup-assets.ps1` | Provision `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. |
-| `scripts/launcher.ps1` | Interactive two-step picker: worktree → action (build, run, setup). |
-| `scripts/build-run.ps1` | Build via VS MSBuild + launch. Resolves MSBuild automatically. |
-| `scripts/publish-native-runtime.ps1` | Maintainer-only: zip + publish a `native-vX.Y.Z` GitHub release. |
+| `scripts/deckle.ps1` | Interactive menu: build, clean, stats, setup, bootstrap, publish. |
+| `scripts/lib/build-run.ps1` | Build via VS MSBuild + launch. Resolves MSBuild automatically. |
+| `scripts/lib/clean.ps1` | Remove `bin/` + `obj/` under every `src/<module>/`. |
+| `scripts/lib/stats.ps1` | Per-module file + LOC stats (`.cs` / `.xaml` / `.resw`). |
+| `scripts/lib/setup-assets.ps1` | Provision `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. |
+| `scripts/lib/bootstrap-dev-env.ps1` | Probe + install dev dependencies (winget, Scoop, VS, .NET SDK). |
+| `scripts/lib/publish-native-runtime.ps1` | Maintainer-only: zip + publish a `native-vX.Y.Z` GitHub release. |
+
+See [`scripts/README.md`](scripts/README.md) for the full menu structure
+and per-script switches.
 
 ---
 
@@ -172,14 +183,14 @@ service, nothing machine-wide.
 │   ├── Deckle.Settings/        Settings UI shell + per-module persistence
 │   ├── Deckle.Llm/             LLM rewrite via Ollama
 │   └── Deckle.Whisp/           Whisper transcription pipeline
-├── scripts/                    Build, publish, setup, launcher
+├── scripts/                    Build, publish, setup, launcher (deckle.ps1 + lib/)
 ├── docs/                       Reference sheets and research notes
 ├── benchmark/                  Python benchmark suite (optional, to be extracted)
 └── LICENSE, README.md, SECURITY.md, NOTICE.md
 ```
 
 Native DLLs and Whisper models do **not** live in the repository. They are
-provisioned at dev time by `scripts/setup-assets.ps1` into
+provisioned at dev time by `scripts/lib/setup-assets.ps1` into
 `%LOCALAPPDATA%\Deckle\` and at user time by the first-run wizard.
 
 ---

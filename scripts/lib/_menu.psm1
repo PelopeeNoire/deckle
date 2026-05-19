@@ -1,8 +1,9 @@
 # _menu.psm1 — Interactive arrow-key menu utilities
 #
 # Single source of truth for the cursor-driven picker pattern used by the
-# scripts in this folder. Imported by build-run.ps1 (-Pick), launcher.ps1,
-# and any future script that needs the same flow.
+# scripts in this folder. Imported by deckle.ps1 (top-level launcher),
+# build-run.ps1 (-Pick), clean.ps1 (-Pick), and any future script that
+# needs the same flow.
 #
 # Two public functions:
 #   - Select-Worktree : picks a worktree from `git worktree list`. Returns
@@ -10,6 +11,9 @@
 #                       when there is only one worktree.
 #   - Select-Action   : picks one entry from a list of (Label, Value)
 #                       pairs. Returns the chosen Value (or $null on Esc).
+#                       Items with IsHeader=$true are rendered as
+#                       non-selectable section dividers (Up/Down skips
+#                       them); useful for grouping a flat list visually.
 #
 # Both honour the same key bindings: Up/Down to navigate, Enter to confirm,
 # Esc to cancel. The line truncation logic preserves the meaningful tail
@@ -19,39 +23,67 @@
 
 Set-StrictMode -Version Latest
 
-# Internal: render a single highlighted/normal label line, padded to the
-# terminal width so a previous longer line gets fully overwritten.
+# Internal: does this pscustomobject have an IsHeader property set to true?
+# Wrapped in a helper because Set-StrictMode trips on direct prop access
+# when the prop is absent.
+function Test-MenuHeader {
+    param($Item)
+    $prop = $Item.PSObject.Properties['IsHeader']
+    return ($null -ne $prop) -and [bool]$prop.Value
+}
+
+# Internal: render a single label line, padded to the terminal width so
+# a previous longer line gets fully overwritten. Headers render in
+# DarkCyan without a cursor prefix; selectable items use '  > ' / '    '.
 function Write-MenuLine {
     param(
         [int]$Row,
         [string]$Label,
-        [bool]$Selected
+        [bool]$Selected,
+        [bool]$IsHeader
     )
 
-    $prefix = if ($Selected) { '  > ' } else { '    ' }
-    $line   = $prefix + $Label
-    $pad    = [Console]::WindowWidth - $line.Length - 1
+    if ($IsHeader) {
+        $line = '  ' + $Label
+    } else {
+        $prefix = if ($Selected) { '  > ' } else { '    ' }
+        $line   = $prefix + $Label
+    }
+    $pad = [Console]::WindowWidth - $line.Length - 1
     if ($pad -gt 0) { $line += (' ' * $pad) }
 
     [Console]::SetCursorPosition(0, $Row)
-    if ($Selected) {
+    if ($IsHeader) {
+        Write-Host $line -ForegroundColor DarkCyan -NoNewline
+    } elseif ($Selected) {
         Write-Host $line -ForegroundColor Green -NoNewline
     } else {
         Write-Host $line -NoNewline
     }
 }
 
-# Internal: drives the arrow-key loop over an array of pre-formatted labels.
-# Returns the selected index, or -1 if the user cancelled with Esc.
+# Internal: drives the arrow-key loop over an array of items. Each item
+# is a hashtable @{ Label = '...'; IsHeader = $false/$true }. Returns the
+# selected index, or -1 if the user cancelled with Esc. Up/Down skip
+# header rows automatically.
 function Invoke-MenuLoop {
     param(
         [string]$Header,
-        [string[]]$Labels,
+        [object[]]$Items,
         [int]$Default = 0
     )
 
-    if ($Labels.Count -eq 0) { return -1 }
-    $selected = [Math]::Min([Math]::Max(0, $Default), $Labels.Count - 1)
+    if ($Items.Count -eq 0) { return -1 }
+
+    # Indices of selectable (non-header) items. If empty, nothing to pick.
+    $selectableIdx = @()
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        if (-not $Items[$i].IsHeader) { $selectableIdx += $i }
+    }
+    if ($selectableIdx.Count -eq 0) { return -1 }
+
+    # Clamp Default to a valid selectable index.
+    $selected = if ($selectableIdx -contains $Default) { $Default } else { $selectableIdx[0] }
 
     Write-Host ""
     Write-Host $Header -ForegroundColor Cyan
@@ -59,16 +91,21 @@ function Invoke-MenuLoop {
     # Render every label once so the buffer grows naturally; capturing the
     # final cursor position after the fact is more reliable than reserving
     # rows up front (which breaks when the buffer scrolls near the bottom).
-    for ($i = 0; $i -lt $Labels.Count; $i++) {
-        $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
-        if ($i -eq $selected) {
-            Write-Host ($prefix + $Labels[$i]) -ForegroundColor Green
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        $it = $Items[$i]
+        if ($it.IsHeader) {
+            Write-Host ('  ' + $it.Label) -ForegroundColor DarkCyan
         } else {
-            Write-Host ($prefix + $Labels[$i])
+            $prefix = if ($i -eq $selected) { '  > ' } else { '    ' }
+            if ($i -eq $selected) {
+                Write-Host ($prefix + $it.Label) -ForegroundColor Green
+            } else {
+                Write-Host ($prefix + $it.Label)
+            }
         }
     }
     $bottom = [Console]::CursorTop
-    $top    = [Math]::Max(0, $bottom - $Labels.Count)
+    $top    = [Math]::Max(0, $bottom - $Items.Count)
 
     [Console]::CursorVisible = $false
     try {
@@ -76,20 +113,27 @@ function Invoke-MenuLoop {
             $key  = [Console]::ReadKey($true)
             $prev = $selected
             switch ($key.Key) {
-                'UpArrow'   { if ($selected -gt 0)                  { $selected-- } }
-                'DownArrow' { if ($selected -lt $Labels.Count - 1)  { $selected++ } }
-                'Enter'     {
+                'UpArrow' {
+                    # Step up through selectables only.
+                    $pos = $selectableIdx.IndexOf($selected)
+                    if ($pos -gt 0) { $selected = $selectableIdx[$pos - 1] }
+                }
+                'DownArrow' {
+                    $pos = $selectableIdx.IndexOf($selected)
+                    if ($pos -lt $selectableIdx.Count - 1) { $selected = $selectableIdx[$pos + 1] }
+                }
+                'Enter'  {
                     [Console]::SetCursorPosition(0, $bottom)
                     return $selected
                 }
-                'Escape'    {
+                'Escape' {
                     [Console]::SetCursorPosition(0, $bottom)
                     return -1
                 }
             }
             if ($selected -eq $prev) { continue }
-            Write-MenuLine -Row ($top + $prev)     -Label $Labels[$prev]     -Selected $false
-            Write-MenuLine -Row ($top + $selected) -Label $Labels[$selected] -Selected $true
+            Write-MenuLine -Row ($top + $prev)     -Label $Items[$prev].Label     -Selected $false -IsHeader $false
+            Write-MenuLine -Row ($top + $selected) -Label $Items[$selected].Label -Selected $true  -IsHeader $false
         }
     } finally {
         [Console]::CursorVisible = $true
@@ -152,16 +196,22 @@ function Select-Worktree {
     # Auto-pick when there is nothing to choose between.
     if ($entries.Count -eq 1) { return $entries[0].Path }
 
-    $labels = foreach ($e in $entries) { Format-WorktreeLabel -Branch $e.Branch -Path $e.Path }
-    $idx    = Invoke-MenuLoop -Header 'Pick a worktree (Up/Down, Enter = confirm, Esc = cancel):' -Labels $labels
+    $items = foreach ($e in $entries) {
+        [pscustomobject]@{
+            Label    = (Format-WorktreeLabel -Branch $e.Branch -Path $e.Path)
+            IsHeader = $false
+        }
+    }
+    $idx = Invoke-MenuLoop -Header 'Pick a worktree (Up/Down, Enter = confirm, Esc = cancel):' -Items $items
     if ($idx -lt 0) { throw "Cancelled" }
     return $entries[$idx].Path
 }
 
 # Public: list a set of action labels and return the selected value.
-# Items must be an array of [pscustomobject]@{ Label = '...'; Value = ... }
-# (Value can be any type — string, hashtable, scriptblock). Throws
-# "Cancelled" on Esc.
+# Items must be an array of [pscustomobject] with at least Label and
+# Value (Value can be any type — string, hashtable, scriptblock).
+# Items with IsHeader=$true render as non-selectable section dividers
+# (Up/Down skips them). Throws "Cancelled" on Esc.
 function Select-Action {
     [CmdletBinding()]
     param(
@@ -172,8 +222,16 @@ function Select-Action {
 
     if ($Items.Count -eq 0) { throw "No items to select from" }
 
-    $labels = foreach ($it in $Items) { [string]$it.Label }
-    $idx    = Invoke-MenuLoop -Header $Header -Labels $labels -Default $Default
+    # Normalise: every item ends up with Label + IsHeader. Missing
+    # IsHeader defaults to false (regular selectable entry).
+    $normalised = foreach ($it in $Items) {
+        [pscustomobject]@{
+            Label    = [string]$it.Label
+            IsHeader = (Test-MenuHeader $it)
+        }
+    }
+
+    $idx = Invoke-MenuLoop -Header $Header -Items $normalised -Default $Default
     if ($idx -lt 0) { throw "Cancelled" }
     return $Items[$idx].Value
 }
