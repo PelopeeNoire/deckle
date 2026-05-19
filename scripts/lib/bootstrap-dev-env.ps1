@@ -6,7 +6,7 @@
 # safe to re-run.
 #
 # Out of scope (intentional):
-#   - Does NOT build or run Deckle (see scripts/build-run.ps1, and
+#   - Does NOT build or run Deckle (see scripts/lib/build-run.ps1, and
 #     CLAUDE.md non-negotiable).
 #   - Does NOT clone whisper.cpp (location is per-dev preference; prints
 #     the command instead). Required only for -Full (native rebuild).
@@ -21,11 +21,11 @@
 #             rewrite path end-to-end.
 #
 # Usage:
-#   scripts\bootstrap-dev-env.ps1                      # default tier + assets
-#   scripts\bootstrap-dev-env.ps1 -DryRun              # probe only, no install
-#   scripts\bootstrap-dev-env.ps1 -Full                # full toolchain
-#   scripts\bootstrap-dev-env.ps1 -SkipAssets          # skip setup-assets.ps1
-#   scripts\bootstrap-dev-env.ps1 -Yes                 # no confirmation prompt
+#   scripts\lib\bootstrap-dev-env.ps1                      # default tier + assets
+#   scripts\lib\bootstrap-dev-env.ps1 -DryRun              # probe only, no install
+#   scripts\lib\bootstrap-dev-env.ps1 -Full                # full toolchain
+#   scripts\lib\bootstrap-dev-env.ps1 -SkipAssets          # skip setup-assets.ps1
+#   scripts\lib\bootstrap-dev-env.ps1 -Yes                 # no confirmation prompt
 
 [CmdletBinding()]
 param(
@@ -37,7 +37,7 @@ param(
     # local LLM rewrite path. Off by default to keep first setup lean.
     [switch]$Full,
 
-    # Skip the final invocation of scripts/setup-assets.ps1. Use when you
+    # Skip the final invocation of scripts/lib/setup-assets.ps1. Use when you
     # plan to provision <UserDataRoot> manually or rely on the first-run
     # wizard.
     [switch]$SkipAssets,
@@ -508,12 +508,12 @@ Write-Host "  1. Open a new PowerShell terminal so DECKLE_MSBUILD / VULKAN_SDK" 
 Write-Host "     and any freshly-installed tool become visible." -ForegroundColor White
 Write-Host ""
 Write-Host "  2. Verify nothing is missing:" -ForegroundColor White
-Write-Host "       scripts\bootstrap-dev-env.ps1 -DryRun" -ForegroundColor DarkGray
+Write-Host "       scripts\lib\bootstrap-dev-env.ps1 -DryRun" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  3. Build + run Deckle:" -ForegroundColor White
-Write-Host "       scripts\build-run.ps1" -ForegroundColor DarkGray
+Write-Host "       scripts\lib\build-run.ps1" -ForegroundColor DarkGray
 Write-Host "     or use the interactive launcher:" -ForegroundColor White
-Write-Host "       scripts\launcher.ps1" -ForegroundColor DarkGray
+Write-Host "       scripts\deckle.ps1" -ForegroundColor DarkGray
 
 if ($Full) {
     Write-Host ""

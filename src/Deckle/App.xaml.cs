@@ -457,6 +457,29 @@ public partial class App : Microsoft.UI.Xaml.Application
             ShowSettingsWindowLazy(pageTag);
         }
 
+        // If launched with --post-build (set by scripts/lib/build-run.ps1),
+        // schedule a one-shot self-restart via ShellExecute. The first
+        // launch right after MSBuild occasionally inherits a degraded
+        // foreground state that makes Windows defer WS_EX_TOPMOST on the
+        // HUD, so the first recording shows the HUD behind every other
+        // window. Relaunching ourselves through cmd /c start gives the
+        // new process a clean foreground state.
+        int postBuildIdx = Array.IndexOf(cliArgs, "--post-build");
+        if (postBuildIdx >= 0)
+        {
+            _log.Verbose(LogSource.App, "--post-build flag detected | scheduling shell-execute relaunch in 800ms");
+            var dq = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+            var timer = dq.CreateTimer();
+            timer.Interval = TimeSpan.FromMilliseconds(800);
+            timer.IsRepeating = false;
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                RestartViaShellExecute();
+            };
+            timer.Start();
+        }
+
         sw.Stop();
         milestones.Add($"total {sw.ElapsedMilliseconds}ms");
         _log.Verbose(LogSource.App, "startup milestones | " + string.Join(" | ", milestones));
@@ -657,6 +680,42 @@ public partial class App : Microsoft.UI.Xaml.Application
                 : "--settings";
             _log.Verbose(LogSource.App, $"spawn new process | exe={exePath} | args={args}");
             System.Diagnostics.Process.Start(exePath, args);
+        }
+
+        if (Current is App app)
+            app.QuitApp();
+    }
+
+    // ── Self-restart via ShellExecute (post-build mitigation) ──────────────
+    //
+    // Used by the --post-build flag set by scripts/lib/build-run.ps1.
+    // Routes the relaunch through `cmd /c start` so the new process is
+    // created via ShellExecute (detached) rather than as a child of the
+    // current process. The HUD's WS_EX_TOPMOST flag is sensitive to the
+    // foreground state at process creation; relaunching through the
+    // shell gives the new instance a clean foreground state, mirroring
+    // the launch.ps1 idiom on the PowerShell side.
+    public static void RestartViaShellExecute()
+    {
+        _log.Info(LogSource.App, "Post-build self-restart requested");
+        try { Settings.SettingsService.Instance.Flush(); } catch { }
+
+        var exePath = Environment.ProcessPath;
+        if (exePath is not null)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName        = "cmd.exe",
+                Arguments       = $"/c start \"\" \"{exePath}\"",
+                UseShellExecute = false,
+                CreateNoWindow  = true,
+            };
+            _log.Verbose(LogSource.App, $"shell-execute relaunch | exe={exePath}");
+            try { System.Diagnostics.Process.Start(psi); }
+            catch (Exception ex)
+            {
+                _log.Error(LogSource.App, $"shell-execute relaunch failed: {ex.Message}");
+            }
         }
 
         if (Current is App app)

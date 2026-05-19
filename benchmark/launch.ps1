@@ -9,8 +9,8 @@
     asks for the optional flags relevant to that bench and runs it.
 
     No external module dependency — uses [Console]::ReadKey() like
-    scripts/build-run.ps1's Select-WorktreeInteractive (kept lean on
-    purpose). See benchmark/AGENT.md for the bench-side conventions.
+    scripts/lib/_menu.psm1's Select-Worktree (kept lean on purpose).
+    See benchmark/AGENT.md for the bench-side conventions.
 
 .NOTES
     Up / Down  : move selection

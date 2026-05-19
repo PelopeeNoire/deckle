@@ -28,7 +28,7 @@ D'où vient chaque artefact qui n'est pas produit dans le repo principal.
 | `ggml-base.bin` | `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin` | Très stable (dépôt officiel ggerganov) | À ajouter : SHA-256 fixe |
 | `ggml-large-v3.bin` | `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin` | Idem | Idem |
 | `ggml-silero-v6.2.0.bin` | `https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin` | Versionné par tag `v6.2.0` | Idem |
-| Runtime natif whisper | GitHub Releases du repo Deckle taggées `native-vX.Y.Z`. Asset unique `deckle-native-X.Y.Z.zip` (8 DLLs flat + `PROVENANCE.txt` + `SHA256SUMS`). Produit par `scripts/publish-native-runtime.ps1`. | Tu contrôles | SHA-256 du zip hardcodé dans `NativeRuntime.CurrentBundle.Sha256` |
+| Runtime natif whisper | GitHub Releases du repo Deckle taggées `native-vX.Y.Z`. Asset unique `deckle-native-X.Y.Z.zip` (8 DLLs flat + `PROVENANCE.txt` + `SHA256SUMS`). Produit par `scripts/lib/publish-native-runtime.ps1`. | Tu contrôles | SHA-256 du zip hardcodé dans `NativeRuntime.CurrentBundle.Sha256` |
 | `whisper.cpp` source | `https://github.com/ggerganov/whisper.cpp` | Très stable | Tag whisper.cpp pinné dans la doc build |
 | Suite benchmark | **À héberger** : repo GitHub `Deckle-benchmark` à extraire de `benchmark/` actuel | Tu contrôles | n/a |
 | Vulkan SDK runtime | LunarG ou drivers GPU AMD/Intel/NVIDIA | Externe | n/a — vérification "Vulkan dispo" au runtime |

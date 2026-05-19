@@ -34,7 +34,7 @@
        PublishSingleFile bundles the managed assemblies into Deckle.exe.
        Native DLLs (libwhisper + ggml backends + MinGW runtime) and Whisper
        models are NOT shipped — they live in <UserDataRoot>\native\ and
-       <UserDataRoot>\models\, populated by scripts/setup-assets.ps1 (or
+       <UserDataRoot>\models\, populated by scripts/lib/setup-assets.ps1 (or
        the future first-run wizard) on a per-user basis.
 
        SelfContained pairs with PublishSingleFile per WinAppSDK's SingleFile

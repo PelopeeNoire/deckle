@@ -15,21 +15,27 @@ param(
     [string]$Target,
     # Interactive picker: lists the main repo + all linked worktrees via
     # `git worktree list` and prompts for a choice. Overrides -Target.
-    [switch]$Pick
+    [switch]$Pick,
+    # Skip the --post-build flag passed to Deckle.exe on launch. The flag
+    # triggers a one-shot self-restart at the app side, mitigating the
+    # post-build HUD topmost glitch. Disable here for debug scenarios
+    # where you want a stable PID (attached debugger, log capture, ...).
+    [switch]$NoAutoRestart
 )
 
 $ErrorActionPreference = 'Stop'
-$ScriptDir  = $PSScriptRoot                                  # scripts/
+$ScriptDir  = $PSScriptRoot                                  # scripts/lib/
 
 # =============================================================================
 # RepoRoot resolution
 # -----------------------------------------------------------------------------
 # Default: build the repo containing this script copy — the VS Code "Run"
 # flow (PowerShell extension on the open file) naturally picks the
-# worktree currently being edited.
+# worktree currently being edited. Two levels up from this script:
+# scripts/lib/build-run.ps1 → scripts/ → <repo root>.
 #
 # Override: -Target "<path>" picks any path. -Pick lists the worktrees
-# via the shared interactive picker (scripts/_menu.psm1) and prompts.
+# via the shared interactive picker (scripts/lib/_menu.psm1) and prompts.
 # Both are for terminal use; VS Code Run should stay no-arg.
 # =============================================================================
 if ($Pick) {
@@ -39,7 +45,7 @@ if ($Pick) {
     if (-not (Test-Path $Target)) { throw "Target not found: $Target" }
     $RepoRoot = (Get-Item $Target).FullName
 } else {
-    $RepoRoot = Split-Path $ScriptDir
+    $RepoRoot = Split-Path -Parent (Split-Path $ScriptDir)
 }
 
 Write-Host "Repo: $RepoRoot" -ForegroundColor DarkGray
@@ -144,15 +150,28 @@ Write-Host "Run $ExePath" -ForegroundColor Green
 # also non-foreground, and the foreground lock policy then silently
 # downgrades / defers the WS_EX_TOPMOST flag that HudWindow's
 # OverlappedPresenter posts at construction (IsAlwaysOnTop = true). The
-# net effect Louis observed: HUD launches behind every other window for
-# the entire session, and only an app restart from Explorer (which routes
-# through ShellExecute and gets proper foreground promotion) cures it.
+# net effect: HUD launches behind every other window for the entire
+# session, and only an app restart from Explorer (which routes through
+# ShellExecute and gets proper foreground promotion) cures it.
 # `cmd /c start "" "<path>"` is the canonical Windows idiom for "launch
 # this exe as if the user had double-clicked it from the shell". The
 # empty "" is the START title slot — required when the path is quoted,
 # otherwise `start` interprets the quoted path as the title and silently
 # does nothing.
-& cmd /c start "" "$ExePath"
+#
+# Post-build mitigation: even with cmd /c start, the first launch right
+# after MSBuild has finished still occasionally exhibits the HUD-behind
+# glitch (the foreground lock heuristic appears to be sensitive to the
+# timing of the PowerShell host that just spawned MSBuild). To work
+# around this, we pass --post-build to Deckle.exe so it re-launches
+# itself once via cmd /c start after a short delay, then exits. The
+# second instance never inherits the post-build foreground state. Pass
+# -NoAutoRestart to suppress (debug-attach scenarios).
+if ($NoAutoRestart) {
+    & cmd /c start "" "$ExePath"
+} else {
+    & cmd /c start "" "$ExePath" --post-build
+}
 
 if ($Wait) {
     # cmd /c start spawned the process detached; we don't have a direct

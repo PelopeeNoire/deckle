@@ -59,8 +59,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Repo paths
-$Repo = Split-Path -Parent $PSScriptRoot
+# Repo paths — two levels up: scripts/lib → scripts → repo root
+$Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 # Scoop respects the SCOOP env var when installed in a non-default location;
 # fall back to the per-user default %USERPROFILE%\scoop otherwise.
@@ -80,7 +80,7 @@ function Ok($msg)   { Write-Host "         $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "         $msg" -ForegroundColor Yellow }
 
 # Catalog (matches Deckle.Setup.NativeRuntime.RequiredDllNames and
-# scripts/publish-native-runtime.ps1 — divergence is a bug)
+# scripts/lib/publish-native-runtime.ps1 — divergence is a bug)
 $WhisperDlls = @(
     'libwhisper.dll', 'ggml.dll', 'ggml-base.dll',
     'ggml-cpu.dll',   'ggml-vulkan.dll'
@@ -251,4 +251,4 @@ $modelCount  = (Get-ChildItem $TargetModels -File -ErrorAction SilentlyContinue 
 Step 'done'
 Write-Host "         $TargetNative : $nativeCount file(s)"
 Write-Host "         $TargetModels : $modelCount file(s)"
-Write-Host "`nNext: scripts\launcher.ps1 (Build & run)" -ForegroundColor Cyan
+Write-Host "`nNext: scripts\deckle.ps1 (Build & run)" -ForegroundColor Cyan

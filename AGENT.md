@@ -27,15 +27,18 @@ contributors who clone and build it.
 
 ## Scripts — what to run and when
 
-All scripts live under `scripts/`. Run from the repo root in PowerShell 7+.
+The single entry point is `scripts/deckle.ps1`. Worker scripts live
+under `scripts/lib/` and are callable directly. Run from PowerShell 7+.
 
 | Script | When to use | Safe to run? |
 |--------|-------------|:---:|
-| `bootstrap-dev-env.ps1` | Fresh machine setup — installs VS, .NET SDK, Scoop toolchain, provisions runtime assets. `-DryRun` to preview. `-Full` for the native recompile toolchain. | Yes |
-| `setup-assets.ps1` | Populate `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. `-FromRelease X.Y.Z` for published bundles. | Yes |
-| `launcher.ps1` | Interactive picker: select a worktree then an action (build, run, setup). | **No** (builds) |
-| `build-run.ps1` | Build + launch Deckle. | **No** (builds) |
-| `publish-native-runtime.ps1` | Zip + push a `native-vX.Y.Z` release. | **No** (publishes) |
+| `scripts/deckle.ps1` | Interactive menu: build, clean, stats, setup, bootstrap, publish. | Depends on the action picked |
+| `scripts/lib/bootstrap-dev-env.ps1` | Fresh machine setup — installs VS, .NET SDK, Scoop toolchain, provisions runtime assets. `-DryRun` to preview. `-Full` for the native recompile toolchain. | Yes |
+| `scripts/lib/setup-assets.ps1` | Populate `%LOCALAPPDATA%\Deckle\` with native DLLs and Whisper models. `-FromRelease X.Y.Z` for published bundles. | Yes |
+| `scripts/lib/clean.ps1` | Remove `bin/` + `obj/` under every `src/<module>/`. | Yes |
+| `scripts/lib/stats.ps1` | Per-module file + LOC stats. Read-only. | Yes |
+| `scripts/lib/build-run.ps1` | Build + launch Deckle. | **No** (builds) |
+| `scripts/lib/publish-native-runtime.ps1` | Zip + push a `native-vX.Y.Z` release. | **No** (publishes) |
 
 ---
 

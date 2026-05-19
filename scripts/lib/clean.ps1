@@ -1,13 +1,9 @@
 # clean.ps1 — Local workspace cleanup
 #
 # Removes generated artifacts from a Deckle worktree without touching
-# anything tracked by git. All targets are `.gitignore`d and rebuilt by
-# the next build — safe to delete and re-create at will.
-#
-# Targets are opt-in via switches so nothing happens by accident. Today
-# only -BinObj is supported (per-module `bin/` and `obj/` under `src/`);
-# future categories (asset caches, local logs, …) get their own switch.
-# Run with no switch to see the help text.
+# anything tracked by git. Targets per-module `bin/` and `obj/` under
+# `src/` — all `.gitignore`d and rebuilt by the next build, safe to
+# delete and re-create at will.
 #
 # Symlink guard: skips any reparse-point folder rather than recursing
 # into it. PowerShell's `Remove-Item -Recurse` follows symlinks and
@@ -20,16 +16,10 @@ param(
     # currently-edited worktree).
     [string]$Target,
 
-    # Interactive worktree picker via scripts/_menu.psm1. Overrides
+    # Interactive worktree picker via scripts/lib/_menu.psm1. Overrides
     # -Target. Useful when cleaning from a terminal with several
     # worktrees checked out.
-    [switch]$Pick,
-
-    # Remove every `bin/` and `obj/` directory found at the root of
-    # each module under <Target>/src/. Currently the only cleanup
-    # category — kept as a switch so adding more later (caches, logs)
-    # doesn't break this script's contract.
-    [switch]$BinObj
+    [switch]$Pick
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +28,8 @@ $ScriptDir = $PSScriptRoot
 # =============================================================================
 # RepoRoot resolution — mirrors build-run.ps1 so the two scripts behave
 # the same way when called from the same context (VS Code Run, terminal,
-# launcher.ps1 with -Target).
+# scripts/deckle.ps1 with -Target). Two levels up from this script:
+# scripts/lib/clean.ps1 → scripts/ → <repo root>.
 # =============================================================================
 if ($Pick) {
     Import-Module (Join-Path $ScriptDir '_menu.psm1') -Force
@@ -47,27 +38,13 @@ if ($Pick) {
     if (-not (Test-Path $Target)) { throw "Target not found: $Target" }
     $RepoRoot = (Get-Item $Target).FullName
 } else {
-    $RepoRoot = Split-Path $ScriptDir
+    $RepoRoot = Split-Path -Parent (Split-Path $ScriptDir)
 }
 
 Write-Host "Repo: $RepoRoot" -ForegroundColor DarkGray
 
-# Help when called without any cleanup switch — surface what's available
-# and exit clean rather than silently doing nothing.
-if (-not $BinObj) {
-    Write-Host ""
-    Write-Host "Nothing to do — no cleanup switch was passed." -ForegroundColor Yellow
-    Write-Host "Available cleanup categories:" -ForegroundColor DarkGray
-    Write-Host "  -BinObj   Remove bin/ and obj/ from every module under src/" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "Examples:" -ForegroundColor DarkGray
-    Write-Host "  scripts\clean.ps1 -BinObj"             -ForegroundColor DarkGray
-    Write-Host "  scripts\clean.ps1 -Pick -BinObj"       -ForegroundColor DarkGray
-    return
-}
-
 # =============================================================================
-# -BinObj — purge per-module bin/ + obj/ at the root of every src/* folder.
+# Purge per-module bin/ + obj/ at the root of every src/* folder.
 # =============================================================================
 $SrcDir = Join-Path $RepoRoot 'src'
 if (-not (Test-Path $SrcDir)) { throw "src/ not found under $RepoRoot" }
